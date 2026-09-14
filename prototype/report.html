@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>分析报告 · 澄岳足球训练数据管理系统</title>
+<link rel="stylesheet" href="assets/app.css?v=20260914b">
+</head>
+<body>
+<div id="app"></div>
+<script src="assets/mock.js?v=20260914b"></script>
+<script src="assets/app.js?v=20260914b"></script>
+<script>
+renderShell('report', '分析报告');
+
+document.getElementById('content').innerHTML = `
+  <div class="page-head">
+    <div>
+      <div style="font-size:12px;font-weight:600;color:var(--green-600);margin-bottom:4px">分析与报告</div>
+      <div class="page-title" style="font-size:20px">个人与团队综合测试报告</div>
+      <div class="page-sub">按单项或组合测试汇总当前值、队内参考、状态判定与纵向变化</div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <div class="segmented" style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+        <button class="btn btn-sm" style="border-radius:0;background:var(--green-600);color:#fff">个人报告</button>
+        <button class="btn btn-sm" style="border-radius:0;background:#fff;color:var(--text-2)">团队报告</button>
+      </div>
+      <select class="select" style="width:170px;height:36px">
+        <option>陈予安 · #8</option>
+        ${PLAYERS.map(p => `<option>${p.name} · #${p.no}</option>`).join('')}
+      </select>
+      <button class="btn btn-primary">${ICONS.download}导出PDF</button>
+    </div>
+  </div>
+
+  <div class="report-paper">
+    <!-- 报告头 -->
+    <div class="rp-head">
+      <div style="width:200px"></div>
+      <div class="rp-org">
+        澄岳足球俱乐部
+        <small>运动员训练数据管理系统</small>
+      </div>
+      <div class="rp-title">
+        个人综合测试报告
+        <small>报告编号 CY-20260819-008 · 生成日期 2026-08-19</small>
+      </div>
+    </div>
+
+    <!-- 队员信息 -->
+    <div class="rp-player">
+      <div class="avatar avatar-xl" style="background:${HERO.color}">${HERO.name.charAt(0)}</div>
+      <div>
+        <div class="rp-pname">${HERO.name} ${rtpBadge('y')}</div>
+        <div class="rp-psub">U18梯队 · #8 · 中前卫 · ${BODY.height} cm / ${BODY.weight} kg</div>
+      </div>
+    </div>
+
+    <!-- 核心指标 -->
+    <div class="grid grid-4" style="gap:12px">
+      ${REPORT_METRICS.map(m => `
+        <div class="metric">
+          <div class="m-label">${m.label}</div>
+          <div class="m-value">${m.value}${m.unit ? `<span class="u">${m.unit}</span>` : ''}</div>
+          <div class="m-note">${m.range}</div>
+        </div>`).join('')}
+    </div>
+
+    <!-- 图表 + 专业人员记录 -->
+    <div class="grid" style="grid-template-columns:1.6fr 1fr;gap:16px;margin-top:18px">
+      <div class="card" style="box-shadow:none">
+        <div class="card-h" style="padding-left:0"><div class="section-title" style="margin:0">多维表现概览</div></div>
+        <div style="padding:0">${barChart(REPORT_SCORES)}</div>
+      </div>
+      <div class="card" style="box-shadow:none">
+        <div class="card-h" style="padding-left:0"><div class="section-title" style="margin:0">专业人员记录</div></div>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          ${REPORT_NOTES.map(n => `
+            <div style="border-left:3px solid var(--green-500);padding:2px 0 2px 12px">
+              <div style="font-size:12px;color:var(--text-3);margin-bottom:3px">${n.who} · ${n.role}</div>
+              <div style="font-size:12.5px;font-weight:600;margin-bottom:3px">${n.type}</div>
+              <div style="font-size:12.5px;color:var(--text-2);line-height:1.65">${n.text}</div>
+            </div>`).join('')}
+          <div class="notice notice-amber" style="font-size:11px;line-height:1.7">
+            ${ICONS.info}
+            <span>本报告由系统按模板组装，不构成医学手术和训练医学处方正式评估结论。</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 历次记录 -->
+    <div class="section-title" style="margin-top:20px">近5次专项测试记录</div>
+    <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>日期</th><th>Yo-Yo IR1</th><th>RSA平均</th><th>伊利诺伊敏捷</th><th>CMJ相对峰值功率</th><th>10米冲刺</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${REPORT_HISTORY.map(r => `
+            <tr>
+              <td>${r.date}</td><td>${r.yoyo}</td><td>${r.rsa}</td><td>${r.illinois}</td><td>${r.cmj}</td><td>${r.sprint}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+`;
+</script>
+</body>
+</html>

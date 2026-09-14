@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>机构与小组 · 澄岳足球训练数据管理系统</title>
+<link rel="stylesheet" href="assets/app.css?v=20260914b">
+</head>
+<body>
+<div id="app"></div>
+<script src="assets/mock.js?v=20260914b"></script>
+<script src="assets/app.js?v=20260914b"></script>
+<script>
+renderShell('org', '机构与小组');
+
+const TEAMS = [
+  { name: 'U18梯队', type: '主队伍', count: 12, lead: '主教练 · 高指导', desc: '陈予安等队员主队伍归属' },
+  { name: 'U16梯队', type: '主队伍', count: 6, lead: '主教练 · 林指导', desc: '年生长发育周期测量对象' },
+  { name: '速度专项组', type: '专项小组', count: 4, lead: '体能师 · 陈聪', desc: '冲刺、RSA 专项训练与复测' },
+  { name: 'RTP复核组', type: '恢复小组', count: 2, lead: '康复师 · 沈禹', desc: '红黄状态队员功能复测' },
+];
+
+document.getElementById('content').innerHTML = `
+  <div class="page-head">
+    <div>
+      <div class="page-title" style="font-size:20px">机构与小组</div>
+      <div class="page-sub">机构、队伍、小组与运动员的统一组织模型；同一队员可在多个专项/恢复小组中重复归属</div>
+    </div>
+    <button class="btn btn-primary">${ICONS.plus}新建小组</button>
+  </div>
+
+  <div class="grid grid-2" style="gap:14px">
+    ${TEAMS.map(t => `
+      <div class="card">
+        <div class="card-b" style="padding:18px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="width:42px;height:42px;border-radius:11px;background:var(--green-50);color:var(--green-600);display:grid;place-items:center">${ICONS.org}</span>
+            <div style="flex:1">
+              <div style="font-size:15px;font-weight:700;display:flex;align-items:center;gap:9px">${t.name}<span class="badge ${t.type === '主队伍' ? 'badge-green' : 'badge-blue'}" style="font-size:11px">${t.type}</span></div>
+              <div style="font-size:12px;color:var(--text-3);margin-top:2px">${t.lead}</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:22px;font-weight:700">${t.count}</div>
+              <div style="font-size:11px;color:var(--text-3)">名队员</div>
+            </div>
+          </div>
+          <div style="font-size:12.5px;color:var(--text-2);margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">${t.desc}</div>
+        </div>
+      </div>`).join('')}
+  </div>
+
+  <div class="notice notice-blue" style="margin-top:16px">
+    ${ICONS.info}
+    <span>本期组织模型服务于"一人一档"的数据归集，不扩展为人事、合同、保险或学籍管理。</span>
+  </div>
+`;
+</script>
+</body>
+</html>

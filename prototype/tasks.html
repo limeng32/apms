@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>测试任务 · 澄岳足球训练数据管理系统</title>
+<link rel="stylesheet" href="assets/app.css?v=20260914b">
+</head>
+<body>
+<div id="app"></div>
+<script src="assets/mock.js?v=20260914b"></script>
+<script src="assets/app.js?v=20260914b"></script>
+<script>
+renderShell('tasks', '测试任务');
+
+const t = TASKS[0];
+
+document.getElementById('content').innerHTML = `
+  <div class="page-head">
+    <div>
+      <div style="font-size:12px;font-weight:600;color:var(--green-600);margin-bottom:4px">测试执行厅</div>
+      <div class="page-title" style="font-size:20px">测试任务与进度</div>
+      <div class="page-sub">任务按小组下发，结果可手动录入或从标准CSV文件导入</div>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-ghost">${ICONS.download}下载模板</button>
+      <button class="btn btn-ghost">${ICONS.upload}导入CSV</button>
+      <button class="btn btn-primary">${ICONS.plus}新增任务</button>
+    </div>
+  </div>
+
+  <div class="task-layout">
+    <!-- 左：任务卡列表 -->
+    <div class="task-col">
+      ${TASKS.map(task => {
+        const color = { '进行中': '#4a78c9', '待开始': '#9aa7a1', '已完成': '#3fa96e' }[task.status];
+        return `
+        <div class="task-card ${task.id === 1 ? 'active' : ''}" style="border-left-color:${color}">
+          <div class="tc-top">
+            <span class="badge ${task.statusCls}" style="font-size:11px">${task.status}</span>
+            <span style="font-size:11.5px;color:var(--text-3)">${task.window}</span>
+          </div>
+          <div class="tc-name">${task.name}</div>
+          <div class="tc-meta">${task.group}</div>
+          <div class="tc-bar">
+            <div class="progress ${task.bar}"><i style="width:${task.done / task.total * 100}%"></i></div>
+            <span class="tc-pct">${Math.round(task.done / task.total * 100)}%</span>
+          </div>
+          <div class="tc-meta" style="margin-top:6px">${task.done}/${task.total} 人</div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <!-- 右：任务详情 -->
+    <div class="card">
+      <div class="card-h">
+        <div>
+          <div class="card-title" style="font-size:15.5px">${t.name}</div>
+          <div class="page-sub" style="margin-top:3px">U18梯队 · ${t.window}</div>
+        </div>
+        <span class="badge ${t.statusCls}">${t.status}</span>
+      </div>
+      <div class="card-b">
+        <!-- 统计行 -->
+        <div class="grid grid-4" style="gap:10px;margin-bottom:14px">
+          <div class="metric"><div class="m-label">主测责任人</div><div style="font-size:15px;font-weight:700;margin-top:4px">陈聪</div></div>
+          <div class="metric"><div class="m-label">目标人数</div><div style="font-size:15px;font-weight:700;margin-top:4px">${t.total} 人</div></div>
+          <div class="metric"><div class="m-label">已完成人数</div><div style="font-size:15px;font-weight:700;margin-top:4px;color:var(--green-600)">${t.done} 人</div></div>
+          <div class="metric"><div class="m-label">执行时间窗</div><div style="font-size:15px;font-weight:700;margin-top:4px">${t.window}</div></div>
+        </div>
+
+        <!-- 测试项 -->
+        <div style="display:flex;gap:8px;margin-bottom:16px">
+          ${t.items.map(i => `<span class="badge badge-blue" style="font-size:11.5px">${i}</span>`).join('')}
+        </div>
+
+        <!-- 成员进度 -->
+        <div class="member-grid">
+          ${t.members.map(m => `
+            <div class="member-item ${m.done ? 'done' : ''}">
+              <span class="check-pill ${m.done ? 'done' : 'todo'}">${m.done ? ICONS.check : ''}</span>
+              <div class="m-info">
+                <div class="m-name">${m.name}</div>
+                <div class="m-sub">${m.sub}</div>
+              </div>
+              <span style="font-size:11px;color:${m.done ? 'var(--green-600)' : 'var(--text-3)'}">${m.done ? '已完成' : '待测'}</span>
+            </div>`).join('')}
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px">
+          <button class="btn btn-ghost">${ICONS.upload}导入结果</button>
+          <button class="btn btn-darkgreen">${ICONS.edit}手动录入</button>
+        </div>
+      </div>
+    </div>
+  </div>
+`;
+</script>
+</body>
+</html>

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>工作台 · 澄岳足球训练数据管理系统</title>
+<link rel="stylesheet" href="assets/app.css?v=20260914b">
+</head>
+<body>
+<div id="app"></div>
+<script src="assets/mock.js?v=20260914b"></script>
+<script src="assets/app.js?v=20260914b"></script>
+<script>
+renderShell('dashboard', '工作台');
+
+const inProgress = TASKS.filter(t => t.status === '进行中').length;
+const doneTasks = TASKS.filter(t => t.status === '已完成').length;
+
+document.getElementById('content').innerHTML = `
+  <div class="dash-hero">
+    <div>
+      <h2>早上好，鹏思</h2>
+      <p>当前赛季 · 全部队伍 12 名队员，今日有 ${inProgress} 个测试任务进行中，${RTP_SUMMARY[1].count + RTP_SUMMARY[2].count} 名队员参训状态需要关注。</p>
+    </div>
+    <a class="btn btn-ghost" href="tasks.html">${ICONS.task}查看测试看板</a>
+  </div>
+
+  <div class="grid grid-4" style="margin-top:16px">
+    <div class="card" style="padding:16px 18px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div class="m-label" style="font-size:12.5px;color:var(--text-3)">在队队员</div>
+        <span style="color:var(--green-500)">${ICONS.users}</span>
+      </div>
+      <div style="font-size:28px;font-weight:700;margin-top:6px">12 <span style="font-size:13px;font-weight:400;color:var(--text-3)">人</span></div>
+      <div style="font-size:11.5px;color:var(--text-3);margin-top:4px">U18梯队 · U16梯队 · 专项组</div>
+    </div>
+    <div class="card" style="padding:16px 18px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:12.5px;color:var(--text-3)">进行中任务</div>
+        <span style="color:#4a78c9">${ICONS.task}</span>
+      </div>
+      <div style="font-size:28px;font-weight:700;margin-top:6px">${inProgress} <span style="font-size:13px;font-weight:400;color:var(--text-3)">个</span></div>
+      <div style="font-size:11.5px;color:var(--text-3);margin-top:4px">另有 1 个待开始、${doneTasks} 个已完成</div>
+    </div>
+    <div class="card" style="padding:16px 18px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:12.5px;color:var(--text-3)">限制 / 不建议参训</div>
+        <span style="color:var(--rtp-amber)">${ICONS.health}</span>
+      </div>
+      <div style="font-size:28px;font-weight:700;margin-top:6px">${RTP_SUMMARY[1].count + RTP_SUMMARY[2].count} <span style="font-size:13px;font-weight:400;color:var(--text-3)">人</span></div>
+      <div style="font-size:11.5px;margin-top:4px"><span style="color:var(--rtp-amber)">● ${RTP_SUMMARY[1].count} 限制</span> &nbsp; <span style="color:var(--rtp-red)">● ${RTP_SUMMARY[2].count} 停训</span></div>
+    </div>
+    <div class="card" style="padding:16px 18px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:12.5px;color:var(--text-3)">本周新测量</div>
+        <span style="color:var(--green-500)">${ICONS.trend}</span>
+      </div>
+      <div style="font-size:28px;font-weight:700;margin-top:6px">7 <span style="font-size:13px;font-weight:400;color:var(--text-3)">人次</span></div>
+      <div style="font-size:11.5px;color:var(--text-3);margin-top:4px">体态 4 · PHV 3</div>
+    </div>
+  </div>
+
+  <div class="grid grid-2" style="margin-top:16px;grid-template-columns: 1.25fr 1fr">
+    <div class="card">
+      <div class="card-h">
+        <div class="card-title">测试任务进度 <small>进行中的任务</small></div>
+        <a class="btn btn-ghost btn-sm" href="tasks.html">全部任务</a>
+      </div>
+      <div class="card-b">
+        ${TASKS.slice(0, 3).map(t => `
+          <div style="padding:11px 0;border-bottom:1px solid var(--border)">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div style="font-size:13.5px;font-weight:600">${t.name}</div>
+              <span class="badge ${t.statusCls}">${t.status}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:9px">
+              <div class="progress ${t.bar}" style="flex:1"><i style="width:${t.done / t.total * 100}%"></i></div>
+              <span style="font-size:12px;color:var(--text-2);width:64px;text-align:right">${t.done}/${t.total} 人 · ${Math.round(t.done/t.total*100)}%</span>
+            </div>
+            <div style="font-size:11.5px;color:var(--text-3);margin-top:5px">${t.group} · ${t.window}</div>
+          </div>`).join('')}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <div class="card-title">参训状态总览 <small>RTP 红黄绿</small></div>
+        <a class="btn btn-ghost btn-sm" href="health.html">健康与医疗</a>
+      </div>
+      <div class="card-b">
+        <div class="grid grid-3" style="gap:10px">
+          <div style="background:var(--rtp-green-bg);border-radius:10px;padding:13px;text-align:center">
+            <div style="font-size:24px;font-weight:700;color:#2c8a57">8</div>
+            <div style="font-size:11.5px;color:#3c7a59;margin-top:2px">正常全量</div>
+          </div>
+          <div style="background:var(--rtp-amber-bg);border-radius:10px;padding:13px;text-align:center">
+            <div style="font-size:24px;font-weight:700;color:#b97a16">3</div>
+            <div style="font-size:11.5px;color:#9a7020;margin-top:2px">限制参训</div>
+          </div>
+          <div style="background:var(--rtp-red-bg);border-radius:10px;padding:13px;text-align:center">
+            <div style="font-size:24px;font-weight:700;color:#c14747">1</div>
+            <div style="font-size:11.5px;color:#a15050;margin-top:2px">不建议训练</div>
+          </div>
+        </div>
+        <div style="margin-top:14px">
+          ${PLAYERS.filter(p => p.rtp !== 'g').map(p => `
+            <div class="player-row">
+              ${avatarHTML(p, 'sm')}
+              <div class="p-meta"><div class="p-name">${p.name}</div><div class="p-sub">#${p.no} · ${p.pos}</div></div>
+              <span class="rtp-dot ${p.rtp}"></span>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-h"><div class="card-title">快捷入口</div></div>
+    <div class="card-b">
+      <div class="grid grid-4" style="gap:12px">
+        <a class="quick-link" href="profile.html">
+          <span class="ql-ic">${ICONS.users}</span>
+          <div><div class="ql-t">队员数字档案</div><div class="ql-d">一人一档 · 持续数据归集</div></div>
+        </a>
+        <a class="quick-link" href="phv.html">
+          <span class="ql-ic">${ICONS.growth}</span>
+          <div><div class="ql-t">生长发育监控</div><div class="ql-d">PHV · 预测成年身高</div></div>
+        </a>
+        <a class="quick-link" href="matrix.html">
+          <span class="ql-ic">${ICONS.matrix}</span>
+          <div><div class="ql-t">指标与任务下发</div><div class="ql-d">勾选指标 · 指定小组窗口</div></div>
+        </a>
+        <a class="quick-link" href="report.html">
+          <span class="ql-ic">${ICONS.report}</span>
+          <div><div class="ql-t">综合测试报告</div><div class="ql-d">个人 / 团队 · 导出 PDF</div></div>
+        </a>
+      </div>
+    </div>
+  </div>
+`;
+</script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>测试模型 · 澄岳足球训练数据管理系统</title>
+<link rel="stylesheet" href="assets/app.css?v=20260914b">
+</head>
+<body>
+<div id="app"></div>
+<script src="assets/mock.js?v=20260914b"></script>
+<script src="assets/app.js?v=20260914b"></script>
+<script>
+renderShell('models', '测试模型');
+
+const detail = TEST_MODELS[0].detail;
+
+document.getElementById('content').innerHTML = `
+  <div class="page-head">
+    <div>
+      <div style="font-size:12px;font-weight:600;color:var(--green-600);margin-bottom:4px">足球专项体能与敏捷测试模型库</div>
+      <div class="page-title" style="font-size:20px">测试模型库</div>
+      <div class="page-sub">固定测试规程、记录字段和算法版本，原始结果支持手工录入或CSV导入</div>
+    </div>
+    <button class="btn btn-primary">${ICONS.plus}创建测试任务</button>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:16px;align-items:start">
+    <!-- 模型卡片 -->
+    <div class="model-grid">
+      ${TEST_MODELS.map((m, i) => `
+        <div class="model-card ${i === 0 ? 'selected' : ''} ${m.combo ? 'mc-combo' : ''}" style="border-left-color:${m.border}">
+          <div class="mc-top">
+            <span class="badge ${m.catCls}" style="font-size:11px">${m.cat}</span>
+            <span class="badge badge-gray" style="font-size:11px">${m.scheme}</span>
+          </div>
+          <div class="mc-name">${m.name}</div>
+          <div class="mc-desc">${m.desc}</div>
+          <div class="mc-fields">${ICONS.task}${m.fields}</div>
+          <span class="mc-go">${ICONS.arrowRight}</span>
+        </div>`).join('')}
+    </div>
+
+    <!-- 模型详情 -->
+    <div class="card" style="position:sticky;top:72px">
+      <div class="card-h">
+        <div class="card-title">${TEST_MODELS[0].name} <small style="font-size:11.5px">${detail.code}</small></div>
+      </div>
+      <div class="card-b">
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:7px">测试规程</div>
+        <div class="notice notice-blue" style="margin-bottom:16px;font-size:12px">
+          ${ICONS.info}<span>${detail.protocol}</span>
+        </div>
+
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:9px">记录与计算字段</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+          ${detail.rows.map(r => `
+            <div style="display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:9px;padding:9px 12px">
+              <span class="check-pill done" style="background:var(--rtp-green-bg);color:var(--rtp-green)">${ICONS.target}</span>
+              <span style="font-size:13px;flex:1">${r.name}</span>
+              <span style="font-size:11px;color:var(--text-3)">${r.src}</span>
+            </div>`).join('')}
+        </div>
+
+        <div class="notice notice-amber" style="font-size:11.5px;line-height:1.7;margin-bottom:16px">
+          ${ICONS.warn}<span>${detail.note}</span>
+        </div>
+
+        <button class="btn btn-darkgreen" style="width:100%;justify-content:center">
+          根据该模型创建任务 ${ICONS.arrowRight}
+        </button>
+      </div>
+    </div>
+  </div>
+`;
+</script>
+</body>
+</html>

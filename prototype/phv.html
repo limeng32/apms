@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>生长发育 · 澄岳足球训练数据管理系统</title>
+<link rel="stylesheet" href="assets/app.css?v=20260914b">
+</head>
+<body>
+<div id="app"></div>
+<script src="assets/mock.js?v=20260914b"></script>
+<script src="assets/app.js?v=20260914b"></script>
+<script>
+renderShell('phv', '生长发育');
+
+const phvIcons = {
+  offset: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20"><path d="M12 21V8M12 8l-4 4M12 8l4 4M5 4h14"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 9h16M8 3v4M16 3v4"/></svg>',
+  ruler: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20"><path d="M3 17L17 3l4 4L7 21z"/><path d="M8 12l1.5 1.5M11 9l1.5 1.5M14 6l1.5 1.5"/></svg>',
+  percent: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20"><path d="M4 20L20 4M7 7h.01M17 17h.01"/><circle cx="7" cy="7" r="2.5"/><circle cx="17" cy="17" r="2.5"/></svg>',
+};
+
+document.getElementById('content').innerHTML = `
+  <div class="page-head">
+    <div>
+      <div class="page-title"><span class="tip-tag">青训生长发育与选材监控</span></div>
+      <div style="font-size:21px;font-weight:700;margin-top:8px">生长发育监控</div>
+      <div class="page-sub">无创体测量仅用于周期跟踪，不作为医学诊断或单独选材结论</div>
+    </div>
+    <select class="select" style="width:200px;height:38px">
+      <option>陈予安 · U18梯队</option>
+      ${PLAYERS.map(p => `<option>${p.name} · U18梯队</option>`).join('')}
+    </select>
+  </div>
+
+  <div class="grid" style="grid-template-columns: 1.35fr 1fr;gap:16px;align-items:start">
+    <!-- 本次测量表单 -->
+    <div class="card">
+      <div class="card-h">
+        <div class="card-title">本次测量 <small>陈予安 · 男 · 出生日期 2010-01-18</small></div>
+      </div>
+      <div class="card-b">
+        <div class="measure-form">
+          <div class="full">
+            <label class="field-label">测量日期</label>
+            <input class="input" value="${PHV_FORM.date}">
+          </div>
+          <div>
+            <label class="field-label">站立身高</label>
+            <div class="input-suffix"><input class="input" value="${PHV_FORM.height}"><span class="u-tag">cm</span></div>
+          </div>
+          <div>
+            <label class="field-label">坐高</label>
+            <div class="input-suffix"><input class="input" value="${PHV_FORM.sitHeight}"><span class="u-tag">cm</span></div>
+          </div>
+          <div>
+            <label class="field-label">体重</label>
+            <div class="input-suffix"><input class="input" value="${PHV_FORM.weight}"><span class="u-tag">kg</span></div>
+          </div>
+          <div>
+            <label class="field-label">十进制年龄</label>
+            <div class="input-suffix"><input class="input" value="${PHV_FORM.decimalAge}"><span class="u-tag">岁</span></div>
+          </div>
+          <div>
+            <label class="field-label">父亲身高</label>
+            <div class="input-suffix"><input class="input" value="${PHV_FORM.fatherHeight}"><span class="u-tag">cm</span></div>
+          </div>
+          <div>
+            <label class="field-label">母亲身高</label>
+            <div class="input-suffix"><input class="input" value="${PHV_FORM.motherHeight}"><span class="u-tag">cm</span></div>
+          </div>
+        </div>
+        <div class="form-foot">
+          <button class="btn btn-darkgreen">${ICONS.calc}计算并保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 计算结果 -->
+    <div class="grid" style="grid-template-columns:1fr 1fr;gap:12px">
+      ${PHV_RESULTS.map(r => `
+        <div class="metric ${r.tag === 'PHV后' ? 'accent' : ''}" style="padding:16px 17px;position:relative">
+          <span style="position:absolute;top:13px;right:14px;color:var(--green-500)">${phvIcons[r.icon]}</span>
+          <div class="m-label">${r.label}</div>
+          <div class="m-value" style="font-size:26px">${r.value}<span class="u">${r.unit}</span></div>
+          <div style="margin-top:5px">
+            ${r.tag ? `<span class="badge ${r.tagCls}" style="font-size:11px">${r.tag}</span>` : `<span class="m-note">${r.note}</span>`}
+          </div>
+          ${r.tag ? `<div class="m-note" style="margin-top:4px">${r.note}</div>` : ''}
+        </div>`).join('')}
+      <div class="notice notice-blue" style="grid-column:1/-1;font-size:11.5px;line-height:1.7">
+        ${ICONS.info}
+        <span>模型运算受测量误差、成熟度阶段及家族身高人群影响，建议结合连续生长曲线，由专业人员综合判断。</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 身高变化趋势 -->
+  <div class="card" style="margin-top:16px">
+    <div class="card-h">
+      <div class="card-title">身高变化趋势 <small>最近12个月 · 血液平均增长速度约 2.4 cm/年</small></div>
+    </div>
+    <div class="card-b">
+      ${lineChart(HEIGHT_TREND, { unit: 'cm' })}
+    </div>
+  </div>
+`;
+</script>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>角色权限 · 澄岳足球训练数据管理系统</title>
+<link rel="stylesheet" href="assets/app.css?v=20260914b">
+</head>
+<body>
+<div id="app"></div>
+<script src="assets/mock.js?v=20260914b"></script>
+<script src="assets/app.js?v=20260914b"></script>
+<script>
+renderShell('rbac', '角色权限');
+
+const ROLES = [
+  { role: '体能师', users: '陈聪、鹏思', perms: ['指标/测试数据查看', '数据录入与修改', '任务创建下发', '报告查看/导出'], highlight: false },
+  { role: '康复师', users: '沈禹', perms: ['RTP状态修改（唯一入口）', '医疗附件归档', '状态变更留痕', '报告查看'], highlight: true },
+  { role: '队医', users: '周医生', perms: ['健康风险筛查查看', '医疗附件查阅', 'RTP状态查看'], highlight: false },
+  { role: '主教练', users: '高指导、林指导', perms: ['队伍报告查看', 'RTP状态查看', '队员档案查看'], highlight: false },
+  { role: '科研人员', users: '科研组 2 人', perms: ['测试数据查看', '组合模型配置', '报告查看/导出'], highlight: false },
+];
+
+document.getElementById('content').innerHTML = `
+  <div class="page-head">
+    <div>
+      <div class="page-title" style="font-size:20px">角色权限（RBAC）</div>
+      <div class="page-sub">按岗位控制数据查看、录入修改、报告导出及 RTP 状态修改，遵循敏感资料最小可见原则</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="overflow:hidden;border-radius:0 0 12px 12px">
+      <table class="tbl">
+        <thead>
+          <tr><th style="width:150px">角色</th><th style="width:200px">成员</th><th>本期权限范围</th></tr>
+        </thead>
+        <tbody>
+          ${ROLES.map(r => `
+            <tr>
+              <td><b>${r.role}</b>${r.highlight ? '<div style="margin-top:4px"><span class="badge badge-amber" style="font-size:10.5px">RTP唯一修改方</span></div>' : ''}</td>
+              <td>${r.users}</td>
+              <td>
+                <div style="display:flex;flex-wrap:wrap;gap:7px">
+                  ${r.perms.map(p => `<span class="badge ${r.highlight ? 'badge-amber' : 'badge-gray'}" style="font-weight:500">${p}</span>`).join('')}
+                </div>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="notice notice-blue" style="margin-top:16px">
+    ${ICONS.shield}
+    <span>RTP 红黄绿状态仅授权康复师人工确认与修改，系统不自动升降级；所有变更保留前后值、操作人、时间、原因与限制内容。</span>
+  </div>
+`;
+</script>
+</body>
+</html>

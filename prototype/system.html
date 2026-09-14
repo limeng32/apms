@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>系统说明 · 澄岳足球训练数据管理系统</title>
+<link rel="stylesheet" href="assets/app.css?v=20260914b">
+</head>
+<body>
+<div id="app"></div>
+<script src="assets/mock.js?v=20260914b"></script>
+<script src="assets/app.js?v=20260914b"></script>
+<script>
+renderShell('system', '系统说明');
+
+const STACK = [
+  { layer: '访问层', items: ['浏览器 / PC', 'HTTPS / Nginx', '统一认证', 'RBAC', '操作审计'] },
+  { layer: '业务应用', items: ['机构小组', '数字档案', '指标矩阵', '测试任务', '生长发育', 'RTP健康', '医疗归档', '分析报告'] },
+  { layer: '服务层', items: ['Java Web API', '规则与模型服务', '报表服务', '文件服务', '任务调度', '接口适配'] },
+  { layer: '数据层', items: ['MySQL 业务数据', 'PDF/图片文件', '测试结果封存', '审计日志', '备份与恢复'] },
+];
+
+const NOT_PROMISED = [
+  'ACWR / sRPE / GPS 等训练负荷自动风险判定',
+  '自动医疗诊断、自动复出许可、自动训练处方',
+  '设备 BLE/Wi-Fi 底层控制与原始信号实时采集',
+  'AI 选材、AI 训练建议与自然语言问答',
+  '家长端、完整移动协同/审批平台',
+];
+
+document.getElementById('content').innerHTML = `
+  <div class="page-head">
+    <div>
+      <div class="page-title" style="font-size:20px">系统说明</div>
+      <div class="page-sub">一期交付边界与部署基线（静态演示版，数据均为虚构）</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-h"><div class="card-title">逻辑架构</div></div>
+    <div class="card-b">
+      ${STACK.map(s => `
+        <div style="display:flex;align-items:stretch;gap:12px;margin-bottom:10px">
+          <div style="width:96px;flex:none;background:var(--green-700);color:#fff;border-radius:9px;display:grid;place-items:center;font-size:13px;font-weight:600">${s.layer}</div>
+          <div style="flex:1;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+            ${s.items.map(i => `<span style="border:1px solid var(--border);border-radius:8px;padding:7px 13px;font-size:12.5px;color:var(--text-2);background:#fafcfb">${i}</span>`).join('')}
+          </div>
+        </div>`).join('')}
+      <div class="page-sub" style="margin-top:8px">设备结果可通过手工录入、CSV导入或经联调验证的接口适配进入平台；不默认承诺原始信号实时同步。</div>
+    </div>
+  </div>
+
+  <div class="grid grid-2" style="margin-top:16px;gap:14px">
+    <div class="card">
+      <div class="card-h"><div class="card-title">一期业务闭环</div></div>
+      <div class="card-b">
+        <ul style="list-style:none;display:flex;flex-direction:column;gap:9px">
+          ${['一人一档持续数据归集','RTP 红黄绿人工确认与留痕','PHV 版本化公式计算与趋势','指标配置 → 任务下发 → 结果录入 → 进度更新','专项测试模型与结果级组合计算','个人/团队报告与 PDF 导出','RBAC 岗位权限隔离'].map(x => `
+            <li style="display:flex;gap:9px;font-size:13px;color:var(--text-2)"><span style="color:var(--green-500);flex:none">${ICONS.check}</span>${x}</li>`).join('')}
+        </ul>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="card-title">本期不承诺</div></div>
+      <div class="card-b">
+        <ul style="list-style:none;display:flex;flex-direction:column;gap:9px">
+          ${NOT_PROMISED.map(x => `
+            <li style="display:flex;gap:9px;font-size:13px;color:var(--text-2)"><span style="color:var(--rtp-amber);flex:none">${ICONS.warn}</span>${x}</li>`).join('')}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-h"><div class="card-title">部署模式</div></div>
+    <div class="card-b">
+      <div class="grid grid-2" style="gap:14px">
+        <div style="border:1px solid #bfe0cf;background:var(--rtp-green-bg);border-radius:11px;padding:16px 18px">
+          <div style="font-weight:700;color:#2c7a54;margin-bottom:10px">方案 A · 本地化部署</div>
+          <div style="font-size:12.5px;color:var(--text-2);line-height:2">单位局域网访问 · Linux 服务器或虚拟机<br>Nginx + Java Web · MySQL + 文件存储<br>本地备份与恢复 · 数据不离开指定网络</div>
+        </div>
+        <div style="border:1px solid #c8d8f3;background:#eef4fd;border-radius:11px;padding:16px 18px">
+          <div style="font-weight:700;color:#3b6dc4;margin-bottom:10px">方案 B · 政务云部署</div>
+          <div style="font-size:12.5px;color:var(--text-2);line-height:2">政务外网或专网访问 · 云主机 / 容器资源<br>Nginx + Java Web · MySQL 兼容数据库<br>云存储与云备份 · 遵循云平台安全规范</div>
+        </div>
+      </div>
+    </div>
+  </div>
+`;
+</script>
+</body>
+</html>

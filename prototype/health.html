@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>健康与医疗 · 澄岳足球训练数据管理系统</title>
+<link rel="stylesheet" href="assets/app.css?v=20260914b">
+</head>
+<body>
+<div id="app"></div>
+<script src="assets/mock.js?v=20260914b"></script>
+<script src="assets/app.js?v=20260914b"></script>
+<script>
+renderShell('health', '健康与医疗');
+
+document.getElementById('content').innerHTML = `
+  <div class="page-head">
+    <div>
+      <div class="page-title">
+        健康与医疗
+      </div>
+      <div class="page-sub">红黄绿状态由康复师人工确认，外接 PDF 或图片以附件形式归档；系统不自动作出医学判断</div>
+    </div>
+    <select class="select" style="width:200px;height:38px">
+      <option>陈予安 · 限制参训</option>
+      ${PLAYERS.map(p => `<option>${p.name} · ${RTP_TEXT[p.rtp]}</option>`).join('')}
+    </select>
+  </div>
+
+  <div class="layout-split">
+    <!-- 左：状态总览 + 队员列表 -->
+    <div style="width:300px;flex:none" class="grid" >
+      <div class="card">
+        <div class="card-h"><div class="card-title">参训状态总览</div></div>
+        <div class="card-b">
+          <div style="font-size:11.5px;color:var(--text-3);margin-bottom:9px">当前队伍 12 人</div>
+          <div class="grid grid-3" style="gap:8px">
+            <div style="background:var(--rtp-green-bg);border-radius:9px;padding:10px 6px;text-align:center">
+              <div style="font-size:21px;font-weight:700;color:#2c8a57">8</div>
+              <div style="font-size:10.5px;color:#3c7a59">正常全量</div>
+            </div>
+            <div style="background:var(--rtp-amber-bg);border-radius:9px;padding:10px 6px;text-align:center">
+              <div style="font-size:21px;font-weight:700;color:#b97a16">3</div>
+              <div style="font-size:10.5px;color:#9a7020">限制参训</div>
+            </div>
+            <div style="background:var(--rtp-red-bg);border-radius:9px;padding:10px 6px;text-align:center">
+              <div style="font-size:21px;font-weight:700;color:#c14747">1</div>
+              <div style="font-size:10.5px;color:#a15050">不建议训练</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+        <div style="overflow-y:auto;padding:6px 10px 10px">
+          ${PLAYERS.map(p => `
+            <div class="player-row ${p.id === HERO.id ? 'active' : ''}" onclick="switchPlayer(${p.id})">
+              ${avatarHTML(p, 'md')}
+              <div class="p-meta">
+                <div class="p-name">${p.name}</div>
+                <div class="p-sub">#${p.no} · ${p.pos}</div>
+              </div>
+              <span class="rtp-dot ${p.rtp}"></span>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>
+
+    <!-- 右：详情 -->
+    <div class="pane grid" style="gap:14px">
+      <!-- 状态卡（黄框） -->
+      <div class="card" style="border:1.5px solid #eccf93">
+        <div class="card-b" style="padding:18px">
+          <div style="display:flex;align-items:center;gap:16px">
+            <div class="avatar avatar-xl" style="background:${HERO.color}">${HERO.name.charAt(0)}</div>
+            <div>
+              <div style="font-size:18px;font-weight:700">${HERO.name}</div>
+              <div style="font-size:12px;color:var(--text-3);margin-top:2px">U18梯队 · #8 · 中前卫</div>
+            </div>
+            <div style="margin-left:26px">
+              <div style="font-size:11.5px;color:var(--text-3);margin-bottom:5px">当前参训状态</div>
+              ${rtpBadge('y')}
+              <div style="font-size:11px;color:var(--text-3);margin-top:5px">系统将作参考训练</div>
+            </div>
+            <div style="margin-left:26px">
+              <div style="font-size:11.5px;color:var(--text-3);margin-bottom:5px">标记原因 / 训练限制</div>
+              <div style="font-size:12.5px;color:var(--text-2);max-width:270px;line-height:1.6">
+                ${RTP_LIMIT.content}
+              </div>
+              <div style="font-size:11.5px;color:var(--text-3);margin-top:5px">下次复核 ${RTP_LIMIT.reviewDate}</div>
+            </div>
+            <button class="btn btn-darkgreen" style="margin-left:auto" data-action="rtp">
+              ${ICONS.edit}修改参训状态
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-2" style="gap:14px">
+        <!-- 医疗资料 -->
+        <div class="card">
+          <div class="card-h">
+            <div class="card-title">临床医疗资料 <small>PDF或图片手动归档</small></div>
+            <button class="btn btn-ghost btn-sm">${ICONS.upload}上传资料</button>
+          </div>
+          <div class="card-b" style="display:flex;flex-direction:column;gap:10px">
+            ${MEDICAL_FILES.map(f => `
+              <div class="file-item">
+                <div class="file-ic">${f.ext}</div>
+                <div>
+                  <div class="f-name">${f.name}</div>
+                  <div class="f-meta">${f.type} · ${f.date} · ${f.source}</div>
+                </div>
+                <button class="icon-btn f-view">${ICONS.eye}</button>
+              </div>`).join('')}
+          </div>
+        </div>
+
+        <!-- 状态变更记录 -->
+        <div class="card">
+          <div class="card-h">
+            <div class="card-title">状态变更记录 <small>保留人工操作痕迹和责任人</small></div>
+          </div>
+          <div class="card-b">
+            ${RTP_LOGS.map(l => `
+              <div class="timeline-item">
+                <span class="timeline-dot"></span>
+                <div>
+                  <div class="t-main">${l.title}</div>
+                  <div class="t-desc">${l.desc}</div>
+                  <div class="t-time">${l.time} · ${l.operator}</div>
+                </div>
+              </div>`).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+`;
+</script>
+</body>
+</html>

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>指标矩阵 · 澄岳足球训练数据管理系统</title>
+<link rel="stylesheet" href="assets/app.css?v=20260914b">
+</head>
+<body>
+<div id="app"></div>
+<script src="assets/mock.js?v=20260914b"></script>
+<script src="assets/app.js?v=20260914b"></script>
+<script>
+renderShell('matrix', '指标矩阵');
+
+const selectedCount = INDICATORS.reduce((s, c) => s + c.items.filter(i => i.checked).length, 0);
+
+document.getElementById('content').innerHTML = `
+  <div class="page-head">
+    <div>
+      <div style="font-size:12px;font-weight:600;color:var(--green-600);margin-bottom:4px">多维指标矩阵库</div>
+      <div class="page-title" style="font-size:20px">指标选择与任务下发</div>
+      <div class="page-sub">按测试目的勾选指标，形成可复用检测清单并下发到目标小组</div>
+    </div>
+    <button class="btn btn-primary">${ICONS.send}下发测试任务</button>
+  </div>
+
+  <!-- 任务配置行 -->
+  <div class="pick-row">
+    <div class="pick-box">
+      <span class="pb-ic">${ICONS.matrix}</span>
+      <div><div class="pb-l">已选指标</div><div class="pb-v">${selectedCount} 项</div></div>
+    </div>
+    <div class="pick-box">
+      <span class="pb-ic">${ICONS.org}</span>
+      <div style="flex:1"><div class="pb-l">目标小组</div>
+        <select class="select" style="height:30px;margin-top:2px;border:none;padding:0;font-weight:600"><option>U18梯队</option><option>U16梯队</option><option>速度专项组</option></select>
+      </div>
+    </div>
+    <div class="pick-box">
+      <span class="pb-ic">${ICONS.users}</span>
+      <div><div class="pb-l">主测责任人</div><div class="pb-v">陈聪 · 体能师</div><div class="pb-l">执行时间窗：08.24 → 08.30</div></div>
+    </div>
+    <div class="notice notice-blue" style="flex:1;margin:0;min-width:280px">
+      ${ICONS.info}
+      <span>勾选项可被保存为任务模板，CSV导入入口将在任务看板内提供。</span>
+    </div>
+  </div>
+
+  <!-- 四类指标 -->
+  <div class="grid grid-2" style="gap:14px">
+    ${INDICATORS.map(cat => {
+      const checked = cat.items.filter(i => i.checked).length;
+      return `
+      <div class="card">
+        <div class="card-h">
+          <div class="card-title">${cat.cat} <small>${cat.desc}</small></div>
+          <span class="badge badge-gray">${checked}/${cat.total}</span>
+        </div>
+        <div class="card-b">
+          <div class="indi-list">
+            ${cat.items.map(i => `
+              <div class="indi-item ${i.checked ? 'checked' : ''}" onclick="this.classList.toggle('checked')">
+                <span class="checkbox">${ICONS.check}</span>
+                <span class="i-name">${i.name}</span>
+                <span class="i-src">${i.src}</span>
+              </div>`).join('')}
+          </div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>
+`;
+</script>
+</body>
+</html>
