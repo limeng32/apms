@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsTestResultValueMapper">
+
+    <resultMap id="ApmsTestResultValueResult" type="com.ruoyi.system.domain.apms.ApmsTestResultValue">
+        <id     column="id"            property="id"/>
+        <result column="result_id"      property="resultId"/>
+        <result column="indicator_id"   property="indicatorId"/>
+        <result column="model_id"       property="modelId"/>
+        <result column="field_id"       property="fieldId"/>
+        <result column="field_key"      property="fieldKey"/>
+        <result column="field_name"    property="fieldName"/>
+        <result column="numeric_value" property="numericValue"/>
+        <result column="text_value"     property="textValue"/>
+        <result column="unit"           property="unit"/>
+        <result column="is_derived"     property="isDerived"/>
+        <result column="algorithm_id"  property="algorithmId"/>
+        <result column="algorithm_version" property="algorithmVersion"/>
+
+        <!-- JOIN 解析 -->
+        <result column="ind_code"       property="indicatorCode"/>
+        <result column="ind_name"       property="indicatorName"/>
+        <result column="mfd_field_key"  property="modelFieldKey"/>
+        <result column="mfd_field_name" property="modelFieldName"/>
+    </resultMap>
+
+    <select id="selectById" parameterType="Long" resultMap="ApmsTestResultValueResult">
+        SELECT v.*, ind.code AS ind_code, ind.name AS ind_name,
+               mfd.field_key AS mfd_field_key, mfd.field_name AS mfd_field_name
+        FROM apms_test_result_value v
+        LEFT JOIN apms_indicator ind ON v.indicator_id = ind.id
+        LEFT JOIN apms_test_model_field mfd ON v.field_id = mfd.id
+        WHERE v.id = #{id}
+    </select>
+
+    <select id="selectByResultId" parameterType="Long" resultMap="ApmsTestResultValueResult">
+        SELECT v.*, ind.code AS ind_code, ind.name AS ind_name,
+               mfd.field_key AS mfd_field_key, mfd.field_name AS mfd_field_name
+        FROM apms_test_result_value v
+        LEFT JOIN apms_indicator ind ON v.indicator_id = ind.id
+        LEFT JOIN apms_test_model_field mfd ON v.field_id = mfd.id
+        WHERE v.result_id = #{resultId}
+        ORDER BY v.field_id, v.id
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsTestResultValue" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_test_result_value
+            (result_id, indicator_id, model_id, field_id, field_key, field_name,
+             numeric_value, text_value, unit, is_derived, algorithm_id, algorithm_version)
+        VALUES
+            (#{resultId}, #{indicatorId}, #{modelId}, #{fieldId}, #{fieldKey}, #{fieldName},
+             #{numericValue}, #{textValue}, #{unit}, #{isDerived}, #{algorithmId}, #{algorithmVersion})
+    </insert>
+
+    <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsTestResultValue">
+        UPDATE apms_test_result_value
+        SET field_name=#{fieldName}, numeric_value=#{numericValue}, text_value=#{textValue},
+            unit=#{unit}, is_derived=#{isDerived}
+        WHERE id=#{id}
+    </update>
+
+    <delete id="deleteById"><![CDATA[DELETE FROM apms_test_result_value WHERE id = #{id}]]></delete>
+    <delete id="deleteByResultId"><![CDATA[DELETE FROM apms_test_result_value WHERE result_id = #{resultId}]]></delete>
+
+    <insert id="batchInsert" parameterType="java.util.List">
+        INSERT INTO apms_test_result_value
+            (result_id, indicator_id, model_id, field_id, field_key, field_name,
+             numeric_value, text_value, unit, is_derived)
+        VALUES
+        <foreach collection="list" item="v" separator=",">
+            (#{v.resultId}, #{v.indicatorId}, #{v.modelId}, #{v.fieldId}, #{v.fieldKey}, #{v.fieldName},
+             #{v.numericValue}, #{v.textValue}, #{v.unit}, #{v.isDerived})
+        </foreach>
+    </insert>
+</mapper>

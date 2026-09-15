@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsTestModelMapper">
+
+    <resultMap id="ApmsTestModelResult" type="com.ruoyi.system.domain.apms.ApmsTestModel">
+        <id     column="id"           property="id"/>
+        <result column="category"     property="category"/>
+        <result column="name"         property="name"/>
+        <result column="code"         property="code"/>
+        <result column="protocol"     property="protocol"/>
+        <result column="is_combo"     property="isCombo"/>
+        <result column="algo_version" property="algoVersion"/>
+        <result column="status"       property="status"/>
+        <result column="create_time"  property="createTime"/>
+    </resultMap>
+
+    <sql id="selectVo">
+        SELECT id, category, name, code, protocol, is_combo, algo_version, status, create_time
+        FROM apms_test_model
+    </sql>
+
+    <select id="selectList" parameterType="com.ruoyi.system.domain.apms.ApmsTestModel" resultMap="ApmsTestModelResult">
+        <include refid="selectVo"/>
+        <where>
+            <if test="code != null and code != ''">          AND code LIKE CONCAT('%', #{code}, '%')</if>
+            <if test="name != null and name != ''">          AND name LIKE CONCAT('%', #{name}, '%')</if>
+            <if test="category != null and category != ''">  AND category = #{category}</if>
+            <if test="status != null and status != ''">      AND status = #{status}</if>
+        </where>
+        ORDER BY category ASC, id ASC
+    </select>
+
+    <select id="selectById" parameterType="Long" resultMap="ApmsTestModelResult">
+        <include refid="selectVo"/> WHERE id = #{id}
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsTestModel" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_test_model (category, name, code, protocol, is_combo, algo_version, status, create_time)
+        VALUES (#{category}, #{name}, #{code}, #{protocol}, #{isCombo}, #{algoVersion}, #{status}, NOW())
+    </insert>
+
+    <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsTestModel">
+        UPDATE apms_test_model
+        SET category = #{category}, name = #{name}, code = #{code}, protocol = #{protocol},
+            is_combo = #{isCombo}, algo_version = #{algoVersion}, status = #{status}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteByIds" parameterType="String">
+        DELETE FROM apms_test_model WHERE id IN
+        <foreach item="id" collection="array" open="(" separator="," close=")">#{id}</foreach>
+    </delete>
+
+</mapper>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsComboScoreMapper">
+
+    <resultMap id="ApmsComboScoreResult" type="com.ruoyi.system.domain.apms.ApmsComboScore">
+        <id     column="id"                 property="id"/>
+        <result column="combo_model_id"     property="comboModelId"/>
+        <result column="athlete_id"         property="athleteId"/>
+        <result column="trigger_result_id"   property="triggerResultId"/>
+        <result column="combo_score"        property="comboScore"/>
+        <result column="ref_snapshot"        property="refSnapshot"/>
+        <result column="algo_version"        property="algoVersion"/>
+        <result column="calculated_at"      property="calculatedAt"/>
+    </resultMap>
+
+    <select id="selectById" parameterType="Long" resultMap="ApmsComboScoreResult">
+        SELECT id, combo_model_id, athlete_id, trigger_result_id, combo_score,
+               ref_snapshot, algo_version, calculated_at
+        FROM apms_combo_score WHERE id = #{id}
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsComboScore" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_combo_score (combo_model_id, athlete_id, trigger_result_id, combo_score,
+                                      ref_snapshot, algo_version, calculated_at)
+        VALUES (#{comboModelId}, #{athleteId}, #{triggerResultId}, #{comboScore},
+                #{refSnapshot}, #{algoVersion}, #{calculatedAt})
+    </insert>
+
+</mapper>

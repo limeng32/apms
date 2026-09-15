@@ -54,6 +54,12 @@
             <artifactId>ruoyi-generator</artifactId>
         </dependency>
 
+        <!-- iText 5 (PDF 生成, Java 17 兼容, LGPL, 已移到 ruoyi-system) -->
+        <!--<dependency>
+            <groupId>com.itextpdf</groupId>
+            <artifactId>itextpdf</artifactId>
+        </dependency>-->
+
     </dependencies>
 
     <build>

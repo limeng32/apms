@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsTestResultMapper">
+
+    <resultMap id="ApmsTestResultResult" type="com.ruoyi.system.domain.apms.ApmsTestResult">
+        <id     column="r_id"            property="id"/>
+        <result column="r_task_id"       property="taskId"/>
+        <result column="r_task_item_id"   property="taskItemId"/>
+        <result column="r_athlete_id"    property="athleteId"/>
+        <result column="r_indicator_id"   property="indicatorId"/>
+        <result column="r_model_id"       property="modelId"/>
+        <result column="r_session_key"   property="sessionKey"/>
+        <result column="r_measure_date"  property="measureDate"/>
+        <result column="r_attempt_no"     property="attemptNo"/>
+        <result column="r_is_valid"       property="isValid"/>
+        <result column="r_is_selected"    property="isSelected"/>
+        <result column="r_invalid_reason" property="invalidReason"/>
+        <result column="r_data_source"    property="dataSource"/>
+        <result column="r_raw_payload"    property="rawPayload"/>
+        <result column="r_create_by"      property="createBy"/>
+        <result column="r_create_time"    property="createTime"/>
+
+        <!-- JOIN 解析 -->
+        <result column="task_name"           property="taskName"/>
+        <result column="a_name"              property="athleteName"/>
+        <result column="a_gender"            property="athleteGender"/>
+        <result column="dept_name"           property="athleteTeam"/>
+        <result column="ind_code"             property="indicatorCode"/>
+        <result column="ind_name"             property="indicatorName"/>
+        <result column="ind_direction"        property="indicatorDirection"/>
+        <result column="ind_unit"            property="indicatorUnit"/>
+        <result column="mdl_code"            property="modelCode"/>
+        <result column="mdl_name"            property="modelName"/>
+        <result column="item_type"           property="itemType"/>
+        <result column="item_sort"           property="itemSortOrder"/>
+    </resultMap>
+
+    <sql id="selectVo">
+        SELECT r.id AS r_id, r.task_id AS r_task_id, r.task_item_id AS r_task_item_id,
+               r.athlete_id AS r_athlete_id, r.indicator_id AS r_indicator_id,
+               r.model_id AS r_model_id, r.session_key AS r_session_key,
+               r.measure_date AS r_measure_date, r.attempt_no AS r_attempt_no,
+               r.is_valid AS r_is_valid, r.is_selected AS r_is_selected,
+               r.invalid_reason AS r_invalid_reason, r.data_source AS r_data_source,
+               r.raw_payload AS r_raw_payload, r.create_by AS r_create_by, r.create_time AS r_create_time,
+               t.task_name,
+               a.name AS a_name, a.gender AS a_gender, d.dept_name,
+               ind.code AS ind_code, ind.name AS ind_name, ind.evaluation_direction AS ind_direction, ind.unit AS ind_unit,
+               m.code AS mdl_code, m.name AS mdl_name,
+               ti.item_type, ti.sort_order AS item_sort
+        FROM apms_test_result r
+        LEFT JOIN apms_test_task t      ON r.task_id     = t.id
+        LEFT JOIN apms_task_item ti    ON r.task_item_id = ti.id
+        LEFT JOIN apms_athlete a       ON r.athlete_id   = a.athlete_id
+        LEFT JOIN sys_dept d           ON a.primary_team_id = d.dept_id
+        LEFT JOIN apms_indicator ind   ON r.indicator_id = ind.id
+        LEFT JOIN apms_test_model m    ON r.model_id     = m.id
+    </sql>
+
+    <select id="selectById" parameterType="Long" resultMap="ApmsTestResultResult">
+        <include refid="selectVo"/> WHERE r.id = #{id}
+    </select>
+
+    <select id="selectList" parameterType="com.ruoyi.system.domain.apms.ApmsTestResult" resultMap="ApmsTestResultResult">
+        <include refid="selectVo"/>
+        <where>
+            <if test="taskId != null">      AND r.task_id = #{taskId}</if>
+            <if test="taskItemId != null">  AND r.task_item_id = #{taskItemId}</if>
+            <if test="athleteId != null">   AND r.athlete_id = #{athleteId}</if>
+            <if test="indicatorId != null"> AND r.indicator_id = #{indicatorId}</if>
+            <if test="modelId != null">     AND r.model_id = #{modelId}</if>
+            <if test="isSelected != null and isSelected != ''"> AND r.is_selected = #{isSelected}</if>
+            <if test="measureDate != null"> AND r.measure_date = #{measureDate}</if>
+        </where>
+        ORDER BY r.task_id, r.athlete_id, r.task_item_id, r.attempt_no
+    </select>
+
+    <select id="selectByTaskMember" resultMap="ApmsTestResultResult">
+        <include refid="selectVo"/>
+        <where>
+            r.task_id = #{taskId} AND r.athlete_id = #{athleteId}
+        </where>
+        ORDER BY r.task_item_id, r.attempt_no
+    </select>
+
+    <select id="selectSelectedByTaskItem" resultMap="ApmsTestResultResult">
+        <include refid="selectVo"/>
+        <where>
+            r.task_item_id = #{taskItemId} AND r.is_selected = '1'
+        </where>
+        ORDER BY r.athlete_id
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsTestResult" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_test_result
+            (task_id, task_item_id, athlete_id, indicator_id, model_id, session_key,
+             measure_date, attempt_no, is_valid, is_selected, invalid_reason, data_source, raw_payload,
+             create_by, create_time)
+        VALUES
+            (#{taskId}, #{taskItemId}, #{athleteId}, #{indicatorId}, #{modelId}, #{sessionKey},
+             #{measureDate}, #{attemptNo}, #{isValid}, #{isSelected}, #{invalidReason}, #{dataSource}, #{rawPayload},
+             #{createBy}, NOW())
+    </insert>
+
+    <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsTestResult">
+        UPDATE apms_test_result
+        SET task_id=#{taskId}, task_item_id=#{taskItemId}, athlete_id=#{athleteId},
+            indicator_id=#{indicatorId}, model_id=#{modelId}, session_key=#{sessionKey},
+            measure_date=#{measureDate}, attempt_no=#{attemptNo}, is_valid=#{isValid},
+            is_selected=#{isSelected}, invalid_reason=#{invalidReason}, data_source=#{dataSource},
+            raw_payload=#{rawPayload}
+        WHERE id=#{id}
+    </update>
+
+    <update id="clearSelectedForGroup">
+        UPDATE apms_test_result
+        SET is_selected='0'
+        WHERE task_item_id=#{taskItemId} AND athlete_id=#{athleteId}
+    </update>
+
+    <update id="updateSelected">
+        UPDATE apms_test_result SET is_selected=#{isSelected} WHERE id=#{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM apms_test_result WHERE id=#{id}
+    </delete>
+
+    <delete id="deleteByTaskId">
+        DELETE FROM apms_test_result WHERE task_id=#{taskId}
+    </delete>
+</mapper>

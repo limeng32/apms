@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsBodyMeasureMapper">
+
+    <resultMap id="ApmsBodyMeasureResult" type="com.ruoyi.system.domain.apms.ApmsBodyMeasure">
+        <id     property="id"              column="id"/>
+        <result property="athleteId"       column="athlete_id"/>
+        <result property="measureDate"     column="measure_date"/>
+        <result property="height"          column="height"/>
+        <result property="weight"          column="weight"/>
+        <result property="sitHeight"       column="sit_height"/>
+        <result property="bodyFatRate"     column="body_fat_rate"/>
+        <result property="waist"           column="waist"/>
+        <result property="dataSource"      column="data_source"/>
+        <result property="sourceTaskId"    column="source_task_id"/>
+        <result property="sourceSessionKey" column="source_session_key"/>
+        <result property="createBy"        column="create_by"/>
+        <result property="createTime"      column="create_time"/>
+    </resultMap>
+
+    <sql id="selectApmsBodyMeasureVo">
+        SELECT
+            id, athlete_id, measure_date, height, weight, sit_height,
+            body_fat_rate, waist, data_source, source_task_id, source_session_key,
+            create_by, create_time
+        FROM apms_body_measure
+    </sql>
+
+    <select id="selectById" parameterType="Long" resultMap="ApmsBodyMeasureResult">
+        <include refid="selectApmsBodyMeasureVo"/>
+        WHERE id = #{id}
+    </select>
+
+    <select id="selectByAthleteId" parameterType="Long" resultMap="ApmsBodyMeasureResult">
+        <include refid="selectApmsBodyMeasureVo"/>
+        WHERE athlete_id = #{athleteId}
+        ORDER BY measure_date DESC, id DESC
+    </select>
+
+    <select id="selectLatestByAthleteId" parameterType="Long" resultMap="ApmsBodyMeasureResult">
+        <include refid="selectApmsBodyMeasureVo"/>
+        WHERE athlete_id = #{athleteId}
+        ORDER BY measure_date DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectByUniqueKey" parameterType="com.ruoyi.system.domain.apms.ApmsBodyMeasure" resultMap="ApmsBodyMeasureResult">
+        <include refid="selectApmsBodyMeasureVo"/>
+        WHERE athlete_id = #{athleteId}
+          AND measure_date = #{measureDate}
+          <if test="sourceTaskId != null">AND source_task_id = #{sourceTaskId}</if>
+          <if test="sourceSessionKey != null and sourceSessionKey != ''">AND source_session_key = #{sourceSessionKey}</if>
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsBodyMeasure" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_body_measure (
+            athlete_id, measure_date, height, weight, sit_height,
+            body_fat_rate, waist, data_source, source_task_id, source_session_key,
+            create_by, create_time
+        ) VALUES (
+            #{athleteId}, #{measureDate}, #{height}, #{weight}, #{sitHeight},
+            #{bodyFatRate}, #{waist}, #{dataSource}, #{sourceTaskId}, #{sourceSessionKey},
+            #{createBy}, sysdate()
+        )
+    </insert>
+
+    <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsBodyMeasure">
+        UPDATE apms_body_measure
+        <set>
+            <if test="measureDate != null">measure_date = #{measureDate},</if>
+            <if test="height != null">height = #{height},</if>
+            <if test="weight != null">weight = #{weight},</if>
+            <if test="sitHeight != null">sit_height = #{sitHeight},</if>
+            <if test="bodyFatRate != null">body_fat_rate = #{bodyFatRate},</if>
+            <if test="waist != null">waist = #{waist},</if>
+            <if test="dataSource != null">data_source = #{dataSource},</if>
+            <if test="sourceTaskId != null">source_task_id = #{sourceTaskId},</if>
+            <if test="sourceSessionKey != null">source_session_key = #{sourceSessionKey},</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById" parameterType="Long">
+        DELETE FROM apms_body_measure WHERE id = #{id}
+    </delete>
+
+</mapper>

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsRtpLogMapper">
+
+    <resultMap id="ApmsRtpLogResult" type="com.ruoyi.system.domain.apms.ApmsRtpLog">
+        <id     property="id"             column="id"/>
+        <result property="athleteId"      column="athlete_id"/>
+        <result property="fromStatus"     column="from_status"/>
+        <result property="toStatus"       column="to_status"/>
+        <result property="reason"         column="reason"/>
+        <result property="trainingLimit"  column="training_limit"/>
+        <result property="nextReviewDate" column="next_review_date"/>
+        <result property="operatorId"     column="operator_id"/>
+        <result property="operatorName"   column="operator_name"/>
+        <result property="operateTime"    column="operate_time"/>
+        <result property="athleteName"    column="athlete_name"/>
+    </resultMap>
+
+    <sql id="selectApmsRtpLogVo">
+        SELECT
+            l.id, l.athlete_id, l.from_status, l.to_status, l.reason,
+            l.training_limit, l.next_review_date, l.operator_id, l.operator_name,
+            l.operate_time,
+            a.name AS athlete_name
+        FROM apms_rtp_log l
+        LEFT JOIN apms_athlete a ON l.athlete_id = a.athlete_id
+    </sql>
+
+    <select id="selectByAthleteId" parameterType="Long" resultMap="ApmsRtpLogResult">
+        <include refid="selectApmsRtpLogVo"/>
+        WHERE l.athlete_id = #{athleteId}
+        ORDER BY l.operate_time DESC, l.id DESC
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsRtpLog" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_rtp_log (
+            athlete_id, from_status, to_status, reason, training_limit,
+            next_review_date, operator_id, operator_name, operate_time
+        ) VALUES (
+            #{athleteId}, #{fromStatus}, #{toStatus}, #{reason}, #{trainingLimit},
+            #{nextReviewDate}, #{operatorId}, #{operatorName}, sysdate()
+        )
+    </insert>
+
+</mapper>

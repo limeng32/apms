@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsTaskMemberMapper">
+
+    <resultMap id="ApmsTaskMemberResult" type="com.ruoyi.system.domain.apms.ApmsTaskMember">
+        <result column="task_id"    property="taskId"/>
+        <result column="athlete_id" property="athleteId"/>
+        <result column="status"     property="status"/>
+        <!-- JOIN apms_athlete -->
+        <result column="ath_name"   property="athleteName"/>
+        <result column="ath_gender" property="athleteGender"/>
+        <result column="ath_team"   property="athleteTeam"/>
+    </resultMap>
+
+    <select id="selectByTaskId" parameterType="Long" resultMap="ApmsTaskMemberResult">
+        SELECT tm.task_id, tm.athlete_id, tm.status,
+               a.name AS ath_name, a.gender AS ath_gender,
+               d.dept_name AS ath_team
+        FROM apms_task_member tm
+        LEFT JOIN apms_athlete a ON tm.athlete_id = a.athlete_id
+        LEFT JOIN sys_dept d     ON a.primary_team_id = d.dept_id
+        WHERE tm.task_id = #{taskId}
+        ORDER BY a.name ASC, tm.athlete_id ASC
+    </select>
+
+    <select id="countByTaskAndStatus" resultType="int">
+        SELECT COUNT(*) FROM apms_task_member
+        WHERE task_id = #{taskId} AND status = #{status}
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsTaskMember">
+        INSERT INTO apms_task_member (task_id, athlete_id, status)
+        VALUES (#{taskId}, #{athleteId}, #{status})
+        ON DUPLICATE KEY UPDATE status = #{status}
+    </insert>
+
+    <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsTaskMember">
+        UPDATE apms_task_member SET status = #{status}
+        WHERE task_id = #{taskId} AND athlete_id = #{athleteId}
+    </update>
+
+    <delete id="delete">
+        DELETE FROM apms_task_member WHERE task_id = #{taskId} AND athlete_id = #{athleteId}
+    </delete>
+
+    <delete id="deleteByTaskId" parameterType="Long">
+        DELETE FROM apms_task_member WHERE task_id = #{taskId}
+    </delete>
+
+</mapper>

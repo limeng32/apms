@@ -10,7 +10,8 @@ ruoyi:
   profile: /Users/limeng/Documents/trae_projects/apms/uploadPath
   # 获取ip地址开关
   addressEnabled: false
-  # 验证码类型 math 数字计算 char 字符验证
+  # 验证码类型 math 数字计算 char 字符验证 — 本地开发关闭
+  captchaEnabled: false
   captchaType: math
 
 # 开发环境配置

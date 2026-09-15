@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsIndicatorRefMapper">
+
+    <resultMap id="ApmsIndicatorRefResult" type="com.ruoyi.system.domain.apms.ApmsIndicatorRef">
+        <id     column="id"              property="id"/>
+        <result column="indicator_id"    property="indicatorId"/>
+        <result column="gender"          property="gender"/>
+        <result column="age_group"       property="ageGroup"/>
+        <result column="dept_id"         property="deptId"/>
+        <result column="ref_min"         property="refMin"/>
+        <result column="ref_max"         property="refMax"/>
+        <result column="model_version"   property="modelVersion"/>
+    </resultMap>
+
+    <sql id="selectVo">
+        SELECT id, indicator_id, gender, age_group, dept_id, ref_min, ref_max, model_version
+        FROM apms_indicator_ref
+    </sql>
+
+    <select id="selectByIndicatorId" parameterType="Long" resultMap="ApmsIndicatorRefResult">
+        <include refid="selectVo"/>
+        WHERE indicator_id = #{indicatorId}
+        ORDER BY gender ASC, age_group ASC
+    </select>
+
+    <select id="selectById" parameterType="Long" resultMap="ApmsIndicatorRefResult">
+        <include refid="selectVo"/> WHERE id = #{id}
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsIndicatorRef" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_indicator_ref (indicator_id, gender, age_group, dept_id, ref_min, ref_max, model_version)
+        VALUES (#{indicatorId}, #{gender}, #{ageGroup}, #{deptId}, #{refMin}, #{refMax}, #{modelVersion})
+    </insert>
+
+    <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsIndicatorRef">
+        UPDATE apms_indicator_ref
+        SET gender = #{gender},
+            age_group = #{ageGroup},
+            dept_id = #{deptId},
+            ref_min = #{refMin},
+            ref_max = #{refMax},
+            model_version = #{modelVersion}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById" parameterType="Long">
+        DELETE FROM apms_indicator_ref WHERE id = #{id}
+    </delete>
+
+    <delete id="deleteByIndicatorId" parameterType="Long">
+        DELETE FROM apms_indicator_ref WHERE indicator_id = #{indicatorId}
+    </delete>
+
+</mapper>

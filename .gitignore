@@ -52,3 +52,6 @@ nbdist/
 /ruoyi-ui/dist/
 /ruoyi-ui/.vite/
 ruoyi-ui/.env.development
+
+# 运行时文件：上传附件 + PDF 报告 + 头像 + Excel 导出
+uploadPath/

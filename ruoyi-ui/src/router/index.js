@@ -89,6 +89,20 @@ export const constantRoutes = [
         meta: { title: '个人中心', icon: 'user' }
       }
     ]
+  },
+  {
+    path: '/apms',
+    component: Layout,
+    hidden: true,
+    redirect: 'noredirect',
+    children: [
+      {
+        path: 'athlete/detail/:athleteId(\\d+)',
+        component: () => import('@/views/apms/athlete/detail'),
+        name: 'AthleteDetail',
+        meta: { title: '运动员详情', activeMenu: '/apms/athlete', noCache: true }
+      }
+    ]
   }
 ]
 

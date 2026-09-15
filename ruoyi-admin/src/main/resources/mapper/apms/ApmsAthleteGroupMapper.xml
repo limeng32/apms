@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsAthleteGroupMapper">
+
+    <resultMap id="ApmsAthleteGroupResult" type="com.ruoyi.system.domain.apms.ApmsAthleteGroup">
+        <id     property="id"         column="id"/>
+        <result property="athleteId"  column="athlete_id"/>
+        <result property="deptId"      column="dept_id"/>
+        <result property="joinDate"    column="join_date"/>
+        <result property="leaveDate"   column="leave_date"/>
+        <result property="status"      column="status"/>
+        <result property="createBy"    column="create_by"/>
+        <result property="createTime"  column="create_time"/>
+        <result property="deptName"    column="dept_name"/>
+        <result property="deptTypeName" column="dept_type_name"/>
+    </resultMap>
+
+    <sql id="selectApmsAthleteGroupVo">
+        SELECT
+            g.id, g.athlete_id, g.dept_id, g.join_date, g.leave_date, g.status,
+            g.create_by, g.create_time,
+            d.dept_name,
+            CASE d.dept_type
+                WHEN '30' THEN '训练小组'
+                WHEN '40' THEN '科研小组'
+                WHEN '50' THEN '恢复小组'
+                ELSE '其他'
+            END AS dept_type_name
+        FROM apms_athlete_group g
+        LEFT JOIN sys_dept d ON g.dept_id = d.dept_id
+    </sql>
+
+    <!-- 按运动员查询历史 -->
+    <select id="selectByAthleteId" parameterType="Long" resultMap="ApmsAthleteGroupResult">
+        <include refid="selectApmsAthleteGroupVo"/>
+        WHERE g.athlete_id = #{athleteId}
+        ORDER BY g.join_date DESC, g.id DESC
+    </select>
+
+    <!-- 按运动员查询当前在组记录 -->
+    <select id="selectCurrentByAthleteId" parameterType="Long" resultMap="ApmsAthleteGroupResult">
+        <include refid="selectApmsAthleteGroupVo"/>
+        WHERE g.athlete_id = #{athleteId}
+          AND g.leave_date IS NULL
+          AND g.status = '0'
+        LIMIT 1
+    </select>
+
+    <!-- 按小组查询所有当前在组成员 -->
+    <select id="selectActiveByDeptId" parameterType="Long" resultMap="ApmsAthleteGroupResult">
+        <include refid="selectApmsAthleteGroupVo"/>
+        WHERE g.dept_id = #{deptId}
+          AND g.leave_date IS NULL
+          AND g.status = '0'
+        ORDER BY g.join_date DESC
+    </select>
+
+    <!-- 新增 -->
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsAthleteGroup" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_athlete_group (
+            athlete_id, dept_id, join_date, status,
+            create_by, create_time
+        ) VALUES (
+            #{athleteId}, #{deptId}, #{joinDate},
+            <choose>
+                <when test="status != null and status != ''">#{status}</when>
+                <otherwise>'0'</otherwise>
+            </choose>,
+            #{createBy}, sysdate()
+        )
+    </insert>
+
+    <!-- 修改 -->
+    <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsAthleteGroup">
+        UPDATE apms_athlete_group
+        <set>
+            <if test="joinDate != null">join_date = #{joinDate},</if>
+            <if test="leaveDate != null">leave_date = #{leaveDate},</if>
+            <if test="status != null and status != ''">status = #{status},</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 关闭运动员所有当前在组记录 -->
+    <update id="closeAllCurrentByAthleteId">
+        UPDATE apms_athlete_group
+        SET leave_date = #{leaveDate}, status = '1'
+        WHERE athlete_id = #{athleteId}
+          AND leave_date IS NULL
+          AND status = '0'
+    </update>
+
+</mapper>

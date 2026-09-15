@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsTestResultRepMapper">
+
+    <resultMap id="ApmsTestResultRepResult" type="com.ruoyi.system.domain.apms.ApmsTestResultRep">
+        <id     column="id"         property="id"/>
+        <result column="result_id"   property="resultId"/>
+        <result column="field_key"   property="fieldKey"/>
+        <result column="rep_no"      property="repNo"/>
+        <result column="value"       property="value"/>
+        <result column="unit"        property="unit"/>
+        <!-- 静态映射 -->
+        <result column="rep_no" property="repLevel" typeHandler="org.apache.ibatis.type.StringTypeHandler"/>
+        <result column="rep_no" property="direction" typeHandler="org.apache.ibatis.type.StringTypeHandler"/>
+    </resultMap>
+
+    <!-- 查询 REP + 静态映射 level 名 / direction（避免 JOIN 笛卡尔积） -->
+    <resultMap id="ApmsTestResultRepFullResult" type="com.ruoyi.system.domain.apms.ApmsTestResultRep">
+        <id     column="r_id"        property="id"/>
+        <result column="r_result_id"  property="resultId"/>
+        <result column="r_field_key"  property="fieldKey"/>
+        <result column="r_rep_no"     property="repNo"/>
+        <result column="r_value"      property="value"/>
+        <result column="r_unit"       property="unit"/>
+        <!-- 通过 CASE 静态映射 rep_no → level 名 -->
+        <result column="r_level"      property="repLevel"/>
+        <result column="ind_dir"      property="direction"/>
+    </resultMap>
+
+    <select id="selectByResultId" parameterType="Long" resultMap="ApmsTestResultRepFullResult">
+        SELECT r.id AS r_id, r.result_id AS r_result_id, r.field_key AS r_field_key,
+               r.rep_no AS r_rep_no, r.value AS r_value, r.unit AS r_unit,
+               CASE r.rep_no WHEN 1 THEN 'Excellent' WHEN 2 THEN 'Good'
+                            WHEN 3 THEN 'Normal'    WHEN 4 THEN 'Poor'
+                            ELSE 'Unknown' END AS r_level,
+               ind.evaluation_direction AS ind_dir
+        FROM apms_test_result_rep r
+        LEFT JOIN apms_test_result res ON r.result_id = res.id
+        LEFT JOIN apms_indicator ind
+            ON ind.id = COALESCE(res.indicator_id,
+                (SELECT ti.indicator_id FROM apms_task_item ti WHERE ti.id = res.task_item_id))
+        WHERE r.result_id = #{resultId}
+        ORDER BY r.field_key
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsTestResultRep" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_test_result_rep (result_id, field_key, rep_no, value, unit)
+        VALUES (#{resultId}, #{fieldKey}, #{repNo}, #{value}, #{unit})
+    </insert>
+
+    <delete id="deleteByResultId"><![CDATA[DELETE FROM apms_test_result_rep WHERE result_id = #{resultId}]]></delete>
+
+    <insert id="batchInsert" parameterType="java.util.List">
+        INSERT INTO apms_test_result_rep (result_id, field_key, rep_no, value, unit)
+        VALUES
+        <foreach collection="list" item="r" separator=",">
+            (#{r.resultId}, #{r.fieldKey}, #{r.repNo}, #{r.value}, #{r.unit})
+        </foreach>
+    </insert>
+
+    <!-- Service 算 REP 时查参照等级 -->
+    <resultMap id="RefLevelResult" type="com.ruoyi.system.domain.apms.ApmsIndicatorRefLevel">
+        <id     column="rl_id"        property="id"/>
+        <result column="rl_ref_id"    property="refId"/>
+        <result column="rl_level"     property="level"/>
+        <result column="rl_min"       property="minValue"/>
+        <result column="rl_max"       property="maxValue"/>
+    </resultMap>
+
+    <select id="selectRefLevels" resultMap="RefLevelResult">
+        SELECT rl.id AS rl_id, rl.ref_id AS rl_ref_id, rl.level AS rl_level,
+               rl.min_value AS rl_min, rl.max_value AS rl_max
+        FROM apms_indicator_ref_level rl
+        JOIN apms_indicator_ref r ON rl.ref_id = r.id
+        WHERE r.indicator_id = #{arg0}
+          AND r.gender       = #{arg1}
+          AND r.age_group    = #{arg2}
+        ORDER BY rl.min_value
+    </select>
+</mapper>

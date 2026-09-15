@@ -67,8 +67,9 @@
           <el-tag :type="statusTagType(scope.row.status)">{{ statusLabel(scope.row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" align="center" class-name="small-padding" width="180">
+      <el-table-column label="操作" align="center" class-name="small-padding" width="220">
         <template #default="scope">
+          <el-button link type="primary" icon="View" @click="handleDetail(scope.row)" v-hasPermi="['apms:athlete:query']">详情</el-button>
           <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['apms:athlete:edit']">修改</el-button>
           <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['apms:athlete:remove']">离队</el-button>
         </template>
@@ -298,6 +299,11 @@ function handleDelete(row) {
     getList()
     proxy.$modal.msgSuccess('已设为离队')
   }).catch(() => {})
+}
+
+// 详情（路由跳转）
+function handleDetail(row) {
+  proxy.$router.push('/apms/athlete/detail/' + row.athleteId)
 }
 
 // 初始化

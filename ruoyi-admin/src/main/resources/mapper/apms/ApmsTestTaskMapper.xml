@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsTestTaskMapper">
+
+    <resultMap id="ApmsTestTaskResult" type="com.ruoyi.system.domain.apms.ApmsTestTask">
+        <id     column="id"              property="id"/>
+        <result column="task_name"        property="taskName"/>
+        <result column="target_dept_id"  property="targetDeptId"/>
+        <result column="tester_id"       property="testerId"/>
+        <result column="start_date"      property="startDate"/>
+        <result column="end_date"        property="endDate"/>
+        <result column="status"          property="status"/>
+        <result column="create_by"       property="createBy"/>
+        <result column="create_time"     property="createTime"/>
+        <result column="dept_name"       property="targetDeptName"/>
+        <result column="nick_name"       property="testerName"/>
+    </resultMap>
+
+    <sql id="selectVo">
+        SELECT t.id, t.task_name, t.target_dept_id, t.tester_id,
+               t.start_date, t.end_date, t.status, t.create_by, t.create_time,
+               d.dept_name, u.nick_name
+        FROM apms_test_task t
+        LEFT JOIN sys_dept d ON t.target_dept_id = d.dept_id
+        LEFT JOIN sys_user  u ON t.tester_id    = u.user_id
+    </sql>
+
+    <select id="selectList" parameterType="com.ruoyi.system.domain.apms.ApmsTestTask" resultMap="ApmsTestTaskResult">
+        <include refid="selectVo"/>
+        <where>
+            <if test="taskName != null and taskName != ''">
+                AND t.task_name LIKE CONCAT('%', #{taskName}, '%')
+            </if>
+            <if test="targetDeptId != null">  AND t.target_dept_id = #{targetDeptId}</if>
+            <if test="testerId != null">       AND t.tester_id = #{testerId}</if>
+            <if test="status != null and status != ''"> AND t.status = #{status}</if>
+            <!-- DataScope 注入在 target_dept_id 上 -->
+            <if test="params.dataScope != null and params.dataScope != ''">
+                AND ${params.dataScope}
+            </if>
+        </where>
+        ORDER BY t.start_date DESC, t.id DESC
+    </select>
+
+    <select id="selectById" parameterType="Long" resultMap="ApmsTestTaskResult">
+        <include refid="selectVo"/> WHERE t.id = #{id}
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsTestTask" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_test_task (task_name, target_dept_id, tester_id, start_date, end_date, status, create_by, create_time)
+        VALUES (#{taskName}, #{targetDeptId}, #{testerId}, #{startDate}, #{endDate}, #{status}, #{createBy}, NOW())
+    </insert>
+
+    <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsTestTask">
+        UPDATE apms_test_task
+        SET task_name = #{taskName}, target_dept_id = #{targetDeptId},
+            tester_id = #{testerId}, start_date = #{startDate}, end_date = #{endDate},
+            status = #{status}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteByIds" parameterType="String">
+        DELETE FROM apms_test_task WHERE id IN
+        <foreach item="id" collection="array" open="(" separator="," close=")">#{id}</foreach>
+    </delete>
+
+</mapper>

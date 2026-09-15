@@ -23,6 +23,13 @@
             <artifactId>ruoyi-common</artifactId>
         </dependency>
 
+        <!-- iText 5 (PDF 生成, Java 17 兼容, LGPL) -->
+        <dependency>
+            <groupId>com.itextpdf</groupId>
+            <artifactId>itextpdf</artifactId>
+            <version>5.5.13.6</version>
+        </dependency>
+
     </dependencies>
 
 </project>

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsTestModelFieldMapper">
+
+    <resultMap id="ApmsTestModelFieldResult" type="com.ruoyi.system.domain.apms.ApmsTestModelField">
+        <id     column="id"          property="id"/>
+        <result column="model_id"    property="modelId"/>
+        <result column="field_key"   property="fieldKey"/>
+        <result column="field_name"  property="fieldName"/>
+        <result column="unit"        property="unit"/>
+        <result column="data_type"   property="dataType"/>
+        <result column="is_required" property="isRequired"/>
+        <result column="sort_order"  property="sortOrder"/>
+    </resultMap>
+
+    <sql id="selectVo">
+        SELECT id, model_id, field_key, field_name, unit, data_type, is_required, sort_order
+        FROM apms_test_model_field
+    </sql>
+
+    <select id="selectByModelId" parameterType="Long" resultMap="ApmsTestModelFieldResult">
+        <include refid="selectVo"/>
+        WHERE model_id = #{modelId}
+        ORDER BY sort_order ASC, id ASC
+    </select>
+
+    <select id="selectById" parameterType="Long" resultMap="ApmsTestModelFieldResult">
+        <include refid="selectVo"/> WHERE id = #{id}
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsTestModelField" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_test_model_field (model_id, field_key, field_name, unit, data_type, is_required, sort_order)
+        VALUES (#{modelId}, #{fieldKey}, #{fieldName}, #{unit}, #{dataType}, #{isRequired}, #{sortOrder})
+    </insert>
+
+    <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsTestModelField">
+        UPDATE apms_test_model_field
+        SET field_key = #{fieldKey}, field_name = #{fieldName}, unit = #{unit},
+            data_type = #{dataType}, is_required = #{isRequired}, sort_order = #{sortOrder}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById" parameterType="Long">
+        DELETE FROM apms_test_model_field WHERE id = #{id}
+    </delete>
+
+    <delete id="deleteByModelId" parameterType="Long">
+        DELETE FROM apms_test_model_field WHERE model_id = #{modelId}
+    </delete>
+
+</mapper>

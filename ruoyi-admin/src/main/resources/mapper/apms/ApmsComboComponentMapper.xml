@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsComboComponentMapper">
+
+    <resultMap id="ApmsComboComponentResult" type="com.ruoyi.system.domain.apms.ApmsComboComponent">
+        <id     column="id"               property="id"/>
+        <result column="combo_model_id"   property="comboModelId"/>
+        <result column="indicator_id"      property="indicatorId"/>
+        <result column="weight"            property="weight"/>
+        <result column="direction_override" property="directionOverride"/>
+        <result column="sort_order"        property="sortOrder"/>
+        <!-- LEFT JOIN apms_indicator 解析字段 -->
+        <result column="ind_code"          property="indicatorCode"/>
+        <result column="ind_name"          property="indicatorName"/>
+        <result column="ind_unit"          property="indicatorUnit"/>
+        <result column="ind_direction"     property="indicatorDirection"/>
+    </resultMap>
+
+    <sql id="selectVoWithJoin">
+        SELECT cc.id, cc.combo_model_id, cc.indicator_id, cc.weight, cc.direction_override, cc.sort_order,
+               ind.code  AS ind_code, ind.name  AS ind_name,
+               ind.unit  AS ind_unit, ind.evaluation_direction AS ind_direction
+        FROM apms_combo_component cc
+        LEFT JOIN apms_indicator ind ON cc.indicator_id = ind.id
+    </sql>
+
+    <select id="selectByComboModelId" parameterType="Long" resultMap="ApmsComboComponentResult">
+        <include refid="selectVoWithJoin"/>
+        WHERE cc.combo_model_id = #{comboModelId}
+        ORDER BY cc.sort_order ASC, cc.id ASC
+    </select>
+
+    <select id="selectById" parameterType="Long" resultMap="ApmsComboComponentResult">
+        <include refid="selectVoWithJoin"/> WHERE cc.id = #{id}
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsComboComponent" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_combo_component (combo_model_id, indicator_id, weight, direction_override, sort_order)
+        VALUES (#{comboModelId}, #{indicatorId}, #{weight}, #{directionOverride}, #{sortOrder})
+    </insert>
+
+    <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsComboComponent">
+        UPDATE apms_combo_component
+        SET indicator_id = #{indicatorId}, weight = #{weight},
+            direction_override = #{directionOverride}, sort_order = #{sortOrder}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById" parameterType="Long">
+        DELETE FROM apms_combo_component WHERE id = #{id}
+    </delete>
+
+    <delete id="deleteByComboModelId" parameterType="Long">
+        DELETE FROM apms_combo_component WHERE combo_model_id = #{comboModelId}
+    </delete>
+
+</mapper>

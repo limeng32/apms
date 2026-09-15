@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsIndicatorMapper">
+
+    <resultMap id="ApmsIndicatorResult" type="com.ruoyi.system.domain.apms.ApmsIndicator">
+        <id     column="id"                       property="id"/>
+        <result column="code"                     property="code"/>
+        <result column="category"                 property="category"/>
+        <result column="name"                     property="name"/>
+        <result column="unit"                     property="unit"/>
+        <result column="data_type"                property="dataType"/>
+        <result column="evaluation_direction"     property="evaluationDirection"/>
+        <result column="collection_method"        property="collectionMethod"/>
+        <result column="status"                   property="status"/>
+        <result column="version"                  property="version"/>
+        <result column="create_time"              property="createTime"/>
+    </resultMap>
+
+    <sql id="selectVo">
+        SELECT id, code, category, name, unit, data_type, evaluation_direction,
+               collection_method, status, version, create_time
+        FROM apms_indicator
+    </sql>
+
+    <select id="selectList" parameterType="com.ruoyi.system.domain.apms.ApmsIndicator" resultMap="ApmsIndicatorResult">
+        <include refid="selectVo"/>
+        <where>
+            <if test="code != null and code != ''">              AND code LIKE CONCAT('%', #{code}, '%')</if>
+            <if test="name != null and name != ''">              AND name LIKE CONCAT('%', #{name}, '%')</if>
+            <if test="category != null and category != ''">      AND category = #{category}</if>
+            <if test="evaluationDirection != null and evaluationDirection != ''"> AND evaluation_direction = #{evaluationDirection}</if>
+            <if test="status != null and status != ''">          AND status = #{status}</if>
+        </where>
+        ORDER BY category ASC, id ASC
+    </select>
+
+    <select id="selectById" parameterType="Long" resultMap="ApmsIndicatorResult">
+        <include refid="selectVo"/> WHERE id = #{id}
+    </select>
+
+    <select id="selectByCode" parameterType="String" resultMap="ApmsIndicatorResult">
+        <include refid="selectVo"/> WHERE code = #{code} LIMIT 1
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsIndicator" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_indicator (code, category, name, unit, data_type, evaluation_direction,
+                                    collection_method, status, version, create_time)
+        VALUES (#{code}, #{category}, #{name}, #{unit}, #{dataType}, #{evaluationDirection},
+                #{collectionMethod}, #{status}, #{version}, NOW())
+    </insert>
+
+    <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsIndicator">
+        UPDATE apms_indicator
+        SET category = #{category},
+            name = #{name},
+            unit = #{unit},
+            data_type = #{dataType},
+            evaluation_direction = #{evaluationDirection},
+            collection_method = #{collectionMethod},
+            status = #{status},
+            version = #{version}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById" parameterType="Long">
+        DELETE FROM apms_indicator WHERE id = #{id}
+    </delete>
+
+    <delete id="deleteByIds" parameterType="String">
+        DELETE FROM apms_indicator WHERE id IN
+        <foreach item="id" collection="array" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+
+</mapper>

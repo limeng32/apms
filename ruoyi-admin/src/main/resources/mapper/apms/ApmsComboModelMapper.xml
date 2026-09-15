@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsComboModelMapper">
+
+    <resultMap id="ApmsComboModelResult" type="com.ruoyi.system.domain.apms.ApmsComboModel">
+        <id     column="cm_id"                property="id"/>
+        <result column="cm_model_id"          property="modelId"/>
+        <result column="normalization_method" property="normalizationMethod"/>
+        <result column="formula"              property="formula"/>
+        <result column="ref_version"          property="refVersion"/>
+        <result column="algo_version"          property="algoVersion"/>
+        <result column="tm_code"              property="testModelCode"/>
+        <result column="tm_name"              property="testModelName"/>
+    </resultMap>
+
+    <sql id="selectVo">
+        SELECT cm.id AS cm_id, cm.model_id AS cm_model_id,
+               cm.normalization_method, cm.formula, cm.ref_version, cm.algo_version,
+               tm.code AS tm_code, tm.name AS tm_name
+        FROM apms_combo_model cm
+        LEFT JOIN apms_test_model tm ON cm.model_id = tm.id
+    </sql>
+
+    <select id="selectList" parameterType="com.ruoyi.system.domain.apms.ApmsComboModel" resultMap="ApmsComboModelResult">
+        <include refid="selectVo"/>
+        <where>
+            <if test="modelId != null"> AND cm.model_id = #{modelId}</if>
+        </where>
+        ORDER BY cm.id ASC
+    </select>
+
+    <select id="selectById" parameterType="Long" resultMap="ApmsComboModelResult">
+        <include refid="selectVo"/> WHERE cm.id = #{id}
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsComboModel" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_combo_model (model_id, normalization_method, formula, ref_version, algo_version)
+        VALUES (#{modelId}, #{normalizationMethod}, #{formula}, #{refVersion}, #{algoVersion})
+    </insert>
+
+    <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsComboModel">
+        UPDATE apms_combo_model
+        SET model_id = #{modelId}, normalization_method = #{normalizationMethod},
+            formula = #{formula}, ref_version = #{refVersion}, algo_version = #{algoVersion}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteByIds" parameterType="String">
+        DELETE FROM apms_combo_model WHERE id IN
+        <foreach item="id" collection="array" open="(" separator="," close=")">#{id}</foreach>
+    </delete>
+
+</mapper>

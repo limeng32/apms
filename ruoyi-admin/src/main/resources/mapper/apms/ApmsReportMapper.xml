@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsReportMapper">
+
+    <resultMap id="ApmsReportResult" type="com.ruoyi.system.domain.apms.ApmsReport">
+        <id     column="id"              property="id"/>
+        <result column="report_type"     property="reportType"/>
+        <result column="athlete_id"      property="athleteId"/>
+        <result column="dept_id"         property="deptId"/>
+        <result column="task_id"         property="taskId"/>
+        <result column="template_version" property="templateVersion"/>
+        <result column="content_snapshot" property="contentSnapshot"/>
+        <result column="file_path"       property="filePath"/>
+        <result column="generate_by"     property="generateBy"/>
+        <result column="generate_time"   property="generateTime"/>
+
+        <!-- JOIN 解析 -->
+        <result column="a_name"          property="athleteName"/>
+        <result column="a_gender"        property="athleteGender"/>
+        <result column="dept_name"       property="athleteTeam"/>
+        <result column="t_name"          property="taskName"/>
+        <result column="d2_name"         property="deptName"/>
+    </resultMap>
+
+    <sql id="selectVo">
+        SELECT r.id, r.report_type, r.athlete_id, r.dept_id, r.task_id,
+               r.template_version, r.content_snapshot, r.file_path,
+               r.generate_by, r.generate_time,
+               a.name AS a_name, a.gender AS a_gender, d.dept_name,
+               t.task_name AS t_name, d2.dept_name AS d2_name
+        FROM apms_report r
+        LEFT JOIN apms_athlete a ON r.athlete_id = a.athlete_id
+        LEFT JOIN sys_dept d    ON a.primary_team_id = d.dept_id
+        LEFT JOIN apms_test_task t ON r.task_id = t.id
+        LEFT JOIN sys_dept d2   ON r.dept_id = d2.dept_id
+    </sql>
+
+    <select id="selectById" parameterType="Long" resultMap="ApmsReportResult">
+        <include refid="selectVo"/> WHERE r.id = #{id}
+    </select>
+
+    <select id="selectList" parameterType="com.ruoyi.system.domain.apms.ApmsReport" resultMap="ApmsReportResult">
+        <include refid="selectVo"/>
+        <where>
+            <if test="reportType != null and reportType != ''"> AND r.report_type = #{reportType}</if>
+            <if test="athleteId != null">  AND r.athlete_id = #{athleteId}</if>
+            <if test="deptId != null">     AND r.dept_id = #{deptId}</if>
+            <if test="taskId != null">     AND r.task_id = #{taskId}</if>
+            <if test="params.dataScope != null and params.dataScope != ''">
+                AND ${params.dataScope}
+            </if>
+        </where>
+        ORDER BY r.generate_time DESC, r.id DESC
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsReport" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_report (report_type, athlete_id, dept_id, task_id, template_version,
+                                 content_snapshot, file_path, generate_by, generate_time)
+        VALUES (#{reportType}, #{athleteId}, #{deptId}, #{taskId}, #{templateVersion},
+                #{contentSnapshot}, #{filePath}, #{generateBy}, #{generateTime})
+    </insert>
+
+    <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsReport">
+        UPDATE apms_report
+        SET file_path=#{filePath}, content_snapshot=#{contentSnapshot}
+        WHERE id=#{id}
+    </update>
+
+    <delete id="deleteById"><![CDATA[DELETE FROM apms_report WHERE id = #{id}]]></delete>
+</mapper>

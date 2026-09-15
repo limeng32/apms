@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsPhvRecordMapper">
+
+    <resultMap id="ApmsPhvRecordResult" type="com.ruoyi.system.domain.apms.ApmsPhvRecord">
+        <id     property="id"                  column="id"/>
+        <result property="athleteId"           column="athlete_id"/>
+        <result property="sourceMeasureId"     column="source_measure_id"/>
+        <result property="gender"               column="gender"/>
+        <result property="measureDate"         column="measure_date"/>
+        <result property="decimalAge"          column="decimal_age"/>
+        <result property="height"              column="height"/>
+        <result property="sitHeight"           column="sit_height"/>
+        <result property="weight"              column="weight"/>
+        <result property="fatherHeight"        column="father_height"/>
+        <result property="motherHeight"        column="mother_height"/>
+        <result property="legLength"           column="leg_length"/>
+        <result property="maturityOffset"      column="maturity_offset"/>
+        <result property="predictedPhvAge"     column="predicted_phv_age"/>
+        <result property="predictedAdultHeight" column="predicted_adult_height"/>
+        <result property="mirwaldVersion"      column="mirwald_version"/>
+        <result property="khamisVersion"       column="khamis_version"/>
+        <result property="inputSnapshot"       column="input_snapshot"/>
+        <result property="createBy"            column="create_by"/>
+        <result property="createTime"          column="create_time"/>
+        <result property="athleteName"         column="athlete_name"/>
+    </resultMap>
+
+    <sql id="selectApmsPhvRecordVo">
+        SELECT
+            r.id, r.athlete_id, r.source_measure_id, r.gender, r.measure_date,
+            r.decimal_age, r.height, r.sit_height, r.weight,
+            r.father_height, r.mother_height, r.leg_length,
+            r.maturity_offset, r.predicted_phv_age, r.predicted_adult_height,
+            r.mirwald_version, r.khamis_version, r.input_snapshot,
+            r.create_by, r.create_time,
+            a.name AS athlete_name
+        FROM apms_phv_record r
+        LEFT JOIN apms_athlete a ON r.athlete_id = a.athlete_id
+    </sql>
+
+    <select id="selectById" parameterType="Long" resultMap="ApmsPhvRecordResult">
+        <include refid="selectApmsPhvRecordVo"/>
+        WHERE r.id = #{id}
+    </select>
+
+    <select id="selectByAthleteId" parameterType="Long" resultMap="ApmsPhvRecordResult">
+        <include refid="selectApmsPhvRecordVo"/>
+        WHERE r.athlete_id = #{athleteId}
+        ORDER BY r.measure_date DESC, r.id DESC
+    </select>
+
+    <select id="selectLatestByAthleteId" parameterType="Long" resultMap="ApmsPhvRecordResult">
+        <include refid="selectApmsPhvRecordVo"/>
+        WHERE r.athlete_id = #{athleteId}
+        ORDER BY r.measure_date DESC, r.id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectBySourceMeasureId" resultMap="ApmsPhvRecordResult">
+        <include refid="selectApmsPhvRecordVo"/>
+        WHERE r.athlete_id = #{athleteId}
+          AND r.source_measure_id = #{sourceMeasureId}
+        LIMIT 1
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsPhvRecord" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_phv_record (
+            athlete_id, source_measure_id, gender, measure_date, decimal_age,
+            height, sit_height, weight, father_height, mother_height, leg_length,
+            maturity_offset, predicted_phv_age, predicted_adult_height,
+            mirwald_version, khamis_version, input_snapshot,
+            create_by, create_time
+        ) VALUES (
+            #{athleteId}, #{sourceMeasureId}, #{gender}, #{measureDate}, #{decimalAge},
+            #{height}, #{sitHeight}, #{weight}, #{fatherHeight}, #{motherHeight}, #{legLength},
+            #{maturityOffset}, #{predictedPhvAge}, #{predictedAdultHeight},
+            #{mirwaldVersion}, #{khamisVersion}, #{inputSnapshot},
+            #{createBy}, sysdate()
+        )
+    </insert>
+
+    <delete id="deleteById" parameterType="Long">
+        DELETE FROM apms_phv_record WHERE id = #{id}
+    </delete>
+
+</mapper>
