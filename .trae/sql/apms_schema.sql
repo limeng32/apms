@@ -7,20 +7,21 @@
 -- ------------------------------------------------------------
 -- 0. sys_dept 扩展字段（在若依原表上 ALTER）
 -- ------------------------------------------------------------
-ALTER TABLE sys_dept ADD COLUMN dept_type varchar(2) DEFAULT NULL COMMENT 'APMS部门类型：10=机构 20=队伍 30=训练小组 40=科研小组 50=恢复小组';
+-- dept_type 已在初始化时创建，如未创建请取消注释：
+-- ALTER TABLE sys_dept ADD COLUMN dept_type varchar(2) DEFAULT NULL COMMENT 'APMS部门类型：10=机构 20=队伍 30=训练小组 40=科研小组 50=恢复小组';
 
 -- ------------------------------------------------------------
 -- 1. 字典数据初始化
 -- ------------------------------------------------------------
 
 -- 部门类型
-INSERT INTO sys_dict_type (
+INSERT IGNORE INTO sys_dict_type (
     dict_name, dict_type, status, create_by, create_time, remark
 ) VALUES (
-    '部门类型', 'apms_dept_type', 'N', '0', 'admin', sysdate(), 'APMS 组织层级'
+    '部门类型', 'apms_dept_type', '0', 'admin', sysdate(), 'APMS 组织层级'
 );
 
-INSERT INTO sys_dict_data (
+INSERT IGNORE INTO sys_dict_data (
     dict_sort, dict_label, dict_value, dict_type, css_class, list_class, is_default, status, create_by, create_time, remark
 ) VALUES
 (1, '机构',     '10', 'apms_dept_type', '', 'info',    'Y', '0', 'admin', sysdate(), NULL),
@@ -30,13 +31,13 @@ INSERT INTO sys_dict_data (
 (5, '恢复小组', '50', 'apms_dept_type', '', 'danger',  'N', '0', 'admin', sysdate(), NULL);
 
 -- 医疗记录类型
-INSERT INTO sys_dict_type (
+INSERT IGNORE INTO sys_dict_type (
     dict_name, dict_type, status, create_by, create_time, remark
 ) VALUES (
-    '医疗记录类型', 'apms_medical_type', 'N', '0', 'admin', sysdate(), 'APMS 医疗附件分类'
+    '医疗记录类型', 'apms_medical_type', '0', 'admin', sysdate(), 'APMS 医疗附件分类'
 );
 
-INSERT INTO sys_dict_data (
+INSERT IGNORE INTO sys_dict_data (
     dict_sort, dict_label, dict_value, dict_type, css_class, list_class, is_default, status, create_by, create_time, remark
 ) VALUES
 (1, 'MRI检查',  'MRI',  'apms_medical_type', '', 'danger',  'N', '0', 'admin', sysdate(), NULL),

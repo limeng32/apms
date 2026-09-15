@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsDashboardMapper">
+
+    <resultMap id="DashboardStatsMap" type="com.ruoyi.system.domain.apms.dto.DashboardStatsVO">
+        <result property="athleteCount"          column="athlete_count"/>
+        <result property="taskInProgressCount"   column="task_in_progress_count"/>
+        <result property="taskPendingCount"      column="task_pending_count"/>
+        <result property="taskCompletedCount"    column="task_completed_count"/>
+        <result property="rtpYellowCount"        column="rtp_yellow_count"/>
+        <result property="rtpRedCount"           column="rtp_red_count"/>
+        <result property="rtpGreenCount"         column="rtp_green_count"/>
+        <result property="bodyMeasureWeekCount"  column="body_measure_week_count"/>
+        <result property="phvWeekCount"          column="phv_week_count"/>
+        <result property="teamList"              column="team_list"/>
+    </resultMap>
+
+    <resultMap id="TaskProgressMap" type="com.ruoyi.system.domain.apms.dto.TaskProgressVO">
+        <result property="taskId"          column="task_id"/>
+        <result property="taskName"        column="task_name"/>
+        <result property="status"         column="status"/>
+        <result property="totalCount"     column="total_count"/>
+        <result property="completedCount" column="completed_count"/>
+        <result property="teamName"       column="team_name"/>
+        <result property="startDate"      column="start_date"/>
+        <result property="endDate"        column="end_date"/>
+        <result property="progress"      column="progress"/>
+    </resultMap>
+
+    <resultMap id="RtpAttentionMap" type="com.ruoyi.system.domain.apms.dto.RtpAttentionVO">
+        <result property="athleteId"       column="athlete_id"/>
+        <result property="athleteName"     column="athlete_name"/>
+        <result property="jerseyNo"        column="jersey_no"/>
+        <result property="position"       column="position"/>
+        <result property="status"         column="status"/>
+        <result property="reason"         column="reason"/>
+        <result property="trainingLimit"  column="training_limit"/>
+        <result property="nextReviewDate" column="next_review_date"/>
+    </resultMap>
+
+    <!-- 看板统计：单条 SQL 多字段聚合，避免 N 次查询 -->
+    <select id="selectDashboardStats" resultMap="DashboardStatsMap">
+        SELECT
+            (SELECT COUNT(*) FROM apms_athlete WHERE status = '0') AS athlete_count,
+            (SELECT COUNT(*) FROM apms_test_task WHERE status = 'IN_PROGRESS') AS task_in_progress_count,
+            (SELECT COUNT(*) FROM apms_test_task WHERE status = 'PENDING') AS task_pending_count,
+            (SELECT COUNT(*) FROM apms_test_task WHERE status = 'COMPLETED') AS task_completed_count,
+            (SELECT COUNT(*) FROM apms_rtp_status WHERE status = 'y') AS rtp_yellow_count,
+            (SELECT COUNT(*) FROM apms_rtp_status WHERE status = 'r') AS rtp_red_count,
+            (SELECT COUNT(*) FROM apms_rtp_status WHERE status = 'g') AS rtp_green_count,
+            (SELECT COUNT(*) FROM apms_body_measure WHERE measure_date >= DATE(DATE_SUB(NOW(), INTERVAL 7 DAY))) AS body_measure_week_count,
+            (SELECT COUNT(*) FROM apms_phv_record WHERE measure_date >= DATE(DATE_SUB(NOW(), INTERVAL 7 DAY))) AS phv_week_count,
+            (SELECT GROUP_CONCAT(dept_name SEPARATOR ' · ') FROM sys_dept WHERE dept_type = '20' AND status = '0' AND del_flag = '0') AS team_list
+        FROM dual
+    </select>
+
+    <!-- 进行中任务进度 -->
+    <select id="selectInProgressTasks" resultMap="TaskProgressMap">
+        SELECT
+            t.id           AS task_id,
+            t.task_name    AS task_name,
+            t.status       AS status,
+            t.start_date   AS start_date,
+            t.end_date     AS end_date,
+            d.dept_name    AS team_name,
+            COUNT(m.athlete_id) AS total_count,
+            SUM(CASE WHEN m.status = 'completed' THEN 1 ELSE 0 END) AS completed_count,
+            CASE
+                WHEN COUNT(m.athlete_id) = 0 THEN 0
+                ELSE ROUND(SUM(CASE WHEN m.status = 'completed' THEN 1 ELSE 0 END) * 100 / COUNT(m.athlete_id))
+            END AS progress
+        FROM apms_test_task t
+        LEFT JOIN apms_task_member m ON t.id = m.task_id
+        LEFT JOIN sys_dept d ON t.target_dept_id = d.dept_id
+        WHERE t.status = 'IN_PROGRESS'
+        GROUP BY t.id, t.task_name, t.status, t.start_date, t.end_date, d.dept_name
+        ORDER BY t.start_date ASC
+    </select>
+
+    <!-- RTP 关注名单（y + r） -->
+    <select id="selectRtpAttentionList" resultMap="RtpAttentionMap">
+        SELECT
+            r.athlete_id      AS athlete_id,
+            a.name            AS athlete_name,
+            a.jersey_no       AS jersey_no,
+            a.position        AS position,
+            r.status          AS status,
+            r.reason          AS reason,
+            r.training_limit  AS training_limit,
+            r.next_review_date AS next_review_date
+        FROM apms_rtp_status r
+        LEFT JOIN apms_athlete a ON r.athlete_id = a.athlete_id
+        WHERE r.status IN ('y', 'r')
+        ORDER BY
+            CASE r.status WHEN 'r' THEN 0 WHEN 'y' THEN 1 ELSE 2 END,
+            r.next_review_date ASC
+    </select>
+
+</mapper>

@@ -163,6 +163,7 @@
 <script setup name="Index">
 import { User, Document, Warning, TrendCharts, Aim, DataAnalysis, Files, Setting } from '@element-plus/icons-vue'
 import useUserStore from '@/store/modules/user'
+import request from '@/utils/request'
 
 const userStore = useUserStore()
 const route = useRoute()
@@ -173,36 +174,27 @@ const hour = now.getHours()
 const greeting = hour < 11 ? '早上好' : hour < 14 ? '中午好' : hour < 18 ? '下午好' : '晚上好'
 const todayText = `${now.getMonth()+1}月${now.getDate()}日`
 
-// 统计数据（一期静态 mock，后续替换为 /apms/dashboard/stats）
+// 统计数据（从数据库读取）
 const stats = reactive({
-  athleteCount: 12,
-  teamBreakdown: 'U18梯队 · U16梯队 · 专项组',
-  taskInProgress: 3,
-  taskPending: 1,
-  taskDone: 5,
-  rtpAttention: 4,
-  rtpGreen: 8,
-  rtpYellow: 3,
-  rtpRed: 1,
-  measureWeek: 7,
-  bodyMeasureWeek: 4,
-  phvWeek: 3
+  athleteCount: 0,
+  teamBreakdown: '',
+  taskInProgress: 0,
+  taskPending: 0,
+  taskDone: 0,
+  rtpAttention: 0,
+  rtpGreen: 0,
+  rtpYellow: 0,
+  rtpRed: 0,
+  measureWeek: 0,
+  bodyMeasureWeek: 0,
+  phvWeek: 0
 })
 
-// 任务列表（mock）
-const taskList = reactive([
-  { id: 1, name: '冬季体能测试 · U18', status: '进行中', done: 8, total: 12, bar: 'green', group: 'U18梯队', window: '12.10 - 12.20' },
-  { id: 2, name: '康复评估专项 · 伤后归队', status: '进行中', done: 3, total: 4, bar: 'amber', group: '康复组', window: '12.15 - 12.22' },
-  { id: 3, name: 'CMJ 力量测试 · 全队', status: '进行中', done: 10, total: 12, bar: 'green', group: 'U18+U16', window: '12.18 - 12.20' }
-])
+// 任务列表（从数据库读取）
+const taskList = ref([])
 
-// RTP 关注名单（黄/红）
-const attentionPlayers = reactive([
-  { id: 1, name: '张志远', no: '10', pos: '中场', rtp: 'y', color: '#f0a23a' },
-  { id: 2, name: '李铭昊', no: '7',  pos: '前锋', rtp: 'y', color: '#7b9dc9' },
-  { id: 3, name: '王浩然', no: '4',  pos: '后卫', rtp: 'r', color: '#c14747' },
-  { id: 4, name: '陈嘉宇', no: '23', pos: '门将', rtp: 'y', color: '#5fa080' }
-])
+// RTP 关注名单（从数据库读取）
+const attentionPlayers = ref([])
 
 // 快捷入口
 const quickLinks = [
@@ -212,12 +204,73 @@ const quickLinks = [
   { path: '/apms/report',   title: '综合测试报告', desc: '个人 / 团队 · 导出 PDF', icon: 'Files',         bg: '#f0e8fb' }
 ]
 
+const avatarColors = ['#f0a23a', '#7b9dc9', '#c14747', '#5fa080', '#a878d8', '#d88a3a']
+
+function loadDashboard() {
+  request({ url: '/apms/dashboard/stats', method: 'get' }).then(res => {
+    const data = res.data || res
+    const s = data.stats || {}
+    stats.athleteCount   = s.athleteCount || 0
+    stats.teamBreakdown = s.teamList || '—'
+    stats.taskInProgress = s.taskInProgressCount || 0
+    stats.taskPending    = s.taskPendingCount || 0
+    stats.taskDone        = s.taskCompletedCount || 0
+    stats.rtpGreen       = s.rtpGreenCount || 0
+    stats.rtpYellow      = s.rtpYellowCount || 0
+    stats.rtpRed         = s.rtpRedCount || 0
+    stats.rtpAttention   = stats.rtpYellow + stats.rtpRed
+    stats.bodyMeasureWeek = s.bodyMeasureWeekCount || 0
+    stats.phvWeek         = s.phvWeekCount || 0
+    stats.measureWeek     = stats.bodyMeasureWeek + stats.phvWeek
+
+    // 任务列表
+    taskList.value = (data.taskList || []).map(t => ({
+      id: t.taskId,
+      name: t.taskName,
+      status: '进行中',
+      done: t.completedCount || 0,
+      total: t.totalCount || 0,
+      bar: (t.progress || 0) >= 75 ? 'green' : (t.progress || 0) >= 50 ? 'amber' : 'red',
+      group: t.teamName || '—',
+      window: formatWindow(t.startDate, t.endDate)
+    }))
+
+    // RTP 关注名单
+    attentionPlayers.value = (data.rtpList || []).map((p, idx) => ({
+      id: p.athleteId,
+      name: p.athleteName,
+      no: p.jerseyNo || '—',
+      pos: p.position || '—',
+      rtp: p.status,
+      color: avatarColors[idx % avatarColors.length]
+    }))
+  })
+}
+
+function formatWindow(start, end) {
+  if (!start && !end) return '—'
+  const fmt = (d) => {
+    if (!d) return ''
+    const parts = String(d).split('-')
+    return parts.length >= 2 ? `${parts[1]}.${parts[2] || ''}` : d
+  }
+  return `${fmt(start)} - ${fmt(end)}`
+}
+
 function taskStatusType(s) {
   return s === '进行中' ? 'success' : s === '已完成' ? 'info' : 'warning'
 }
 function taskBarColor(bar) {
   return bar === 'amber' ? '#f0a23a' : bar === 'red' ? '#c14747' : '#4a9a78'
 }
+
+// 首次加载
+loadDashboard()
+
+// 路由切换回来时刷新（keep-alive 场景）
+onActivated(() => {
+  loadDashboard()
+})
 </script>
 
 <style lang="scss" scoped>
