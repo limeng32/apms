@@ -48,4 +48,7 @@ nbdist/
 /.vscode
 .DS_Store
 *.rdb
-/ruoyi-ui
+/ruoyi-ui/node_modules/
+/ruoyi-ui/dist/
+/ruoyi-ui/.vite/
+ruoyi-ui/.env.development
