@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 · APMS 运动员管理系统</title>
+<link rel="stylesheet" href="assets/app.css?v=20260915a">
+<style>
+  /* ============ 登录页专属样式 ============ */
+  body { background: var(--page-bg); }
+
+  .login-wrap {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+  }
+
+  /* 左侧品牌区 */
+  .login-brand {
+    position: relative;
+    background: linear-gradient(150deg, var(--green-900) 0%, var(--green-800) 55%, var(--green-700) 100%);
+    color: #fff;
+    padding: 56px 64px;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .login-brand::before {
+    content: ""; position: absolute; inset: 0;
+    background:
+      radial-gradient(circle at 85% 15%, rgba(74, 168, 134, .18) 0, transparent 38%),
+      radial-gradient(circle at 12% 88%, rgba(63, 169, 110, .12) 0, transparent 42%);
+    pointer-events: none;
+  }
+  .login-brand > * { position: relative; z-index: 1; }
+
+  .lb-head { display: flex; align-items: center; gap: 12px; }
+  .lb-head .brand-logo { width: 42px; height: 48px; }
+  .lb-head .lb-name { font-size: 22px; font-weight: 700; letter-spacing: 1.5px; }
+  .lb-head .lb-sub  { font-size: 11.5px; color: rgba(255,255,255,.55); letter-spacing: 1px; margin-top: 2px; }
+
+  .lb-hero { margin-top: auto; padding-bottom: 24px; }
+  .lb-hero h1 {
+    font-size: 38px; font-weight: 700; line-height: 1.2;
+    letter-spacing: 1px;
+  }
+  .lb-hero h1 .accent { color: var(--green-400); }
+  .lb-hero p {
+    margin-top: 14px; font-size: 14.5px;
+    color: rgba(255,255,255,.7); line-height: 1.7;
+    max-width: 420px;
+  }
+
+  .lb-features {
+    margin-top: 32px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .lb-feature {
+    display: flex; align-items: flex-start; gap: 11px;
+    color: rgba(255,255,255,.78); font-size: 13px; line-height: 1.55;
+  }
+  .lb-feature svg { width: 18px; height: 18px; flex: none; margin-top: 1px; color: var(--green-400); }
+  .lb-feature b { color: #fff; font-weight: 600; }
+
+  .lb-foot {
+    margin-top: 28px;
+    font-size: 11.5px; color: rgba(255,255,255,.35);
+    border-top: 1px solid rgba(255,255,255,.08);
+    padding-top: 16px;
+  }
+
+  /* 右侧表单区 */
+  .login-form-side {
+    display: flex; align-items: center; justify-content: center;
+    padding: 40px 24px;
+    background: var(--card-bg);
+  }
+  .login-form {
+    width: 100%; max-width: 360px;
+  }
+  .lf-title {
+    font-size: 24px; font-weight: 700; color: var(--text-1);
+  }
+  .lf-subtitle {
+    margin-top: 6px; font-size: 13px; color: var(--text-3);
+  }
+  .lf-form { margin-top: 30px; display: flex; flex-direction: column; gap: 18px; }
+
+  .lf-field { position: relative; }
+  .lf-field .lf-icon {
+    position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+    width: 17px; height: 17px; color: var(--text-3);
+    pointer-events: none;
+  }
+  .lf-field input {
+    height: 44px; width: 100%;
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 0 14px 0 40px; background: #fff;
+    color: var(--text-1); font-size: 14px;
+    outline: none; transition: border-color .15s, box-shadow .15s;
+  }
+  .lf-field input::placeholder { color: var(--text-3); }
+  .lf-field input:focus {
+    border-color: var(--green-400);
+    box-shadow: 0 0 0 3px rgba(74, 168, 134, .12);
+  }
+  .lf-field.has-eye input { padding-right: 40px; }
+  .lf-eye {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    width: 32px; height: 32px; border-radius: 8px;
+    display: grid; place-items: center;
+    color: var(--text-3);
+    background: transparent; border: none; cursor: pointer;
+  }
+  .lf-eye:hover { color: var(--green-600); background: var(--green-50); }
+  .lf-eye svg { width: 18px; height: 18px; }
+
+  /* 验证码 */
+  .lf-captcha {
+    display: flex; gap: 10px; align-items: center;
+  }
+  .lf-captcha input { padding-left: 40px; }
+  .lf-captcha-img {
+    width: 110px; height: 44px; flex: none;
+    border: 1px solid var(--border); border-radius: 10px;
+    background: linear-gradient(135deg, #f1f7f4, #e6f2ec);
+    display: grid; place-items: center;
+    color: var(--green-700); font-size: 18px; font-weight: 700;
+    letter-spacing: 4px; font-family: "Courier New", monospace;
+    cursor: pointer; user-select: none;
+    font-style: italic; text-decoration: line-through;
+    text-decoration-color: rgba(63, 169, 110, .4);
+    text-decoration-thickness: 2px;
+  }
+  .lf-captcha-img:hover { border-color: var(--green-400); }
+  .lf-captcha-refresh {
+    background: transparent; border: none; cursor: pointer;
+    color: var(--text-3); width: 32px; height: 32px;
+    display: grid; place-items: center; border-radius: 8px;
+  }
+  .lf-captcha-refresh:hover { color: var(--green-600); background: var(--green-50); }
+  .lf-captcha-refresh svg { width: 16px; height: 16px; }
+
+  /* 记住我 + 忘记密码 */
+  .lf-row {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 13px;
+  }
+  .lf-remember {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--text-2); cursor: pointer; user-select: none;
+  }
+  .lf-remember input { display: none; }
+  .lf-remember .cb {
+    width: 16px; height: 16px; border-radius: 4px;
+    border: 1.5px solid var(--border); background: #fff;
+    display: grid; place-items: center;
+    transition: background .15s, border-color .15s;
+  }
+  .lf-remember .cb svg { width: 11px; height: 11px; color: #fff; opacity: 0; }
+  .lf-remember input:checked + .cb { background: var(--green-600); border-color: var(--green-600); }
+  .lf-remember input:checked + .cb svg { opacity: 1; }
+  .lf-forgot {
+    color: var(--green-600); font-weight: 500;
+  }
+  .lf-forgot:hover { color: var(--green-500); text-decoration: underline; }
+
+  /* 登录按钮 */
+  .lf-submit {
+    height: 46px; width: 100%;
+    background: var(--green-600); color: #fff;
+    border: none; border-radius: 10px;
+    font-size: 14.5px; font-weight: 600; letter-spacing: 1px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: background .15s, transform .05s;
+  }
+  .lf-submit:hover { background: var(--green-500); }
+  .lf-submit:active { transform: scale(.99); }
+  .lf-submit:disabled { background: var(--green-400); cursor: not-allowed; opacity: .7; }
+  .lf-submit svg { width: 16px; height: 16px; }
+  .lf-submit.loading { opacity: .75; }
+
+  /* 角色快捷登录（演示用） */
+  .lf-roles {
+    margin-top: 22px;
+    border-top: 1px dashed var(--border);
+    padding-top: 18px;
+  }
+  .lf-roles-title {
+    font-size: 11.5px; color: var(--text-3);
+    text-align: center; margin-bottom: 10px;
+  }
+  .lf-roles-list {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  }
+  .lf-role-btn {
+    padding: 9px 6px; border: 1px solid var(--border);
+    border-radius: 8px; background: #fff;
+    font-size: 12px; color: var(--text-2);
+    cursor: pointer; text-align: center;
+    transition: border-color .15s, color .15s;
+  }
+  .lf-role-btn:hover { border-color: var(--green-400); color: var(--green-600); }
+  .lf-role-btn .role-icon {
+    display: block; font-size: 16px; margin-bottom: 3px;
+  }
+
+  /* 错误提示 */
+  .lf-error {
+    background: var(--rtp-red-bg); border: 1px solid #f3c6c6;
+    color: #c14747; font-size: 12.5px;
+    padding: 9px 12px; border-radius: 8px;
+    display: none; align-items: center; gap: 8px;
+  }
+  .lf-error.show { display: flex; }
+  .lf-error svg { width: 15px; height: 15px; flex: none; }
+
+  /* 版权 */
+  .lf-copyright {
+    margin-top: 30px; text-align: center;
+    font-size: 11.5px; color: var(--text-3);
+  }
+
+  /* ============ 移动端响应式 ============ */
+  @media (max-width: 900px) {
+    .login-wrap { grid-template-columns: 1fr; }
+    .login-brand { display: none; }
+    .login-form-side { min-height: 100vh; padding: 32px 20px; }
+  }
+  @media (max-width: 480px) {
+    .login-form { max-width: 100%; }
+    .lf-roles-list { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="login-wrap">
+
+  <!-- 左侧品牌区 -->
+  <aside class="login-brand">
+    <div class="lb-head">
+      <svg class="brand-logo" viewBox="0 0 40 46" fill="none">
+        <path d="M20 1.5L37 7v13c0 12-7.5 19-17 24C10.5 39 3 32 3 20V7l17-5.5z"
+          fill="#2c5a4b" stroke="#7fc7ad" stroke-width="1.4"/>
+        <circle cx="20" cy="20" r="8" fill="none" stroke="#d8efe4" stroke-width="1.3"/>
+        <path d="M20 12l4 3-1.5 5h-5L16 15l4-3z" fill="#d8efe4"/>
+        <path d="M14.5 29c1.6-2.2 3.4-3.3 5.5-3.3s3.9 1.1 5.5 3.3" stroke="#d8efe4" stroke-width="1.3" fill="none"/>
+      </svg>
+      <div>
+        <div class="lb-name">APMS</div>
+        <div class="lb-sub">ATHLETE PERFORMANCE MANAGEMENT SYSTEM</div>
+      </div>
+    </div>
+
+    <div class="lb-hero">
+      <h1>为运动员的<br>每一次成长<br><span class="accent">建立数据基石</span></h1>
+      <p>覆盖数字档案、生长发育监控、科研测试、RTP 参训状态、医疗附件、组合评价与 PDF 报告的一体化管理平台。</p>
+
+      <div class="lb-features">
+        <div class="lb-feature">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12l5 5 9-10"/></svg>
+          <span><b>一人一档</b> · 跨赛季持续数据归集，体态/测试/RTP/医疗全维度</span>
+        </div>
+        <div class="lb-feature">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>
+          <span><b>Mirwald PHV</b> · 已确认公式可计算，Khamis-Roche 待参数确认</span>
+        </div>
+        <div class="lb-feature">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l7 3v6c0 4.5-3 7.7-7 9-4-1.3-7-4.5-7-9V6l7-3z"/></svg>
+          <span><b>数据权限</b> · 队伍级 DataScope，医疗附件私有存储，独立权限点</span>
+        </div>
+        <div class="lb-feature">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/></svg>
+          <span><b>报告可复现</b> · 算法版本+参考统计量快照，历史分数不漂移</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="lb-foot">
+      © 2026 APMS · 运动员管理系统 · 基于 RuoYi-Vue 3.9.2
+    </div>
+  </aside>
+
+  <!-- 右侧登录表单区 -->
+  <main class="login-form-side">
+    <div class="login-form">
+      <div class="lf-title">欢迎回来</div>
+      <div class="lf-subtitle">请使用账号登录 APMS 工作台</div>
+
+      <div class="lf-error" id="errBox">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3L2 20h20L12 3z"/><path d="M12 10v4M12 17.5h.01"/></svg>
+        <span id="errMsg">用户名或密码错误</span>
+      </div>
+
+      <form class="lf-form" id="loginForm" novalidate>
+        <div class="lf-field">
+          <svg class="lf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c.6-3.2 2.9-5 5.5-5s4.9 1.8 5.5 5"/><path d="M16 5.2a3 3 0 0 1 0 5.6M17.5 15.2c1.7.7 2.8 2.2 3.2 4.3"/></svg>
+          <input type="text" id="username" name="username" placeholder="请输入用户名" autocomplete="off" value="admin">
+        </div>
+
+        <div class="lf-field has-eye">
+          <svg class="lf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.5"/></svg>
+          <input type="password" id="password" name="password" placeholder="请输入密码" autocomplete="off" value="admin123">
+          <button type="button" class="lf-eye" id="togglePwd" title="显示/隐藏密码">
+            <svg id="eyeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.5"/></svg>
+          </button>
+        </div>
+
+        <div class="lf-captcha">
+          <div class="lf-field" style="flex:1">
+            <svg class="lf-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l7 3v6c0 4.5-3 7.7-7 9-4-1.3-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
+            <input type="text" id="captcha" name="captcha" placeholder="验证码" maxlength="4" autocomplete="off">
+          </div>
+          <div class="lf-captcha-img" id="captchaImg" title="点击刷新">APMS</div>
+          <button type="button" class="lf-captcha-refresh" id="refreshCaptcha" title="刷新验证码">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v5h-5"/></svg>
+          </button>
+        </div>
+
+        <div class="lf-row">
+          <label class="lf-remember">
+            <input type="checkbox" id="remember" checked>
+            <span class="cb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5 9-10"/></svg></span>
+            <span>记住我</span>
+          </label>
+          <a href="javascript:;" class="lf-forgot" onclick="alert('请联系管理员重置密码')">忘记密码？</a>
+        </div>
+
+        <button type="submit" class="lf-submit" id="loginBtn">
+          <span id="loginText">登 录</span>
+          <svg id="loginIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+      </form>
+
+      <div class="lf-roles">
+        <div class="lf-roles-title">— 演示角色快捷登录 —</div>
+        <div class="lf-roles-list">
+          <button class="lf-role-btn" data-role="coach">
+            <span class="role-icon">🏃</span>
+            体能师
+          </button>
+          <button class="lf-role-btn" data-role="rehab">
+            <span class="role-icon">🩺</span>
+            康复师
+          </button>
+          <button class="lf-role-btn" data-role="head">
+            <span class="role-icon">📋</span>
+            主教练
+          </button>
+          <button class="lf-role-btn" data-role="doctor">
+            <span class="role-icon">⚕️</span>
+            队医
+          </button>
+          <button class="lf-role-btn" data-role="research">
+            <span class="role-icon">🔬</span>
+            科研
+          </button>
+          <button class="lf-role-btn" data-role="admin">
+            <span class="role-icon">⚙️</span>
+            管理员
+          </button>
+        </div>
+      </div>
+
+      <div class="lf-copyright">
+        © 2026 APMS · 静态演示环境 · 不联调后端
+      </div>
+    </div>
+  </main>
+
+</div>
+
+<script>
+/* ============================================================
+   登录页交互（纯前端模拟，不联调后端）
+   ============================================================ */
+
+(function() {
+  const $ = (s) => document.querySelector(s);
+  const errBox = $('#errBox');
+  const errMsg = $('#errMsg');
+  const captchaImg = $('#captchaImg');
+
+  /* ---- 验证码生成 ---- */
+  const CAPTCHA_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  function genCaptcha() {
+    let s = '';
+    for (let i = 0; i < 4; i++) s += CAPTCHA_CHARS[Math.floor(Math.random() * CAPTCHA_CHARS.length)];
+    captchaImg.textContent = s;
+    captchaImg.dataset.code = s;
+  }
+  genCaptcha();
+  captchaImg.addEventListener('click', genCaptcha);
+  $('#refreshCaptcha').addEventListener('click', genCaptcha);
+
+  /* ---- 密码显示切换 ---- */
+  const pwdInput = $('#password');
+  const eyeIcon = $('#eyeIcon');
+  $('#togglePwd').addEventListener('click', () => {
+    const isPwd = pwdInput.type === 'password';
+    pwdInput.type = isPwd ? 'text' : 'password';
+    eyeIcon.innerHTML = isPwd
+      ? '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><line x1="3" y1="3" x2="21" y2="21" stroke="currentColor" stroke-width="1.8"/>'
+      : '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/>';
+  });
+
+  /* ---- 错误提示 ---- */
+  function showError(msg) {
+    errMsg.textContent = msg;
+    errBox.classList.add('show');
+  }
+  function clearError() { errBox.classList.remove('show'); }
+
+  /* ---- 模拟登录 ---- */
+  const DEMO_USERS = {
+    admin:    { name: '鹏思', role: '体能师', color: '#2f6b57' },
+    coach:    { name: '鹏思', role: '体能师', color: '#2f6b57' },
+    rehab:    { name: '赵宁', role: '康复师', color: '#3d8a6e' },
+    head:     { name: '王志远', role: '主教练', color: '#27503f' },
+    doctor:   { name: '李健', role: '队医', color: '#4a78c9' },
+    research: { name: '陈研', role: '科研人员', color: '#7251b5' },
+  };
+
+  function doLogin(username, captchaInput) {
+    // 校验验证码（演示环境不区分大小写）
+    if (!captchaInput) {
+      showError('请输入验证码');
+      return false;
+    }
+    if (captchaInput.toUpperCase() !== captchaImg.dataset.code) {
+      showError('验证码错误，请重新输入');
+      genCaptcha();
+      $('#captcha').value = '';
+      return false;
+    }
+
+    // 演示环境：任意非空用户名密码均可登录
+    const key = DEMO_USERS[username] ? username : 'admin';
+    const user = DEMO_USERS[key];
+
+    // 写入 sessionStorage 模拟登录态（供 index.html 等页面读取）
+    try {
+      sessionStorage.setItem('apms_user', JSON.stringify({
+        name: user.name,
+        role: user.role,
+        color: user.color,
+        loginAt: new Date().toISOString()
+      }));
+    } catch (e) { /* sessionStorage 不可用时忽略 */ }
+
+    return true;
+  }
+
+  /* ---- 表单提交 ---- */
+  const loginBtn = $('#loginBtn');
+  const loginText = $('#loginText');
+  const loginIcon = $('#loginIcon');
+
+  $('#loginForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    clearError();
+
+    const username = $('#username').value.trim();
+    const password = $('#password').value;
+    const captchaInput = $('#captcha').value.trim();
+
+    if (!username) { showError('请输入用户名'); return; }
+    if (!password) { showError('请输入密码'); return; }
+
+    // 加载态
+    loginBtn.disabled = true;
+    loginBtn.classList.add('loading');
+    loginText.textContent = '登录中...';
+    loginIcon.style.display = 'none';
+
+    // 模拟网络延迟
+    setTimeout(() => {
+      if (doLogin(username, captchaInput)) {
+        window.location.href = 'index.html';
+      } else {
+        loginBtn.disabled = false;
+        loginBtn.classList.remove('loading');
+        loginText.textContent = '登 录';
+        loginIcon.style.display = '';
+      }
+    }, 600);
+  });
+
+  /* ---- 角色快捷登录 ---- */
+  document.querySelectorAll('.lf-role-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const role = btn.dataset.role;
+      $('#username').value = role;
+      $('#password').value = role + '123';
+      $('#captcha').value = captchaImg.dataset.code;
+      $('#loginForm').dispatchEvent(new Event('submit'));
+    });
+  });
+
+  /* ---- 输入时清错 ---- */
+  ['username', 'password', 'captcha'].forEach(id => {
+    $('#' + id).addEventListener('input', clearError);
+  });
+})();
+</script>
+</body>
+</html>
