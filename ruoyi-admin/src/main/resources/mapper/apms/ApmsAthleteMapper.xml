@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsAthleteMapper">
+
+    <resultMap id="ApmsAthleteResult" type="com.ruoyi.system.domain.apms.ApmsAthlete">
+        <id     property="athleteId"      column="athlete_id"/>
+        <result property="userId"         column="user_id"/>
+        <result property="name"           column="name"/>
+        <result property="gender"         column="gender"/>
+        <result property="birthday"       column="birthday"/>
+        <result property="phone"          column="phone"/>
+        <result property="primaryTeamId"  column="primary_team_id"/>
+        <result property="jerseyNo"        column="jersey_no"/>
+        <result property="position"        column="position"/>
+        <result property="status"         column="status"/>
+        <result property="createBy"       column="create_by"/>
+        <result property="createTime"     column="create_time"/>
+        <result property="updateBy"       column="update_by"/>
+        <result property="updateTime"     column="update_time"/>
+        <result property="teamName"      column="team_name"/>
+        <result property="age"           column="age"/>
+    </resultMap>
+
+    <sql id="selectApmsAthleteVo">
+        SELECT
+            a.athlete_id, a.user_id, a.name, a.gender, a.birthday, a.phone,
+            a.primary_team_id, a.jersey_no, a.position, a.status,
+            a.create_by, a.create_time, a.update_by, a.update_time,
+            d.dept_name AS team_name,
+            CASE
+                WHEN a.birthday IS NULL THEN NULL
+                ELSE TIMESTAMPDIFF(YEAR, a.birthday, CURDATE())
+            END AS age
+        FROM apms_athlete a
+        LEFT JOIN sys_dept d ON a.primary_team_id = d.dept_id
+    </sql>
+
+    <!-- 根据ID查询 -->
+    <select id="selectApmsAthleteByAthleteId" parameterType="Long" resultMap="ApmsAthleteResult">
+        <include refid="selectApmsAthleteVo"/>
+        WHERE a.athlete_id = #{athleteId}
+    </select>
+
+    <!-- 列表查询（DataScope 通过 @DataScope 注解自动拼接） -->
+    <select id="selectApmsAthleteList" parameterType="com.ruoyi.system.domain.apms.ApmsAthlete" resultMap="ApmsAthleteResult">
+        <include refid="selectApmsAthleteVo"/>
+        <where>
+            a.status != '2'  <!-- 排除已退役 -->
+            <if test="name != null and name != ''">
+                AND a.name LIKE CONCAT('%', #{name}, '%')
+            </if>
+            <if test="gender != null and gender != ''">
+                AND a.gender = #{gender}
+            </if>
+            <if test="primaryTeamId != null">
+                AND a.primary_team_id = #{primaryTeamId}
+            </if>
+            <if test="jerseyNo != null and jerseyNo != ''">
+                AND a.jersey_no = #{jerseyNo}
+            </if>
+            <if test="position != null and position != ''">
+                AND a.position = #{position}
+            </if>
+            <if test="status != null and status != ''">
+                AND a.status = #{status}
+            </if>
+        </where>
+        ORDER BY a.primary_team_id ASC, a.jersey_no ASC
+    </select>
+
+    <!-- 新增 -->
+    <insert id="insertApmsAthlete" parameterType="com.ruoyi.system.domain.apms.ApmsAthlete" useGeneratedKeys="true" keyProperty="athleteId">
+        INSERT INTO apms_athlete (
+            user_id, name, gender, birthday, phone,
+            primary_team_id, jersey_no, position, status,
+            create_by, create_time
+        ) VALUES (
+            #{userId}, #{name}, #{gender}, #{birthday}, #{phone},
+            #{primaryTeamId}, #{jerseyNo}, #{position},
+            <choose>
+                <when test="status != null and status != ''">#{status}</when>
+                <otherwise>'0'</otherwise>
+            </choose>,
+            #{createBy}, sysdate()
+        )
+    </insert>
+
+    <!-- 修改 -->
+    <update id="updateApmsAthlete" parameterType="com.ruoyi.system.domain.apms.ApmsAthlete">
+        UPDATE apms_athlete
+        <set>
+            <if test="userId != null">user_id = #{userId},</if>
+            <if test="name != null and name != ''">name = #{name},</if>
+            <if test="gender != null and gender != ''">gender = #{gender},</if>
+            <if test="birthday != null">birthday = #{birthday},</if>
+            <if test="phone != null">phone = #{phone},</if>
+            <if test="primaryTeamId != null">primary_team_id = #{primaryTeamId},</if>
+            <if test="jerseyNo != null">jersey_no = #{jerseyNo},</if>
+            <if test="position != null">position = #{position},</if>
+            <if test="status != null and status != ''">status = #{status},</if>
+            <if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
+            update_time = sysdate()
+        </set>
+        WHERE athlete_id = #{athleteId}
+    </update>
+
+    <!-- 逻辑删除：改为离队状态 -->
+    <update id="deleteApmsAthleteByAthleteIds" parameterType="Long">
+        UPDATE apms_athlete
+        SET status = '1', update_time = sysdate()
+        WHERE athlete_id IN
+        <foreach collection="array" item="athleteId" open="(" separator="," close=")">
+            #{athleteId}
+        </foreach>
+    </update>
+
+    <!-- 校验同队球衣号码唯一性 -->
+    <select id="checkJerseyNoUnique" resultMap="ApmsAthleteResult">
+        <include refid="selectApmsAthleteVo"/>
+        WHERE a.primary_team_id = #{teamId}
+          AND a.jersey_no = #{jerseyNo}
+          AND a.athlete_id != #{excludeAthleteId}
+          AND a.status != '2'
+        LIMIT 1
+    </select>
+
+</mapper>
