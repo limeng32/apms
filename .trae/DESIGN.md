@@ -19,11 +19,11 @@
 
 ### 1.1.1 移动端策略
 
-一期不开发独立 APP 或 H5 子站，采用 **PC 前端响应式适配**方案：
+Web/H5 采用同一 Vue 3 前端工程，PC 与移动浏览器使用响应式布局；不建设独立移动前端工程。
 
 - 现有 Vue 3 + Element Plus 前端通过媒体查询适配手机浏览器访问
 - 体能师/康复师用手机浏览器直接访问系统，无需安装
-- 后端 API 完全复用，无额外接口开发成本
+- 原则上复用现有 API，仅在移动场景确有必要时增加聚合接口
 - demo prototype 已验证移动端布局可行（侧边栏抽屉化、卡片折行、表格横滚）
 - 将来给运动员/家长开放独立流程时，再评估是否拆独立 H5 子站
 
@@ -88,15 +88,49 @@ APMS（顶级目录）
 
 ### 2.3 角色与权限设计
 
-复用若依 `sys_role` + `sys_menu` 的 RBAC 机制，新增 5 个预置角色：
+复用若依 `sys_role` + `sys_menu` 的 RBAC 机制，新增 5 个预置角色。**功能权限之外，明确数据权限范围（若依 DataScope）**：
 
-| 角色 | 角色Key | 权限范围 |
-|------|---------|---------|
-| 体能师 | apms_coach | 档案查看、测试任务管理、结果录入、报告查看 |
-| 康复师 | apms_rehab | 档案查看、RTP 状态修改、医疗附件管理、报告查看 |
-| 队医 | apms_doctor | 档案查看、医疗附件管理、RTP 查看（不可改）、报告查看 |
-| 主教练 | apms_head_coach | 全部查看、报告查看/导出、不可修改测试结果 |
-| 科研人员 | apms_researcher | 全部查看、指标/模型配置、组合模型管理、报告查看 |
+| 角色 | 角色Key | 功能权限 | 默认数据范围 |
+|------|---------|---------|-------------|
+| 体能师 | apms_coach | 档案查看、测试任务管理、结果录入、报告查看 | 本部门及以下 |
+| 康复师 | apms_rehab | 档案查看、RTP 状态修改、医疗附件管理、报告查看 | 自定义 |
+| 队医 | apms_doctor | 档案查看、医疗附件管理、RTP 查看（不可改）、报告查看 | 自定义 |
+| 主教练 | apms_head_coach | 数据权限范围内全部查看、报告查看/导出、不可修改测试结果 | 本部门及以下 |
+| 科研人员 | apms_researcher | 数据权限范围内全部查看、指标/模型配置、组合模型管理、报告查看 | 自定义 |
+| 管理员 | admin | 系统管理 | 全部 |
+
+> **数据范围说明**：「数据权限范围内全部查看」指受 DataScope 约束的可访问范围，**不是全库权限**。主教练和科研人员虽可查看所有功能模块，但只能看到自己数据范围内的运动员数据。
+
+### 2.3.1 DataScope 实现方式
+
+运动员已脱离 `sys_user` 独立存在于 `apms_athlete` 表，`primary_team_id` 指向 `sys_dept`。若依的 `@DataScope` 注解可直接作用于该字段：
+
+```java
+@DataScope(
+    deptAlias = "a",
+    deptField = "primary_team_id"
+)
+public List<ApmsAthlete> selectAthleteList(ApmsAthlete a) { ... }
+```
+
+- **本部门及以下**（`DATA_SCOPE_DEPT_AND_CHILD`）：体能师、主教练只能看到自己队伍及下属小组的运动员
+- **自定义**（`DATA_SCOPE_CUSTOM`）：康复师/队医/科研人员通过 `sys_role_dept` 选中的部门集合控制数据权限
+- **全部**（`DATA_SCOPE_ALL`）：管理员
+
+医疗、测试、报告等运动员从属数据统一通过关联 `apms_athlete.primary_team_id` 应用 DataScope，不另建数据权限体系。查询时需 JOIN 到 athlete 表让 DataScope SQL 作用在 `primary_team_id` 上（如 medical_file → medical_record → athlete.primary_team_id）。
+
+> **DataScope 配置粒度约束（一期强制规则）**：由于 `primary_team_id` 指向"队伍"层级（`sys_dept.dept_type=20`），DataScope 实际权限粒度是**队伍级**。
+> - **`sys_role_dept` 必须配置到"队伍"节点**（dept_type=20），不能配置到训练小组/科研小组/恢复小组（dept_type=30/40/50）
+> - 原因：若依 DataScope 检查 `athlete.primary_team_id ∈ 角色配置的 dept 集合`，而运动员的 primary_team_id 是队伍级。如果把"康复组"配进 sys_role_dept，匹配的是 `primary_team_id = 康复组`，永远匹配不上（运动员 primary_team_id 是 U15 这样的队伍），康复师反而看不到任何运动员
+> - **专项/康复/科研小组只用于业务分组**（`apms_athlete_group` 记录历史归属），**不作为数据权限节点**
+> - 角色需要覆盖多支队伍时，在 sys_role_dept 中勾选多个"队伍"节点，而非勾选小组
+> - 部门树配置示例：
+>   ```
+>   机构（dept_type=10）
+>   └── U15 队（dept_type=20）  ← sys_role_dept 勾选这里
+>       ├── 速度专项组（dept_type=30）  ← 不勾选，仅业务分组
+>       └── 康复组（dept_type=50）       ← 不勾选，仅业务分组
+>   ```
 
 RTP 状态修改按钮仅对 `apms_rehab` 角色可见；测试结果录入仅对 `apms_coach` 和 `apms_researcher` 可见。
 
@@ -120,31 +154,45 @@ RTP 状态修改按钮仅对 `apms_rehab` 角色可见；测试结果录入仅�
 
 ```sql
 -- 字典类型
-INSERT INTO sys_dict_type VALUES (NULL, '部门类型', 'apms_dept_type', 'N', '0', 'admin', sysdate(), '', NULL, 'APMS 组织层级');
+INSERT INTO sys_dict_type (
+    dict_name, dict_type, status, create_by, create_time, remark
+) VALUES (
+    '部门类型', 'apms_dept_type', 'N', '0', 'admin', sysdate(), 'APMS 组织层级'
+);
 
 -- 字典数据
-INSERT INTO sys_dict_data VALUES
-(NULL, 1, '机构',     '10', 'apms_dept_type', '', 'info',    'Y', '0', 'admin', sysdate(), '', NULL, NULL),
-(NULL, 2, '队伍',     '20', 'apms_dept_type', '', 'success', 'N', '0', 'admin', sysdate(), '', NULL, NULL),
-(NULL, 3, '训练小组', '30', 'apms_dept_type', '', 'primary', 'N', '0', 'admin', sysdate(), '', NULL, NULL),
-(NULL, 4, '科研小组', '40', 'apms_dept_type', '', 'warning', 'N', '0', 'admin', sysdate(), '', NULL, NULL),
-(NULL, 5, '恢复小组', '50', 'apms_dept_type', '', 'danger',  'N', '0', 'admin', sysdate(), '', NULL, NULL);
+INSERT INTO sys_dict_data (
+    dict_sort, dict_label, dict_value, dict_type, css_class, list_class, is_default, status, create_by, create_time, remark
+) VALUES
+(1, '机构',     '10', 'apms_dept_type', '', 'info',    'Y', '0', 'admin', sysdate(), NULL),
+(2, '队伍',     '20', 'apms_dept_type', '', 'success', 'N', '0', 'admin', sysdate(), NULL),
+(3, '训练小组', '30', 'apms_dept_type', '', 'primary', 'N', '0', 'admin', sysdate(), NULL),
+(4, '科研小组', '40', 'apms_dept_type', '', 'warning', 'N', '0', 'admin', sysdate(), NULL),
+(5, '恢复小组', '50', 'apms_dept_type', '', 'danger',  'N', '0', 'admin', sysdate(), NULL);
 ```
 
 ```sql
 -- 字典类型：医疗记录类型
-INSERT INTO sys_dict_type VALUES (NULL, '医疗记录类型', 'apms_medical_type', 'N', '0', 'admin', sysdate(), '', NULL, 'APMS 医疗附件分类');
+INSERT INTO sys_dict_type (
+    dict_name, dict_type, status, create_by, create_time, remark
+) VALUES (
+    '医疗记录类型', 'apms_medical_type', 'N', '0', 'admin', sysdate(), 'APMS 医疗附件分类'
+);
 
 -- 字典数据
-INSERT INTO sys_dict_data VALUES
-(NULL, 1, 'MRI检查',      'MRI',  'apms_medical_type', '', 'danger',  'N', '0', 'admin', sysdate(), '', NULL, NULL),
-(NULL, 2, 'CT检查',       'CT',   'apms_medical_type', '', 'warning', 'N', '0', 'admin', sysdate(), '', NULL, NULL),
-(NULL, 3, '超声检查',     'US',   'apms_medical_type', '', 'info',     'N', '0', 'admin', sysdate(), '', NULL, NULL),
-(NULL, 4, 'X光检查',      'XRAY', 'apms_medical_type', '', 'info',     'N', '0', 'admin', sysdate(), '', NULL, NULL),
-(NULL, 5, '血液检验',     'LAB',  'apms_medical_type', '', 'primary',  'N', '0', 'admin', sysdate(), '', NULL, NULL),
-(NULL, 6, '康复评估',     'REHAB','apms_medical_type', '', 'success',  'N', '0', 'admin', sysdate(), '', NULL, NULL),
-(NULL, 7, '其他',         'OTHER','apms_medical_type', '', '',         'N', '0', 'admin', sysdate(), '', NULL, NULL);
+INSERT INTO sys_dict_data (
+    dict_sort, dict_label, dict_value, dict_type, css_class, list_class, is_default, status, create_by, create_time, remark
+) VALUES
+(1, 'MRI检查',      'MRI',  'apms_medical_type', '', 'danger',  'N', '0', 'admin', sysdate(), NULL),
+(2, 'CT检查',       'CT',   'apms_medical_type', '', 'warning', 'N', '0', 'admin', sysdate(), NULL),
+(3, '超声检查',     'US',   'apms_medical_type', '', 'info',    'N', '0', 'admin', sysdate(), NULL),
+(4, 'X光检查',      'XRAY', 'apms_medical_type', '', 'info',    'N', '0', 'admin', sysdate(), NULL),
+(5, '血液检验',     'LAB',  'apms_medical_type', '', 'primary', 'N', '0', 'admin', sysdate(), NULL),
+(6, '康复评估',     'REHAB','apms_medical_type', '', 'success', 'N', '0', 'admin', sysdate(), NULL),
+(7, '其他',         'OTHER','apms_medical_type', '', '',        'N', '0', 'admin', sysdate(), NULL);
 ```
+
+> **SQL 脚本工程约定**：所有 `INSERT` 语句必须显式写列名，不依赖表字段顺序。若依版本变动或字段顺序调整后脚本依然可用，避免"位置依赖"导致的插入错位。
 
 ### 3.1 组织与运动员
 
@@ -179,8 +227,7 @@ INSERT INTO sys_dict_data VALUES
 |------|------|------|
 | id | bigint PK AI | 自增 |
 | athlete_id | bigint | 运动员ID |
-| dept_id | bigint | 小组ID（sys_dept，小组层级） |
-| group_type | varchar(20) | 类型（training/research/recovery） |
+| dept_id | bigint | 小组ID（sys_dept，小组层级；类型由 sys_dept.dept_type 决定） |
 | join_date | date | 加入日期 |
 | leave_date | date NULL | 离开日期（NULL=当前在组） |
 | status | char(1) | 0=在组 1=已离组 |
@@ -190,6 +237,26 @@ INSERT INTO sys_dict_data VALUES
 ### 3.2 基础体态测量
 
 #### apms_body_measure — 体态测量记录
+
+> 原始测量事实。PHV 计算时通过 `apms_phv_record.source_measure_id` 回溯到这条记录。
+> 即使后续修正了身高数据，也能解释"2026年9月当时基于该测量值算出的 PHV 是多少"。
+>
+> **体态数据唯一业务真源**：`apms_body_measure` 是身高/体重/坐高的唯一真源。
+> 当测试任务包含 HEIGHT/WEIGHT/SIT_HEIGHT 指标时，业务服务将同一次测量会话（session）下的多个 result 聚合 upsert 到一条 `apms_body_measure`；
+> `apms_test_result_value` 记录任务上下文（哪个任务、哪个 attempt 录的），但不形成第二套独立体态事实。
+> 运动员档案页、PHV 计算、趋势分析均从 `apms_body_measure` 读取，不从 `apms_test_result_value` 读体态数据。
+>
+> **测量会话（measure_session_key）**：解决"一个任务下 HEIGHT/WEIGHT/SIT_HEIGHT 三个 task_item 各产生独立 result，但实际是同一次体态测量"的聚合问题。
+> - 一次现场测量生成一个 `session_key`（前端生成 UUID 或 `{taskId}-{yyyyMMddHHmm}-{seq}` 格式）
+> - 同一 session 下的多个 `apms_test_result` 共享该 session_key
+> - 业务服务按 session_key 聚合所有相关 result 的 value，统一 upsert 到一条 `body_measure`
+>
+> **同步/更新规则**：
+> - 任务流程录入：按 `athlete_id + measure_date + source_task_id + source_session_key` 聚合 → 同 session 的 height/weight/sit_height 等字段合并到一条 body_measure（更新已有或新增）
+> - 不同 session（如同日上下午各测一次）：各自独立成行，保留为不同 body_measure 记录
+> - 非任务手工录入（`source_task_id=NULL, source_session_key=NULL`）：按 `athlete_id + measure_date` 判定是否更新；同日多次手工录入以最后一条为准
+> - PHV 计算通过 `apms_phv_record.source_measure_id` 明确回溯到具体哪条 `body_measure`，不依赖隐式推断
+> - 若需要从 body_measure 反查具体是哪几个 result 录入的，通过 `source_session_key` 反查 `apms_test_result.session_key` 即可，无需在 body_measure 上冗余存 result_id
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -201,7 +268,9 @@ INSERT INTO sys_dict_data VALUES
 | sit_height | decimal(5,1) | 坐高 cm |
 | body_fat_rate | decimal(4,1) | 体脂率 %（可选） |
 | waist | decimal(5,1) | 腰围 cm（可选） |
-| data_source | varchar(20) | 来源（manual/csv/import） |
+| data_source | varchar(20) | 来源（manual/csv/import/task） |
+| source_task_id | bigint NULL | 来源任务ID（任务流程录入时指向 apms_test_task.id；非任务录入为 NULL） |
+| source_session_key | varchar(50) NULL | 来源测量会话Key（指向 apms_test_result.session_key；非任务录入为 NULL） |
 | create_by | varchar(64) | 操作人 |
 | create_time | datetime | 录入时间 |
 
@@ -209,7 +278,7 @@ INSERT INTO sys_dict_data VALUES
 
 #### apms_rtp_status — 当前 RTP 状态
 
-> 每个运动员一条当前状态记录。
+> 每个运动员一条当前状态记录。**新建运动员时不自动插入 RTP 状态记录**。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -222,6 +291,13 @@ INSERT INTO sys_dict_data VALUES
 | updated_by | varchar(64) | 操作人 |
 | updated_time | datetime | 操作时间 |
 
+> **RTP 状态评估状态**：
+> - `apms_rtp_status` 无记录 → **NOT_ASSESSED（未评估）**，页面显示"未评估"
+> - 康复师首次评估后插入第一条记录，进入 `g/y/r` 三态
+> - "未评估"与"允许完整训练（g）"语义不同：未评估表示康复师尚未介入，不代表医学上已确认可训练
+> - 遵循"系统不做自动医学判断"原则，新建运动员不预置 `g` 状态
+> - 工作台"RTP 汇总"卡片中未评估运动员不计入绿/黄/红任一档，单独显示"未评估 N 人"
+
 #### apms_rtp_log — RTP 状态变更日志
 
 | 字段 | 类型 | 说明 |
@@ -232,9 +308,12 @@ INSERT INTO sys_dict_data VALUES
 | to_status | char(1) | 变更后状态 |
 | reason | varchar(500) | 变更原因 |
 | training_limit | varchar(500) | 训练限制 |
+| next_review_date | date | 当时计划的下次复核日期 |
 | operator_id | bigint | 操作人（sys_user） |
 | operator_name | varchar(64) | 操作人姓名 |
 | operate_time | datetime | 操作时间 |
+
+> **RTP 变更事务**：更新 `apms_rtp_status` + 插入 `apms_rtp_log` 必须在同一事务内完成，确保当前状态和历史日志不脱节。
 
 ### 3.4 PHV 生长发育
 
@@ -244,22 +323,23 @@ INSERT INTO sys_dict_data VALUES
 |------|------|------|
 | id | bigint PK | 自增 |
 | athlete_id | bigint | 运动员ID |
+| source_measure_id | bigint NULL | 关联 apms_body_measure.id（原始测量事实来源） |
 | gender | char(1) | 性别（0男 1女） |
 | measure_date | date | 测量日期 |
-| decimal_age | decimal(4,2) | 精确年龄（0.01岁） |
-| height | decimal(5,1) | 站立身高 cm |
-| sit_height | decimal(5,1) | 坐高 cm |
-| weight | decimal(5,1) | 体重 kg |
+| decimal_age | decimal(6,4) | 精确年龄（0.0001岁） |
+| height | decimal(5,1) | 站立身高 cm（快照副本） |
+| sit_height | decimal(5,1) | 坐高 cm（快照副本） |
+| weight | decimal(5,1) | 体重 kg（快照副本） |
 | father_height | decimal(5,1) | 父亲身高 cm |
 | mother_height | decimal(5,1) | 母亲身高 cm |
 | leg_length | decimal(5,1) | 腿长（身高-坐高，计算值） |
 | -- 以下为算法输出 -- | | |
-| maturity_offset | decimal(4,2) | 成熟度偏移 |
-| predicted_phv_age | decimal(4,2) | 预计PHV年龄 |
+| maturity_offset | decimal(8,4) | 成熟度偏移 |
+| predicted_phv_age | decimal(6,4) | 预计PHV年龄 |
 | predicted_adult_height | decimal(5,1) | 预测成年身高 |
 | mirwald_version | varchar(20) | Mirwald 公式版本 |
 | khamis_version | varchar(20) | Khamis-Roche 公式版本 |
-| input_snapshot | text | 完整输入快照（JSON） |
+| input_snapshot | json | 完整输入快照（算法当时使用的全部输入值） |
 | create_by | varchar(64) | 操作人 |
 | create_time | datetime | 计算时间 |
 
@@ -270,16 +350,28 @@ INSERT INTO sys_dict_data VALUES
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | bigint PK | 自增 |
+| code | varchar(50) UQ | 稳定业务编码（HEIGHT/WEIGHT/CMJ_HEIGHT/SPRINT_30M/RSA_SDEC/YOYO_DISTANCE 等），代码、CSV、算法、报告均依赖此字段而非中文名 |
 | category | varchar(20) | 分类（形态/机能/素质/筛查） |
-| name | varchar(50) | 指标名称 |
+| name | varchar(50) | 指标名称（可改，不影响关联） |
 | unit | varchar(20) | 单位 |
 | data_type | varchar(20) | 数据类型（number/decimal/text/select） |
-| ref_min | decimal(14,4) | 参考下限（可选） |
-| ref_max | decimal(14,4) | 参考上限（可选） |
+| evaluation_direction | varchar(20) | 评价方向：HIGHER_BETTER / LOWER_BETTER / RANGE_BEST / REFERENCE_ONLY |
 | collection_method | varchar(20) | 采集方式（manual/device/csv） |
 | status | char(1) | 0=启用 1=停用 |
 | version | varchar(20) | 有效版本 |
 | create_time | datetime | 创建时间 |
+
+> **`code` 是程序关联的唯一标识**，名称可改（如"30米冲刺"→"30m冲刺"），code 不变则所有关联不受影响。
+>
+> **`evaluation_direction` 四种取值**：
+> | 取值 | 含义 | 示例 | 报告判定逻辑 |
+> |------|------|------|-------------|
+> | HIGHER_BETTER | 越大越好 | Yo-Yo 距离、CMJ 功率 | 值越高评级越高 |
+> | LOWER_BETTER | 越小越好 | 30m 冲刺时间 | 值越低评级越高 |
+> | RANGE_BEST | 在范围内最佳 | 体脂率 | 值落在 ref 区间内为正常 |
+> | REFERENCE_ONLY | 仅参考不评级 | 身高 | 展示参考值但不输出评级 |
+>
+> 参考范围三级关系：`indicator` → `indicator_ref`（性别/年龄/队伍） → `ref_level`（GOOD/NORMAL/ATTENTION）。
 
 #### apms_indicator_ref — 参考范围（按性别/年龄组/队伍）
 
@@ -290,9 +382,70 @@ INSERT INTO sys_dict_data VALUES
 | gender | char(1) | 适用性别 |
 | age_group | varchar(20) | 年龄组（如 U16/U18） |
 | dept_id | bigint | 适用队伍（0=全机构） |
-| ref_min | decimal(14,4) | 参考下限 |
-| ref_max | decimal(14,4) | 参考上限 |
+| ref_min | decimal(14,4) | 简单参考下限（用于 RANGE_BEST 展示，不做三级判定） |
+| ref_max | decimal(14,4) | 简单参考上限 |
 | model_version | varchar(20) | 参考口径版本 |
+
+#### apms_indicator_ref_level — 参考范围三级判定
+
+> 报告需要输出「良好 / 正常 / 需关注」，单靠 ref_min/ref_max 只能表达一个范围。
+> 三级规则按 direction 自动判定，不需要复杂规则引擎。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | bigint PK | 自增 |
+| ref_id | bigint | 关联 apms_indicator_ref.id |
+| level | varchar(10) | GOOD / NORMAL / ATTENTION |
+| min_value | decimal(14,4) NULL | 下限（NULL = 负无穷） |
+| max_value | decimal(14,4) NULL | 上限（NULL = 正无穷） |
+
+示例（30m 冲刺，direction=1 越小越好）：
+
+```
+GOOD       NULL ~ 4.20
+NORMAL     4.20 ~ 4.50
+ATTENTION  4.50 ~ NULL
+```
+
+示例（CMJ 功率，direction=0 越大越好）：
+
+```
+ATTENTION  NULL ~ 40.0
+NORMAL     40.0 ~ 55.0
+GOOD       55.0 ~ NULL
+```
+
+> 报告模块直接根据指标 evaluation_direction + 值落入的 level 输出评级，无需再回来改数据库。
+>
+> **区间边界规则：左闭右开 `[min_value, max_value)`**。
+> 即 `min_value <= value < max_value` 属于该 level。
+> 例如 `GOOD: NULL ~ 4.20` 和 `NORMAL: 4.20 ~ 4.50`，4.20 属于 NORMAL 不属于 GOOD。
+> `max_value = NULL` 表示正无穷（上界不含）。
+>
+> **服务层校验规则**（`IndicatorRefService` 在创建/修改 ref_level 时执行，不依赖规则引擎）：
+> - 三级 `GOOD / NORMAL / ATTENTION` 必须同时存在，缺一不可
+> - 区间**连续不重叠**：相邻两级的边界值必须相等（上一级 `max_value` = 下一级 `min_value`）
+>   - 正确：`GOOD [0,5) NORMAL [5,8) ATTENTION [8,NULL)`
+>   - 错误：`GOOD [0,5) NORMAL [4,8)` — 重叠区间 4~5
+>   - 错误：`GOOD [0,5) NORMAL [6,8)` — 空洞区间 5~6 无归属
+> - 方向边界一致：`HIGHER_BETTER` 指标 GOOD 区间在高端（`min` 起于某值，`max=NULL`）；`LOWER_BETTER` 指标 GOOD 区间在低端（`min=NULL`，`max` 止于某值）
+> - 校验失败抛出 `IndicatorRefInvalidException`，不写入数据库
+> - 数据库唯一约束 `(ref_id, level)` 仅保证每种 level 一条，无法阻止区间重叠/空洞，故校验必须在 Service 层完成
+
+建表语句：
+
+```sql
+CREATE TABLE apms_indicator_ref_level (
+    id          bigint       NOT NULL AUTO_INCREMENT COMMENT '自增主键',
+    ref_id      bigint       NOT NULL                COMMENT '关联 apms_indicator_ref.id',
+    level       varchar(10)  NOT NULL                COMMENT '评级：GOOD / NORMAL / ATTENTION',
+    min_value   decimal(14,4) DEFAULT NULL          COMMENT '下限（NULL = 负无穷）',
+    max_value   decimal(14,4) DEFAULT NULL          COMMENT '上限（NULL = 正无穷）',
+    PRIMARY KEY (id),
+    KEY idx_ref_id (ref_id),
+    CONSTRAINT uk_ref_level UNIQUE (ref_id, level)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='指标参考范围三级判定';
+```
 
 ### 3.6 测试模型
 
@@ -304,8 +457,8 @@ INSERT INTO sys_dict_data VALUES
 | category | varchar(20) | 分类（耐力/速度耐力/敏捷/带球敏捷/组合） |
 | name | varchar(50) | 模型名称 |
 | code | varchar(30) | 模型编码（如 YOYO_IR1） |
-| protocol | text | 测试规程描述 |
-| is_combo | char(1) | 是否组合模型 |
+| protocol | text | 测试规程描述（人读，体积小） |
+| is_combo | char(1) | 1=组合模型 0=否 |
 | algo_version | varchar(20) | 算法版本 |
 | status | char(1) | 0=启用 1=停用 |
 | create_time | datetime | 创建时间 |
@@ -320,7 +473,7 @@ INSERT INTO sys_dict_data VALUES
 | field_name | varchar(50) | 显示名（如 完成总距离） |
 | unit | varchar(20) | 单位 |
 | data_type | varchar(20) | 数据类型 |
-| required | char(1) | 是否必填 |
+| is_required | char(1) | 1=必填 0=选填 |
 | sort_order | int | 排序 |
 
 #### apms_combo_model — 组合模型
@@ -348,14 +501,83 @@ INSERT INTO sys_dict_data VALUES
 | combo_model_id | bigint | 关联 apms_combo_model.id |
 | indicator_id | bigint | 关联 apms_indicator.id |
 | weight | decimal(5,2) | 权重（如 0.50） |
-| direction | char(1) | 0=越大越好（功率） 1=越小越好（冲刺时间） |
+| direction_override | char(1) NULL | 覆盖指标方向（NULL=继承 indicator.evaluation_direction；非 NULL 时 0=越大越好 1=越小越好） |
 | sort_order | int | 排序 |
 
-> `direction` 直接影响 Z 分计算：
-> - direction=0（越大越好）：Z = (x - μ) / σ
-> - direction=1（越小越好）：Z = -(x - μ) / σ
+> **方向来源**：默认从 `indicator.evaluation_direction` 继承（HIGHER_BETTER→0, LOWER_BETTER→1），不重复存储。
+> `direction_override` 仅在组合模型需要特殊覆盖时填写，默认 NULL。
+>
+> Z 分计算时方向判定：
+> - 越大越好（direction=0）：Z = (x - μ) / σ
+> - 越小越好（direction=1）：Z = -(x - μ) / σ
 >
 > 不翻转会导致冲刺快的运动员得分反而低。
+> RANGE_BEST 和 REFERENCE_ONLY 的指标不参与组合模型。
+
+#### apms_combo_score — 组合得分计算记录（带参考快照）
+
+> 组合分每次计算时，将当时的 μ、σ、样本量等参考统计量**快照保存**，确保历史报告可复现。
+> 9月算的 T 分不会被 12月新增数据改变。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | bigint PK AI | 自增 |
+| combo_model_id | bigint | 关联 apms_combo_model.id |
+| athlete_id | bigint | 运动员ID |
+| trigger_result_id | bigint NULL | 触发本次计算的结果ID（哪条结果录入/更新触发了重新计算；手工触发重算时可为 NULL） |
+| combo_score | decimal(14,4) | 组合分最终值 |
+| ref_snapshot | json | 各指标的参考统计量快照 + 组成项来源 result_id（见下方结构，是组合分的真实数据来源） |
+| algo_version | varchar(20) | 算法版本 |
+| calculated_at | datetime | 计算时间 |
+
+> **`trigger_result_id` 语义说明**：
+> - 该字段仅记录"哪条结果触发了本次组合分计算"，**不是组合分的数据来源**
+> - 组合分的真实数据来源保存在 `ref_snapshot.components[].result_id` 和 `ref_snapshot.components[].result_value_id`，一个组合分可能由多个不同 result 组成（如 CMJ result #100 + 30m result #150）
+> - 命名为 `trigger_result_id` 而非 `result_id` 是为避免误读为"组合分只基于一个测试结果"
+> - 手工触发重算（如参考组口径调整后批量重算）时，没有单条触发结果，该字段为 NULL
+
+`ref_snapshot` JSON 结构：
+
+```json
+{
+  "components": [
+    {
+      "indicator_id": 101,
+      "indicator_code": "SPRINT_30M",
+      "indicator_name": "30m冲刺",
+      "result_id": 150,
+      "result_value_id": 1503,
+      "mean": 4.56,
+      "stddev": 0.21,
+      "sample_size": 18,
+      "reference_scope": "U15-male-2026",
+      "direction": 1,
+      "raw_value": 4.31,
+      "z_score": 1.1905,
+      "t_score": 61.90,
+      "weight": 0.50
+    },
+    {
+      "indicator_id": 102,
+      "indicator_code": "CMJ_POWER",
+      "indicator_name": "CMJ功率",
+      "result_id": 100,
+      "result_value_id": 1007,
+      "mean": 50.0,
+      "stddev": 8.0,
+      "sample_size": 18,
+      "reference_scope": "U15-male-2026",
+      "direction": 0,
+      "raw_value": 54.0,
+      "z_score": 0.5000,
+      "t_score": 55.00,
+      "weight": 0.50
+    }
+  ]
+}
+```
+
+> 重新查询历史报告时，直接读 `combo_score` 和 `ref_snapshot`，不重新计算，确保分数不会随数据库增长而漂移。
 
 ### 3.7 测试任务
 
@@ -377,24 +599,44 @@ INSERT INTO sys_dict_data VALUES
 > ```sql
 > -- 目标人数
 > SELECT COUNT(*) FROM apms_task_member WHERE task_id = ?
-> -- 已测人数（以结果表为准）
-> SELECT COUNT(DISTINCT athlete_id) FROM apms_test_result WHERE task_id = ?
+> -- 已完成人数（以 member.status 为准，与"有效+selected+required fields 完整"的完成定义一致）
+> SELECT COUNT(*) FROM apms_task_member WHERE task_id = ? AND status = 'completed'
+> -- 部分完成人数
+> SELECT COUNT(*) FROM apms_task_member WHERE task_id = ? AND status = 'partial'
 > ```
-> 本系统规模不大（几十到几百名运动员），MySQL 聚合无压力，避免三处状态不一致。
+> **不使用** `SELECT COUNT(DISTINCT athlete_id) FROM apms_test_result WHERE task_id = ?` 作为"已测人数"——
+> 该 SQL 会把只录了一个无效 attempt（`is_valid=0`）或只完成一项选测的运动员算成"已测"，与完成定义冲突。
+> `member.status` 是由 `TaskProgressService.recalculate()` 根据严格完成定义推算的派生状态，任务卡片完成率必须基于该字段。
 
-#### apms_task_indicator — 任务关联指标
+#### apms_task_item — 任务测试项
+
+> 一个任务下发的测试项，可以是单指标或整个测试模型。
+> MODEL 类型（如 RSA）算一个整体：完成一个 model 算完成，不需要三个 indicator 全写入。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
+| id | bigint PK AI | 自增 |
 | task_id | bigint | 任务ID |
-| indicator_id | bigint | 指标ID |
-| model_id | bigint | 测试模型ID（可选） |
-| PK | (task_id, indicator_id) | 联合主键 |
+| item_type | varchar(10) | INDICATOR=单指标 / MODEL=测试模型 |
+| indicator_id | bigint NULL | 关联 apms_indicator.id（item_type=INDICATOR 时填写） |
+| model_id | bigint NULL | 关联 apms_test_model.id（item_type=MODEL 时填写） |
+| is_required | char(1) | 1=必测 0=选测 |
+| sort_order | int | 排序 |
+
+> **task_item 配置约束**（Service 层校验，不依赖数据库 CHECK）：
+> - `item_type=INDICATOR` 时：`indicator_id` 必填、`model_id` 必为 NULL
+> - `item_type=MODEL` 时：`model_id` 必填、`indicator_id` 必为 NULL
+> - 同一 `task_id` 下不允许重复配置相同的 `indicator_id` 或 `model_id`（避免同一指标/模型在一个任务里被多次下发）
+> - 违反约束时 Service 层抛出 `TaskItemConfigException`，不写入数据库
+
+> **任务完成判定**（"完成"= 有有效成绩，不是"数据库里建过一行"）：
+> - MODEL 项：至少存在一个 `is_valid=1 AND is_selected=1` 的 result，且该 result 下 `apms_test_model_field.is_required=1` 的字段均有值 → 完成
+> - INDICATOR 项：至少存在一个 `is_valid=1` 的 result 且其 value 有 `numeric_value` 或 `text_value` → 完成
+> - member.status = 所有 `is_required=1` 的 task_item 均完成 → completed；部分完成 → partial；无 → pending
 
 #### apms_task_member — 任务成员
 
 > `status` 反映运动员在本任务中的完成进度，三态而非二元。
-> 一个任务可含多项指标（身高、体重、30m、RSA），部分完成不算"已测"。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -403,33 +645,75 @@ INSERT INTO sys_dict_data VALUES
 | status | varchar(20) | pending=未测 partial=部分完成 completed=全部完成 |
 | PK | (task_id, athlete_id) | 联合主键 |
 
-> `status` 由录入结果时自动推算：该运动员在本任务应测指标中已录入结果的比例决定 pending/partial/completed。
+> `status` 由录入结果时自动推算：只看 `is_required=1`（必测）的 task_item 是否全部完成，`is_required=0`（选测）不计入判定。
+> - 所有必测项完成 → completed
+> - 部分完成 → partial
+> - 无 → pending
+>
 > 任务卡片上的完成率 = `COUNT(status='completed') / COUNT(*)`，实时计算不存库。
+>
+> **`status` 是派生缓存字段**，事实来源是 task_item + test_result + result_value。
+> 所有结果写操作（新增、修改、删除、CSV 导入、取消有效成绩、重新选择最佳 attempt）必须在同一事务内调用 `TaskProgressService.recalculate(taskId, athleteId)` 重新计算 status。
+> 另提供 `TaskProgressService.recalculateAll(taskId)` 支持任务级批量重算。
 
 ### 3.8 测试结果
 
-#### apms_test_result — 测试结果主记录
+#### apms_test_result — 测试结果主记录（一次 attempt）
+
+> **一行 = 一次试测尝试**。attempt_no / is_valid / is_selected 在此层定义，描述的是"这次尝试整体是否有效、是否被选中"，而不是其中某个字段。
+> 体态测量等无试测概念的指标：attempt_no=NULL, is_valid=1, is_selected=1，只一行。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | bigint PK AI | 自增 |
 | task_id | bigint NULL | 任务ID（可为空——支持不走任务流程直接补录体态/单项测量） |
+| task_item_id | bigint NULL | 关联 apms_task_item.id（明确归属哪个任务项；任务流程下录入时必填，直接补录时为空） |
 | athlete_id | bigint | 运动员ID |
 | model_id | bigint NULL | 测试模型ID（可为空——体态测量不一定对应某个测试模型） |
+| indicator_id | bigint NULL | 主指标ID（可选，单指标测试时填写；MODEL 类型任务可不填，靠 value.indicator_id 标识具体指标） |
+| session_key | varchar(50) NULL | 测量会话Key（同一次现场测量共享同一 key；用于聚合体态类多 result 到一条 body_measure；非聚合场景为 NULL） |
 | measure_date | date | 测试日期 |
+| attempt_no | int NULL | 第几次试测（1/2/3…，NULL=无试测概念如体态） |
+| is_valid | char(1) | 1=有效 0=无效（如抢跑、犯规） |
+| is_selected | char(1) | 0=否 1=选中（取最佳成绩时标记哪条被采纳） |
+| invalid_reason | varchar(200) | 无效原因（如"抢跑"、"犯规"，is_valid=0 时填写） |
 | data_source | varchar(20) | 来源（manual/csv/device） |
 | raw_payload | json NULL | 原始设备 payload（保留导入时的完整原始数据，不作规范化用途） |
 | create_by | varchar(64) | 录入人 |
 | create_time | datetime | 录入时间 |
+
+> **三层模型**：
+> ```
+> apms_test_result     = 一次 attempt（张三 30m 第2次试测）
+>   ├── apms_test_result_value  = 这次 attempt 的字段结果（total_time=4.25）
+>   └── apms_test_result_rep    = 这次 attempt 内部的多趟原始数据（RSA 7趟）
+> ```
+>
+> **RSA 多轮场景**：RSA 测两轮时，每轮是一个独立 attempt（attempt_no=1 和 attempt_no=2），各自的 7 趟 reps 分别挂在对应 result_id 下，不会混淆。
+>
+> **试测数据使用约定**：
+> - 趋势分析和组合计算只取 `is_valid=1 AND is_selected=1` 的 result
+> - 示例：张三 30m 冲刺 3 次试测，result #102 attempt=2 成绩 4.25s 被选中 → 组合计算和趋势只用 4.25
+>
+> **`is_selected` 唯一选中规则**（Service 层事务保证，不依赖数据库唯一约束）：
+> - **同一 `athlete_id + task_item_id` 下最多只能有一个 `is_selected=1` 的 attempt**
+>   - 原因：趋势/组合模型取值靠 `is_valid=1 AND is_selected=1`，允许多选会导致"取哪条"不确定
+> - **选中操作的事务规则**（`AttemptSelectionService.select(resultId)`）：
+>   1. 校验目标 result 的 `is_valid=1`（无效 attempt 不能被选中）
+>   2. 同 `athlete_id + task_item_id` 下其余所有 result 置 `is_selected=0`
+>   3. 目标 result 置 `is_selected=1`
+>   4. 同事务内调用 `TaskProgressService.recalculate(taskId, athleteId)`
+> - **无效强制不选中**：`is_valid=0` 的 attempt 的 `is_selected` 强制为 0
+>   - 标记 `is_valid=0` 时（如判定抢跑、犯规），同事务内将该 result 的 `is_selected` 置 0
+>   - 若该 result 原本是选中状态，需提示"原选中成绩已失效，请重新选择"或自动选下一个最优有效 attempt
+> - **无 task_item_id 的直接补录**（非任务流程）：不适用此规则，按 `athlete_id + indicator_id` 维度判定唯一选中
+> - 体态类无 attempt 概念的指标（attempt_no=NULL）：`is_valid=1, is_selected=1`，唯一一行，不触发选中规则
 
 #### apms_test_result_value — 规范化测试结果值
 
 > 核心设计：数字按数字存，文本按文本存，不做 varchar 化。
 > 趋势分析、AVG/MAX/MIN、参考范围判断、组合计算均直接基于 `numeric_value` 操作。
 > **业务约束：`indicator_id` 和 `field_id` 不能同时为 NULL**——至少有一个非空，用于标识该值的来源。
->
-> **多次试测**：专项测试（30m 冲刺、CMJ、伊利诺伊等）常有多次试测取最佳成绩，每行一条试测记录。
-> 与 RSA 的 `apms_test_result_rep`（同一次 attempt 内部的多趟 reps）是不同维度。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -443,15 +727,8 @@ INSERT INTO sys_dict_data VALUES
 | text_value | varchar(500) NULL | 文本型结果（终止阶段、主观描述等） |
 | unit | varchar(20) | 单位 |
 | is_derived | char(1) | 0=原始录入值 1=算法派生值（如 RSA 衰减率） |
-| attempt_no | int NULL | 第几次试测（1/2/3…，NULL=无试测概念如体态） |
-| is_valid | char(1) | 0=有效 1=无效（如抢跑、犯规） |
-| is_selected | char(1) | 0=否 1=选中（取最佳成绩时标记哪条被采纳） |
-| invalid_reason | varchar(200) | 无效原因（如"抢跑"、"犯规"，is_valid=1 时填写） |
-
-> **试测数据使用约定**：
-> - 趋势分析和组合计算只取 `is_valid=0 AND is_selected=1` 的值
-> - 示例：张三 30m 冲刺 3 次试测，attempt 2 成绩 4.25s 被选中 → 组合计算和趋势只用 4.25
-> - `attempt_no` 为 NULL 表示该指标无试测概念（如身高只测一次），直接取 `numeric_value`
+| algorithm_id | varchar(30) NULL | 算法ID（is_derived=1 时填写，如 rsa-decay） |
+| algorithm_version | varchar(20) NULL | 算法版本（is_derived=1 时填写，如 rsa-decay-v1） |
 
 #### apms_test_result_rep — 原始多次/多趟数据
 
@@ -514,7 +791,7 @@ INSERT INTO sys_dict_data VALUES
 | dept_id | bigint | 队伍ID（团队报告） |
 | task_id | bigint | 关联任务ID |
 | template_version | varchar(20) | 模板版本 |
-| content_snapshot | text | 内容快照（JSON） |
+| content_snapshot | longtext | 内容快照（JSON，完整报告内容，可能较大） |
 | file_path | varchar(500) | PDF 文件路径 |
 | generate_by | varchar(64) | 生成人 |
 | generate_time | datetime | 生成时间 |
@@ -539,8 +816,8 @@ sys_user（系统登录账号）    sys_dept（机构 → 队伍 → 小组，�
     │
     │
     ▼
- apms_test_task ──── apms_task_indicator ──── apms_indicator
-    │                                    ──── apms_test_model
+ apms_test_task ──── apms_task_item ──── apms_indicator (item_type=INDICATOR)
+    │                                  ──── apms_test_model (item_type=MODEL)
     │                                               │
     ├── apms_task_member                       apms_test_model_field
     │
@@ -603,10 +880,14 @@ sys_user（系统登录账号）    sys_dept（机构 → 队伍 → 小组，�
 > **T 分值域与 demo 数据对齐**：标准 T 分范围大致 20～80（±3σ 覆盖 99.7%），报告页柱状图值域设为 20～80。
 > demo [mock.js](file:///prototype/assets/mock.js) 中现有的 90/82/56/91/75 是旧的 0～100 风格，开发时替换为 T 分值。
 
-> **参考组统计量来源**：μ 和 σ 不是算法参数，而是数据参数。
+> **参考组统计量来源与快照**：μ 和 σ 不是算法参数，而是数据参数。
 > - 从 `apms_test_result_value` 按同队伍、同年龄组、同指标的历史数据实时聚合计算
-> - 设最低样本量门槛：N < 5 时不计算 T 分，界面显示「样本不足，无法生成标准分」
+> - **计算后将 μ、σ、样本量、参考口径快照保存到 `apms_combo_score.ref_snapshot`**，历史报告直接读快照，不重新计算
+> - 没有快照会导致：9月算的 T 分 = 63，12月队伍新增人后重新查询变成 58——同一历史记录分数自己变了，无法复现
+> - 设最低样本量门槛：N < 5 时不计算 T 分，界面显示「样本不足，无法生成本队参考分」
 > - 门槛值写入 `apms_combo_model` 的配置或系统参数项，不硬编码
+> - N ≥ 5 是**一期内部实现门槛**，不是统计学上可靠的行业标准，仅适用于演示和队内标准化
+> - 界面标注用「本队内部参考分」，**不叫「行业常模」**
 > - 系统上线初期数据不足属正常状态，不造假、不降门槛
 
 ### 4.5 算法版本管理
@@ -638,6 +919,46 @@ public interface AlgorithmCalculator<I, O> {
 | Khamis-Roche 成年身高 | khamis-roche-v1-pending | NOT_CONFIGURED |
 | RSA 衰减率 | rsa-decay-v1 | READY |
 | 组合指数（T 分） | combo-tscore-v1 | READY |
+
+### 4.6 设备结果接入扩展点（TestResultProvider）
+
+> 数据模型已预留 `data_source=device` 和 `raw_payload`，但一期不做完整设备 SDK。
+> 通过定义统一接口，一期实现 CSV Provider，未来按需扩展 Vald SmartSpeed 等设备 Provider，不改变核心结果处理流程。
+
+```java
+public interface TestResultProvider {
+    /** Provider 唯一编码（如 csv / vald_smart_speed / hawk_eye） */
+    String getProviderCode();
+
+    /** 从数据源拉取待导入的测试结果（CSV 解析 / 设备 API 拉取 / 文件解析） */
+    List<TestResultImportDto> fetch(TestResultRequest request);
+
+    /** 校验导入数据合法性（字段完整性、指标匹配、单位换算） */
+    default List<String> validate(List<TestResultImportDto> data) {
+        return Collections.emptyList();
+    }
+}
+```
+
+一期实现的 Provider：
+
+| Provider | 编码 | 数据源 | 说明 |
+|----------|------|--------|------|
+| CsvResultProvider | `csv` | 手工 CSV 文件 | 一期唯一实现，解析上传的 CSV，按 `task_id + athlete_id + task_item_id + attempt_no` 幂等写入 |
+
+> **Provider 接口是能力预留，不是厂商兼容清单**。下表仅为示例，展示接口形态，**不构成对任何厂商的接入承诺**：
+>
+> | 示例 Provider（未实现） | 编码 | 数据源 | 状态 |
+> |------------------------|------|--------|------|
+> | ValdSmartSpeedProvider | `vald_smart_speed` | Vald SmartSpeed API | 示例/待验证，需厂商开放接口资料 + 联调验证后才正式接入 |
+> | FutureDeviceProvider | `future_device` | 待定设备接口 | 示例占位，厂商未定 |
+>
+> **接入边界**：一期只做"手工 / CSV / 经验证的设备接口"三种来源。设备接入需先在 `apms_indicator.collection_method=device` 标记设备类指标，并通过 `raw_payload` 保留设备原始数据，规范化结果写入 `apms_test_result_value`。新设备接入需满足：
+> 1. 厂商提供正式开放接口文档
+> 2. 接口通过联调验证（字段映射、单位换算、数据完整性）
+> 3. 实现 `TestResultProvider` 接口并注册到 `ProviderRegistry`
+>
+> 不满足上述条件的设备不写入正式 DESIGN Provider 清单。
 
 ---
 
@@ -675,7 +996,18 @@ public interface AlgorithmCalculator<I, O> {
 | /apms/health/medical/record/{id} | DELETE | 删除医疗记录（级联删除附件文件） |
 | /apms/health/medical/record/{recordId}/files | GET | 某条记录下的附件列表 |
 | /apms/health/medical/record/{recordId}/upload | POST | 上传附件到指定医疗记录 |
-| /apms/health/medical/file/{fileId} | DELETE | 删除单个附件 |
+| /apms/health/medical/file/{fileId} | DELETE | 删除单个附件（`apms:medical:delete`） |
+| /apms/health/medical/file/{fileId}/download | GET | 下载附件（`apms:medical:download`） |
+
+> **医疗权限细分为四个独立权限点**：
+> | 权限标识 | 说明 |
+> |---------|------|
+> | `apms:medical:list` | 查看医疗记录和附件列表 |
+> | `apms:medical:upload` | 上传医疗附件 |
+> | `apms:medical:download` | 下载医疗附件 |
+> | `apms:medical:delete` | 删除医疗记录和附件 |
+>
+> **下载流程**：JWT 认证 → 校验 `apms:medical:download` 权限 → DataScope 校验（fileId → medical_record → athlete.primary_team_id 是否在数据范围内）→ 从私有存储流式输出。医疗文件**不进入 `/profile/**` 静态访问路径**。
 
 ### 5.4 PHV 生长发育
 
@@ -712,7 +1044,7 @@ public interface AlgorithmCalculator<I, O> {
 | /apms/task/list | GET | 任务看板列表 |
 | /apms/task/{id} | GET | 任务详情（含成员完成情况） |
 | /apms/task | POST | 创建任务 |
-| /apms/task/{id}/indicators | PUT | 配置任务指标 |
+| /apms/task/{id}/items | PUT | 配置任务测试项（INDICATOR/MODEL） |
 | /apms/task/{id}/members | PUT | 配置任务成员 |
 | /apms/task/{id}/result | POST | 录入测试结果（自动更新进度） |
 | /apms/task/{id}/import | POST | CSV批量导入结果 |
@@ -846,7 +1178,7 @@ src/views/apms/
 
 - RTP 状态管理与变更日志
 - PHV 测量录入 + Mirwald 计算
-- Khamis-Roche 占位实现（待系数确认）
+- Khamis-Roche 接口骨架 + `NOT_CONFIGURED` 禁用态（`calculate()` 抛 `AlgorithmNotConfiguredException`，界面显示"待业务方确认参数后启用"，**不产生任何假值**）
 - 成长趋势折线图
 - 医疗附件上传与权限控制
 
@@ -895,14 +1227,107 @@ src/views/apms/
 
 ### 9.1 算法单元测试
 
-为每个已确认公式准备 **golden cases**（固定输入 → 固定正确输出），代码改动后一跑即知公式有没有被改坏。
+为每个已确认公式准备 **golden cases**（固定输入 → 固定正确输出）。预期值由**人工独立核算**，不抄自实现代码。
 
-| 算法 | 测试用例 | 说明 |
-|------|---------|------|
-| Mirwald（男） | 身高 175 / 体重 65 / 坐高 92 / 年龄 14.2 → 预期 PHV 值 | 验证成熟度偏移计算 |
-| Mirwald（女） | 身高 162 / 体重 52 / 坐高 86 / 年龄 12.8 → 预期 PHV 值 | 性别系数不同 |
-| RSA 衰减率 | 7 趟成绩 [4.31, 4.42, 4.50, 4.48, 4.55, 4.61, 4.70] → 预期衰减率 | 验证公式：((sum(best) - sum(actual)) / (best × N)) × 100 |
-| 组合指数 | 两个指标值 + 权重 + direction → 预期 T 分 + 组合分 | 验证 Z 分方向翻转 + 加权 |
+#### Mirwald（男）
+
+| 输入 | 值 |
+|------|-----|
+| 身高 | 175 cm |
+| 体重 | 65 kg |
+| 坐高 | 92 cm |
+| 年龄 | 14.2 岁 |
+| 腿长 | 83 cm（计算值） |
+
+手工核算：
+
+```
+偏移 = -9.236
+  + 0.0002708 × (83 × 92)      = +2.0678
+  - 0.001663 × (14.2 × 83)     = -1.9600
+  + 0.007216 × (14.2 × 92)     = +9.4270
+  + 0.02292 × (65 / 175 × 100) = +0.8513
+= 1.1501
+```
+
+```java
+assertEquals(1.1501, result.getOffset(), 0.0001);
+assertEquals(13.05,  result.getPhvAge(), 0.01);
+```
+
+#### Mirwald（女）
+
+| 输入 | 值 |
+|------|-----|
+| 身高 | 162 cm |
+| 体重 | 52 kg |
+| 坐高 | 86 cm |
+| 年龄 | 12.8 岁 |
+| 腿长 | 76 cm（计算值） |
+
+手工核算：
+
+```
+偏移 = -9.376
+  + 0.0001882 × (76 × 86)      = +1.2301
+  + 0.0022 × (12.8 × 76)       = +2.1402
+  + 0.005841 × (12.8 × 86)     = +6.4298
+  - 0.002658 × (12.8 × 52)     = -1.7692
+  + 0.07693 × (52 / 162 × 100) = +2.4694
+= 1.1242
+```
+
+```java
+assertEquals(1.1242, result.getOffset(), 0.0001);
+assertEquals(11.68,  result.getPhvAge(), 0.01);
+```
+
+#### RSA 衰减率
+
+7 趟成绩：`[4.31, 4.42, 4.50, 4.48, 4.55, 4.61, 4.70]`
+
+手工核算：
+
+```
+总时间 = 4.31 + 4.42 + 4.50 + 4.48 + 4.55 + 4.61 + 4.70 = 31.57
+最佳  = 4.31
+n    = 7
+Sdec = (31.57 - 4.31 × 7) / (4.31 × 7) × 100
+    = (31.57 - 30.17) / 30.17 × 100
+    = 1.40 / 30.17 × 100
+    = 4.6404%
+```
+
+```java
+assertEquals(4.6404, result.getSdec(), 0.0001);
+```
+
+#### 组合指数
+
+| 指标 | 实际值 | evaluation_direction | direction_override | μ | σ | 权重 |
+|------|--------|----------------------|--------------------|---|---|------|
+| CMJ功率 | 54.0 W/kg | HIGHER_BETTER | NULL | 50.0 | 8.0 | 0.5 |
+| 10m冲刺 | 1.78 s | LOWER_BETTER | NULL | 1.90 | 0.06 | 0.5 |
+
+手工核算：
+
+```
+CMJ:  HIGHER_BETTER → direction=0（继承），不翻转
+Z_A = (54.0 - 50.0) / 8.0 = 0.5000
+T_A = 50 + 10 × 0.5 = 55.00
+
+冲刺: LOWER_BETTER → direction=1（继承），翻转
+Z_B = -(1.78 - 1.90) / 0.06 = 2.0000
+T_B = 50 + 10 × 2.0 = 70.00
+
+组合分 = 0.5 × 55.00 + 0.5 × 70.00 = 62.50
+```
+
+```java
+assertEquals(55.00, result.getTScoreA(), 0.01);
+assertEquals(70.00, result.getTScoreB(), 0.01);
+assertEquals(62.50, result.getComboScore(), 0.01);
+```
 
 Khamis-Roche 不写 golden case（NOT_CONFIGURED 状态下 `calculate()` 直接拒绝，无数字输出）。
 
@@ -913,15 +1338,15 @@ Khamis-Roche 不写 golden case（NOT_CONFIGURED 状态下 `calculate()` 直接�
 | RTP 只能康复师修改 | 非康复师角色调用修改接口返回 403 |
 | RTP 日志正确追加 | 每次状态变更后 `apms_rtp_log` 新增一条，旧记录不变 |
 | 任务进度正确 | `apms_task_member.status` 与 `apms_test_result` 实际数据一致（pending/partial/completed） |
-| CSV 重复导入 | 同一 task_id + athlete_id 重复导入时提示已存在，不产生重复数据 |
+| CSV 重复导入 | 幂等粒度为 task_id + athlete_id + task_item + attempt_no；同一组合重复导入时提示已存在或覆盖，不产生重复数据。同一运动员的不同 task_item（30m、RSA、Yo-Yo）不互相冲突 |
 | 多次试测最佳成绩 | 3 次 attempt 中 `is_selected=1` 的那条是最优有效值，无效成绩不参与 |
 
 ### 9.3 安全测试
 
 | 场景 | 验证点 |
 |------|--------|
-| 未登录不能下载医疗附件 | 无 token 访问 `/apms/medical/file/download` 返回 401 |
-| 无医疗权限不能下载 | 有 token 但角色无 `apms:medical:list` 权限返回 403 |
+| 未登录不能下载医疗附件 | 无 token 访问 `/apms/health/medical/file/{fileId}/download` 返回 401 |
+| 无医疗权限不能下载 | 有 token 但角色无 `apms:medical:download` 权限返回 403 |
 | 越权访问其他队伍运动员 | 体能师 A 查询体能师 B 队伍的运动员列表返回空 |
 
 ### 9.4 验收测试
