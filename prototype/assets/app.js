@@ -109,7 +109,7 @@ function renderShell(activeKey, crumb) {
   const topbar = `
   <header class="topbar">
     <button class="menu-toggle" data-menu-toggle aria-label="打开菜单">${ICONS.menu}</button>
-    <div class="crumb">运动员训练数据管理系统 <span class="sep">/</span> <b>${crumb}</b></div>
+    <div class="crumb">运动员管理系统 <span class="sep">/</span> <b>${crumb}</b></div>
     <div class="top-search">
       ${ICONS.search}<span>搜索队员、测试任务或报告</span><kbd>Ctrl K</kbd>
     </div>
