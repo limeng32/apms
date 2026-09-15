@@ -81,24 +81,6 @@
             </el-input>
           </el-form-item>
 
-          <el-form-item prop="code" v-if="captchaEnabled">
-            <div class="lf-captcha">
-              <el-input
-                v-model="loginForm.code"
-                auto-complete="off"
-                placeholder="验证码"
-                style="flex: 1"
-                @keyup.enter="handleLogin"
-              >
-                <template #prefix><el-icon><CircleCheck/></el-icon></template>
-              </el-input>
-              <div class="lf-captcha-img" @click="getCode">
-                <img :src="codeUrl" class="lf-code-img" alt="验证码" v-if="codeUrl"/>
-                <span v-else>点击获取</span>
-              </div>
-            </div>
-          </el-form-item>
-
           <div class="lf-row">
             <el-checkbox v-model="loginForm.rememberMe">记住我</el-checkbox>
             <a href="javascript:;" class="lf-forgot" @click="handleForgot">忘记密码？</a>
@@ -136,7 +118,6 @@
 </template>
 
 <script setup>
-import { getCodeImg } from "@/api/login"
 import Cookies from "js-cookie"
 import { encrypt, decrypt } from "@/utils/jsencrypt"
 import useUserStore from '@/store/modules/user'
@@ -168,20 +149,15 @@ const showPassword = ref(false)
 const loginForm = ref({
   username: "admin",
   password: "admin123",
-  rememberMe: false,
-  code: "",
-  uuid: ""
+  rememberMe: false
 })
 
-const loginRules = {
+const loginRules = reactive({
   username: [{ required: true, trigger: "blur", message: "请输入您的账号" }],
-  password: [{ required: true, trigger: "blur", message: "请输入您的密码" }],
-  code: [{ required: true, trigger: "change", message: "请输入验证码" }]
-}
+  password: [{ required: true, trigger: "blur", message: "请输入您的密码" }]
+})
 
-const codeUrl = ref("")
 const loading = ref(false)
-const captchaEnabled = ref(true)
 const register = ref(false)
 const redirect = ref(undefined)
 
@@ -213,20 +189,7 @@ function handleLogin() {
         router.push({ path: redirect.value || "/", query: otherQueryParams })
       }).catch(() => {
         loading.value = false
-        if (captchaEnabled.value) {
-          getCode()
-        }
       })
-    }
-  })
-}
-
-function getCode() {
-  getCodeImg().then(res => {
-    captchaEnabled.value = res.captchaEnabled === undefined ? true : res.captchaEnabled
-    if (captchaEnabled.value) {
-      codeUrl.value = "data:image/gif;base64," + res.img
-      loginForm.value.uuid = res.uuid
     }
   })
 }
@@ -245,7 +208,6 @@ function getCookie() {
 function quickFill(role, name) {
   loginForm.value.username = role
   loginForm.value.password = role + '123'
-  getCode()
   proxy.$modal.msgSuccess(`已填入演示账号：${name}`)
 }
 
@@ -253,7 +215,6 @@ function handleForgot() {
   proxy.$modal.msgWarning('请联系管理员重置密码')
 }
 
-getCode()
 getCookie()
 </script>
 
@@ -366,32 +327,6 @@ getCookie()
 }
 .lf-form {
   margin-top: 30px;
-}
-
-/* 验证码 */
-.lf-captcha {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  width: 100%;
-}
-.lf-captcha-img {
-  width: 110px;
-  height: 40px;
-  flex: none;
-  border: 1px solid #e3eae6;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #f1f7f4, #e6f2ec);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  overflow: hidden;
-  &:hover { border-color: #4aa886; }
-  .lf-code-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
 }
 
 /* 输入框 */
@@ -525,9 +460,6 @@ html.dark .login-form-side {
 }
 html.dark .lf-title { color: var(--el-text-color-primary); }
 html.dark .lf-subtitle { color: var(--el-text-color-secondary); }
-html.dark .lf-captcha-img {
-  background: linear-gradient(135deg, #1a261f, #0d1a16);
-}
 html.dark .lf-role-btn {
   background: var(--el-bg-color-overlay);
   border-color: var(--el-border-color);
