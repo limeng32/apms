@@ -12,19 +12,60 @@
         <result column="ref_snapshot"        property="refSnapshot"/>
         <result column="algo_version"        property="algoVersion"/>
         <result column="calculated_at"      property="calculatedAt"/>
+        <result column="athlete_name"       property="athleteName"/>
+        <result column="athlete_team"       property="athleteTeam"/>
+        <result column="combo_model_name"   property="comboModelName"/>
     </resultMap>
 
+    <sql id="selectVo">
+        SELECT
+            s.id, s.combo_model_id, s.athlete_id, s.trigger_result_id,
+            s.combo_score, s.ref_snapshot, s.algo_version, s.calculated_at,
+            a.name AS athlete_name, d.dept_name AS athlete_team,
+            cm.formula AS combo_model_name
+        FROM apms_combo_score s
+        LEFT JOIN apms_athlete a ON s.athlete_id = a.athlete_id
+        LEFT JOIN sys_dept d     ON a.primary_team_id = d.dept_id
+        LEFT JOIN apms_combo_model cm ON s.combo_model_id = cm.id
+    </sql>
+
+    <select id="selectList" parameterType="com.ruoyi.system.domain.apms.ApmsComboScore" resultMap="ApmsComboScoreResult">
+        <include refid="selectVo"/>
+        <where>
+            <if test="comboModelId != null"> AND s.combo_model_id = #{comboModelId}</if>
+            <if test="athleteId != null"> AND s.athlete_id = #{athleteId}</if>
+            <if test="params.dataScope != null and params.dataScope != ''"> AND ${params.dataScope}</if>
+        </where>
+        ORDER BY s.combo_score DESC, s.calculated_at DESC
+    </select>
+
+    <select id="selectUnique" resultMap="ApmsComboScoreResult">
+        <include refid="selectVo"/>
+        WHERE s.athlete_id = #{athleteId} AND s.combo_model_id = #{comboModelId}
+          AND s.trigger_result_id = #{triggerResultId}
+        LIMIT 1
+    </select>
+
     <select id="selectById" parameterType="Long" resultMap="ApmsComboScoreResult">
-        SELECT id, combo_model_id, athlete_id, trigger_result_id, combo_score,
-               ref_snapshot, algo_version, calculated_at
-        FROM apms_combo_score WHERE id = #{id}
+        <include refid="selectVo"/>
+        WHERE s.id = #{id}
     </select>
 
     <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsComboScore" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO apms_combo_score (combo_model_id, athlete_id, trigger_result_id, combo_score,
                                       ref_snapshot, algo_version, calculated_at)
         VALUES (#{comboModelId}, #{athleteId}, #{triggerResultId}, #{comboScore},
-                #{refSnapshot}, #{algoVersion}, #{calculatedAt})
+                #{refSnapshot}, #{algoVersion}, IFNULL(#{calculatedAt}, sysdate()))
     </insert>
+
+    <delete id="deleteById" parameterType="Long">
+        DELETE FROM apms_combo_score WHERE id = #{id}
+    </delete>
+
+    <delete id="deleteByUnique">
+        DELETE FROM apms_combo_score
+        WHERE athlete_id = #{athleteId} AND combo_model_id = #{comboModelId}
+          AND trigger_result_id = #{triggerResultId}
+    </delete>
 
 </mapper>

@@ -131,7 +131,7 @@
       }
 
       .el-sub-menu.is-active > .el-sub-menu__title {
-        color: var(--current-color, #409eff) !important;
+        color: var(--current-color, #2c8a57) !important;
       }
 
       .el-menu-item:not(.is-active),
@@ -166,7 +166,7 @@
       }
 
       .el-menu-item.is-active {
-        color: var(--current-color, #409eff) !important;
+        color: var(--current-color, #2c8a57) !important;
         position: relative;
 
         &::before {
@@ -180,7 +180,7 @@
       }
 
       .el-sub-menu.is-active > .el-sub-menu__title {
-        color: var(--current-color, #409eff) !important;
+        color: var(--current-color, #2c8a57) !important;
       }
 
       .el-menu-item:not(.is-active):hover,
