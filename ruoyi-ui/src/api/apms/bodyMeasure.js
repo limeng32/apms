@@ -1,5 +1,14 @@
 import request from '@/utils/request'
 
+// 全局列表（DataScope 队伍隔离）
+export function list(query) {
+  return request({
+    url: '/apms/body-measure/list',
+    method: 'get',
+    params: query
+  })
+}
+
 // 按运动员查询所有测量记录
 export function listByAthlete(athleteId) {
   return request({

@@ -10,6 +10,9 @@ import com.ruoyi.system.domain.apms.ApmsBodyMeasure;
  */
 public interface ApmsBodyMeasureMapper {
 
+    /** 全局列表（JOIN athlete + dept，可选 deptId/athleteId 过滤） */
+    List<ApmsBodyMeasure> selectList(ApmsBodyMeasure query);
+
     /** 按ID查询 */
     ApmsBodyMeasure selectById(Long id);
 

@@ -24,6 +24,7 @@
         <result property="createBy"            column="create_by"/>
         <result property="createTime"          column="create_time"/>
         <result property="athleteName"         column="athlete_name"/>
+        <result property="athleteTeam"         column="athlete_team"/>
     </resultMap>
 
     <sql id="selectApmsPhvRecordVo">
@@ -34,10 +35,21 @@
             r.maturity_offset, r.predicted_phv_age, r.predicted_adult_height,
             r.mirwald_version, r.khamis_version, r.input_snapshot,
             r.create_by, r.create_time,
-            a.name AS athlete_name
+            a.name AS athlete_name, d.dept_name AS athlete_team
         FROM apms_phv_record r
         LEFT JOIN apms_athlete a ON r.athlete_id = a.athlete_id
+        LEFT JOIN sys_dept d     ON a.primary_team_id = d.dept_id
     </sql>
+
+    <select id="selectList" parameterType="com.ruoyi.system.domain.apms.ApmsPhvRecord" resultMap="ApmsPhvRecordResult">
+        <include refid="selectApmsPhvRecordVo"/>
+        <where>
+            <if test="athleteId != null"> AND r.athlete_id = #{athleteId}</if>
+            <if test="deptId != null"> AND a.primary_team_id = #{deptId}</if>
+            <if test="params.dataScope != null and params.dataScope != ''"> AND ${params.dataScope}</if>
+        </where>
+        ORDER BY r.measure_date DESC, r.id DESC
+    </select>
 
     <select id="selectById" parameterType="Long" resultMap="ApmsPhvRecordResult">
         <include refid="selectApmsPhvRecordVo"/>

@@ -16,15 +16,29 @@
         <result property="sourceSessionKey" column="source_session_key"/>
         <result property="createBy"        column="create_by"/>
         <result property="createTime"      column="create_time"/>
+        <result property="athleteName"     column="athlete_name"/>
+        <result property="athleteTeam"     column="athlete_team"/>
     </resultMap>
 
     <sql id="selectApmsBodyMeasureVo">
         SELECT
-            id, athlete_id, measure_date, height, weight, sit_height,
-            body_fat_rate, waist, data_source, source_task_id, source_session_key,
-            create_by, create_time
-        FROM apms_body_measure
+            m.id, m.athlete_id, m.measure_date, m.height, m.weight, m.sit_height,
+            m.body_fat_rate, m.waist, m.data_source, m.source_task_id, m.source_session_key,
+            m.create_by, m.create_time,
+            a.name AS athlete_name, d.dept_name AS athlete_team
+        FROM apms_body_measure m
+        LEFT JOIN apms_athlete a ON m.athlete_id = a.athlete_id
+        LEFT JOIN sys_dept d     ON a.primary_team_id = d.dept_id
     </sql>
+
+    <select id="selectList" parameterType="com.ruoyi.system.domain.apms.ApmsBodyMeasure" resultMap="ApmsBodyMeasureResult">
+        <include refid="selectApmsBodyMeasureVo"/>
+        <where>
+            <if test="athleteId != null"> AND m.athlete_id = #{athleteId}</if>
+            <if test="params.dataScope != null and params.dataScope != ''"> AND ${params.dataScope}</if>
+        </where>
+        ORDER BY m.measure_date DESC, m.id DESC
+    </select>
 
     <select id="selectById" parameterType="Long" resultMap="ApmsBodyMeasureResult">
         <include refid="selectApmsBodyMeasureVo"/>

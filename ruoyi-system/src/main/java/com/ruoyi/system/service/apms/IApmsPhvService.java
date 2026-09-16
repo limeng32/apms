@@ -10,6 +10,9 @@ import com.ruoyi.system.domain.apms.ApmsPhvRecord;
  */
 public interface IApmsPhvService {
 
+    /** 全局列表 */
+    List<ApmsPhvRecord> list(ApmsPhvRecord query);
+
     /** 按ID查询 */
     ApmsPhvRecord selectById(Long id);
 

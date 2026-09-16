@@ -29,6 +29,11 @@ import com.ruoyi.system.util.apms.MirwaldCalculator;
 @Service
 public class ApmsPhvServiceImpl implements IApmsPhvService {
 
+    @Override
+    public List<ApmsPhvRecord> list(ApmsPhvRecord query) {
+        return phvMapper.selectList(query);
+    }
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Autowired

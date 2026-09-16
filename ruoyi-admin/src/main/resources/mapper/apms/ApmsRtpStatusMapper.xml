@@ -12,15 +12,17 @@
         <result property="updatedBy"      column="updated_by"/>
         <result property="updatedTime"    column="updated_time"/>
         <result property="athleteName"    column="athlete_name"/>
+        <result property="athleteTeam"    column="athlete_team"/>
     </resultMap>
 
     <sql id="selectApmsRtpStatusVo">
         SELECT
             s.id, s.athlete_id, s.status, s.reason, s.training_limit,
             s.next_review_date, s.updated_by, s.updated_time,
-            a.name AS athlete_name
+            a.name AS athlete_name, d.dept_name AS athlete_team
         FROM apms_rtp_status s
         LEFT JOIN apms_athlete a ON s.athlete_id = a.athlete_id
+        LEFT JOIN sys_dept d     ON a.primary_team_id = d.dept_id
     </sql>
 
     <select id="selectByAthleteId" parameterType="Long" resultMap="ApmsRtpStatusResult">

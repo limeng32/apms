@@ -39,6 +39,9 @@ public class ApmsRtpStatus {
     /** 运动员姓名（关联查询） */
     private String athleteName;
 
+    /** 运动员所在队伍（关联查询） */
+    private String athleteTeam;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public Long getAthleteId() { return athleteId; }
@@ -57,4 +60,6 @@ public class ApmsRtpStatus {
     public void setUpdatedTime(Date updatedTime) { this.updatedTime = updatedTime; }
     public String getAthleteName() { return athleteName; }
     public void setAthleteName(String athleteName) { this.athleteName = athleteName; }
+    public String getAthleteTeam() { return athleteTeam; }
+    public void setAthleteTeam(String athleteTeam) { this.athleteTeam = athleteTeam; }
 }

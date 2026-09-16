@@ -20,6 +20,11 @@ public class ApmsBodyMeasureServiceImpl implements IApmsBodyMeasureService {
     private ApmsBodyMeasureMapper measureMapper;
 
     @Override
+    public List<ApmsBodyMeasure> list(ApmsBodyMeasure query) {
+        return measureMapper.selectList(query);
+    }
+
+    @Override
     public ApmsBodyMeasure selectById(Long id) {
         return measureMapper.selectById(id);
     }

@@ -2,6 +2,8 @@ package com.ruoyi.system.domain.apms;
 
 import java.math.BigDecimal;
 import java.util.Date;
+import java.util.Map;
+import java.util.HashMap;
 import com.fasterxml.jackson.annotation.JsonFormat;
 
 /**
@@ -75,6 +77,17 @@ public class ApmsPhvRecord {
     /** 运动员姓名（关联查询） */
     private String athleteName;
 
+    /** 运动员所在队伍（关联查询） */
+    private String athleteTeam;
+
+    /** 队伍筛选条件（非持久化） */
+    private Long deptId;
+
+    /** DataScope 注入的参数（非持久化） */
+    private Map<String, Object> params = new HashMap<>();
+    public Map<String, Object> getParams() { return params; }
+    public void setParams(Map<String, Object> params) { this.params = params; }
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public Long getAthleteId() { return athleteId; }
@@ -117,4 +130,8 @@ public class ApmsPhvRecord {
     public void setCreateTime(Date createTime) { this.createTime = createTime; }
     public String getAthleteName() { return athleteName; }
     public void setAthleteName(String athleteName) { this.athleteName = athleteName; }
+    public String getAthleteTeam() { return athleteTeam; }
+    public void setAthleteTeam(String athleteTeam) { this.athleteTeam = athleteTeam; }
+    public Long getDeptId() { return deptId; }
+    public void setDeptId(Long deptId) { this.deptId = deptId; }
 }

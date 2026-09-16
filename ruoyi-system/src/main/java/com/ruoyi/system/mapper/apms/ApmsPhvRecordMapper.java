@@ -11,6 +11,9 @@ import com.ruoyi.system.domain.apms.ApmsPhvRecord;
  */
 public interface ApmsPhvRecordMapper {
 
+    /** 全局列表（JOIN athlete + dept，可选 deptId/athleteId 过滤） */
+    List<ApmsPhvRecord> selectList(ApmsPhvRecord query);
+
     /** 按ID查询 */
     ApmsPhvRecord selectById(Long id);
 

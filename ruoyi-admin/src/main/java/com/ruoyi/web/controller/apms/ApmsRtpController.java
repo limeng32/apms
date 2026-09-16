@@ -31,7 +31,7 @@ public class ApmsRtpController extends BaseController {
     /**
      * 查询运动员当前RTP状态（无记录=未评估）
      */
-    @PreAuthorize("@ss.hasPermi('apms:athlete:query')")
+    @PreAuthorize("@ss.hasPermi('apms:rtp:query')")
     @GetMapping("/status/{athleteId}")
     public AjaxResult getStatus(@PathVariable Long athleteId) {
         return success(rtpService.selectStatusByAthleteId(athleteId));
@@ -40,7 +40,7 @@ public class ApmsRtpController extends BaseController {
     /**
      * 列表查询（用于统计/批量查看）
      */
-    @PreAuthorize("@ss.hasPermi('apms:athlete:query')")
+    @PreAuthorize("@ss.hasPermi('apms:rtp:list')")
     @GetMapping("/status/list")
     public AjaxResult listStatus() {
         List<ApmsRtpStatus> list = rtpService.selectStatusList();
@@ -50,7 +50,7 @@ public class ApmsRtpController extends BaseController {
     /**
      * 查询RTP变更历史
      */
-    @PreAuthorize("@ss.hasPermi('apms:athlete:query')")
+    @PreAuthorize("@ss.hasPermi('apms:rtp:query')")
     @GetMapping("/log/{athleteId}")
     public AjaxResult getLog(@PathVariable Long athleteId) {
         List<ApmsRtpLog> list = rtpService.selectLogByAthleteId(athleteId);
@@ -61,7 +61,7 @@ public class ApmsRtpController extends BaseController {
      * 更新RTP状态（自动写入变更日志，事务绑定）
      * Body: { athleteId, status, reason, trainingLimit, nextReviewDate }
      */
-    @PreAuthorize("@ss.hasPermi('apms:athlete:edit')")
+    @PreAuthorize("@ss.hasPermi('apms:rtp:edit')")
     @PostMapping("/update")
     public AjaxResult update(@RequestBody ApmsRtpStatus body) {
         rtpService.updateRtpStatus(
@@ -75,7 +75,7 @@ public class ApmsRtpController extends BaseController {
      * 清除RTP状态（回到未评估，自动写入日志）
      * Body: { reason }
      */
-    @PreAuthorize("@ss.hasPermi('apms:athlete:edit')")
+    @PreAuthorize("@ss.hasPermi('apms:rtp:clear')")
     @PostMapping("/clear/{athleteId}")
     public AjaxResult clear(@PathVariable Long athleteId, @RequestBody(required = false) ApmsRtpLog body) {
         String reason = body != null ? body.getReason() : null;

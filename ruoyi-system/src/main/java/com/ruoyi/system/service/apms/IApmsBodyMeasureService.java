@@ -10,6 +10,9 @@ import com.ruoyi.system.domain.apms.ApmsBodyMeasure;
  */
 public interface IApmsBodyMeasureService {
 
+    /** 全局列表 */
+    List<ApmsBodyMeasure> list(ApmsBodyMeasure query);
+
     /** 按ID查询 */
     ApmsBodyMeasure selectById(Long id);
 
