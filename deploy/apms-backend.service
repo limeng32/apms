@@ -1,0 +1,17 @@
+[Unit]
+Description=APMS Backend (Spring Boot)
+After=network.target mysql.service redis.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/apms
+# 不写 EnvironmentFile，由 start-backend.sh 自己 source env.conf
+ExecStart=/opt/apms/start-backend.sh
+ExecStartPost=/bin/sh -c 'systemctl show apms-backend.service -p MainPID --value > /opt/apms/APPID'
+ExecStopPost=/bin/sh -c 'rm -f /opt/apms/APPID'
+Restart=on-failure
+RestartSec=5
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

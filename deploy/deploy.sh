@@ -81,53 +81,49 @@ mysql_cli() { mysql -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" --password="$DB_PASS"
 # mysqldump 必须指定 --databases "$DB_NAME"，否则会尝试 dump 所有 DB（包括 mysql 系统库），可能权限不够失败
 mysql_dump() { mysqldump -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" --password="$DB_PASS" --single-transaction --routines --triggers --databases "$DB_NAME" "$@"; }
 
-# ===== do_stop: 停止后端进程 =====
+# ===== do_stop: systemd 停止 =====
 do_stop() {
-    log "停止后端 (PID file: $PIDFILE, port: $APP_PORT)..."
+    log "停止后端 (systemd service: apms-backend)..."
 
-    # 优先从 PID 文件读
-    if [ -f "$PIDFILE" ]; then
-        PID=$(cat "$PIDFILE" 2>/dev/null | tr -d '[:space:]')
-        if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
-            kill "$PID" 2>/dev/null && log "  已发送 SIGTERM 给 $PID"
-            # 等 10s 优雅退出
-            for i in $(seq 1 10); do
-                if ! kill -0 "$PID" 2>/dev/null; then
-                    rm -f "$PIDFILE"
-                    log "  ✅ 进程已退出 ($PID)"
-                    return 0
-                fi
-                sleep 1
-            done
-            # 兜底 SIGKILL
-            kill -9 "$PID" 2>/dev/null
-            rm -f "$PIDFILE"
-            warn "  超时，已 SIGKILL $PID"
-        else
-            warn "  PID 文件残留，清理 (进程已不存在)"
-            rm -f "$PIDFILE"
+    # 先看 service 是否存在/运行
+    if ! systemctl list-unit-files | grep -q '^apms-backend.service'; then
+        warn "systemd service 不存在"
+        # 兜底：按端口杀（macOS lsof / Linux ss）
+        PIDS=""
+        if command -v lsof >/dev/null 2>&1; then
+            PIDS=$(lsof -tiTCP:"$APP_PORT" -sTCP:LISTEN 2>/dev/null || true)
         fi
+        if [ -z "$PIDS" ] && command -v ss >/dev/null 2>&1; then
+            PIDS=$(ss -tlnp 2>/dev/null | grep ":${APP_PORT} " | grep -oP 'pid=\K[0-9]+' | head -1 || true)
+        fi
+        if [ -n "$PIDS" ]; then
+            warn "  端口 $APP_PORT 仍被占用 (PID=$PIDS)，强制 kill..."
+            kill -9 $PIDS 2>/dev/null || true
+        fi
+        rm -f "$PIDFILE"
+        return 0
     fi
 
-    # 兜底：按端口杀（macOS lsof / Linux ss）
-    PIDS=""
-    if command -v lsof >/dev/null 2>&1; then
-        PIDS=$(lsof -tiTCP:"$APP_PORT" -sTCP:LISTEN 2>/dev/null || true)
-    fi
-    if [ -z "$PIDS" ] && command -v ss >/dev/null 2>&1; then
-        PIDS=$(ss -tlnp 2>/dev/null | grep ":${APP_PORT} " | grep -oP 'pid=\K[0-9]+' | head -1 || true)
-    fi
-    if [ -n "$PIDS" ]; then
-        warn "  端口 $APP_PORT 仍被占用 (PID=$PIDS)，强制 kill..."
-        kill -9 $PIDS 2>/dev/null || true
+    systemctl stop apms-backend 2>/dev/null
+    # 等 15s 优雅退出
+    for i in $(seq 1 15); do
+        STATE=$(systemctl is-active apms-backend 2>/dev/null || echo "inactive")
+        if [ "$STATE" = "inactive" ] || [ "$STATE" = "failed" ]; then
+            rm -f "$PIDFILE"
+            log "  ✅ 已停止 (state=$STATE)"
+            return 0
+        fi
         sleep 1
+    done
+    # 兜底 kill
+    PIDS=$(systemctl show apms-backend.service -p MainPID --value 2>/dev/null || echo "")
+    if [ -n "$PIDS" ] && [ "$PIDS" != "0" ]; then
+        warn "  超时，强制 kill $PIDS"
+        kill -9 "$PIDS" 2>/dev/null
+        systemctl reset-failed apms-backend 2>/dev/null
     fi
-
-    # 确认端口释放
-    if command -v lsof >/dev/null 2>&1 && lsof -tiTCP:"$APP_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-        err "  ❌ 端口 $APP_PORT 仍被占用"
-    fi
-    log "  ✅ 端口 $APP_PORT / $MGMT_PORT 已释放"
+    rm -f "$PIDFILE"
+    log "  ✅ 已停止"
 }
 
 # ===== 找 Java 17（优先显式路径，fallback 到 PATH）=====
@@ -152,59 +148,80 @@ find_java17() {
     return 1
 }
 
-# ===== do_start: 启动后端进程 =====
+# ===== do_start: systemd 启动 =====
 do_start() {
     JAVA_BIN=$(find_java17) || err "找不到 Java 17，请安装 /usr/lib/jvm/java-17-openjdk"
     log "Java: $JAVA_BIN ($("$JAVA_BIN" -version 2>&1 | head -1))"
     [ -f "$JAR" ] || err "jar 不存在: $JAR"
-    mkdir -p "$LOGDIR" "$(dirname "$PIDFILE")"
 
-    # PID 文件检查
-    if [ -f "$PIDFILE" ]; then
-        OLD_PID=$(cat "$PIDFILE" 2>/dev/null | tr -d '[:space:]')
-        if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
-            warn "进程已在运行! PID=$OLD_PID"
-            return 0
-        fi
-        rm -f "$PIDFILE"
+    # 写 env.conf + start-backend.sh
+    cat > "$BINDIR/env.conf" <<EOF
+PROFILE=$PROFILE
+APP_PORT=$APP_PORT
+MGMT_PORT=$MGMT_PORT
+DB_HOST=$DB_HOST
+DB_PORT=$DB_PORT
+DB_NAME=$DB_NAME
+DB_USER=$DB_USER
+DB_PASS=$DB_PASS
+REDIS_HOST=$REDIS_HOST
+REDIS_PORT=$REDIS_PORT
+REDIS_PASS=$REDIS_PASS
+REDIS_DB=$REDIS_DB
+EOF
+    log "env.conf 已更新"
+
+    # 生成 start-backend.sh（systemd ExecStart 调这个）
+    cat > "$BINDIR/start-backend.sh" <<'STARTSH'
+#!/usr/bin/env bash
+set -e
+BINDIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck disable=SC1091
+source "$BINDIR/env.conf"
+JAVA="${JAVA_BIN:-/usr/lib/jvm/java-17-openjdk/bin/java}"
+JAR="$BINDIR/backend/apms.jar"
+LOGDIR="$BINDIR/logs"
+mkdir -p "$LOGDIR"
+exec "$JAVA" \
+  -Xms256m -Xmx512m \
+  -DLOG_PATH="$LOGDIR" \
+  -Druoyi.profile="$BINDIR/backend/uploadPath" \
+  -jar "$JAR" \
+  --spring.profiles.active=druid,"${PROFILE}" \
+  --server.port="${APP_PORT}" \
+  --management.server.port="${MGMT_PORT}" \
+  "--spring.datasource.druid.master.url=jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8" \
+  --spring.datasource.druid.master.username="${DB_USER}" \
+  "--spring.datasource.druid.master.password=${DB_PASS}" \
+  --spring.data.redis.database="${REDIS_DB}" \
+  --spring.data.redis.host="${REDIS_HOST}" \
+  --spring.data.redis.port="${REDIS_PORT}" \
+  "--spring.data.redis.password=${REDIS_PASS}" \
+  >> "$LOGDIR/stdout.log" 2>&1
+STARTSH
+    chmod +x "$BINDIR/start-backend.sh"
+    log "start-backend.sh 已生成"
+
+    # 同步 service 文件
+    local SERVICE_TARGET="/etc/systemd/system/apms-backend.service"
+    if [ -f "$BINDIR/deploy/apms-backend.service" ]; then
+        cp -f "$BINDIR/deploy/apms-backend.service" "$SERVICE_TARGET"
+    elif [ -f "$(dirname "$0")/apms-backend.service" ]; then
+        cp -f "$(dirname "$0")/apms-backend.service" "$SERVICE_TARGET"
     fi
+    systemctl daemon-reload
 
     log "启动后端 (profile=$PROFILE, port=$APP_PORT)..."
     echo ""
     echo "=========================================="
-    echo "  APMS Start"
-    echo "  jar:      $JAR"
+    echo "  APMS Start (systemd)"
+    echo "  service:  apms-backend"
     echo "  profile:  $PROFILE"
     echo "  port:     $APP_PORT (mgmt: $MGMT_PORT)"
-    echo "  config:   ${CONFIGDIR:-<jar内默认>}"
-    echo "  pidfile:  $PIDFILE"
     echo "=========================================="
 
-    local -a JAVA_OPTS=(
-        -Xms256m -Xmx512m
-        -DLOG_PATH="$LOGDIR"
-        -Druoyi.profile="$JARDIR/uploadPath"
-    )
-    local -a SPRING_ARGS=(
-        -jar "$JAR"
-        "--spring.profiles.active=druid,$PROFILE"
-        "--server.port=$APP_PORT"
-        "--management.server.port=$MGMT_PORT"
-        # DB — 用命令行扁平属性只覆盖叶子，不冲掉 druid.yml 的连接池配置
-        "--spring.datasource.druid.master.url=jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8"
-        "--spring.datasource.druid.master.username=$DB_USER"
-        "--spring.datasource.druid.master.password=$DB_PASS"
-        # Redis — 同理
-        "--spring.data.redis.database=$REDIS_DB"
-        "--spring.data.redis.host=$REDIS_HOST"
-        "--spring.data.redis.port=$REDIS_PORT"
-    )
-    [ -n "$REDIS_PASS" ] && SPRING_ARGS+=("--spring.data.redis.password=$REDIS_PASS")
-
-    nohup "$JAVA_BIN" "${JAVA_OPTS[@]}" "${SPRING_ARGS[@]}" > "$LOGDIR/stdout.log" 2>&1 &
-    PID=$!
-    echo "$PID" > "$PIDFILE"
-    log "  ✅ 启动 PID=$PID (写入 $PIDFILE)"
+    systemctl reset-failed apms-backend 2>/dev/null
+    systemctl start apms-backend || err "systemctl start 失败"
 
     # 健康检查（90s）
     HEALTHY=0
