@@ -21,9 +21,28 @@
 set -euo pipefail
 
 REMOTE_HOST="${REMOTE_HOST:-<YOUR_SERVER_IP>}"
-# ⚠️ 正式交付时应创建单独 deploy 账户 + SSH key
-# 开发期可以 REMOTE_USER=root，生产请改成 deploy
-REMOTE_USER="${REMOTE_USER:-deploy}"
+# deploy.sh 内部直接执行 systemctl/cp /etc/systemd/system/
+# 需要 root 权限，因此默认 root。
+#
+# 生产安全加固（可选但推荐）：
+#   1. 创建 deploy 账户 + SSH key，禁止密码登录
+#   2. 配置 NOPASSWD sudoers 只放行必要命令：
+#      /etc/sudoers.d/apms-deploy:
+#        deploy ALL=(root) NOPASSWD: \
+#          /usr/bin/systemctl stop apms-backend, \
+#          /usr/bin/systemctl start apms-backend, \
+#          /usr/bin/systemctl restart apms-backend, \
+#          /usr/bin/systemctl status apms-backend, \
+#          /usr/bin/systemctl daemon-reload, \
+#          /usr/bin/systemctl reset-failed apms-backend, \
+#          /usr/bin/cp, \
+#          /usr/sbin/nginx, \
+#          /usr/bin/mkdir, \
+#          /usr/bin/chmod
+#   3. 远端调用改成 sudo:
+#      REMOTE_USER=deploy bash deploy/build.sh
+#      (build.sh 内部 ssh 命令会自动加 sudo)
+REMOTE_USER="${REMOTE_USER:-root}"
 REMOTE_DIR="${REMOTE_DIR:-/opt/apms}"
 # SSH 选项：默认强制验证 host key（生产安全）
 # 开发期如果想临时跳过（⚠️ 仅内网/本地开发），执行：
@@ -139,8 +158,12 @@ log "  ✅ 上传完成"
 log "Step 4: 远程执行 deploy.sh --version $VERSION $DEPLOY_SKIP_ARGS"
 scp "${SSH_OPTS[@]}" "$PROJECT_ROOT/deploy/deploy.sh" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/deploy.sh" >/dev/null 2>&1
 
+# 非 root 用户自动加 sudo（需要 NOPASSWD sudoers 配置）
+REMOTE_SUDO=""
+[ "$REMOTE_USER" != "root" ] && REMOTE_SUDO="sudo"
+
 ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$REMOTE_HOST" \
-    "bash $REMOTE_DIR/deploy.sh --version $VERSION $DEPLOY_SKIP_ARGS"
+    "$REMOTE_SUDO bash $REMOTE_DIR/deploy.sh --version $VERSION $DEPLOY_SKIP_ARGS"
 
 echo ""
 log "=========================================="

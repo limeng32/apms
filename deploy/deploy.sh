@@ -227,8 +227,9 @@ do_start() {
     log "Java: $JAVA_BIN ($("$JAVA_BIN" -version 2>&1 | head -1))"
     [ -f "$JAR" ] || err "jar 不存在: $JAR"
 
-    # 写 env.conf + start-backend.sh
+    # 写 env.conf + start-backend.sh（JAVA_BIN 用 find_java17 实测通过的路径）
     cat > "$BINDIR/env.conf" <<EOF
+JAVA_BIN=$JAVA_BIN
 PROFILE=$PROFILE
 APP_PORT=$APP_PORT
 MGMT_PORT=$MGMT_PORT
@@ -252,11 +253,13 @@ set -e
 BINDIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck disable=SC1091
 source "$BINDIR/env.conf"
-JAVA="${JAVA_BIN:-/usr/lib/jvm/java-17-openjdk/bin/java}"
+# JAVA_BIN 由 deploy.sh 执行 find_java17() 后写入 env.conf
+# 这里必须存在，缺失说明 env.conf 不是最新的（手动重建或重跑 deploy）
+[ -n "$JAVA_BIN" ] || { echo "❌ env.conf 缺失 JAVA_BIN" >&2; exit 1; }
 JAR="$BINDIR/backend/apms.jar"
 LOGDIR="$BINDIR/logs"
 mkdir -p "$LOGDIR"
-exec "$JAVA" \
+exec "$JAVA_BIN" \
   -Xms256m -Xmx512m \
   -DLOG_PATH="$LOGDIR" \
   -Druoyi.profile="$BINDIR/backend/uploadPath" \
@@ -276,12 +279,12 @@ STARTSH
     chmod +x "$BINDIR/start-backend.sh"
     log "start-backend.sh 已生成"
 
-    # 同步 service 文件
+    # 同步 service 文件（唯一来源：build.sh 上传的 upload/apms-backend.service）
     local SERVICE_TARGET="/etc/systemd/system/apms-backend.service"
-    if [ -f "$BINDIR/deploy/apms-backend.service" ]; then
-        cp -f "$BINDIR/deploy/apms-backend.service" "$SERVICE_TARGET"
-    elif [ -f "$(dirname "$0")/apms-backend.service" ]; then
-        cp -f "$(dirname "$0")/apms-backend.service" "$SERVICE_TARGET"
+    if [ -f "$UPLOAD/apms-backend.service" ]; then
+        cp -f "$UPLOAD/apms-backend.service" "$SERVICE_TARGET"
+    else
+        err "❌ 缺少 apms-backend.service（$UPLOAD/ 下未找到）"
     fi
     systemctl daemon-reload
 
