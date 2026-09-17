@@ -1,5 +1,5 @@
 -- APMS 运动员档案扩展：字典、菜单、权限
-USE `ry-vue`;
+USE `apms-dev`;
 
 -- 1. 球员位置字典
 INSERT IGNORE INTO sys_dict_type (

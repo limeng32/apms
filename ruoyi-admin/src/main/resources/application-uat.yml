@@ -1,0 +1,30 @@
+# =====================================================================
+# UAT 环境 — 源码默认值（可被外部 config/application-uat.yml 覆盖）
+# 外部配置位置: .uat/config/application-uat.yml
+# 启动: java -jar apms.jar --spring.profiles.active=druid,uat
+# =====================================================================
+
+server:
+  port: 9080
+
+management:
+  server:
+    port: 9081
+
+# 数据源默认值 — 外部 yml 用同一结构覆盖
+spring:
+  datasource:
+    druid:
+      master:
+        url: jdbc:mysql://localhost:3306/apms-uat?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=false&serverTimezone=GMT%2B8
+        username: root
+        password: ${UAT_DB_PASS:root}
+  data:
+    redis:
+      database: 1
+      host: ${UAT_REDIS_HOST:localhost}
+      port: ${UAT_REDIS_PORT:6379}
+      password: ${UAT_REDIS_PASS:}
+
+ruoyi:
+  profile: ./uploadPath

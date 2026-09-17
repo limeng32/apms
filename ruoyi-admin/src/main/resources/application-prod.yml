@@ -1,0 +1,27 @@
+# =====================================================================
+# 生产环境 — 源码默认值（可被外部 config/application-prod.yml 覆盖）
+# 外部配置位置: /opt/apms/config/application-prod.yml
+# 启动: java -jar apms.jar --spring.profiles.active=druid,prod
+# =====================================================================
+
+server:
+  port: 10080
+
+management:
+  server:
+    port: 10081
+
+# 数据源 — 生产密码由外部 yml 或 -D 参数覆盖
+spring:
+  datasource:
+    druid:
+      master:
+        url: jdbc:mysql://localhost:3306/apms?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8
+        username: ${PROD_DB_USER:root}
+        password: ${PROD_DB_PASS:}
+  data:
+    redis:
+      database: 0
+      host: ${PROD_REDIS_HOST:localhost}
+      port: ${PROD_REDIS_PORT:6379}
+      password: ${PROD_REDIS_PASS:}

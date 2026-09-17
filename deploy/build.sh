@@ -108,7 +108,7 @@ if [ -d "$PROJECT_ROOT/ruoyi-ui/dist" ]; then
 fi
 
 # 3c. 上传 deploy 配置文件
-for f in apms-backend.service apms-nginx.conf; do
+for f in apms-nginx.conf; do
     if [ -f "$PROJECT_ROOT/deploy/$f" ]; then
         scp -o StrictHostKeyChecking=no "$PROJECT_ROOT/deploy/$f" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/$f" >/dev/null 2>&1
     fi

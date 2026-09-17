@@ -16,7 +16,7 @@ ruoyi:
 
 # 开发环境配置
 server:
-  # 服务器的HTTP端口，默认为8080
+  # 业务 API 端口
   port: 8080
   servlet:
     # 应用的访问路径
@@ -31,6 +31,24 @@ server:
       max: 800
       # Tomcat启动初始化的线程数，默认值10
       min-spare: 100
+
+# Actuator 管理端口（健康检查独立于业务端口）
+management:
+  server:
+    port: 8081
+  endpoints:
+    web:
+      # 只暴露 health 端点，其他端点关闭避免安全风险
+      exposure:
+        include: health
+      # 禁用 actuator 默认的 base-path 前缀，直接 /health
+      base-path: /
+  endpoint:
+    health:
+      show-details: always
+  # 管理端口不经过 Spring Security（否则健康检查被 401）
+  security:
+    enabled: false
 
 # 日志配置
 logging:

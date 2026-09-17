@@ -3,20 +3,19 @@
 # APMS 生产环境部署脚本（远程执行）
 # ------------------------------------------------------------
 # 用法：
-#   bash deploy.sh [--skip-patch] [--skip-cache] [--version X.Y.Z-TIMESTAMP]
+#   bash deploy.sh                 # 完整部署（默认）
+#   bash deploy.sh start|startup   # 只启动
+#   bash deploy.sh stop|shutdown   # 只停止
+#   bash deploy.sh restart         # 重启
+#   bash deploy.sh deploy --skip-patch --version X.Y.Z
 #
-# 要求（由本地 build.sh 上传到 /opt/apms/upload/）：
-#   /opt/apms/upload/
-#     ├── apms.jar            (后端产物)
-#     ├── dist/                      (前端产物)
-#     ├── apms-backend.service       (systemd 文件)
-#     ├── apms-nginx.conf            (nginx conf)
-#     ├── patches/                   (SQL 增量补丁，可选)
-#     │   └── patch-X.Y.Z-TIMESTAMP.sql
-#
-# 流程：
-#   备份 DB → 备份产物 → 停服务 → systemd reset
-#   → 应用 patches → 替换 jar/前端 → 清 Redis → 启服务 → 健康检查
+# 运行目录: /opt/apms/
+#   ├── APPID              (PID 文件)
+#   ├── backend/apms.jar   (后端)
+#   ├── backend/uploadPath (Druid 上传路径)
+#   ├── config/application.yml  (运行时配置，自动生成)
+#   ├── logs/stdout.log    (启动日志)
+#   ├── env.conf          (可覆盖 DB/Redis/端口)
 # ============================================================
 set -euo pipefail
 
@@ -27,7 +26,13 @@ info() { echo -e "${BLUE}[....]${NC} $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 err()  { echo -e "${RED}[ERR ]${NC} $*"; exit 1; }
 
-# ===== 参数解析 =====
+# ===== 参数解析（第一个参数可能是子命令，也可能直接是 flag）=====
+KNOWN_CMD="^(start|startup|stop|shutdown|restart|deploy)$"
+if [ -n "${1:-}" ] && [[ "$1" =~ $KNOWN_CMD ]]; then
+    CMD="$1"; shift
+else
+    CMD="deploy"   # 默认完整部署，第一个参数保留给 flag 循环
+fi
 SKIP_PATCH=0
 SKIP_CACHE=0
 TARGET_VERSION=""
@@ -36,41 +41,209 @@ while [[ $# -gt 0 ]]; do
         --skip-patch) SKIP_PATCH=1; shift ;;
         --skip-cache) SKIP_CACHE=1; shift ;;
         --version) TARGET_VERSION="$2"; shift 2 ;;
-        --help|-h)   sed -n '2,25p' "$0"; exit 0 ;;
+        --help|-h)   sed -n '2,30p' "$0"; exit 0 ;;
         *)           err "未知参数: $1" ;;
     esac
 done
 
-# ===== 配置（从 /etc/apms/env.conf 或硬编码 fallback）=====
+# ===== 配置（从 env.conf 或硬编码 fallback）=====
 if [ -f /etc/apms/env.conf ]; then
     set -a; source /etc/apms/env.conf; set +a
-else
-    # ==== ⚠️ 生产环境务必把这些移到 /etc/apms/env.conf 并 chmod 600 ====
-    DB_HOST="${DB_HOST:-localhost}"
-    DB_PORT="${DB_PORT:-3306}"
-    DB_NAME="${DB_NAME:-ry-vue}"
-    DB_USER="${DB_USER:-root}"
-    DB_PASS="${DB_PASS:-!#111111qQ}"
-    REDIS_HOST="${REDIS_HOST:-localhost}"
-    REDIS_PORT="${REDIS_PORT:-6379}"
-    REDIS_PASS="${REDIS_PASS:-}"
-    PUBLIC_HOST="${PUBLIC_HOST:-39.97.246.69}"
-    BINDIR="${BINDIR:-/opt/apms}"
 fi
+PROFILE="${PROFILE:-prod}"
+APP_PORT="${APP_PORT:-10080}"
+MGMT_PORT="${MGMT_PORT:-10081}"
+DB_HOST="${DB_HOST:-localhost}"
+DB_PORT="${DB_PORT:-3306}"
+DB_NAME="${DB_NAME:-apms}"
+DB_USER="${DB_USER:-root}"
+DB_PASS="${DB_PASS:-!#111111qQ}"
+REDIS_HOST="${REDIS_HOST:-localhost}"
+REDIS_PORT="${REDIS_PORT:-6379}"
+REDIS_PASS="${REDIS_PASS:-}"
+REDIS_DB="${REDIS_DB:-0}"
+PUBLIC_HOST="${PUBLIC_HOST:-39.97.246.69}"
+BINDIR="${BINDIR:-/opt/apms}"
 
+PIDFILE="$BINDIR/APPID"
 UPLOAD="$BINDIR/upload"
 BACKUP="$BINDIR/backup"
 LOGDIR="$BINDIR/logs"
 JARDIR="$BINDIR/backend"
+JAR="$JARDIR/apms.jar"
 FRONTIR="$BINDIR/frontend"
+CONFIGDIR="$BINDIR/config"
 PATCHES_UPLOAD="$UPLOAD/patches"
 PATCHES_LOCAL="$BINDIR/patches"
-SERVICE_NAME="apms-backend"
 
 # ⚠️ 关键：密码里可能有 !#$ 等特殊字符，必须用函数形式避免 bash 解释
 mysql_cli() { mysql -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" --password="$DB_PASS" "$DB_NAME" "$@"; }
 # mysqldump 必须指定 --databases "$DB_NAME"，否则会尝试 dump 所有 DB（包括 mysql 系统库），可能权限不够失败
 mysql_dump() { mysqldump -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" --password="$DB_PASS" --single-transaction --routines --triggers --databases "$DB_NAME" "$@"; }
+
+# ===== do_stop: 停止后端进程 =====
+do_stop() {
+    log "停止后端 (PID file: $PIDFILE, port: $APP_PORT)..."
+
+    # 优先从 PID 文件读
+    if [ -f "$PIDFILE" ]; then
+        PID=$(cat "$PIDFILE" 2>/dev/null | tr -d '[:space:]')
+        if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+            kill "$PID" 2>/dev/null && log "  已发送 SIGTERM 给 $PID"
+            # 等 10s 优雅退出
+            for i in $(seq 1 10); do
+                if ! kill -0 "$PID" 2>/dev/null; then
+                    rm -f "$PIDFILE"
+                    log "  ✅ 进程已退出 ($PID)"
+                    return 0
+                fi
+                sleep 1
+            done
+            # 兜底 SIGKILL
+            kill -9 "$PID" 2>/dev/null
+            rm -f "$PIDFILE"
+            warn "  超时，已 SIGKILL $PID"
+        else
+            warn "  PID 文件残留，清理 (进程已不存在)"
+            rm -f "$PIDFILE"
+        fi
+    fi
+
+    # 兜底：按端口杀（macOS lsof / Linux ss）
+    PIDS=""
+    if command -v lsof >/dev/null 2>&1; then
+        PIDS=$(lsof -tiTCP:"$APP_PORT" -sTCP:LISTEN 2>/dev/null || true)
+    fi
+    if [ -z "$PIDS" ] && command -v ss >/dev/null 2>&1; then
+        PIDS=$(ss -tlnp 2>/dev/null | grep ":${APP_PORT} " | grep -oP 'pid=\K[0-9]+' | head -1 || true)
+    fi
+    if [ -n "$PIDS" ]; then
+        warn "  端口 $APP_PORT 仍被占用 (PID=$PIDS)，强制 kill..."
+        kill -9 $PIDS 2>/dev/null || true
+        sleep 1
+    fi
+
+    # 确认端口释放
+    if command -v lsof >/dev/null 2>&1 && lsof -tiTCP:"$APP_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+        err "  ❌ 端口 $APP_PORT 仍被占用"
+    fi
+    log "  ✅ 端口 $APP_PORT / $MGMT_PORT 已释放"
+}
+
+# ===== 找 Java 17（优先显式路径，fallback 到 PATH）=====
+find_java17() {
+    local -a CANDIDATES=(
+        /usr/lib/jvm/java-17-openjdk/bin/java
+        /usr/lib/jvm/java-17/bin/java
+        /usr/lib/jvm/jre-17-openjdk/bin/java
+        /opt/java/bin/java
+    )
+    for c in "${CANDIDATES[@]}"; do
+        if [ -x "$c" ] && "$c" -version 2>&1 | grep -qE '"17\.|"21\.'; then
+            echo "$c"; return 0
+        fi
+    done
+    # fallback: PATH 里找版本 ≥17 的
+    local path_java
+    path_java=$(command -v java 2>/dev/null || echo "")
+    if [ -n "$path_java" ] && "$path_java" -version 2>&1 | grep -qE '"(1[7-9]|2[0-9])\.'; then
+        echo "$path_java"; return 0
+    fi
+    return 1
+}
+
+# ===== do_start: 启动后端进程 =====
+do_start() {
+    JAVA_BIN=$(find_java17) || err "找不到 Java 17，请安装 /usr/lib/jvm/java-17-openjdk"
+    log "Java: $JAVA_BIN ($("$JAVA_BIN" -version 2>&1 | head -1))"
+    [ -f "$JAR" ] || err "jar 不存在: $JAR"
+    mkdir -p "$LOGDIR" "$(dirname "$PIDFILE")"
+
+    # PID 文件检查
+    if [ -f "$PIDFILE" ]; then
+        OLD_PID=$(cat "$PIDFILE" 2>/dev/null | tr -d '[:space:]')
+        if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+            warn "进程已在运行! PID=$OLD_PID"
+            return 0
+        fi
+        rm -f "$PIDFILE"
+    fi
+
+    log "启动后端 (profile=$PROFILE, port=$APP_PORT)..."
+    echo ""
+    echo "=========================================="
+    echo "  APMS Start"
+    echo "  jar:      $JAR"
+    echo "  profile:  $PROFILE"
+    echo "  port:     $APP_PORT (mgmt: $MGMT_PORT)"
+    echo "  config:   ${CONFIGDIR:-<jar内默认>}"
+    echo "  pidfile:  $PIDFILE"
+    echo "=========================================="
+
+    local -a JAVA_OPTS=(
+        -Xms256m -Xmx512m
+        -DLOG_PATH="$LOGDIR"
+        -Druoyi.profile="$JARDIR/uploadPath"
+    )
+    local -a SPRING_ARGS=(
+        -jar "$JAR"
+        "--spring.profiles.active=druid,$PROFILE"
+        "--server.port=$APP_PORT"
+        "--management.server.port=$MGMT_PORT"
+        # DB — 用命令行扁平属性只覆盖叶子，不冲掉 druid.yml 的连接池配置
+        "--spring.datasource.druid.master.url=jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8"
+        "--spring.datasource.druid.master.username=$DB_USER"
+        "--spring.datasource.druid.master.password=$DB_PASS"
+        # Redis — 同理
+        "--spring.data.redis.database=$REDIS_DB"
+        "--spring.data.redis.host=$REDIS_HOST"
+        "--spring.data.redis.port=$REDIS_PORT"
+    )
+    [ -n "$REDIS_PASS" ] && SPRING_ARGS+=("--spring.data.redis.password=$REDIS_PASS")
+
+    nohup "$JAVA_BIN" "${JAVA_OPTS[@]}" "${SPRING_ARGS[@]}" > "$LOGDIR/stdout.log" 2>&1 &
+    PID=$!
+    echo "$PID" > "$PIDFILE"
+    log "  ✅ 启动 PID=$PID (写入 $PIDFILE)"
+
+    # 健康检查（90s）
+    HEALTHY=0
+    for i in $(seq 1 45); do
+        CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${MGMT_PORT}/health" 2>/dev/null || echo "000")
+        if [ "$CODE" = "200" ]; then
+            log "  ✅ 就绪 (第 ${i} 次轮询, health=200)"
+            HEALTHY=1
+            break
+        fi
+        if ! kill -0 "$PID" 2>/dev/null; then
+            rm -f "$PIDFILE"
+            err "  ❌ 进程 $PID 已退出! 查看: tail -f $LOGDIR/stdout.log"
+        fi
+        sleep 2
+    done
+
+    if [ "$HEALTHY" -ne 1 ]; then
+        warn "  ❌ 90s 内未就绪，可能还在启动中"
+        warn "  日志: tail -f $LOGDIR/stdout.log"
+    fi
+    echo ""
+}
+
+# ===== do_restart =====
+do_restart() {
+    do_stop
+    sleep 1
+    do_start
+}
+
+# ===== 子命令 dispatch =====
+case "$CMD" in
+    start|startup)   do_start; exit 0 ;;
+    stop|shutdown)   do_stop;  exit 0 ;;
+    restart)         do_restart; exit 0 ;;
+    deploy|"")       : ;;  # 走下面的完整部署流程
+    *)               err "未知子命令: $CMD (可用: start|stop|restart|deploy)" ;;
+esac
 
 # ===== 版本号推导 =====
 if [ -z "$TARGET_VERSION" ]; then
@@ -107,28 +280,11 @@ REDIS_ARGS="-h $REDIS_HOST -p $REDIS_PORT"
 [ -n "$REDIS_PASS" ] && REDIS_ARGS="$REDIS_ARGS -a $REDIS_PASS"
 REDIS_OLD_VERSION=""
 if command -v redis-cli >/dev/null 2>&1; then
-    REDIS_OLD_VERSION=$(redis-cli $REDIS_ARGS GET "apms:version" 2>/dev/null || echo "")
+    REDIS_OLD_VERSION=$(redis-cli $REDIS_ARGS -n "$REDIS_DB" GET "apms:version" 2>/dev/null || echo "")
 fi
 
 # ===== Step 1: 停服务 =====
-log "Step 1: 停止后端服务..."
-sudo systemctl reset-failed "$SERVICE_NAME" 2>/dev/null || true   # 防 auto-restart 计数锁死
-if sudo systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-    sudo systemctl stop "$SERVICE_NAME"
-    log "  systemd stopped"
-fi
-# 兜底：端口释放
-for _ in 1 2 3; do
-    if ss -tlnp 2>/dev/null | grep -q ':8080'; then
-        warn "  8080 端口仍被占用，强制释放..."
-        sudo fuser -k 8080/tcp 2>/dev/null || sudo pkill -f "ruoyi-admin.*\.jar" 2>/dev/null || true
-        sleep 2
-    fi
-done
-if ss -tlnp 2>/dev/null | grep -q ':8080'; then
-    err "  8080 端口无法释放，请手动 kill"
-fi
-log "  ✅ 8080 已释放"
+do_stop
 
 # ===== Step 2: 全量备份（DB + 产物）=====
 BACKUP_TS=$(date '+%Y%m%d_%H%M%S')
@@ -237,13 +393,31 @@ if [ -d "$UPLOAD/dist" ]; then
     log "  前端: $(find "$FRONTIR/dist" -type f | wc -l) files"
 fi
 
-# ===== Step 5: systemd + Nginx =====
-log "Step 5: 部署 systemd + Nginx..."
-if [ -f "$UPLOAD/apms-backend.service" ]; then
-    sudo cp -f "$UPLOAD/apms-backend.service" /etc/systemd/system/"$SERVICE_NAME".service
-    sudo systemctl daemon-reload
-    sudo systemctl enable "$SERVICE_NAME"
-fi
+# ===== Step 4.5: 生成外部运行时 yml =====
+# 关键：用扁平属性名只覆盖叶子节点，不能用嵌套结构（会整体替换 jar 内 application-druid.yml 的 druid 配置树）
+log "Step 4.5: 生成外部运行时配置..."
+CONFIGDIR="$BINDIR/config"
+mkdir -p "$CONFIGDIR"
+cat > "$CONFIGDIR/application.yml" <<EOF
+# APMS PROD 运行时配置（deploy.sh 自动生成，改 env.conf 后重跑即更新）
+server.port: ${APP_PORT}
+management.server.port: ${MGMT_PORT}
+
+# 数据源 — 扁平属性只覆盖叶子，保留 jar 内 druid.yml 的连接池完整配置
+spring.datasource.druid.master.url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8
+spring.datasource.druid.master.username: ${DB_USER}
+spring.datasource.druid.master.password: "${DB_PASS}"
+
+# Redis — 同理扁平覆盖
+spring.data.redis.database: ${REDIS_DB}
+spring.data.redis.host: ${REDIS_HOST}
+spring.data.redis.port: ${REDIS_PORT}
+spring.data.redis.password: "${REDIS_PASS}"
+EOF
+log "  ✅ $CONFIGDIR/application.yml"
+
+# ===== Step 5: Nginx =====
+log "Step 5: 部署 Nginx..."
 if [ -f "$UPLOAD/apms-nginx.conf" ]; then
     sudo cp -f "$UPLOAD/apms-nginx.conf" /etc/nginx/conf.d/apms.conf
     sudo nginx -t && sudo systemctl reload nginx
@@ -259,10 +433,10 @@ if [ "$SKIP_CACHE" -eq 1 ]; then
 elif [ "$REDIS_OLD_VERSION" != "$TARGET_VERSION" ]; then
     log "Step 6: 版本变更 → 清 Redis 缓存 (旧=${REDIS_OLD_VERSION:-<空>} → 新=$TARGET_VERSION)"
     if command -v redis-cli >/dev/null 2>&1; then
-        if redis-cli $REDIS_ARGS FLUSHDB 2>/dev/null; then
-            # FLUSHDB 成功后写入新版本号，作为下次部署的对比基准
-            redis-cli $REDIS_ARGS SET "apms:version" "$TARGET_VERSION" 2>/dev/null || true
-            log "  ✅ Redis FLUSHDB + SET apms:version=$TARGET_VERSION"
+        # -n 指定 DB index，避免误清其他 DB 的数据
+        if redis-cli $REDIS_ARGS -n "$REDIS_DB" FLUSHDB 2>/dev/null; then
+            redis-cli $REDIS_ARGS -n "$REDIS_DB" SET "apms:version" "$TARGET_VERSION" 2>/dev/null || true
+            log "  ✅ Redis DB $REDIS_DB FLUSHDB + SET apms:version=$TARGET_VERSION"
         else
             warn "  Redis FLUSHDB 失败，可能密码不对或 Redis 未启动"
         fi
@@ -274,35 +448,7 @@ else
 fi
 
 # ===== Step 7: 启动后端 =====
-log "Step 7: 启动后端..."
-sudo systemctl reset-failed "$SERVICE_NAME"
-sudo systemctl start "$SERVICE_NAME"
-
-# 健康检查（90s 超时，分两阶段）
-HEALTHY=0
-for i in $(seq 1 45); do
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080/apms/version" 2>/dev/null || echo "000")
-    if [ "$HTTP_CODE" = "200" ]; then
-        # 再验证版本号是否匹配
-        RUNNING_VERSION=$(curl -s "http://localhost:8080/apms/version" 2>/dev/null | grep -o '"version":"[^"]*"' | cut -d'"' -f4 || echo "")
-        log "  ✅ 后端启动 (第 ${i} 次轮询，版本=${RUNNING_VERSION})"
-        if [ -n "$RUNNING_VERSION" ] && [ "$RUNNING_VERSION" != "unknown" ]; then
-            log "  版本匹配: 目标=${TARGET_VERSION} 运行=${RUNNING_VERSION}"
-        fi
-        HEALTHY=1
-        break
-    fi
-    # 检查 systemd 是否还在运行
-    if ! sudo systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-        err "  systemd 已失败！查看 journal: journalctl -u $SERVICE_NAME -n 50 --no-pager"
-    fi
-    sleep 2
-done
-
-if [ "$HEALTHY" -ne 1 ]; then
-    warn "  ❌ 90s 内未就绪，但 systemd 可能仍在启动中"
-    warn "  查看日志: journalctl -u $SERVICE_NAME -n 100 --no-pager"
-fi
+do_start
 
 # ===== Step 8: 外网验证 =====
 if command -v curl >/dev/null 2>&1; then
@@ -320,7 +466,9 @@ info "  ✅ 部署完成 → ${TARGET_VERSION}"
 info "=========================================="
 echo ""
 info "  外网:    http://$PUBLIC_HOST/"
-info "  版本:    http://localhost:8080/apms/version"
+info "  API:     http://localhost:${APP_PORT}/apms/version"
+info "  Health:  http://localhost:${MGMT_PORT}/health"
+info "  Profile: $PROFILE"
 info "  日志:    tail -f $LOGDIR/backend.log"
 info "  状态:    systemctl status $SERVICE_NAME"
 info "  回滚:    # 如有问题"

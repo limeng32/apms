@@ -1,5 +1,5 @@
 -- APMS 种子数据（演示用，覆盖 admin 看板所需的全部数据）
-USE `ry-vue`;
+USE `apms-dev`;
 
 -- 1. 队伍部门（sys_dept 扩展 dept_type）
 INSERT IGNORE INTO sys_dept (dept_id, parent_id, ancestors, dept_name, order_num, leader, phone, email, status, del_flag, create_by, create_time, dept_type) VALUES
