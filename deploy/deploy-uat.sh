@@ -336,8 +336,7 @@ log "Step 2: 数据库备份 → $BKDIR/db.sql.gz"
 if mysql_dump 2>/dev/null | gzip > "$BKDIR/db.sql.gz"; then
     log "  ✅ DB 备份完成 ($(du -h "$BKDIR/db.sql.gz" | cut -f1))"
 else
-    warn "  DB 备份失败，继续部署"
-    rm -f "$BKDIR/db.sql.gz"
+    err "❌ DB 备份失败，终止部署（P0 数据安全：无备份不允许执行 SQL patch）"
 fi
 
 # ===== Step 3: SQL Patches =====

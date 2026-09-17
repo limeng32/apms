@@ -306,9 +306,13 @@ STARTSH
             HEALTHY=1
             break
         fi
-        if ! kill -0 "$PID" 2>/dev/null; then
-            rm -f "$PIDFILE"
-            err "  ❌ 进程 $PID 已退出! 查看: tail -f $LOGDIR/stdout.log"
+        # systemd 层面检查服务是否还活着（替代旧的 kill -0 $PID）
+        if ! systemctl is-active --quiet apms-backend 2>/dev/null; then
+            echo ""
+            warn "  ❌ systemd 服务已退出!"
+            warn "  日志: journalctl -u apms-backend -n 50 --no-pager"
+            rollback "systemd 服务异常退出"
+            exit 1
         fi
         sleep 2
     done
@@ -390,8 +394,7 @@ log "Step 2: 数据库备份 → $BKDIR/db.sql.gz"
 if mysql_dump 2>/dev/null | gzip > "$BKDIR/db.sql.gz"; then
     log "  ✅ DB 备份完成 ($(du -h "$BKDIR/db.sql.gz" | cut -f1))"
 else
-    warn "  DB 备份失败，继续部署（⚠️ 无法回滚）"
-    rm -f "$BKDIR/db.sql.gz"
+    err "❌ DB 备份失败，终止部署（P0 数据安全：无备份不允许执行 SQL patch）"
 fi
 
 log "  备份当前产物..."
@@ -578,10 +581,9 @@ info "  外网:    http://$PUBLIC_HOST/"
 info "  API:     http://localhost:${APP_PORT}/apms/version"
 info "  Health:  http://localhost:${MGMT_PORT}/health"
 info "  Profile: $PROFILE"
-info "  日志:    tail -f $LOGDIR/backend.log"
-info "  状态:    systemctl status $SERVICE_NAME"
+info "  日志:    tail -f $LOGDIR/stdout.log"
+info "  状态:    systemctl status apms-backend"
 info "  回滚:    # 如有问题"
-info "           $JARDIR/uploadPath/db.sql.gz 恢复"
 info "           cp $BKDIR/apms.jar $JARDIR/"
-info "           sudo systemctl restart $SERVICE_NAME"
+info "           systemctl restart apms-backend"
 echo ""
