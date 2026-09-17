@@ -49,21 +49,27 @@ done
 # ===== 配置（从 env.conf 或硬编码 fallback）=====
 if [ -f /etc/apms/env.conf ]; then
     set -a; source /etc/apms/env.conf; set +a
+else
+    err "生产部署要求 /etc/apms/env.conf 存在且 chmod 600，当前缺失 → 拒绝部署"
 fi
+
+# 这些变量允许 fallback（非敏感）
 PROFILE="${PROFILE:-prod}"
 APP_PORT="${APP_PORT:-10080}"
 MGMT_PORT="${MGMT_PORT:-10081}"
 DB_HOST="${DB_HOST:-localhost}"
 DB_PORT="${DB_PORT:-3306}"
-DB_NAME="${DB_NAME:-apms}"
-DB_USER="${DB_USER:-root}"
-DB_PASS="${DB_PASS:-!#111111qQ}"
 REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"
-REDIS_PASS="${REDIS_PASS:-}"
 REDIS_DB="${REDIS_DB:-0}"
-PUBLIC_HOST="${PUBLIC_HOST:-39.97.246.69}"
 BINDIR="${BINDIR:-/opt/apms}"
+
+# 这些变量必须在 env.conf 里显式配置，缺失 → hard fail
+[ -n "$DB_NAME" ] || err "env.conf 缺失 DB_NAME，拒绝部署（禁止 fallback）"
+[ -n "$DB_USER" ] || err "env.conf 缺失 DB_USER，拒绝部署（禁止 fallback）"
+[ -n "$DB_PASS" ] || err "env.conf 缺失 DB_PASS，拒绝部署（禁止 fallback）"
+# REDIS_PASS 可以留空（表示无密码），但变量必须显式声明
+[ -n "${REDIS_PASS+x}" ] || err "env.conf 缺失 REDIS_PASS（可空但必须声明），拒绝部署"
 
 PIDFILE="$BINDIR/APPID"
 UPLOAD="$BINDIR/upload"
@@ -148,6 +154,73 @@ find_java17() {
     return 1
 }
 
+# ===== rollback: 恢复上一版产物 + 重启 =====
+# 由 Step 4 在替换产物前备份到 $BKDIR（定义在部署流程里）
+ROLLBACK_DIR="${ROLLBACK_DIR:-}"   # 部署流程里 Step 2 会设置 BKDIR，这里用它
+rollback() {
+    local FAIL_REASON="$1"
+    echo ""
+    warn "╔══════════════════════════════════════════════════════╗"
+    warn "║  ❌ 部署失败: $FAIL_REASON"
+    warn "║  🔄  自动回滚到上一版本..."
+    warn "╚══════════════════════════════════════════════════════╝"
+    echo ""
+
+    # 1. 停服务
+    do_stop || warn "do_stop 失败，继续回滚"
+
+    # 2. 找备份目录（Step 2 写的）
+    local LAST_BK
+    LAST_BK=$(ls -dt "$BACKUP"/*/ 2>/dev/null | head -1)
+    if [ -z "$LAST_BK" ] || [ ! -d "$LAST_BK" ]; then
+        err "❌ 无可用备份目录，无法自动回滚！手动处理：systemctl reset-failed apms-backend"
+        return 1
+    fi
+    log "回滚源: $LAST_BK"
+
+    # 3. 恢复 jar
+    if [ -f "$LAST_BK/apms.jar" ]; then
+        cp -f "$LAST_BK/apms.jar" "$JAR"
+        log "  ✅ 恢复 jar"
+    else
+        warn "  ⚠️  备份目录无 jar，跳过"
+    fi
+
+    # 4. 恢复 dist
+    if [ -d "$LAST_BK/dist_old" ]; then
+        rm -rf "$FRONTIR/dist"
+        cp -a "$LAST_BK/dist_old" "$FRONTIR/dist"
+        log "  ✅ 恢复 dist"
+    else
+        warn "  ⚠️  备份目录无 dist，跳过"
+    fi
+
+    # 5. 重启
+    log "  重启 systemd..."
+    systemctl reset-failed apms-backend 2>/dev/null
+    systemctl start apms-backend 2>/dev/null || err "回滚后 systemctl start 失败"
+
+    # 6. 健康检查（给回滚版本一个机会）
+    local RB_OK=0
+    for i in $(seq 1 30); do
+        if curl -s -o /dev/null -w "%{http_code}" "http://localhost:${MGMT_PORT}/health" --max-time 3 2>/dev/null | grep -q "200"; then
+            RB_OK=1
+            break
+        fi
+        sleep 2
+    done
+
+    echo ""
+    if [ "$RB_OK" -eq 1 ]; then
+        warn "  ✅ 回滚完成，旧版本已就绪（$LAST_BK）"
+    else
+        warn "  ❌ 回滚后旧版本也不健康！需要人工介入"
+        warn "  日志: tail -f $LOGDIR/stdout.log"
+        warn "  DB 备份还在: $LAST_BK/db.sql.gz"
+    fi
+    return 1   # 无论回滚成功与否，部署都是 fail
+}
+
 # ===== do_start: systemd 启动 =====
 do_start() {
     JAVA_BIN=$(find_java17) || err "找不到 Java 17，请安装 /usr/lib/jvm/java-17-openjdk"
@@ -169,7 +242,8 @@ REDIS_PORT=$REDIS_PORT
 REDIS_PASS=$REDIS_PASS
 REDIS_DB=$REDIS_DB
 EOF
-    log "env.conf 已更新"
+    chmod 600 "$BINDIR/env.conf"
+    log "env.conf 已更新 (chmod 600)"
 
     # 生成 start-backend.sh（systemd ExecStart 调这个）
     cat > "$BINDIR/start-backend.sh" <<'STARTSH'
@@ -240,8 +314,12 @@ STARTSH
     done
 
     if [ "$HEALTHY" -ne 1 ]; then
-        warn "  ❌ 90s 内未就绪，可能还在启动中"
-        warn "  日志: tail -f $LOGDIR/stdout.log"
+        echo ""
+        warn "❌ 90s 内未就绪"
+        warn "日志: tail -f $LOGDIR/stdout.log"
+        echo ""
+        rollback "健康检查超时 (MGMT_PORT=$MGMT_PORT)"
+        exit 1
     fi
     echo ""
 }
@@ -468,12 +546,26 @@ fi
 do_start
 
 # ===== Step 8: 外网验证 =====
-if command -v curl >/dev/null 2>&1; then
+FAIL_EXTERNAL=0
+if command -v curl >/dev/null 2>&1 && [ -n "$PUBLIC_HOST" ]; then
     log "Step 8: 外网验证..."
-    PUBLIC_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://$PUBLIC_HOST/" --max-time 10 2>/dev/null || echo "timeout")
+    PUBLIC_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://$PUBLIC_HOST/" --max-time 10 2>/dev/null || echo "000")
     log "  http://$PUBLIC_HOST/ → HTTP $PUBLIC_CODE"
-    API_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://$PUBLIC_HOST/prod-api/captchaImage" --max-time 10 2>/dev/null || echo "timeout")
+    if [ "$PUBLIC_CODE" != "200" ]; then
+        warn "  ⚠️  首页非 200 (HTTP $PUBLIC_CODE)"
+        FAIL_EXTERNAL=1
+    fi
+    API_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://$PUBLIC_HOST/prod-api/captchaImage" --max-time 10 2>/dev/null || echo "000")
     log "  http://$PUBLIC_HOST/prod-api/captchaImage → HTTP $API_CODE"
+    if [ "$API_CODE" != "200" ]; then
+        warn "  ⚠️  API 非 200 (HTTP $API_CODE)"
+        FAIL_EXTERNAL=1
+    fi
+fi
+
+if [ "$FAIL_EXTERNAL" -eq 1 ]; then
+    rollback "外网验证失败 (首页/API 非 200)"
+    exit 1
 fi
 
 # ===== 完成 =====

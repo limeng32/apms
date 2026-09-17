@@ -63,24 +63,29 @@ FRONTIR="$BINDIR/frontend"
 CONFIGDIR="$BINDIR/config"
 PATCHES_LOCAL="$BINDIR/patches"
 
-# env.conf 覆盖
-if [ -f "$BINDIR/env.conf" ]; then
-    set -a; source "$BINDIR/env.conf"; set +a
+# env.conf 覆盖 —— 生产安全策略：缺失即 hard fail，绝不 fallback
+if [ ! -f "$BINDIR/env.conf" ]; then
+    err "UAT 部署要求 $BINDIR/env.conf 存在且 chmod 600，当前缺失 → 拒绝部署"
 fi
+set -a; source "$BINDIR/env.conf"; set +a
+
+# 这些变量允许 fallback（非敏感）
 PROFILE="${PROFILE:-uat}"
 APP_PORT="${APP_PORT:-9080}"
 MGMT_PORT="${MGMT_PORT:-9081}"
 NGINX_LISTEN="${NGINX_LISTEN:-80}"
-DB_NAME="${DB_NAME:-apms-uat}"
 REDIS_DB="${REDIS_DB:-1}"
-PUBLIC_HOST="${PUBLIC_HOST:-localhost:$NGINX_LISTEN}"
 DB_HOST="${DB_HOST:-localhost}"
 DB_PORT="${DB_PORT:-3306}"
-DB_USER="${DB_USER:-root}"
-DB_PASS="${DB_PASS:-!#111111qQ}"
 REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"
-REDIS_PASS="${REDIS_PASS:-}"
+PUBLIC_HOST="${PUBLIC_HOST:-localhost:$NGINX_LISTEN}"
+
+# 这些变量必须显式声明，缺失 → hard fail
+[ -n "$DB_NAME" ] || err "env.conf 缺失 DB_NAME，拒绝部署（禁止 fallback）"
+[ -n "$DB_USER" ] || err "env.conf 缺失 DB_USER，拒绝部署（禁止 fallback）"
+[ -n "$DB_PASS" ] || err "env.conf 缺失 DB_PASS，拒绝部署（禁止 fallback）"
+[ -n "${REDIS_PASS+x}" ] || err "env.conf 缺失 REDIS_PASS（可空但必须声明），拒绝部署"
 
 # ⚠️ 密码里可能有 !#$ 等特殊字符，必须用函数形式避免 bash 解释
 mysql_cli() { mysql -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" --password="$DB_PASS" "$DB_NAME" "$@"; }
@@ -214,10 +219,53 @@ do_start() {
     done
 
     if [ "$HEALTHY" -ne 1 ]; then
-        warn "  ❌ 90s 内未就绪，可能还在启动中"
+        warn "  ❌ 90s 内未就绪"
         warn "  日志: tail -f $LOGDIR/stdout.log"
+        echo ""
+        rollback "健康检查超时 (MGMT_PORT=$MGMT_PORT)"
+        exit 1
     fi
     echo ""
+}
+
+# ===== rollback: 恢复上一版产物 + 重启 =====
+rollback() {
+    local FAIL_REASON="$1"
+    echo ""
+    warn "╔══════════════════════════════════════════════════════╗"
+    warn "║  ❌ 部署失败: $FAIL_REASON"
+    warn "║  🔄  自动回滚到上一版本..."
+    warn "╚══════════════════════════════════════════════════════╝"
+    echo ""
+
+    # 1. 停服务
+    do_stop || warn "do_stop 失败，继续回滚"
+
+    # 2. 找备份目录
+    local LAST_BK
+    LAST_BK=$(ls -dt "$BACKUP"/*/ 2>/dev/null | head -1)
+    if [ -z "$LAST_BK" ] || [ ! -d "$LAST_BK" ]; then
+        err "❌ 无可用备份目录，无法自动回滚！手动 kill Java 进程 + 恢复旧产物"
+        return 1
+    fi
+    log "回滚源: $LAST_BK"
+
+    # 3. 恢复 jar
+    if [ -f "$LAST_BK/apms.jar" ]; then
+        cp -f "$LAST_BK/apms.jar" "$JAR"
+        log "  ✅ 恢复 jar"
+    fi
+    # 4. 恢复 dist
+    if [ -d "$LAST_BK/dist_old" ]; then
+        rm -rf "$FRONTIR/dist"
+        cp -a "$LAST_BK/dist_old" "$FRONTIR/dist"
+        log "  ✅ 恢复 dist"
+    fi
+    # 5. 重新 nohup 启动（复用 do_start 的逻辑，但通过 env.conf 读参数）
+    log "  重启后端..."
+    # do_start 会读 env.conf，里面有 APP_PORT/MGMT_PORT 等
+    do_start || true   # do_start 里有自己的健康检查 + rollback 递归保护
+    return 1
 }
 
 # ===== do_restart =====
@@ -443,6 +491,29 @@ if [ -n "$NGINX_BIN" ]; then
     fi
 else
     warn "  nginx 未安装，跳过 reload"
+fi
+
+# ===== Step 8: 外网验证 =====
+FAIL_EXTERNAL=0
+if command -v curl >/dev/null 2>&1 && [ -n "$PUBLIC_HOST" ]; then
+    log "Step 8: 外网验证..."
+    PUBLIC_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://$PUBLIC_HOST/" --max-time 10 2>/dev/null || echo "000")
+    log "  http://$PUBLIC_HOST/ → HTTP $PUBLIC_CODE"
+    if [ "$PUBLIC_CODE" != "200" ]; then
+        warn "  ⚠️  首页非 200 (HTTP $PUBLIC_CODE)"
+        FAIL_EXTERNAL=1
+    fi
+    API_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://$PUBLIC_HOST/prod-api/captchaImage" --max-time 10 2>/dev/null || echo "000")
+    log "  http://$PUBLIC_HOST/prod-api/captchaImage → HTTP $API_CODE"
+    if [ "$API_CODE" != "200" ]; then
+        warn "  ⚠️  API 非 200 (HTTP $API_CODE)"
+        FAIL_EXTERNAL=1
+    fi
+fi
+
+if [ "$FAIL_EXTERNAL" -eq 1 ]; then
+    rollback "外网验证失败 (首页/API 非 200)"
+    exit 1
 fi
 
 # ===== 完成 =====

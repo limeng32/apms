@@ -20,9 +20,19 @@
 # ============================================================
 set -euo pipefail
 
-REMOTE_HOST="${REMOTE_HOST:-39.97.246.69}"
-REMOTE_USER="${REMOTE_USER:-root}"
+REMOTE_HOST="${REMOTE_HOST:-<YOUR_SERVER_IP>}"
+# ⚠️ 正式交付时应创建单独 deploy 账户 + SSH key
+# 开发期可以 REMOTE_USER=root，生产请改成 deploy
+REMOTE_USER="${REMOTE_USER:-deploy}"
 REMOTE_DIR="${REMOTE_DIR:-/opt/apms}"
+# SSH 选项：默认强制验证 host key（生产安全）
+# 开发期如果想临时跳过（⚠️ 仅内网/本地开发），执行：
+#   KNOWN_HOSTS_FILE=/dev/null bash deploy/build.sh
+if [ "${KNOWN_HOSTS_FILE:-}" = "/dev/null" ]; then
+    SSH_OPTS=""$SSH_OPTS" -o UserKnownHostsFile=/dev/null"
+else
+    SSH_OPTS=""
+fi
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
@@ -90,35 +100,35 @@ fi
 
 # ===== Step 3: 准备上传目录 =====
 log "Step 3: 上传到 $REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/"
-ssh -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" "mkdir -p $REMOTE_DIR/upload/patches"
+ssh "$SSH_OPTS" "$REMOTE_USER@$REMOTE_HOST" "mkdir -p $REMOTE_DIR/upload/patches"
 
 # 3a. 上传 jar
-scp -o StrictHostKeyChecking=no "$JAR_FILE" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/apms.jar" >/dev/null 2>&1
+scp "$SSH_OPTS" "$JAR_FILE" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/apms.jar" >/dev/null 2>&1
 
 # 3b. 上传前端 dist
 if [ -d "$PROJECT_ROOT/ruoyi-ui/dist" ]; then
     # 用 rsync 增量上传更快，没有 rsync 就 scp -r
     if command -v rsync >/dev/null 2>&1; then
-        rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" "$PROJECT_ROOT/ruoyi-ui/dist/" \
+        rsync -avz --delete -e "ssh "$SSH_OPTS"" "$PROJECT_ROOT/ruoyi-ui/dist/" \
             "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/dist/" >/dev/null 2>&1 || \
-        scp -r -o StrictHostKeyChecking=no "$PROJECT_ROOT/ruoyi-ui/dist/" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/dist"
+        scp -r "$SSH_OPTS" "$PROJECT_ROOT/ruoyi-ui/dist/" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/dist"
     else
-        scp -r -o StrictHostKeyChecking=no "$PROJECT_ROOT/ruoyi-ui/dist/" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/dist"
+        scp -r "$SSH_OPTS" "$PROJECT_ROOT/ruoyi-ui/dist/" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/dist"
     fi
 fi
 
 # 3c. 上传 deploy 配置文件
 for f in apms-nginx.conf; do
     if [ -f "$PROJECT_ROOT/deploy/$f" ]; then
-        scp -o StrictHostKeyChecking=no "$PROJECT_ROOT/deploy/$f" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/$f" >/dev/null 2>&1
+        scp "$SSH_OPTS" "$PROJECT_ROOT/deploy/$f" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/$f" >/dev/null 2>&1
     fi
 done
 
 # 3d. 上传 patches（增量）
 if [ -d "$PROJECT_ROOT/patches" ] && [ "$(ls -A "$PROJECT_ROOT/patches/"*.sql 2>/dev/null | wc -l)" -gt 0 ]; then
-    rsync -avz -e "ssh -o StrictHostKeyChecking=no" "$PROJECT_ROOT/patches/" \
+    rsync -avz -e "ssh "$SSH_OPTS"" "$PROJECT_ROOT/patches/" \
         "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/patches/" >/dev/null 2>&1 || \
-    scp -r -o StrictHostKeyChecking=no "$PROJECT_ROOT/patches/"* "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/patches/" 2>/dev/null || true
+    scp -r "$SSH_OPTS" "$PROJECT_ROOT/patches/"* "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/patches/" 2>/dev/null || true
 fi
 
 log "  ✅ 上传完成"
@@ -126,9 +136,9 @@ log "  ✅ 上传完成"
 # ===== Step 4: 远程执行 deploy.sh =====
 log "Step 4: 远程执行 deploy.sh --version $VERSION $DEPLOY_SKIP_ARGS"
 # 先确保 deploy.sh 在远程存在（上传一份最新的）
-scp -o StrictHostKeyChecking=no "$PROJECT_ROOT/deploy/deploy.sh" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/deploy.sh" >/dev/null 2>&1
+scp "$SSH_OPTS" "$PROJECT_ROOT/deploy/deploy.sh" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/deploy.sh" >/dev/null 2>&1
 
-ssh -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" \
+ssh "$SSH_OPTS" "$REMOTE_USER@$REMOTE_HOST" \
     "bash $REMOTE_DIR/deploy.sh --version $VERSION $DEPLOY_SKIP_ARGS"
 
 echo ""
