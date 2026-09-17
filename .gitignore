@@ -55,3 +55,11 @@ ruoyi-ui/.env.development
 
 # 运行时文件：上传附件 + PDF 报告 + 头像 + Excel 导出
 uploadPath/
+
+# deploy 目录：只保留脚本和配置模板，忽略 SQL 导出产物
+deploy/*.sql
+deploy/*.bak
+deploy/env.conf
+
+# 远程部署备份目录（不应进入 git）
+/backup/

@@ -48,6 +48,9 @@ user:
 
 # Spring配置
 spring:
+  # 导入 APMS 版本信息（version.properties 由 Maven 在打包时注入版本号）
+  config:
+    import: optional:classpath:version.properties
   # 资源信息
   messages:
     # 国际化资源文件路径

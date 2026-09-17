@@ -1,0 +1,17 @@
+[Unit]
+Description=APMS Backend (RuoYi-Vue, Java 17)
+After=network.target mysqld.service redis.service
+Requires=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/apms/backend
+ExecStart=/usr/lib/jvm/java-17-openjdk/bin/java -Xms256m -Xmx512m -DLOG_PATH=/opt/apms/logs -Druoyi.profile=/opt/apms/backend/uploadPath -jar /opt/apms/backend/apms.jar
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/opt/apms/logs/backend.log
+StandardError=append:/opt/apms/logs/backend-error.log
+
+[Install]
+WantedBy=multi-user.target
