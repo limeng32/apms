@@ -24,3 +24,6 @@ export function delByTask(taskId) {
 export function autoSelectBest(taskItemId, athleteId) {
   return request({ url: '/apms/test-result/auto-select', method: 'post', params: { taskItemId, athleteId } })
 }
+export function selectAttempt(resultId) {
+  return request({ url: '/apms/test-result/select-attempt/' + resultId, method: 'post' })
+}

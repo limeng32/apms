@@ -90,20 +90,31 @@
         <div v-if="current" class="detail-panel" v-loading="detailLoading">
           <!-- Attempt 历史 -->
           <div class="attempt-section" v-if="attempts.length">
-            <div class="section-title">同项目所有尝试 ({{ attempts.length }})</div>
+            <div class="section-title">同项目所有尝试 ({{ attempts.length }}) <span class="section-hint">方向：{{ dirLabel(current.indicatorDirection) }}</span></div>
             <el-table :data="attempts" size="small" border stripe>
               <el-table-column label="尝试" width="70" align="center">
                 <template #default="scope">
-                  <span v-if="scope.row.id === current.id" class="selected">★{{ scope.row.attemptNo }}</span>
+                  <span v-if="scope.row.isSelected === '1'" class="selected">★{{ scope.row.attemptNo }}</span>
                   <span v-else class="alt">#{{ scope.row.attemptNo }}</span>
                 </template>
               </el-table-column>
               <el-table-column label="日期" width="110">
                 <template #default="scope">{{ formatDate(scope.row.measureDate) }}</template>
               </el-table-column>
-              <el-table-column label="选中" width="70" align="center">
+              <el-table-column label="状态" width="90" align="center">
                 <template #default="scope">
-                  <el-tag v-if="scope.row.isSelected === '1'" type="success" size="small">✓</el-tag>
+                  <el-tag v-if="scope.row.isSelected === '1'" type="success" size="small" effect="dark">✓ 已选</el-tag>
+                  <el-tag v-else type="info" size="small">备选</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="值" min-width="140">
+                <template #default="scope">
+                  <span v-if="scope.row.values?.length">
+                    <template v-for="(v, idx) in scope.row.values" :key="v.id || idx">
+                      <span v-if="v.isDerived !== '1'" class="attempt-value">{{ v.numericValue ?? v.textValue }} {{ v.unit }}</span>
+                      <el-tag v-if="idx < scope.row.values.length - 1" size="small" type="info" style="margin:0 4px">/</el-tag>
+                    </template>
+                  </span>
                   <span v-else class="muted">—</span>
                 </template>
               </el-table-column>
@@ -112,7 +123,23 @@
                   <span class="dir-badge" :class="dirClass(scope.row.indicatorDirection)">{{ dirLabel(scope.row.indicatorDirection) }}</span>
                 </template>
               </el-table-column>
+              <el-table-column label="操作" width="120" fixed="right" align="center">
+                <template #default="scope">
+                  <el-button
+                    v-if="scope.row.isSelected !== '1'"
+                    link type="primary" size="small"
+                    @click="handleSelectAttempt(scope.row)"
+                    :disabled="selectingId != null"
+                  >
+                    选为最佳
+                  </el-button>
+                  <span v-else class="muted">—</span>
+                </template>
+              </el-table-column>
             </el-table>
+            <div v-if="attempts.length > 1" class="attempt-tip">
+              💡 自动选最佳按方向：{{ dirLabel(current.indicatorDirection) }}。手动点击"选为最佳"可覆盖。
+            </div>
           </div>
 
           <!-- VALUES -->
@@ -160,7 +187,7 @@
 </template>
 
 <script setup name="ApmsTestResult">
-import { listTestResult, getTestResult, listByTaskMember } from '@/api/apms/testResult'
+import { listTestResult, getTestResult, listByTaskMember, selectAttempt } from '@/api/apms/testResult'
 import { listTestTask } from '@/api/apms/testTask'
 import { listAthlete } from '@/api/apms/athlete'
 import CsvImportDialog from '@/components/CsvImportDialog/index.vue'
@@ -199,6 +226,7 @@ listAthlete({ pageNum: 1, pageSize: 300 }).then(r => { athleteOptions.value = r.
 const current = ref(null)
 const attempts = ref([])
 const detailLoading = ref(false)
+const selectingId = ref(null)  // 手动选为最佳的锁
 
 function handleRowClick(row) {
   current.value = row
@@ -217,6 +245,21 @@ function loadDetail(id) {
       detailLoading.value = false
     }
   })
+}
+
+// ========= 手动选最佳 =========
+function handleSelectAttempt(row) {
+  if (selectingId.value != null) return
+  proxy.$modal.confirm(`确认将 attempt #${row.attemptNo} 选为最佳？原来的选中项会被覆盖。`).then(() => {
+    selectingId.value = row.id
+    return selectAttempt(row.id)
+  }).then(() => {
+    proxy.$modal.msgSuccess(`已将 attempt #${row.attemptNo} 选为最佳`)
+    selectingId.value = null
+    // 刷新：左侧列表（选中项变了）+ 右侧详情
+    getList()
+    loadDetail(row.id)
+  }).catch(() => { selectingId.value = null })
 }
 
 // ========= 辅助 =========
@@ -267,6 +310,9 @@ getList()
 .dir-badge { font-size: 11px; padding: 1px 6px; border-radius: 3px; }
 .dir-badge.higher { background: #f0f9eb; color: #67c23a; }
 .dir-badge.lower  { background: #fdf6ec; color: #e6a23c; }
+.section-hint { font-size: 11px; font-weight: 400; color: #909399; }
+.attempt-value { font-family: Menlo, monospace; font-weight: 600; color: #1b4332; font-size: 13px; }
+.attempt-tip { margin-top: 8px; font-size: 12px; color: #606266; padding: 6px 10px; background: #f6fbf7; border-radius: 4px; }
 
 /* Values grid */
 .values-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }

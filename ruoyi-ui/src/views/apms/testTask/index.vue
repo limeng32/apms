@@ -117,8 +117,13 @@
           <el-tabs v-model="activeTab" class="detail-tabs">
             <!-- Tab 1: 测试项 -->
             <el-tab-pane label="测试项" name="items">
+              <div class="tab-toolbar">
+                <el-button type="primary" size="small" icon="Plus" :disabled="!currentTask" @click="openItemDialog()">添加测试项</el-button>
+                <el-button size="small" icon="Refresh" :disabled="!currentTask" @click="loadDetail(currentTask.id)">刷新</el-button>
+                <span class="toolbar-hint">从指标库或测试模型库选择，加入本任务</span>
+              </div>
               <div v-if="detail.items?.length" class="item-tab">
-                <el-table :data="detail.items" size="default" border stripe>
+                <el-table :data="detail.items" size="default" border stripe row-key="id">
                   <el-table-column label="#" type="index" width="40" align="center"/>
                   <el-table-column label="类型" width="90" align="center">
                     <template #default="scope">
@@ -156,13 +161,25 @@
                     </template>
                   </el-table-column>
                   <el-table-column label="排序" prop="sortOrder" width="60" align="center"/>
+                  <el-table-column label="操作" width="140" fixed="right" align="center">
+                    <template #default="scope">
+                      <el-button link type="primary" size="small" @click="openItemDialog(scope.row)">改</el-button>
+                      <el-button link type="danger" size="small" @click="handleDeleteItem(scope.row)">删</el-button>
+                    </template>
+                  </el-table-column>
                 </el-table>
               </div>
-              <el-empty v-else description="暂无测试项"/>
+              <el-empty v-else description="暂无测试项 — 点击上方按钮添加"/>
             </el-tab-pane>
 
             <!-- Tab 2: 参测队员 -->
             <el-tab-pane label="参测队员" name="members">
+              <div class="tab-toolbar">
+                <el-button type="primary" size="small" icon="Plus" :disabled="!currentTask" @click="openEnrollDialog()">单个登记</el-button>
+                <el-button type="primary" size="small" icon="User" :disabled="!currentTask" @click="openBatchEnrollDialog()">批量登记</el-button>
+                <el-button size="small" icon="Refresh" :disabled="!currentTask" @click="loadDetail(currentTask.id)">刷新</el-button>
+                <span class="toolbar-hint">目标队伍：{{ currentTask?.targetDeptName || currentTask?.targetDeptId || '—' }}</span>
+              </div>
               <div v-if="detail.members?.length" class="member-tab">
                 <el-table :data="detail.members" size="default" border stripe>
                   <el-table-column label="姓名" prop="athleteName" width="120"/>
@@ -179,14 +196,15 @@
                       <el-tag :type="memberStatusTag(scope.row.status)" size="small" effect="dark">{{ memberStatusLabel(scope.row.status) }}</el-tag>
                     </template>
                   </el-table-column>
-                  <el-table-column label="操作" width="100" fixed="right" align="center">
+                  <el-table-column label="操作" width="180" fixed="right" align="center">
                     <template #default="scope">
                       <el-button link type="primary" size="small" @click="openQuickChangeStatus(scope.row)">改状态</el-button>
+                      <el-button link type="danger" size="small" @click="handleRemoveMember(scope.row)">离队</el-button>
                     </template>
                   </el-table-column>
                 </el-table>
               </div>
-              <el-empty v-else description="暂无参测队员"/>
+              <el-empty v-else description="暂无参测队员 — 点击上方按钮登记"/>
             </el-tab-pane>
           </el-tabs>
         </div>
@@ -264,14 +282,101 @@
         <el-button type="primary" @click="submitStatus">保 存</el-button>
       </template>
     </el-dialog>
+
+    <!-- ========== 添加/编辑 测试项 ========== -->
+    <el-dialog :title="itemForm.id ? '编辑测试项' : '添加测试项'" v-model="showItemDialog" width="480px">
+      <el-form :model="itemForm" label-width="100px">
+        <el-form-item label="类型">
+          <el-radio-group v-model="itemForm.itemType">
+            <el-radio value="INDICATOR">指标</el-radio>
+            <el-radio value="MODEL">测试模型</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="选择" v-if="itemForm.itemType === 'INDICATOR'">
+          <el-select v-model="itemForm.indicatorId" filterable placeholder="选择指标" style="width:100%">
+            <el-option v-for="i in indicatorOptions" :key="i.id" :label="i.code + ' · ' + i.name" :value="i.id">
+              <span>{{ i.code }}</span>
+              <span style="float:right;color:#8492a6;font-size:13px">{{ i.name }} · {{ i.category }}</span>
+            </el-option>
+          </el-select>
+        </el-form-item>
+        <el-form-item label="选择" v-else>
+          <el-select v-model="itemForm.modelId" filterable placeholder="选择测试模型" style="width:100%">
+            <el-option v-for="m in modelOptions" :key="m.id" :label="m.code + ' · ' + m.name" :value="m.id">
+              <span>{{ m.code }}</span>
+              <span style="float:right;color:#8492a6;font-size:13px">{{ m.name }} · {{ m.category }}</span>
+            </el-option>
+          </el-select>
+        </el-form-item>
+        <el-form-item label="必/选测">
+          <el-switch v-model="itemForm.isRequiredBool" active-value="1" inactive-value="0"/>
+          <span style="margin-left:8px;color:#909399;font-size:12px">{{ itemForm.isRequiredBool === '1' ? '必测（所有队员必须完成）' : '选测' }}</span>
+        </el-form-item>
+        <el-form-item label="排序">
+          <el-input-number v-model="itemForm.sortOrder" :min="1" :step="1"/>
+        </el-form-item>
+        <el-form-item label="方向覆盖" v-if="itemForm.itemType === 'INDICATOR'">
+          <el-select v-model="itemForm.directionOverride" clearable placeholder="跟随指标默认方向" style="width:100%">
+            <el-option label="↑ 越大越好 (HIGHER_BETTER)" value="HIGHER_BETTER"/>
+            <el-option label="↓ 越小越好 (LOWER_BETTER)" value="LOWER_BETTER"/>
+            <el-option label="≈ 范围最佳 (RANGE_BEST)" value="RANGE_BEST"/>
+            <el-option label="— 仅参考 (REFERENCE_ONLY)" value="REFERENCE_ONLY"/>
+          </el-select>
+          <div class="form-tip">不选则使用指标库默认方向</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showItemDialog = false">取 消</el-button>
+        <el-button type="primary" @click="submitItem">保 存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- ========== 单个登记 ========== -->
+    <el-dialog title="登记参测队员" v-model="showEnrollDialog" width="400px">
+      <el-form label-width="90px">
+        <el-form-item label="运动员">
+          <el-select v-model="enrollAthleteId" filterable placeholder="搜索队员" style="width:100%">
+            <el-option v-for="a in athleteOptions" :key="a.athleteId" :label="a.name + ' (' + a.gender + ')'" :value="a.athleteId">
+              <span>{{ a.name }}</span>
+              <span style="float:right;color:#8492a6;font-size:12px">{{ a.gender }} · {{ a.primaryTeamId }}</span>
+            </el-option>
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showEnrollDialog = false">取 消</el-button>
+        <el-button type="primary" @click="submitEnroll">登 记</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- ========== 批量登记 ========== -->
+    <el-dialog title="批量登记参测队员" v-model="showBatchEnrollDialog" width="520px">
+      <el-alert v-if="currentTask?.targetDeptId" :closable="false" type="info" show-icon
+        :title="'只显示目标队伍 ' + currentTask.targetDeptId + ' 的队员（其他队伍也可手动选）'"
+        style="margin-bottom:12px"/>
+      <el-select v-model="batchAthleteIds" multiple filterable placeholder="选择多名队员" style="width:100%"
+        :loading="athleteLoading">
+        <el-option v-for="a in athleteOptions" :key="a.athleteId" :label="a.name + ' (' + a.gender + ')' + ' #' + a.athleteId" :value="a.athleteId">
+          <span>{{ a.name }}</span>
+          <span style="float:right;color:#8492a6;font-size:12px">{{ a.gender }} · team={{ a.primaryTeamId }}</span>
+        </el-option>
+      </el-select>
+      <div class="form-tip">已选 {{ batchAthleteIds.length }} 人 · 已在名单中的队员会自动跳过（幂等）</div>
+      <template #footer>
+        <el-button @click="showBatchEnrollDialog = false">取 消</el-button>
+        <el-button type="primary" @click="submitBatchEnroll">批量登记</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup name="ApmsTestTask">
 import { listTestTask, getTestTask, addTestTask, updateTestTask, delTestTask,
-         updateMemberStatus } from '@/api/apms/testTask'
+         updateMemberStatus, listTaskItem, addTaskItem, updateTaskItem, delTaskItem,
+         listTaskMember, enrollMember, batchEnroll, removeMember } from '@/api/apms/testTask'
 import { listDept } from '@/api/system/dept'
 import { listUser } from '@/api/system/user'
+import request from '@/utils/request'
 
 const { proxy } = getCurrentInstance()
 
@@ -319,6 +424,11 @@ function loadDetail(id) {
 // ========= 辅助下拉 =========
 const deptOptions = ref([])
 const userOptions = ref([])
+const indicatorOptions = ref([])
+const modelOptions = ref([])
+const athleteOptions = ref([])
+const athleteLoading = ref(false)
+
 function loadAuxData() {
   listDept({ pageNum: 1, pageSize: 500 }).then(res => {
     deptOptions.value = (res.data || []).map(d => ({ id: d.deptId, label: d.deptName }))
@@ -326,6 +436,20 @@ function loadAuxData() {
   listUser({ pageNum: 1, pageSize: 100 }).then(res => {
     userOptions.value = res.rows || []
   })
+  // 指标下拉（选测试项时用）
+  request({ url: '/apms/indicator/list', method: 'get', params: { pageSize: 500 } }).then(r => {
+    indicatorOptions.value = r.rows || r.data || []
+  })
+  // 测试模型下拉
+  request({ url: '/apms/test-model/list', method: 'get', params: { pageSize: 500 } }).then(r => {
+    modelOptions.value = r.rows || r.data || []
+  })
+  // 运动员下拉（登记队员时用）
+  athleteLoading.value = true
+  request({ url: '/apms/athlete/list', method: 'get', params: { pageSize: 500, status: '0' } }).then(r => {
+    athleteOptions.value = r.rows || r.data || []
+    athleteLoading.value = false
+  }).catch(() => { athleteLoading.value = false })
 }
 
 // ========= Task Dialog =========
@@ -383,6 +507,118 @@ function submitStatus() {
   })
 }
 
+// ========= 测试项 CRUD =========
+const showItemDialog = ref(false)
+const itemForm = reactive({
+  id: null, taskId: null, itemType: 'INDICATOR',
+  indicatorId: null, modelId: null,
+  isRequiredBool: '0', directionOverride: null, sortOrder: 1
+})
+
+function openItemDialog(row) {
+  if (!currentTask.value) return
+  // 先确保下拉数据已加载
+  if (indicatorOptions.value.length === 0 || modelOptions.value.length === 0) loadAuxData()
+
+  const nextSort = detail.value.items.length + 1
+  if (row) {
+    // 编辑
+    Object.assign(itemForm, {
+      id: row.id,
+      taskId: row.taskId || currentTask.value.id,
+      itemType: row.itemType,
+      indicatorId: row.indicatorId || null,
+      modelId: row.modelId || null,
+      isRequiredBool: row.isRequired || '0',
+      directionOverride: row.directionOverride || null,
+      sortOrder: row.sortOrder || nextSort
+    })
+  } else {
+    // 新增 — 默认 itemType=INDICATOR，自动取下一个 sortOrder
+    Object.assign(itemForm, {
+      id: null, taskId: currentTask.value.id,
+      itemType: 'INDICATOR', indicatorId: null, modelId: null,
+      isRequiredBool: '0', directionOverride: null, sortOrder: nextSort
+    })
+  }
+  showItemDialog.value = true
+}
+function submitItem() {
+  if (itemForm.itemType === 'INDICATOR' && !itemForm.indicatorId) return proxy.$modal.msgWarning('请选择指标')
+  if (itemForm.itemType === 'MODEL' && !itemForm.modelId) return proxy.$modal.msgWarning('请选择测试模型')
+
+  const payload = {
+    id: itemForm.id,
+    taskId: itemForm.taskId,
+    itemType: itemForm.itemType,
+    indicatorId: itemForm.itemType === 'INDICATOR' ? itemForm.indicatorId : null,
+    modelId: itemForm.itemType === 'MODEL' ? itemForm.modelId : null,
+    isRequired: itemForm.isRequiredBool,
+    directionOverride: itemForm.directionOverride || null,
+    sortOrder: itemForm.sortOrder
+  }
+  const req = payload.id ? updateTaskItem(payload) : addTaskItem(payload)
+  req.then(() => {
+    proxy.$modal.msgSuccess('保存成功'); showItemDialog.value = false
+    loadDetail(currentTask.value.id); getList()
+  })
+}
+function handleDeleteItem(row) {
+  proxy.$modal.confirm(`确认删除测试项 "${row.indicatorName || row.modelName}"？`).then(() => {
+    return delTaskItem(row.id)
+  }).then(() => {
+    proxy.$modal.msgSuccess('已删除')
+    loadDetail(currentTask.value.id); getList()
+  }).catch(() => {})
+}
+
+// ========= 成员登记 =========
+const showEnrollDialog = ref(false)
+const enrollAthleteId = ref(null)
+const showBatchEnrollDialog = ref(false)
+const batchAthleteIds = ref([])
+
+function openEnrollDialog() {
+  if (athleteOptions.value.length === 0) loadAuxData()
+  enrollAthleteId.value = null
+  showEnrollDialog.value = true
+}
+function submitEnroll() {
+  if (!enrollAthleteId.value) return proxy.$modal.msgWarning('请选择队员')
+  enrollMember({ taskId: currentTask.value.id, athleteId: enrollAthleteId.value }).then(() => {
+    proxy.$modal.msgSuccess('登记成功'); showEnrollDialog.value = false
+    loadDetail(currentTask.value.id); getList()
+  }).catch(e => {
+    // 400 "already enrolled" 类错误友好提示
+    const msg = e?.message || e?.response?.data?.msg || '登记失败'
+    proxy.$modal.msgWarning(msg)
+  })
+}
+
+function openBatchEnrollDialog() {
+  if (athleteOptions.value.length === 0) loadAuxData()
+  // 预选中目标队伍的 + 已登记过的（让用户直观看到）
+  batchAthleteIds.value = detail.value.members.map(m => m.athleteId)
+  showBatchEnrollDialog.value = true
+}
+function submitBatchEnroll() {
+  if (batchAthleteIds.value.length === 0) return proxy.$modal.msgWarning('请选择至少 1 名队员')
+  batchEnroll(currentTask.value.id, batchAthleteIds.value).then(res => {
+    const msg = res?.msg || `已登记 ${batchAthleteIds.value.length} 人`
+    proxy.$modal.msgSuccess(msg); showBatchEnrollDialog.value = false
+    loadDetail(currentTask.value.id); getList()
+  })
+}
+
+function handleRemoveMember(row) {
+  proxy.$modal.confirm(`确认将 ${row.athleteName} 移出本任务？`).then(() => {
+    return removeMember(currentTask.value.id, row.athleteId)
+  }).then(() => {
+    proxy.$modal.msgSuccess('已移出')
+    loadDetail(currentTask.value.id); getList()
+  }).catch(() => {})
+}
+
 // ========= 辅助 =========
 function statusLabel(s) { return { pending: '未开始', in_progress: '进行中', completed: '已完成' }[s] || s }
 function statusTag(s) { return { pending: 'info', in_progress: 'warning', completed: 'success' }[s] || 'info' }
@@ -434,4 +670,16 @@ getList()
 .female { color: #f56c6c; font-weight: 600; }
 
 .detail-tabs :deep(.el-tabs__item) { font-size: 14px; }
+
+/* tab 工具栏 */
+.tab-toolbar {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
+  padding-bottom: 10px; border-bottom: 1px dashed #ebeef5;
+}
+.toolbar-hint {
+  margin-left: auto; font-size: 12px; color: #909399;
+}
+.form-tip {
+  margin-top: 4px; font-size: 12px; color: #909399; line-height: 1.4;
+}
 </style>
