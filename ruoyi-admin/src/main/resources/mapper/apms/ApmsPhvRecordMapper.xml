@@ -96,4 +96,8 @@
         DELETE FROM apms_phv_record WHERE id = #{id}
     </delete>
 
+    <delete id="deleteBySourceMeasureId" parameterType="Long">
+        DELETE FROM apms_phv_record WHERE source_measure_id = #{sourceMeasureId}
+    </delete>
+
 </mapper>

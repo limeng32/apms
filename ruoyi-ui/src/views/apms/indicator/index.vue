@@ -124,38 +124,52 @@
                 </div>
               </template>
 
+              <!-- 区间冲突/空洞 实时提示 -->
+              <div v-if="getLevelValidationIssues(ref.levels).length" class="level-alerts">
+                <el-alert v-for="(issue, idx) in getLevelValidationIssues(ref.levels)" :key="idx"
+                  :title="issue" type="warning" :closable="false" show-icon :description="'后端保存时也会拦截，建议先修正'" />
+              </div>
+
               <!-- 三级判定表格 -->
-              <el-table :data="ref.levels" size="small" border>
-                <el-table-column label="评级" width="100" align="center">
+              <el-table :data="ref.levels" size="small" border :row-class-name="({ row }) => getLevelRowClass(row, ref.levels)">
+                <el-table-column label="评级" width="140" align="center">
                   <template #default="scope">
-                    <el-tag :type="levelTag(scope.row.level)" size="default" effect="dark">{{ levelLabel(scope.row.level) }}</el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column label="下限" width="130" align="center">
-                  <template #default="scope">
-                    <el-input-number v-if="scope.editing" v-model="scope.row.minValue" :precision="4" :step="0.1" size="small" controls-position="right" style="width:110px"/>
-                    <span v-else>{{ scope.row.minValue ?? '−∞' }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="上限" width="130" align="center">
-                  <template #default="scope">
-                    <el-input-number v-if="scope.editing" v-model="scope.row.maxValue" :precision="4" :step="0.1" size="small" controls-position="right" style="width:110px"/>
-                    <span v-else>{{ scope.row.maxValue ?? '+∞' }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="160" align="center">
-                  <template #default="scope">
-                    <el-button v-if="!scope.editing" link type="primary" size="small" @click="scope.row.editing = true">编辑</el-button>
+                    <template v-if="scope.editing">
+                      <el-input v-model="scope.row.level" size="small" placeholder="如 GOOD / POOR" style="width:100px" maxlength="32"/>
+                    </template>
                     <template v-else>
-                      <el-button link type="primary" size="small" @click="saveLevel(scope.row)">保存</el-button>
-                      <el-button link type="info" size="small" @click="scope.row.editing = false">取消</el-button>
+                      <el-tag :type="levelTag(scope.row.level)" size="default" effect="dark">{{ levelLabel(scope.row.level) }}</el-tag>
                     </template>
                   </template>
                 </el-table-column>
+                <el-table-column label="下限" width="140" align="center">
+                  <template #default="scope">
+                    <el-input-number v-if="scope.editing" v-model="scope.row.minValue" :precision="4" :step="0.1" size="small" controls-position="right" style="width:120px" @change="() => getLevelValidationIssues(ref.levels)"/>
+                    <span v-else>{{ scope.row.minValue ?? '−∞' }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="上限" width="140" align="center">
+                  <template #default="scope">
+                    <el-input-number v-if="scope.editing" v-model="scope.row.maxValue" :precision="4" :step="0.1" size="small" controls-position="right" style="width:120px" @change="() => getLevelValidationIssues(ref.levels)"/>
+                    <span v-else>{{ scope.row.maxValue ?? '+∞' }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="180" align="center">
+                  <template #default="scope">
+                    <el-button v-if="!scope.editing" link type="primary" size="small" @click="startLevelEdit(scope.row)">编辑</el-button>
+                    <template v-else>
+                      <el-button link type="primary" size="small" @click="saveLevel(scope.row)">保存</el-button>
+                      <el-button link type="info" size="small" @click="cancelLevelEdit(scope.row)">取消</el-button>
+                    </template>
+                    <el-button link type="danger" size="small" @click="handleDeleteLevel(scope.row, ref)">删除</el-button>
+                  </template>
+                </el-table-column>
               </el-table>
-              <!-- 新增 level 快捷入口 -->
+              <!-- 新增 level 自由入口 -->
               <div class="add-level-bar">
-                <el-button link type="primary" size="small" icon="Plus" @click="addNewLevel(ref)">新增 {{ addNewLevelLabel(ref.levels) }} 档</el-button>
+                <el-input v-model="newLevelName" placeholder="输入评级名（如 EXCELLENT / POOR）" size="small" style="width:180px" @keyup.enter="addNewLevel(ref)"/>
+                <el-button type="primary" plain size="small" icon="Plus" @click="addNewLevel(ref)" style="margin-left:6px">新增评级</el-button>
+                <el-button size="small" @click="bulkAddLevels(ref)" style="margin-left:6px">一键三档模板</el-button>
               </div>
             </el-card>
           </template>
@@ -417,31 +431,150 @@ function handleDeleteRef(ref) {
 }
 
 // ============ Level 内联编辑 ============
+const newLevelName = ref('')
+// 编辑时的备份（用于取消）
+const levelSnapshots = new Map() // key: level.id -> { level, minValue, maxValue }
+
+// Level 名称 → tag 颜色的动态映射（支持前后端都未知的新档位）
+const LEVEL_COLOR_MAP = {
+  EXCELLENT: 'success', GOOD: 'success', SUPERIOR: 'success',
+  NORMAL: 'warning', MEDIUM: 'warning', MODERATE: 'warning',
+  ATTENTION: 'danger', POOR: 'danger', CRITICAL: 'danger', LOW: 'danger', WEAK: 'danger',
+  HIGH: 'danger', ELEVATED: 'warning',
+  DEFAULT: 'info'
+}
+
+function levelTag(l) { return LEVEL_COLOR_MAP[(l || '').toUpperCase()] || LEVEL_COLOR_MAP.DEFAULT }
+function levelLabel(l) {
+  const map = { EXCELLENT: '优秀 ★★★★', GOOD: '良好 ★★★', NORMAL: '正常 ★★', ATTENTION: '需关注 ★', POOR: '较差', CRITICAL: '危险' }
+  return map[(l || '').toUpperCase()] || l || '—'
+}
+
+function startLevelEdit(row) {
+  levelSnapshots.set(row.id, { level: row.level, minValue: row.minValue, maxValue: row.maxValue })
+  row.editing = true
+}
+function cancelLevelEdit(row) {
+  const snap = levelSnapshots.get(row.id)
+  if (snap) { Object.assign(row, snap); levelSnapshots.delete(row.id) }
+  row.editing = false
+}
+
 function saveLevel(row) {
+  if (!row.level || !row.level.trim()) return proxy.$modal.msgError('评级名称不能为空')
   updateLevel(row).then(() => {
     row.editing = false
+    levelSnapshots.delete(row.id)
     proxy.$modal.msgSuccess('已保存')
+  }).catch(err => {
+    // 后端校验失败：IndicatorRefInvalidException 会带详细消息
+    const msg = err?.response?.data?.msg || err?.message || '保存失败'
+    proxy.$modal.msgError(msg)
   })
 }
-function addNewLevel(ref) {
-  const newLevels = ['GOOD', 'NORMAL', 'ATTENTION'].filter(l => !ref.levels.find(x => x.level === l))
-  if (newLevels.length === 0) return proxy.$modal.msgWarning('三种评级已全部配置')
-  const level = newLevels[0]
-  addLevel({ refId: ref.id, level, minValue: null, maxValue: null }).then(() => {
-    proxy.$modal.msgSuccess(`已添加 ${level} 档，请填写数值范围`)
+
+function handleDeleteLevel(row, ref) {
+  proxy.$modal.confirm(`确认删除评级 [${row.level}]？`).then(() => {
+    return delLevel(row.id)
+  }).then(() => {
+    proxy.$modal.msgSuccess('已删除')
     loadDetail(currentIndicator.value.id)
+  }).catch(() => {})
+}
+
+function addNewLevel(ref) {
+  const name = (newLevelName.value || '').trim()
+  if (!name) return proxy.$modal.msgWarning('请先输入评级名称')
+  const exists = ref.levels?.find(x => (x.level || '').toUpperCase() === name.toUpperCase())
+  if (exists) return proxy.$modal.msgWarning(`评级 [${exists.level}] 已存在`)
+  addLevel({ refId: ref.id, level: name.toUpperCase(), minValue: null, maxValue: null }).then(() => {
+    newLevelName.value = ''
+    loadDetail(currentIndicator.value.id)
+  }).catch(err => {
+    proxy.$modal.msgError(err?.response?.data?.msg || '新增失败')
   })
 }
-function addNewLevelLabel(levels) {
-  const missing = ['GOOD', 'NORMAL', 'ATTENTION'].filter(l => !levels?.find(x => x.level === l))
-  return missing[0] || '评级'
+
+function bulkAddLevels(ref) {
+  if (ref.levels?.length > 0) {
+    const missing = ['GOOD', 'NORMAL', 'ATTENTION'].filter(l => !ref.levels.find(x => (x.level || '').toUpperCase() === l))
+    if (missing.length === 0) return proxy.$modal.msgWarning('已有三档评级，无需添加')
+    proxy.$modal.confirm(`将为当前参考范围补加 [${missing.join(', ')}] 三档（留空数值，保存时填写区间）。继续？`).then(() => {
+      const promises = missing.map(l => addLevel({ refId: ref.id, level: l, minValue: null, maxValue: null }))
+      Promise.all(promises).then(() => {
+        loadDetail(currentIndicator.value.id)
+      }).catch(err => {
+        proxy.$modal.msgError(err?.response?.data?.msg || '部分新增失败')
+      })
+    }).catch(() => {})
+  } else {
+    proxy.$modal.confirm('当前参考范围无评级，将添加 GOOD / NORMAL / ATTENTION 三档模板（区间值留空，自行填写）。继续？').then(() => {
+      Promise.all([
+        addLevel({ refId: ref.id, level: 'GOOD', minValue: null, maxValue: null }),
+        addLevel({ refId: ref.id, level: 'NORMAL', minValue: null, maxValue: null }),
+        addLevel({ refId: ref.id, level: 'ATTENTION', minValue: null, maxValue: null })
+      ]).then(() => {
+        loadDetail(currentIndicator.value.id)
+      }).catch(err => {
+        proxy.$modal.msgError(err?.response?.data?.msg || '部分新增失败')
+      })
+    }).catch(() => {})
+  }
+}
+
+// ============ 前端实时区间校验 ============
+/**
+ * 返回该组 levels 的校验问题列表（前端实时预览）
+ * - 检测重叠（区间有交集）
+ * - 检测空洞（有全局覆盖范围但中间断开）
+ * - 检测 min >= max
+ */
+function getLevelValidationIssues(levels) {
+  if (!levels || levels.length < 2) return []
+  const issues = []
+  const sorted = [...levels].sort((a, b) => {
+    const ma = a.minValue ?? -Infinity, mb = b.minValue ?? -Infinity
+    return ma - mb
+  })
+  // 1) min >= max
+  for (const lv of sorted) {
+    if (lv.minValue != null && lv.maxValue != null && lv.minValue >= lv.maxValue) {
+      issues.push(`[${lv.level}] 下限 ${lv.minValue} 必须小于上限 ${lv.maxValue}`)
+    }
+  }
+  // 2) 相邻区间重叠检测
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const a = sorted[i], b = sorted[i + 1]
+    // 跳过有空值的（用户还没填完）
+    if (a.maxValue == null || b.minValue == null) continue
+    if (a.maxValue > b.minValue) {
+      issues.push(`[${a.level}](${a.minValue}~${a.maxValue}) 与 [${b.level}](${b.minValue}~${b.maxValue}) 区间重叠`)
+    }
+  }
+  // 3) 空洞检测（首尾都明确的情况下）
+  const first = sorted[0], last = sorted[sorted.length - 1]
+  if (first.minValue != null && last.maxValue != null) {
+    let coverage = first.minValue
+    for (const lv of sorted) {
+      if (lv.minValue != null && lv.minValue > coverage) {
+        issues.push(`[${lv.level}] 起始于 ${lv.minValue}，与前一档之间有空洞（${coverage} ~ ${lv.minValue}）`)
+      }
+      if (lv.maxValue != null && lv.maxValue > coverage) coverage = lv.maxValue
+    }
+  }
+  return issues
+}
+
+function getLevelRowClass(row, allLevels) {
+  const issues = getLevelValidationIssues(allLevels)
+  const level = (row.level || '').toUpperCase()
+  const hasOverlap = issues.some(i => i.includes('[' + level + ']'))
+  return hasOverlap ? 'level-row-error' : ''
 }
 
 // ============ 辅助 ============
 function dirLabel(d) { return ({ HIGHER_BETTER: '↑ 越大越好', LOWER_BETTER: '↓ 越小越好', RANGE_BEST: '≈ 范围最佳', REFERENCE_ONLY: '— 仅参考' })[d] || d }
 function categoryTagType(c) { return ({ '形态': '', '机能': 'success', '素质': 'warning', '筛查': 'danger' })[c] || 'info' }
-function levelTag(l) { return ({ GOOD: 'success', NORMAL: 'warning', ATTENTION: 'danger' })[l] || 'info' }
-function levelLabel(l) { return ({ GOOD: '良好', NORMAL: '正常', ATTENTION: '需关注' })[l] || l }
 
 // ============ 初始化 ============
 getList()
@@ -478,5 +611,10 @@ getList()
 .ref-range { font-size: 13px; color: #606266; }
 .ref-version { font-size: 11px; color: #909399; background: #f4f4f5; padding: 1px 6px; border-radius: 3px; }
 .ref-actions { display: flex; gap: 6px; }
-.add-level-bar { margin-top: 8px; text-align: right; }
+.add-level-bar { margin-top: 8px; display: flex; align-items: center; flex-wrap: wrap; }
+
+/* Level 校验样式 */
+.level-alerts { margin-bottom: 8px; }
+:deep(.level-row-error) { background-color: #fef0f0 !important; }
+:deep(.level-row-error td) { border-bottom: 1px solid #fbc4c4; }
 </style>

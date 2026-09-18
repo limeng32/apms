@@ -27,8 +27,12 @@
       <el-form-item>
         <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
         <el-button icon="Refresh" @click="resetQuery">重置</el-button>
+        <el-button type="success" icon="Upload" @click="importDialogRef?.open()" :disabled="!hasImportPerm">CSV 批量导入</el-button>
       </el-form-item>
     </el-form>
+
+    <!-- CSV 导入对话框 -->
+    <csv-import-dialog ref="importDialogRef" action="/apms/test-result/import/csv" @success="handleImportSuccess" />
 
     <!-- 主从两栏 -->
     <el-row :gutter="16">
@@ -159,8 +163,14 @@
 import { listTestResult, getTestResult, listByTaskMember } from '@/api/apms/testResult'
 import { listTestTask } from '@/api/apms/testTask'
 import { listAthlete } from '@/api/apms/athlete'
+import CsvImportDialog from '@/components/CsvImportDialog/index.vue'
 
 const { proxy } = getCurrentInstance()
+
+// ========= CSV 导入 =========
+const importDialogRef = ref(null)
+const hasImportPerm = computed(() => proxy.$checkPermi?.('apms:testResult:add'))
+function handleImportSuccess() { getList() }
 
 // ========= 查询 =========
 const loading = ref(false)

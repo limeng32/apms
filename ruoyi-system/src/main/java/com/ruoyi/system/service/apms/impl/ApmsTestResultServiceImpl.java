@@ -13,6 +13,7 @@ import com.ruoyi.system.mapper.apms.*;
 import com.ruoyi.system.service.apms.IApmsTestResultService;
 import com.ruoyi.system.service.apms.ITaskProgressService;
 import com.ruoyi.system.service.apms.IBodyMeasureSyncService;
+import com.ruoyi.system.service.apms.IApmsPhvService;
 import com.ruoyi.system.util.apms.RsaDecayCalculator;
 
 /**
@@ -34,6 +35,7 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
     @Autowired private ApmsTestModelMapper testModelMapper;
     @Autowired private ITaskProgressService taskProgressService;
     @Autowired private IBodyMeasureSyncService bodyMeasureSyncService;
+    @Autowired private IApmsPhvService phvService;
 
     // ============== 基础 CRUD ==============
     @Override
@@ -91,6 +93,9 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
         // 如果是体态类指标（HEIGHT/WEIGHT/SIT_HEIGHT等），同步到 body_measure
         bodyMeasureSyncService.syncFromResult(result.getId());
 
+        // 🟢 PHV 自动触发：同步完体态后，尝试 Mirwald 计算
+        try { phvService.tryAutoCalculate(result.getAthleteId()); } catch (Exception ignored) {}
+
         // MODEL 型：自动尝试 RSA 衰减率计算（需要 ≥2 趟 sprint 数据）
         computeRsaDecayIfNeeded(result);
         return 1;
@@ -133,6 +138,9 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
 
         // 如果是体态类指标，同步到 body_measure
         bodyMeasureSyncService.syncFromResult(result.getId());
+
+        // 🟢 PHV 自动触发
+        try { phvService.tryAutoCalculate(result.getAthleteId()); } catch (Exception ignored) {}
 
         // MODEL 型：自动尝试 RSA 衰减率计算
         computeRsaDecayIfNeeded(result);

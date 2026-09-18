@@ -105,15 +105,21 @@ public class ApmsDashboardController extends BaseController {
             row.put("taskId", t.getId());
             row.put("taskName", t.getTaskName());
 
-            // 计算进度
+            // 统一口径：运动员维度
             ApmsTestResult rq = new ApmsTestResult();
             rq.setTaskId(t.getId());
             List<ApmsTestResult> results = resultMapper.selectList(rq);
-            long selected = results.stream().filter(r -> "1".equals(r.getIsSelected())).count();
-            long totalDistinct = results.stream().map(ApmsTestResult::getAthleteId).distinct().count();
-            int prog = totalDistinct > 0 ? (int) Math.round(selected * 100.0 / totalDistinct) : 0;
+            Set<Long> allAthleteIds = new HashSet<>();
+            Set<Long> completedAthleteIds = new HashSet<>(); // 有至少 1 个 selected=true 结果
+            for (ApmsTestResult r : results) {
+                allAthleteIds.add(r.getAthleteId());
+                if ("1".equals(r.getIsSelected())) completedAthleteIds.add(r.getAthleteId());
+            }
+            long totalDistinct = allAthleteIds.size();
+            long completedDistinct = completedAthleteIds.size();
+            int prog = totalDistinct > 0 ? (int) Math.round(completedDistinct * 100.0 / totalDistinct) : 0;
 
-            row.put("completedCount", selected);
+            row.put("completedCount", completedDistinct);
             row.put("totalCount", totalDistinct);
             row.put("progress", prog);
             row.put("teamName", t.getTargetDeptId() != null ? String.valueOf(t.getTargetDeptId()) : "—");
@@ -123,12 +129,16 @@ public class ApmsDashboardController extends BaseController {
         }
         root.put("taskList", taskList);
 
-        // --- RTP 关注名单（Yellow + Red，最多 6 人） ---
+        // --- RTP 关注名单（Yellow + Red + 未评估，最多 6 人） ---
         List<Map<String, Object>> rtpAttention = new ArrayList<>();
         Map<Long, ApmsAthlete> athMap = new HashMap<>();
         for (ApmsAthlete a : athletes) athMap.put(a.getAthleteId(), a);
 
+        // 1. 先加黄/红状态的（先跳过 green 的，但要记住哪些已经有 RTP 记录了）
+        Set<Long> addedIds = new HashSet<>();
+        Set<Long> allRtpAthleteIds = new HashSet<>();
         for (ApmsRtpStatus r : rtpList) {
+            allRtpAthleteIds.add(r.getAthleteId());
             String s = r.getStatus() == null ? "" : r.getStatus().toLowerCase();
             boolean isAttention = s.contains("yellow") || s.contains("黄") || "1".equals(s)
                     || s.contains("red") || s.contains("红") || "2".equals(s);
@@ -140,8 +150,22 @@ public class ApmsDashboardController extends BaseController {
             row.put("athleteName", a != null ? a.getName() : "—");
             row.put("jerseyNo", a != null ? a.getJerseyNo() : null);
             row.put("position", a != null ? a.getPosition() : null);
-            row.put("status", r.getStatus());
+            row.put("status", "yellow".equals(s) || "y".equals(s) || "1".equals(s) ? "yellow" : "red");
             rtpAttention.add(row);
+            addedIds.add(r.getAthleteId());
+        }
+
+        // 2. 补未评估成员（没有 rtp_status 记录的 athlete ≠ green）
+        for (ApmsAthlete a : athletes) {
+            if (allRtpAthleteIds.contains(a.getAthleteId())) continue; // 已有 RTP 记录（包括 green）
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("athleteId", a.getAthleteId());
+            row.put("athleteName", a.getName());
+            row.put("jerseyNo", a.getJerseyNo());
+            row.put("position", a.getPosition());
+            row.put("status", "none");
+            rtpAttention.add(row);
+            if (rtpAttention.size() >= 6) break;
         }
         // 最多 6 人
         if (rtpAttention.size() > 6) rtpAttention = rtpAttention.subList(0, 6);

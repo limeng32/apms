@@ -96,13 +96,13 @@ public class ApmsComboScoreServiceImpl implements IApmsComboScoreService {
             refCache.put(comp.getIndicatorId(), refs);
         }
 
-        // 4. 查 indicator evaluation_direction（用于 direction_override 为空时的 fallback）
-        Map<Long, String> directionCache = new HashMap<>();
+        // 4. 查 indicator 完整信息（code/name/direction 都要）
+        Map<Long, ApmsIndicator> indicatorCache = new HashMap<>();
         List<Long> indicatorIds = components.stream()
                 .map(ApmsComboComponent::getIndicatorId).collect(Collectors.toList());
         if (!indicatorIds.isEmpty()) {
             List<ApmsIndicator> inds = indicatorMapper.selectList(new ApmsIndicator());
-            for (ApmsIndicator ind : inds) directionCache.put(ind.getId(), ind.getEvaluationDirection());
+            for (ApmsIndicator ind : inds) indicatorCache.put(ind.getId(), ind);
         }
 
         // 5. 查 athlete → 构建 athleteMap + 预查询每个 indicatorId 的真实参考组统计量
@@ -160,9 +160,11 @@ public class ApmsComboScoreServiceImpl implements IApmsComboScoreService {
                 ComboScoreCalculator.ComponentInput ci = new ComboScoreCalculator.ComponentInput();
                 ci.componentId = comp.getId();
                 ci.indicatorId = comp.getIndicatorId();
-                ci.indicatorName = directionCache.getOrDefault(comp.getIndicatorId(), "");
+                ApmsIndicator ind = indicatorCache.get(comp.getIndicatorId());
+                ci.indicatorCode = ind != null ? ind.getCode() : "";
+                ci.indicatorName = ind != null ? ind.getName() : "";
                 ci.weight = comp.getWeight();
-                ci.direction = resolveDirection(comp, directionCache);
+                ci.direction = resolveDirection(comp, indicatorCache);
                 ci.value = vals.get(comp.getIndicatorId());
 
                 // 先查真实参考组统计量
@@ -230,12 +232,13 @@ public class ApmsComboScoreServiceImpl implements IApmsComboScoreService {
         return teamId + ":" + gender;
     }
 
-    private String resolveDirection(ApmsComboComponent comp, Map<Long, String> directionCache) {
+    private String resolveDirection(ApmsComboComponent comp, Map<Long, ApmsIndicator> indicatorCache) {
         String o = comp.getDirectionOverride();
         if (o != null && !o.isEmpty() && !"0".equals(o)) {
             return o;
         }
-        return directionCache.getOrDefault(comp.getIndicatorId(), "HIGHER_BETTER");
+        ApmsIndicator ind = indicatorCache.get(comp.getIndicatorId());
+        return ind != null && ind.getEvaluationDirection() != null ? ind.getEvaluationDirection() : "HIGHER_BETTER";
     }
 
     private ApmsIndicatorRef findBestRef(List<ApmsIndicatorRef> refs, String gender) {

@@ -11,6 +11,7 @@
           <span class="hl">{{ stats.taskInProgress }} 个测试任务</span>
           进行中，
           <span class="hl-amber">{{ stats.rtpAttention }} 名队员</span>
+          <template v-if="stats.rtpNotAssessed > 0">（含 <b>{{ stats.rtpNotAssessed }}</b> 名未评估）</template>
           参训状态需关注。
         </p>
       </div>
@@ -104,22 +105,28 @@
           </div>
           <div class="card-b">
             <el-row :gutter="10" class="rtp-row">
-              <el-col :span="8">
+              <el-col :span="6">
                 <div class="rtp-cell rtp-green-bg">
                   <div class="rtp-num">{{ stats.rtpGreen }}</div>
                   <div class="rtp-label">正常全量</div>
                 </div>
               </el-col>
-              <el-col :span="8">
+              <el-col :span="6">
                 <div class="rtp-cell rtp-amber-bg">
                   <div class="rtp-num">{{ stats.rtpYellow }}</div>
                   <div class="rtp-label">限制参训</div>
                 </div>
               </el-col>
-              <el-col :span="8">
+              <el-col :span="6">
                 <div class="rtp-cell rtp-red-bg">
                   <div class="rtp-num">{{ stats.rtpRed }}</div>
                   <div class="rtp-label">不建议训练</div>
+                </div>
+              </el-col>
+              <el-col :span="6">
+                <div class="rtp-cell rtp-gray-bg" :class="{ 'rtp-gray-bg-urgent': stats.rtpNotAssessed > 0 }">
+                  <div class="rtp-num">{{ stats.rtpNotAssessed }}</div>
+                  <div class="rtp-label">未评估</div>
                 </div>
               </el-col>
             </el-row>
@@ -185,6 +192,7 @@ const stats = reactive({
   rtpGreen: 0,
   rtpYellow: 0,
   rtpRed: 0,
+  rtpNotAssessed: 0,
   measureWeek: 0,
   bodyMeasureWeek: 0,
   phvWeek: 0
@@ -218,7 +226,8 @@ function loadDashboard() {
     stats.rtpGreen       = s.rtpGreenCount || 0
     stats.rtpYellow      = s.rtpYellowCount || 0
     stats.rtpRed         = s.rtpRedCount || 0
-    stats.rtpAttention   = stats.rtpYellow + stats.rtpRed
+    stats.rtpNotAssessed = s.rtpNotAssessedCount || 0
+    stats.rtpAttention   = stats.rtpYellow + stats.rtpRed + stats.rtpNotAssessed
     stats.bodyMeasureWeek = s.bodyMeasureWeekCount || 0
     stats.phvWeek         = s.phvWeekCount || 0
     stats.measureWeek     = stats.bodyMeasureWeek + stats.phvWeek
@@ -258,7 +267,11 @@ function formatWindow(start, end) {
 }
 
 function taskStatusType(s) {
-  return s === '进行中' ? 'success' : s === '已完成' ? 'info' : 'warning'
+  const map = {
+    'completed': 'success', 'in_progress': 'warning', 'pending': 'info',
+    'COMPLETED': 'success', 'IN_PROGRESS': 'warning', 'PENDING': 'info'
+  }
+  return map[(s || '').toLowerCase()] || 'info'
 }
 function taskBarColor(bar) {
   return bar === 'amber' ? '#f0a23a' : bar === 'red' ? '#c14747' : '#4a9a78'
@@ -449,6 +462,8 @@ onActivated(() => {
 .rtp-green-bg { background: #e8f5ed; .rtp-num { color: #2c8a57; } .rtp-label { color: #3c7a59; } }
 .rtp-amber-bg { background: #fdf3e0; .rtp-num { color: #b97a16; } .rtp-label { color: #9a7020; } }
 .rtp-red-bg   { background: #fce8e8; .rtp-num { color: #c14747; } .rtp-label { color: #a15050; } }
+.rtp-gray-bg  { background: #f4f4f5; .rtp-num { color: #909399; } .rtp-label { color: #606266; } }
+.rtp-gray-bg-urgent { background: #fef0e6; .rtp-num { color: #e6a23c; } .rtp-label { color: #8a6930; } }
 
 .dot-amber { color: #f0a23a; }
 .dot-red   { color: #c14747; }
@@ -493,9 +508,10 @@ onActivated(() => {
   height: 10px;
   border-radius: 50%;
   flex: none;
-  &.y { background: #f0a23a; }
-  &.r { background: #c14747; }
-  &.g { background: #4a9a78; }
+  &.y, &.yellow { background: #f0a23a; }
+  &.r, &.red    { background: #c14747; }
+  &.g, &.green  { background: #4a9a78; }
+  &.none, &.n   { background: #c0c4cc; border: 1px dashed #909399; }
 }
 
 /* ============ 快捷入口 ============ */

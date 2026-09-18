@@ -31,4 +31,7 @@ public interface ApmsPhvRecordMapper {
 
     /** 按ID删除 */
     int deleteById(Long id);
+
+    /** 按 source_measure_id 级联删除（body_measure 删除时触发） */
+    int deleteBySourceMeasureId(Long sourceMeasureId);
 }

@@ -44,6 +44,15 @@ public class ApmsAthlete extends BaseEntity {
     /** 状态（0=在队 1=离队 2=退役） */
     private String status;
 
+    /** Khamis-Roche 预测成年身高 cm */
+    private java.math.BigDecimal predictedAdultHeight;
+
+    /** 成年身高预测算法版本 */
+    private String adultHeightAlgo;
+
+    /** 成年身高预测计算日期 */
+    private java.util.Date adultHeightCalcDate;
+
     /** 队伍名称（关联查询，非数据库字段） */
     private String teamName;
 
@@ -70,6 +79,12 @@ public class ApmsAthlete extends BaseEntity {
     public void setPosition(String position) { this.position = position; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public java.math.BigDecimal getPredictedAdultHeight() { return predictedAdultHeight; }
+    public void setPredictedAdultHeight(java.math.BigDecimal v) { this.predictedAdultHeight = v; }
+    public String getAdultHeightAlgo() { return adultHeightAlgo; }
+    public void setAdultHeightAlgo(String v) { this.adultHeightAlgo = v; }
+    public java.util.Date getAdultHeightCalcDate() { return adultHeightCalcDate; }
+    public void setAdultHeightCalcDate(java.util.Date v) { this.adultHeightCalcDate = v; }
     public String getTeamName() { return teamName; }
     public void setTeamName(String teamName) { this.teamName = teamName; }
     public Integer getAge() { return age; }

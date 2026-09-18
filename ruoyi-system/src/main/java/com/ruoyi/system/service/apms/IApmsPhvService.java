@@ -39,4 +39,16 @@ public interface IApmsPhvService {
 
     /** 删除 */
     int deleteById(Long id);
+
+    /**
+     * 自动尝试 PHV 计算 — 查该运动员最新 body_measure 是否齐了 Mirwald 需要的三个指标
+     * （height + sitHeight + weight），齐了就自动算并落库。
+     * <p>
+     * 幂等：如果该最新 body_measure 已经触发过 PHV 计算，返回 null。
+     * <p>
+     * 触发时机：任何可能让 body_measure 变完整的地方（test result 同步、手动编辑 body_measure）
+     *
+     * @return 新计算的 PHV 记录，或 null（条件不齐 / 已算过 / athlete 没 birthday）
+     */
+    ApmsPhvRecord tryAutoCalculate(Long athleteId);
 }

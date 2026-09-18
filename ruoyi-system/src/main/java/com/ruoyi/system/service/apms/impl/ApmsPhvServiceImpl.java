@@ -7,6 +7,8 @@ import java.time.Period;
 import java.time.ZoneId;
 import java.util.Date;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,6 +30,8 @@ import com.ruoyi.system.util.apms.MirwaldCalculator;
  */
 @Service
 public class ApmsPhvServiceImpl implements IApmsPhvService {
+
+    private static final Logger log = LoggerFactory.getLogger(ApmsPhvServiceImpl.class);
 
     @Override
     public List<ApmsPhvRecord> list(ApmsPhvRecord query) {
@@ -195,6 +199,44 @@ public class ApmsPhvServiceImpl implements IApmsPhvService {
     @Override
     public int deleteById(Long id) {
         return phvMapper.deleteById(id);
+    }
+
+    @Override
+    public ApmsPhvRecord tryAutoCalculate(Long athleteId) {
+        // 1. 查最新 body_measure
+        ApmsBodyMeasure latest = measureMapper.selectLatestByAthleteId(athleteId);
+        if (latest == null) {
+            log.debug("[PHV auto] athleteId={} no body_measure → skip", athleteId);
+            return null;
+        }
+
+        // 2. Mirwald 三指标齐吗？
+        if (latest.getHeight() == null || latest.getSitHeight() == null || latest.getWeight() == null) {
+            log.debug("[PHV auto] athleteId={} body_measure#{} incomplete (H={} sit={} W={}) → skip",
+                athleteId, latest.getId(), latest.getHeight(), latest.getSitHeight(), latest.getWeight());
+            return null; // 数据不齐，等下次触发
+        }
+
+        // 3. athlete birthday？
+        ApmsAthlete athlete = athleteMapper.selectApmsAthleteByAthleteId(athleteId);
+        if (athlete == null || athlete.getBirthday() == null) {
+            log.debug("[PHV auto] athleteId={} no birthday → skip", athleteId);
+            return null;
+        }
+
+        // 4. 去重：同一个 body_measure 已经算过 PHV？
+        ApmsPhvRecord existing = phvMapper.selectBySourceMeasureId(athleteId, latest.getId());
+        if (existing != null) {
+            log.debug("[PHV auto] athleteId={} measureId={} already PHV#{} → skip",
+                athleteId, latest.getId(), existing.getId());
+            return null; // 已算过，跳过（幂等）
+        }
+
+        // 5. 计算并保存
+        log.info("[PHV auto] athleteId={} measureId={} → Mirwald calculating...", athleteId, latest.getId());
+        ApmsPhvRecord rec = calculateAndSave(athleteId, latest.getId());
+        log.info("[PHV auto] athleteId={} PHV#{} offset={} predPHV={}", athleteId, rec.getId(), rec.getMaturityOffset(), rec.getPredictedPhvAge());
+        return rec;
     }
 
     /**

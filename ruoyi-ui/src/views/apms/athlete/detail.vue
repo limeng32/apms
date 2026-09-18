@@ -20,6 +20,12 @@
             <span><strong>年龄</strong>{{ athlete.age ?? '-' }} 岁</span>
             <span><strong>生日</strong>{{ athlete.birthday || '-' }}</span>
             <span><strong>电话</strong>{{ athlete.phone || '-' }}</span>
+            <span v-if="athlete.predictedAdultHeight != null" class="khair-row">
+              <strong>预测成年身高</strong>
+              <span class="khair-val">{{ Number(athlete.predictedAdultHeight).toFixed(1) }} cm</span>
+              <span class="khair-sub">Khamis-Roche</span>
+              <span v-if="athlete.adultHeightCalcDate" class="khair-date">· {{ athlete.adultHeightCalcDate }}</span>
+            </span>
           </div>
         </div>
       </div>
@@ -54,9 +60,15 @@
         </div>
       </el-col>
       <el-col :span="6">
-        <div class="stat-card">
-          <div class="stat-num">{{ phvRecords.length }}</div>
-          <div class="stat-label">PHV 发育评估次数</div>
+        <div class="stat-card" :class="{ 'stat-card-highlight': athlete.predictedAdultHeight != null }">
+          <div class="stat-num">
+            <template v-if="athlete.predictedAdultHeight != null">
+              <span class="khair-stat">{{ Number(athlete.predictedAdultHeight).toFixed(1) }}</span>
+              <span class="khair-unit">cm</span>
+            </template>
+            <span v-else class="stat-na">未计算</span>
+          </div>
+          <div class="stat-label">成年身高预测 (Khamis-Roche)</div>
         </div>
       </el-col>
     </el-row>
@@ -556,7 +568,18 @@ loadAll()
 .stat-num { font-size: 22px; font-weight: 600; color: #1b4332; }
 .stat-label { font-size: 12px; color: #909399; margin-top: 4px; }
 .rtp-na { font-size: 16px; color: #c0c4cc; }
+.stat-na { font-size: 14px; color: #c0c4cc; }
 .rtp-tag { font-size: 13px !important; }
+
+.stat-card-highlight { border-color: #2d6a4f; background: linear-gradient(135deg, #f0faf3 0%, #ffffff 60%); }
+.khair-stat { font-size: 26px; font-weight: 700; color: #2d6a4f; }
+.khair-unit { font-size: 14px; color: #2d6a4f; margin-left: 2px; font-weight: 500; }
+
+.khair-row { margin-left: auto; }
+.khair-row strong { opacity: 0.85; }
+.khair-val { font-size: 14px; font-weight: 700; color: #f8c66a; letter-spacing: 0.5px; }
+.khair-sub { font-size: 11px; background: rgba(255,255,255,0.18); padding: 1px 6px; border-radius: 3px; margin-left: 6px; }
+.khair-date { opacity: 0.7; font-size: 12px; }
 
 .detail-tabs .tab-toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
 

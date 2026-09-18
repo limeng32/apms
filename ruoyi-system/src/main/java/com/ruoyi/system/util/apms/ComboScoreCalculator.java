@@ -99,6 +99,7 @@ public class ComboScoreCalculator {
                 sb.append("{");
                 sb.append("\"indicatorId\":").append(c.indicatorId);
                 sb.append(",\"indicatorCode\":\"").append(c.indicatorCode == null ? "" : c.indicatorCode).append("\"");
+                sb.append(",\"indicatorName\":\"").append(c.indicatorName == null ? "" : c.indicatorName).append("\"");
                 sb.append(",\"weight\":").append(c.weight == null ? "null" : c.weight);
                 sb.append(",\"direction\":\"").append(c.direction == null ? "" : c.direction).append("\"");
                 sb.append(",\"value\":").append(c.value == null ? "null" : c.value);
