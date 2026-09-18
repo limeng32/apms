@@ -4,6 +4,7 @@ import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import com.ruoyi.common.annotation.DataScope;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
@@ -11,6 +12,7 @@ import com.ruoyi.common.core.page.TableDataInfo;
 import com.ruoyi.system.domain.apms.ApmsTestResult;
 import com.ruoyi.system.domain.apms.ApmsTestResultValue;
 import com.ruoyi.system.service.apms.IApmsTestResultService;
+import com.ruoyi.system.service.apms.ITestResultImportProvider;
 
 /**
  * 测试结果 Controller
@@ -21,6 +23,9 @@ public class ApmsTestResultController extends BaseController {
 
     @Autowired
     private IApmsTestResultService resultService;
+
+    @Autowired
+    private ITestResultImportProvider csvImportProvider;
 
     /** 列表查询 */
     @PreAuthorize("@ss.hasPermi('apms:testResult:list')")
@@ -81,6 +86,51 @@ public class ApmsTestResultController extends BaseController {
     @PostMapping("/auto-select")
     public AjaxResult autoSelect(@RequestParam Long taskItemId, @RequestParam Long athleteId) {
         return AjaxResult.success(resultService.autoSelectBest(taskItemId, athleteId));
+    }
+
+    /**
+     * 手动指定选中某个 attempt
+     *
+     * <p>事务内：清同组其他 + 选中目标 + 重算任务进度
+     */
+    @PreAuthorize("@ss.hasPermi('apms:testResult:edit')")
+    @PostMapping("/select-attempt/{resultId}")
+    public AjaxResult selectAttempt(@PathVariable Long resultId) {
+        resultService.selectAttempt(resultId);
+        return AjaxResult.success();
+    }
+
+    /**
+     * CSV 批量导入测试结果
+     *
+     * <p>CSV 格式（UTF-8）：
+     * <pre>
+     * athlete_id,measure_date,session_key,HEIGHT,WEIGHT,50M_SPRINT
+     * 1001,2026-09-18,S1,178.5,72.3,5.21
+     * </pre>
+     *
+     * <p>列名匹配 indicator.code 或 model.code（大小写不敏感）。
+     * 不支持 task_id 绑定（CSV 导入默认为手工批量录入），如需任务绑定请先在 CSV 里设 athlete_id + measure_date + session_key 区分。
+     */
+    @PreAuthorize("@ss.hasPermi('apms:testResult:add')")
+    @PostMapping("/import/csv")
+    public AjaxResult importCsv(@RequestParam("file") MultipartFile file) {
+        if (file.isEmpty()) {
+            return AjaxResult.error("上传文件为空");
+        }
+        try {
+            ITestResultImportProvider.ImportResult result =
+                csvImportProvider.importAll(file.getInputStream(), null);
+
+            AjaxResult ajax = AjaxResult.success();
+            ajax.put("writtenResultCount", result.writtenResultCount);
+            ajax.put("rowsProcessed", result.rows.size());
+            ajax.put("errorRows", result.errorRows);
+            ajax.put("warnings", result.warnings);
+            return ajax;
+        } catch (Exception e) {
+            return AjaxResult.error("CSV 导入失败：" + e.getMessage());
+        }
     }
 
     /** 请求体包装 */

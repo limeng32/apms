@@ -60,16 +60,22 @@ public class ApmsDashboardController extends BaseController {
         // RTP 状态分布
         List<ApmsRtpStatus> rtpList = rtpMapper.selectList();
         int rtpGreen = 0, rtpYellow = 0, rtpRed = 0;
+        Set<Long> rtpAthleteIds = new HashSet<>();
         for (ApmsRtpStatus r : rtpList) {
+            rtpAthleteIds.add(r.getAthleteId());
             String s = r.getStatus() == null ? "" : r.getStatus().toLowerCase();
             if (s.contains("green") || s.contains("绿") || "0".equals(s)) rtpGreen++;
             else if (s.contains("yellow") || s.contains("黄") || "1".equals(s)) rtpYellow++;
             else if (s.contains("red") || s.contains("红") || "2".equals(s)) rtpRed++;
             else rtpGreen++; // 默认 green
         }
+        // "未评估" = 运动员总数 − 有 RTP 记录的
+        int rtpNotAssessed = (int) athletes.stream()
+            .filter(a -> !rtpAthleteIds.contains(a.getAthleteId())).count();
         stats.put("rtpGreenCount", rtpGreen);
         stats.put("rtpYellowCount", rtpYellow);
         stats.put("rtpRedCount", rtpRed);
+        stats.put("rtpNotAssessedCount", rtpNotAssessed);
 
         // 本周新增测量（body + phv 最近 7 天）
         java.sql.Date weekAgo = new java.sql.Date(System.currentTimeMillis() - 7L * 86400000);

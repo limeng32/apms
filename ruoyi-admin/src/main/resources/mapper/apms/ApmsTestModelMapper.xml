@@ -35,6 +35,10 @@
         <include refid="selectVo"/> WHERE id = #{id}
     </select>
 
+    <select id="selectByCode" parameterType="String" resultMap="ApmsTestModelResult">
+        <include refid="selectVo"/> WHERE code = #{code} LIMIT 1
+    </select>
+
     <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsTestModel" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO apms_test_model (category, name, code, protocol, is_combo, algo_version, status, create_time)
         VALUES (#{category}, #{name}, #{code}, #{protocol}, #{isCombo}, #{algoVersion}, #{status}, NOW())

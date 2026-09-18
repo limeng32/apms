@@ -1,6 +1,7 @@
 package com.ruoyi.system.mapper.apms;
 
 import java.util.List;
+import org.apache.ibatis.annotations.Param;
 import com.ruoyi.system.domain.apms.ApmsTestResultRep;
 import com.ruoyi.system.domain.apms.ApmsIndicatorRefLevel;
 
@@ -14,5 +15,7 @@ public interface ApmsTestResultRepMapper {
     int batchInsert(List<ApmsTestResultRep> list);
 
     /** 根据 indicator_id + gender + age_group 查 ref_level（Service 算 REP 用） */
-    List<ApmsIndicatorRefLevel> selectRefLevels(Long indicatorId, String gender, String ageGroup);
+    List<ApmsIndicatorRefLevel> selectRefLevels(@Param("indicatorId") Long indicatorId,
+                                               @Param("gender") String gender,
+                                               @Param("ageGroup") String ageGroup);
 }

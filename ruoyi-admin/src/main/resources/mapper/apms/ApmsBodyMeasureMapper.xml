@@ -42,29 +42,29 @@
 
     <select id="selectById" parameterType="Long" resultMap="ApmsBodyMeasureResult">
         <include refid="selectApmsBodyMeasureVo"/>
-        WHERE id = #{id}
+        WHERE m.id = #{id}
     </select>
 
     <select id="selectByAthleteId" parameterType="Long" resultMap="ApmsBodyMeasureResult">
         <include refid="selectApmsBodyMeasureVo"/>
-        WHERE athlete_id = #{athleteId}
-        ORDER BY measure_date DESC, id DESC
+        WHERE m.athlete_id = #{athleteId}
+        ORDER BY m.measure_date DESC, m.id DESC
     </select>
 
     <select id="selectLatestByAthleteId" parameterType="Long" resultMap="ApmsBodyMeasureResult">
         <include refid="selectApmsBodyMeasureVo"/>
-        WHERE athlete_id = #{athleteId}
-        ORDER BY measure_date DESC, id DESC
+        WHERE m.athlete_id = #{athleteId}
+        ORDER BY m.measure_date DESC, m.id DESC
         LIMIT 1
     </select>
 
     <select id="selectByUniqueKey" parameterType="com.ruoyi.system.domain.apms.ApmsBodyMeasure" resultMap="ApmsBodyMeasureResult">
         <include refid="selectApmsBodyMeasureVo"/>
-        WHERE athlete_id = #{athleteId}
-          AND measure_date = #{measureDate}
-          <if test="sourceTaskId != null">AND source_task_id = #{sourceTaskId}</if>
-          <if test="sourceSessionKey != null and sourceSessionKey != ''">AND source_session_key = #{sourceSessionKey}</if>
-        ORDER BY id DESC
+        WHERE m.athlete_id = #{athleteId}
+          AND m.measure_date = #{measureDate}
+          <if test="sourceTaskId != null">AND m.source_task_id = #{sourceTaskId}</if>
+          <if test="sourceSessionKey != null and sourceSessionKey != ''">AND m.source_session_key = #{sourceSessionKey}</if>
+        ORDER BY m.id DESC
         LIMIT 1
     </select>
 

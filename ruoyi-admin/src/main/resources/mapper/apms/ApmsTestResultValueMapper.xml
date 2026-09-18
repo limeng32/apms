@@ -73,4 +73,29 @@
              #{v.numericValue}, #{v.textValue}, #{v.unit}, #{v.isDerived})
         </foreach>
     </insert>
+
+    <!-- 实时聚合参考组统计量（同队/同年龄段/同指标/同性别）用于 T-Score -->
+    <select id="selectAggregateStats" parameterType="java.util.Map" resultType="java.util.Map">
+        SELECT
+            COUNT(*)           AS count,
+            AVG(v.numeric_value)    AS avg_val,
+            STDDEV(v.numeric_value) AS stddev_val
+        FROM apms_test_result_value v
+        JOIN apms_test_result r ON v.result_id = r.id
+        JOIN apms_athlete    a  ON r.athlete_id = a.athlete_id
+        WHERE r.is_valid = '1'
+          AND r.is_selected = '1'
+          AND v.numeric_value IS NOT NULL
+          AND v.is_derived = '0'
+          AND v.indicator_id = #{indicatorId}
+          <if test="teamId != null">
+              AND a.primary_team_id = #{teamId}
+          </if>
+          <if test="ageGroup != null and ageGroup != ''">
+              AND a.age_group = #{ageGroup}
+          </if>
+          <if test="gender != null and gender != ''">
+              AND a.gender = #{gender}
+          </if>
+    </select>
 </mapper>

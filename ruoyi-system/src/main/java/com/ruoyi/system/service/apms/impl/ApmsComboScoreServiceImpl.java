@@ -105,10 +105,34 @@ public class ApmsComboScoreServiceImpl implements IApmsComboScoreService {
             for (ApmsIndicator ind : inds) directionCache.put(ind.getId(), ind.getEvaluationDirection());
         }
 
-        // 5. 查 athlete gender
+        // 5. 查 athlete → 构建 athleteMap + 预查询每个 indicatorId 的真实参考组统计量
         Map<Long, ApmsAthlete> athleteMap = new HashMap<>();
         List<ApmsAthlete> allAthletes = athleteMapper.selectApmsAthleteList(new ApmsAthlete());
         for (ApmsAthlete a : allAthletes) athleteMap.put(a.getAthleteId(), a);
+
+        // 5.1 预查询：每个 indicatorId 在"同队 + 同性别"范围内的 μ/σ/N
+        //     （ageGroup 暂不传，待 apms_athlete 表加 age_group 字段后启用三级筛选）
+        //     缓存 key = teamId:gender
+        Set<Long> indicatorSet = new HashSet<>(indicatorIds);
+        Map<String, Map<Long, long[]>> realStatsCache = new HashMap<>();
+        for (ApmsAthlete athlete : athleteMap.values()) {
+            String key = buildRefGroupKey(athlete);
+            realStatsCache.computeIfAbsent(key, k -> new HashMap<>());
+            for (Long indId : indicatorSet) {
+                if (realStatsCache.get(key).containsKey(indId)) continue; // 已查过
+                Map<String, Object> params = new HashMap<>();
+                params.put("teamId", athlete.getPrimaryTeamId());
+                params.put("ageGroup", null); // 暂不传
+                params.put("indicatorId", indId);
+                params.put("gender", athlete.getGender());
+                Map<String, Object> stats = valueMapper.selectAggregateStats(params);
+                long count = ((Number) stats.getOrDefault("count", 0)).longValue();
+                double avg = stats.get("avg_val") != null ? ((Number) stats.get("avg_val")).doubleValue() : 0;
+                double sd = stats.get("stddev_val") != null ? ((Number) stats.get("stddev_val")).doubleValue() : 0;
+                realStatsCache.get(key).put(indId, new long[]{count,
+                    Double.doubleToLongBits(avg), Double.doubleToLongBits(sd)});
+            }
+        }
 
         // 6. 逐人计算
         BatchResult result = new BatchResult();
@@ -129,6 +153,9 @@ public class ApmsComboScoreServiceImpl implements IApmsComboScoreService {
             Map<Long, BigDecimal> vals = athleteValues.getOrDefault(athleteId, Collections.emptyMap());
             String gender = athlete != null ? athlete.getGender() : "M";
 
+            String refKey = buildRefGroupKey(athlete);
+            Map<Long, long[]> realStats = realStatsCache.getOrDefault(refKey, Collections.emptyMap());
+
             for (ApmsComboComponent comp : components) {
                 ComboScoreCalculator.ComponentInput ci = new ComboScoreCalculator.ComponentInput();
                 ci.componentId = comp.getId();
@@ -138,11 +165,25 @@ public class ApmsComboScoreServiceImpl implements IApmsComboScoreService {
                 ci.direction = resolveDirection(comp, directionCache);
                 ci.value = vals.get(comp.getIndicatorId());
 
-                List<ApmsIndicatorRef> refs = refCache.getOrDefault(comp.getIndicatorId(), Collections.emptyList());
-                ApmsIndicatorRef ref = findBestRef(refs, gender);
-                if (ref != null) {
-                    ci.refMin = ref.getRefMin();
-                    ci.refMax = ref.getRefMax();
+                // 先查真实参考组统计量
+                long[] stats = realStats.get(comp.getIndicatorId());
+                if (stats != null && stats[0] >= 5) {
+                    // N≥5：注入真实 μ/σ
+                    ci.sampleSize = (int) stats[0];
+                    ci.mu = BigDecimal.valueOf(Double.longBitsToDouble(stats[1]));
+                    ci.sigma = BigDecimal.valueOf(Double.longBitsToDouble(stats[2]));
+                    ci.useRealStats = true;
+                } else {
+                    // 样本不足 → 用 ref 代理做 fallback
+                    List<ApmsIndicatorRef> refs = refCache.getOrDefault(comp.getIndicatorId(), Collections.emptyList());
+                    ApmsIndicatorRef ref = findBestRef(refs, gender);
+                    if (ref != null) {
+                        ci.refMin = ref.getRefMin();
+                        ci.refMax = ref.getRefMax();
+                    }
+                    if (stats != null) {
+                        ci.sampleSize = (int) stats[0]; // 标注真实样本量（即使 <5）
+                    }
                 }
                 inputs.add(ci);
             }
@@ -181,6 +222,13 @@ public class ApmsComboScoreServiceImpl implements IApmsComboScoreService {
     @Override public void recalculate(Long athleteId, Long comboModelId, Long triggerResultId) { /* 复用 batchCalculate */ }
 
     // ============= helpers =============
+
+    /** 构建参考组缓存 key：teamId:gender（ageGroup 暂未启用） */
+    private String buildRefGroupKey(ApmsAthlete a) {
+        long teamId = a.getPrimaryTeamId() != null ? a.getPrimaryTeamId() : 0L;
+        String gender = a.getGender() != null ? a.getGender() : "";
+        return teamId + ":" + gender;
+    }
 
     private String resolveDirection(ApmsComboComponent comp, Map<Long, String> directionCache) {
         String o = comp.getDirectionOverride();

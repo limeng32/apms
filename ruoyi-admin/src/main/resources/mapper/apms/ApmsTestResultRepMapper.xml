@@ -73,9 +73,9 @@
                rl.min_value AS rl_min, rl.max_value AS rl_max
         FROM apms_indicator_ref_level rl
         JOIN apms_indicator_ref r ON rl.ref_id = r.id
-        WHERE r.indicator_id = #{arg0}
-          AND r.gender       = #{arg1}
-          AND r.age_group    = #{arg2}
+        WHERE r.indicator_id = #{indicatorId}
+          AND r.gender       = #{gender}
+          AND r.age_group    = #{ageGroup}
         ORDER BY rl.min_value
     </select>
 </mapper>

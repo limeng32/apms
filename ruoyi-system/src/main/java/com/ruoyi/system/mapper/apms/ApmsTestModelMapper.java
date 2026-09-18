@@ -6,6 +6,7 @@ import com.ruoyi.system.domain.apms.ApmsTestModel;
 public interface ApmsTestModelMapper {
     public List<ApmsTestModel> selectList(ApmsTestModel model);
     public ApmsTestModel selectById(Long id);
+    public ApmsTestModel selectByCode(String code);
     public int insert(ApmsTestModel model);
     public int update(ApmsTestModel model);
     public int deleteByIds(Long[] ids);

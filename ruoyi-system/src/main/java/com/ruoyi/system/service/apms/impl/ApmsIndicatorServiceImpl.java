@@ -11,6 +11,9 @@ import com.ruoyi.system.mapper.apms.ApmsIndicatorMapper;
 import com.ruoyi.system.mapper.apms.ApmsIndicatorRefMapper;
 import com.ruoyi.system.mapper.apms.ApmsIndicatorRefLevelMapper;
 import com.ruoyi.system.service.apms.IApmsIndicatorService;
+import com.ruoyi.system.service.apms.impl.IndicatorRefLevelValidator;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 指标库 Service 实现
@@ -26,6 +29,9 @@ public class ApmsIndicatorServiceImpl implements IApmsIndicatorService {
 
     @Autowired
     private ApmsIndicatorRefLevelMapper levelMapper;
+
+    @Autowired
+    private IndicatorRefLevelValidator levelValidator;
 
     // ===================== Indicator =====================
 
@@ -123,11 +129,27 @@ public class ApmsIndicatorServiceImpl implements IApmsIndicatorService {
 
     @Override
     public int insertLevel(ApmsIndicatorRefLevel level) {
+        // 校验：同 refId 下所有 levels + 新 level
+        List<ApmsIndicatorRefLevel> all = levelMapper.selectByRefId(level.getRefId());
+        List<ApmsIndicatorRefLevel> toValidate = new ArrayList<>(all);
+        toValidate.add(level);
+        levelValidator.validate(toValidate);
         return levelMapper.insert(level);
     }
 
     @Override
     public int updateLevel(ApmsIndicatorRefLevel level) {
+        // 校验：同 refId 下所有 levels，替换当前 level
+        List<ApmsIndicatorRefLevel> all = levelMapper.selectByRefId(level.getRefId());
+        List<ApmsIndicatorRefLevel> toValidate = new ArrayList<>();
+        for (ApmsIndicatorRefLevel l : all) {
+            if (l.getId().equals(level.getId())) {
+                toValidate.add(level); // 替换为新版本
+            } else {
+                toValidate.add(l);
+            }
+        }
+        levelValidator.validate(toValidate);
         return levelMapper.update(level);
     }
 
