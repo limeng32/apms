@@ -16,7 +16,7 @@
         </p>
       </div>
       <div class="hero-right">
-        <el-button type="primary" class="btn-goals" @click="$router.push('/apms/task')">查看测试看板</el-button>
+        <el-button type="primary" class="btn-goals" @click="$router.push('/apms/testTask')">查看测试看板</el-button>
       </div>
     </div>
 
@@ -73,7 +73,7 @@
         <div class="card">
           <div class="card-h">
             <div class="card-title">测试任务进度 <small>进行中</small></div>
-            <el-button text class="btn-link" @click="$router.push('/apms/task')">全部任务 →</el-button>
+            <el-button text class="btn-link" @click="$router.push('/apms/testTask')">全部任务 →</el-button>
           </div>
           <div class="card-b">
             <div v-for="t in taskList" :key="t.id" class="task-row">
@@ -101,7 +101,7 @@
         <div class="card">
           <div class="card-h">
             <div class="card-title">参训状态总览 <small>RTP</small></div>
-            <el-button text class="btn-link" @click="$router.push('/apms/health')">健康与医疗 →</el-button>
+            <el-button text class="btn-link" @click="$router.push('/apms/medical')">健康与医疗 →</el-button>
           </div>
           <div class="card-b">
             <el-row :gutter="10" class="rtp-row">
