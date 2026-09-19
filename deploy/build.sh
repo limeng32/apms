@@ -20,7 +20,7 @@
 # ============================================================
 set -euo pipefail
 
-REMOTE_HOST="${REMOTE_HOST:-<YOUR_SERVER_IP>}"
+REMOTE_HOST="${REMOTE_HOST:-39.97.246.69}"
 # deploy.sh 内部直接执行 systemctl/cp /etc/systemd/system/
 # 需要 root 权限，因此默认 root。
 #
@@ -125,14 +125,29 @@ scp "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "$JAR_FILE" "$REMOTE_USER@$REMOTE_HOST:$RE
 
 # 3b. 上传前端 dist
 if [ -d "$PROJECT_ROOT/ruoyi-ui/dist" ]; then
+    ssh "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" \
+        "$REMOTE_USER@$REMOTE_HOST" \
+        "rm -rf '$REMOTE_DIR/upload/dist' && mkdir -p '$REMOTE_DIR/upload/dist'"
+
     if command -v rsync >/dev/null 2>&1; then
         RSYNC_SSH="ssh"
-        [ "${KNOWN_HOSTS_FILE:-}" = "/dev/null" ] && RSYNC_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
-        rsync -avz --delete -e "$RSYNC_SSH" "$PROJECT_ROOT/ruoyi-ui/dist/" \
-            "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/dist/" >/dev/null 2>&1 || \
-        scp -r "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "$PROJECT_ROOT/ruoyi-ui/dist/" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/dist"
+        [ "${KNOWN_HOSTS_FILE:-}" = "/dev/null" ] && \
+            RSYNC_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+
+        if rsync -avz -e "$RSYNC_SSH" \
+            "$PROJECT_ROOT/ruoyi-ui/dist/" \
+            "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/dist/"; then
+            log "  前端 rsync 完成"
+        else
+            warn "  rsync 失败，回退 scp"
+            scp -r "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" \
+                "$PROJECT_ROOT/ruoyi-ui/dist/"* \
+                "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/dist/"
+        fi
     else
-        scp -r "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "$PROJECT_ROOT/ruoyi-ui/dist/" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/dist"
+        scp -r "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" \
+            "$PROJECT_ROOT/ruoyi-ui/dist/"* \
+            "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/dist/"
     fi
 fi
 
@@ -166,7 +181,7 @@ if [ -d "$PROJECT_ROOT/patches" ] && [ "$(ls -A "$PROJECT_ROOT/patches/"*.sql 2>
     if [ "${REMOTE_PATCH_CNT:-0}" != "$LOCAL_PATCH_CNT" ]; then
         err "patches 校验失败：本地 $LOCAL_PATCH_CNT 个，远端 ${REMOTE_PATCH_CNT:-?} 个，已中止发布"
     fi
-    log "  patches 校验通过（远端 $REMOTE_PATCH_CNT / 本地 $LOCAL_PATCH_CNT）"
+    log "  patches 校验通过（远端 ${REMOTE_PATCH_CNT} / 本地 ${LOCAL_PATCH_CNT}）"
 fi
 
 log "  ✅ 上传完成"

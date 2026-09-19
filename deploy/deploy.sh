@@ -63,6 +63,8 @@ REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 REDIS_DB="${REDIS_DB:-0}"
 BINDIR="${BINDIR:-/opt/apms}"
+# 外网验证/结尾汇总用的公网入口；env.conf 可覆盖。必须给默认值，否则 set -u 下第 574 行会 unbound
+PUBLIC_HOST="${PUBLIC_HOST:-39.97.246.69}"
 
 # 这些变量必须在 env.conf 里显式配置，缺失 → hard fail
 [ -n "$DB_NAME" ] || err "env.conf 缺失 DB_NAME，拒绝部署（禁止 fallback）"
@@ -85,7 +87,7 @@ PATCHES_LOCAL="$BINDIR/patches"
 # ⚠️ 关键：密码里可能有 !#$ 等特殊字符，必须用函数形式避免 bash 解释
 mysql_cli() { mysql -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" --password="$DB_PASS" "$DB_NAME" "$@"; }
 # mysqldump 必须指定 --databases "$DB_NAME"，否则会尝试 dump 所有 DB（包括 mysql 系统库），可能权限不够失败
-mysql_dump() { mysqldump -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" --password="$DB_PASS" --single-transaction --routines --triggers --databases "$DB_NAME" "$@"; }
+mysql_dump() { mysqldump -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" --password="$DB_PASS" --single-transaction --no-tablespaces --triggers --databases "$DB_NAME" "$@"; }
 
 # ===== do_stop: systemd 停止 =====
 do_stop() {
@@ -212,7 +214,7 @@ rollback() {
 
     echo ""
     if [ "$RB_OK" -eq 1 ]; then
-        warn "  ✅ 回滚完成，旧版本已就绪（$LAST_BK）"
+        warn "  ✅ 回滚完成，旧版本已就绪（${LAST_BK}）"
     else
         warn "  ❌ 回滚后旧版本也不健康！需要人工介入"
         warn "  日志: tail -f $LOGDIR/stdout.log"
@@ -385,6 +387,44 @@ if command -v redis-cli >/dev/null 2>&1; then
     REDIS_OLD_VERSION=$(redis-cli $REDIS_ARGS -n "$REDIS_DB" GET "apms:version" 2>/dev/null || echo "")
 fi
 
+# ===== 备份保留策略 =====
+# 规则：保留"每天的第一个备份" + "最新一次备份"，其余删除。
+# 仅处理形如 YYYYMMDD_HHMMSS 的备份目录（目录名即时间戳，字典序=时间序）。
+# 最新备份就是本次部署的回滚点，恒在保留集合内，绝不删除。
+prune_old_backups() {
+    local all name d latest="" keep="" prev_date=""
+    all=$(find "$BACKUP" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null \
+          | grep -E '^[0-9]{8}_[0-9]{6}$' | sort || true)
+    [ -z "$all" ] && return 0
+
+    # 每天取最早一个；循环走完 latest 即最新一个
+    while IFS= read -r name; do
+        [ -z "$name" ] && continue
+        d="${name%%_*}"
+        if [ "$d" != "$prev_date" ]; then
+            keep="${keep} ${name}"
+            prev_date="$d"
+        fi
+        latest="$name"
+    done <<< "$all"
+
+    # 确保最新一个在保留集合（它可能同时是当天第一个，也可能不是）
+    case " ${keep} " in
+        *" ${latest} "*) ;;
+        *) keep="${keep} ${latest}" ;;
+    esac
+
+    while IFS= read -r name; do
+        [ -z "$name" ] && continue
+        case " ${keep} " in
+            *" ${name} "*) ;;
+            *) rm -rf -- "$BACKUP/$name" 2>/dev/null \
+                && log "  🧹 清理过期备份 ${name}" \
+                || warn "  ⚠️ 无法删除过期备份 ${name}" ;;
+        esac
+    done <<< "$all"
+}
+
 # ===== Step 1: 停服务 =====
 do_stop
 
@@ -403,6 +443,9 @@ fi
 log "  备份当前产物..."
 [ -f "$JARDIR/apms.jar" ] && cp "$JARDIR/apms.jar" "$BKDIR/apms.jar" || true
 [ -d "$FRONTIR/dist" ] && cp -a "$FRONTIR/dist" "$BKDIR/dist_old" || true
+
+# 应用备份保留策略：本次备份已落盘（=最新），清理每天非首个且非最新的旧备份
+prune_old_backups
 
 # ===== Step 3: 应用 SQL Patches（Flyway-lite）=====
 if [ "$SKIP_PATCH" -eq 1 ]; then
