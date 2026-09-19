@@ -118,10 +118,10 @@ fi
 
 # ===== Step 3: 准备上传目录 =====
 log "Step 3: 上传到 $REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/"
-ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$REMOTE_HOST" "mkdir -p $REMOTE_DIR/upload/patches"
+ssh "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "$REMOTE_USER@$REMOTE_HOST" "mkdir -p $REMOTE_DIR/upload/patches"
 
 # 3a. 上传 jar
-scp "${SSH_OPTS[@]}" "$JAR_FILE" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/apms.jar" >/dev/null 2>&1
+scp "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "$JAR_FILE" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/apms.jar" >/dev/null 2>&1
 
 # 3b. 上传前端 dist
 if [ -d "$PROJECT_ROOT/ruoyi-ui/dist" ]; then
@@ -130,39 +130,56 @@ if [ -d "$PROJECT_ROOT/ruoyi-ui/dist" ]; then
         [ "${KNOWN_HOSTS_FILE:-}" = "/dev/null" ] && RSYNC_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
         rsync -avz --delete -e "$RSYNC_SSH" "$PROJECT_ROOT/ruoyi-ui/dist/" \
             "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/dist/" >/dev/null 2>&1 || \
-        scp -r "${SSH_OPTS[@]}" "$PROJECT_ROOT/ruoyi-ui/dist/" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/dist"
+        scp -r "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "$PROJECT_ROOT/ruoyi-ui/dist/" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/dist"
     else
-        scp -r "${SSH_OPTS[@]}" "$PROJECT_ROOT/ruoyi-ui/dist/" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/dist"
+        scp -r "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "$PROJECT_ROOT/ruoyi-ui/dist/" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/dist"
     fi
 fi
 
 # 3c. 上传 deploy 配置文件（含 apms-backend.service，首次部署必须）
 for f in apms-nginx.conf apms-backend.service; do
     if [ -f "$PROJECT_ROOT/deploy/$f" ]; then
-        scp "${SSH_OPTS[@]}" "$PROJECT_ROOT/deploy/$f" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/$f" >/dev/null 2>&1
+        scp "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "$PROJECT_ROOT/deploy/$f" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/$f" >/dev/null 2>&1
     fi
 done
 
 # 3d. 上传 patches（增量）
+# 生产安全：patches 上传失败必须中止，防止"漏传 SQL patch 却照常发布"导致库结构落后于代码
 if [ -d "$PROJECT_ROOT/patches" ] && [ "$(ls -A "$PROJECT_ROOT/patches/"*.sql 2>/dev/null | wc -l)" -gt 0 ]; then
     RSYNC_SSH="ssh"
     [ "${KNOWN_HOSTS_FILE:-}" = "/dev/null" ] && RSYNC_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
-    rsync -avz -e "$RSYNC_SSH" "$PROJECT_ROOT/patches/" \
-        "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/patches/" >/dev/null 2>&1 || \
-    scp -r "${SSH_OPTS[@]}" "$PROJECT_ROOT/patches/"* "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/patches/" 2>/dev/null || true
+    LOCAL_PATCH_CNT=$(ls "$PROJECT_ROOT/patches/"*.sql 2>/dev/null | wc -l | tr -d '[:space:]')
+
+    if rsync -az -e "$RSYNC_SSH" "$PROJECT_ROOT/patches/" \
+        "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/patches/" >/dev/null 2>&1; then
+        log "  patches rsync 完成"
+    else
+        warn "  rsync 失败/不可用，回退 scp..."
+        scp -r "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "$PROJECT_ROOT/patches/"*.sql \
+            "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/upload/patches/" >/dev/null 2>&1 \
+            || err "patches 上传失败（rsync/scp 均失败），已中止发布以避免漏执行 SQL patch"
+    fi
+
+    # 远端校验：upload/patches 下 .sql 数量必须与本地一致，不一致立即中止
+    REMOTE_PATCH_CNT=$(ssh "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "$REMOTE_USER@$REMOTE_HOST" \
+        "ls $REMOTE_DIR/upload/patches/*.sql 2>/dev/null | wc -l" 2>/dev/null | tr -d '[:space:]')
+    if [ "${REMOTE_PATCH_CNT:-0}" != "$LOCAL_PATCH_CNT" ]; then
+        err "patches 校验失败：本地 $LOCAL_PATCH_CNT 个，远端 ${REMOTE_PATCH_CNT:-?} 个，已中止发布"
+    fi
+    log "  patches 校验通过（远端 $REMOTE_PATCH_CNT / 本地 $LOCAL_PATCH_CNT）"
 fi
 
 log "  ✅ 上传完成"
 
 # ===== Step 4: 远程执行 deploy.sh =====
 log "Step 4: 远程执行 deploy.sh --version $VERSION $DEPLOY_SKIP_ARGS"
-scp "${SSH_OPTS[@]}" "$PROJECT_ROOT/deploy/deploy.sh" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/deploy.sh" >/dev/null 2>&1
+scp "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "$PROJECT_ROOT/deploy/deploy.sh" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/deploy.sh" >/dev/null 2>&1
 
 # 非 root 用户自动加 sudo（需要 NOPASSWD sudoers 配置）
 REMOTE_SUDO=""
 [ "$REMOTE_USER" != "root" ] && REMOTE_SUDO="sudo"
 
-ssh "${SSH_OPTS[@]}" "$REMOTE_USER@$REMOTE_HOST" \
+ssh "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "$REMOTE_USER@$REMOTE_HOST" \
     "$REMOTE_SUDO bash $REMOTE_DIR/deploy.sh --version $VERSION $DEPLOY_SKIP_ARGS"
 
 echo ""

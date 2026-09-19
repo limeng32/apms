@@ -469,15 +469,33 @@ EOSQL
 
             log "  ▶ 应用 $pname (v$pversion)..."
             START_MS=$(($(date +%s%N)/1000000))
-            if mysql_cli < "$patch" 2>&1 | tail -5; then
+            PATCH_LOG=$(mktemp /tmp/apms-patch.XXXXXX.log)
+            # 显式取 mysql 退出码：输出落临时文件、不经过管道，杜绝任何吞错可能
+            set +e
+            mysql_cli < "$patch" >"$PATCH_LOG" 2>&1
+            PATCH_RC=$?
+            set -e
+            if [ "$PATCH_RC" -eq 0 ]; then
                 END_MS=$(($(date +%s%N)/1000000))
                 ELAPSED=$((END_MS - START_MS))
-                mysql_cli -e "INSERT INTO apms_db_version (patch_name, version, checksum, description, applied_by, execution_ms) VALUES ('$pname', '$pversion', '$checksum', '$(echo "$pdesc" | sed "s/'//g")', 'deploy.sh', $ELAPSED);" 2>/dev/null || true
+                mysql_cli -e "INSERT INTO apms_db_version (patch_name, version, checksum, description, applied_by, execution_ms) VALUES ('$pname', '$pversion', '$checksum', '$(echo "$pdesc" | sed "s/'//g")', 'deploy.sh', $ELAPSED);" 2>/dev/null \
+                    || warn "    ⚠️ 版本记录写入失败（patch 幂等，下次部署会安全重跑）"
                 APPLIED_COUNT=$((APPLIED_COUNT + 1))
                 log "    ✅ 成功 (${ELAPSED}ms)"
             else
-                err "    ❌ $pname 执行失败！DB 已备份在 $BKDIR/db.sql.gz，建议回滚"
+                # 此刻处于"已停服、尚未替换 jar/dist"阶段：旧版本仍在 $JARDIR，先拉起保可用
+                echo -e "${RED}    ❌ $pname 执行失败 (mysql rc=$PATCH_RC)，输出末尾：${NC}"
+                tail -15 "$PATCH_LOG" | sed 's/^/      /'
+                echo -e "${YELLOW}    🩺 旧产物未改动，尝试立即拉起旧版本以恢复线上服务...${NC}"
+                if systemctl start apms-backend 2>/dev/null && sleep 3 && systemctl is-active --quiet apms-backend; then
+                    warn "    ✅ 旧版本已重新拉起（active）；DB 备份: $BKDIR/db.sql.gz"
+                else
+                    warn "    ⚠️ 旧版本未能确认 active，请立即人工: systemctl status apms-backend"
+                fi
+                rm -f "$PATCH_LOG"
+                err "🛑 SQL patch 失败 → 已中止部署（jar/dist 未替换、版本未记录）。修正 patch 后重跑即可"
             fi
+            rm -f "$PATCH_LOG"
         done
     fi
     log "  ✅ SQL patches: $APPLIED_COUNT 个新 patch 已应用"

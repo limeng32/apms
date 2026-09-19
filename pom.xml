@@ -17,7 +17,7 @@
         <!-- APMS 业务版本号（独立于若依框架版本）
              迭代中写完整构建号如 0.0.2-09171135，定版时去掉时间戳如 0.0.2
              pom 是版本唯一真相源 -->
-        <apms.version>0.0.2-09171135</apms.version>
+        <apms.version>0.0.2-09191145</apms.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
