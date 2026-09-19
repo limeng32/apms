@@ -434,10 +434,17 @@ BKDIR="$BACKUP/$BACKUP_TS"
 mkdir -p "$BKDIR"
 
 log "Step 2: 数据库备份 → $BKDIR/db.sql.gz"
-if mysql_dump 2>/dev/null | gzip > "$BKDIR/db.sql.gz"; then
+# 先写临时文件，成功且通过非空+gzip 完整性校验后再原子改名。
+# 保证不变量：backup/<时间戳>/ 一旦存在，其 db.sql.gz 必然完整可解压（prune 无需再判合法性）。
+DB_BACKUP_TMP="$BKDIR/db.sql.gz.tmp"
+if mysql_dump 2>/dev/null | gzip > "$DB_BACKUP_TMP" \
+   && [ -s "$DB_BACKUP_TMP" ] \
+   && gzip -t "$DB_BACKUP_TMP"; then
+    mv "$DB_BACKUP_TMP" "$BKDIR/db.sql.gz"
     log "  ✅ DB 备份完成 ($(du -h "$BKDIR/db.sql.gz" | cut -f1))"
 else
-    err "❌ DB 备份失败，终止部署（P0 数据安全：无备份不允许执行 SQL patch）"
+    rm -rf -- "$BKDIR"
+    err "❌ DB 备份失败，已清理无效备份目录，终止部署（P0 数据安全：无完整备份不允许执行 SQL patch）"
 fi
 
 log "  备份当前产物..."
