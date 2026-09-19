@@ -93,9 +93,11 @@ mysql_dump() { mysqldump -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" --password="$DB_
 do_stop() {
     log "停止后端 (systemd service: apms-backend)..."
 
-    # 先看 service 是否存在/运行
-    if ! systemctl list-unit-files | grep -q '^apms-backend.service'; then
-        warn "systemd service 不存在"
+    # 用 systemctl cat 判断单元是否被识别（无管道）。
+    # 切勿用 `systemctl list-unit-files | grep -q`：set -o pipefail 下 grep -q 提前
+    # 退出会让上游 systemctl 收到 SIGPIPE(141)，导致服务明明存在却被误判为不存在。
+    if ! systemctl cat apms-backend.service >/dev/null 2>&1; then
+        warn "systemd 未识别 apms-backend.service，回退按端口停止"
         # 兜底：按端口杀（macOS lsof / Linux ss）
         PIDS=""
         if command -v lsof >/dev/null 2>&1; then
