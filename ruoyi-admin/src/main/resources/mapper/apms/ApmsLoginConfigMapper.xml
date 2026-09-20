@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsLoginConfigMapper">
+
+    <resultMap id="ApmsLoginConfigResult" type="com.ruoyi.system.domain.apms.ApmsLoginConfig">
+        <id     property="id"          column="id"/>
+        <result property="configKey"   column="config_key"/>
+        <result property="configName"  column="config_name"/>
+        <result property="configJson"  column="config_json"/>
+        <result property="schemaVer"   column="schema_ver"/>
+        <result property="status"      column="status"/>
+        <result property="createBy"    column="create_by"/>
+        <result property="createTime"  column="create_time"/>
+        <result property="updateBy"    column="update_by"/>
+        <result property="updateTime"  column="update_time"/>
+        <result property="remark"      column="remark"/>
+    </resultMap>
+
+    <sql id="selectApmsLoginConfigVo">
+        SELECT id, config_key, config_name, config_json, schema_ver, status,
+               create_by, create_time, update_by, update_time, remark
+        FROM apms_login_config
+    </sql>
+
+    <!-- 按配置标识查询单例配置 -->
+    <select id="selectByConfigKey" parameterType="String" resultMap="ApmsLoginConfigResult">
+        <include refid="selectApmsLoginConfigVo"/>
+        WHERE config_key = #{configKey}
+        LIMIT 1
+    </select>
+
+</mapper>

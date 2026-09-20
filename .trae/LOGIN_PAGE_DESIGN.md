@@ -262,8 +262,12 @@ CREATE TABLE apms_login_config (
 | `--login-link` | `#2f6b57` | 忘记密码链接 |
 | `--login-page-bg` | `#fff` | 表单区/页面底色 |
 | `--login-radius` | `10px` | 圆角 |
-| `--login-hero-size` / `--login-brand-size` | `38px / 22px` | 字号 |
+| `--login-hero-size` / `--login-brand-size` / `--login-form-title-size` | `38px / 22px / 24px` | 字号 |
+| `--login-hero-weight` | `700` | Hero 字重 |
 | `--login-font-family` | 现有浏览器默认栈 | 全局字体（由 `typography.fontFamily` 枚举映射） |
+| `--login-split` | `1.1fr 1fr` | 双栏完整轨道值（M1 落地结论：直接输出 `1.1fr 1fr`，**不要**写 `calc(1.1 * 1fr)`，后者在部分浏览器整条声明失效导致双栏塌成单栏） |
+| `--login-glow-1` / `--login-glow-2` | accent@0.18 / accent@0.12 | 品牌区装饰光晕（由 accent 派生） |
+| `--login-brand-sub` / `-feature` / `-foot` / `-border` | 白字@0.55 / 0.78 / 0.35 / 0.08 | 品牌区英文副标题/特性文字/版权/分隔线（由 textOnBrand 派生） |
 
 注入方式：Renderer 根节点 `:style="cssVars"`（JS 把 config 映射成变量键值对，含渐变字符串拼接 `linear-gradient(${angle}deg, ...stops)`）。`html.dark` 暗黑覆盖保留。
 

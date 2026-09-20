@@ -101,6 +101,8 @@ public class SecurityConfig
                 permitAllUrl.getUrls().forEach(url -> requests.requestMatchers(url).permitAll());
                 // 对于登录login 注册register 验证码captchaImage 允许匿名访问
                 requests.requestMatchers("/login", "/register", "/captchaImage", "/apms/version").permitAll()
+                    // 登录页配置：仅 GET 匿名可读（按方法精确放行，写接口仍需鉴权）
+                    .requestMatchers(HttpMethod.GET, "/login/config").permitAll()
                     // Actuator 健康检查（management 端口）
                     .requestMatchers("/health", "/actuator/**").permitAll()
                     // 静态资源，可匿名访问
