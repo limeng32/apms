@@ -1,70 +1,18 @@
 <template>
   <LoginRenderer :config="loginThemeStore.config">
-    <!-- 登录表单 slot：结构与业务逻辑与改造前完全一致，仅文案取自配置（默认值相同） -->
+    <!-- 登录表单：纯展示组件 LoginFormFields，业务逻辑在本文件 -->
     <template #form>
-      <el-form ref="loginRef" :model="loginForm" :rules="loginRules" class="lf-form" size="large">
-        <el-form-item prop="username">
-          <el-input
-            v-model="loginForm.username"
-            type="text"
-            auto-complete="off"
-            :placeholder="form.usernamePlaceholder"
-          >
-            <template #prefix><el-icon><User/></el-icon></template>
-          </el-input>
-        </el-form-item>
-
-        <el-form-item prop="password">
-          <el-input
-            v-model="loginForm.password"
-            :type="showPassword ? 'text' : 'password'"
-            auto-complete="off"
-            :placeholder="form.passwordPlaceholder"
-            @keyup.enter="handleLogin"
-          >
-            <template #prefix><el-icon><Lock/></el-icon></template>
-            <template #suffix>
-              <el-icon class="lf-eye" @click="showPassword = !showPassword">
-                <View v-if="showPassword"/>
-                <Hide v-else/>
-              </el-icon>
-            </template>
-          </el-input>
-        </el-form-item>
-
-        <div class="lf-row">
-          <el-checkbox v-model="loginForm.rememberMe">{{ form.rememberText }}</el-checkbox>
-          <a
-            v-if="forgot.mode === 'alert'"
-            href="javascript:;"
-            class="lf-forgot"
-            @click="handleForgot"
-          >{{ forgot.text }}</a>
-          <a
-            v-else-if="forgot.mode === 'link' && safeForgotUrl"
-            :href="safeForgotUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="lf-forgot"
-          >{{ forgot.text }}</a>
-          <!-- mode=hidden 不渲染；link 但 URL 非法时不渲染可执行链接 -->
-        </div>
-
-        <el-form-item style="width:100%;">
-          <el-button
-            :loading="loading"
-            type="primary"
-            class="lf-submit"
-            @click.prevent="handleLogin"
-          >
-            <span v-if="!loading">{{ form.buttonText }}</span>
-            <span v-else>{{ form.loadingText }}</span>
-          </el-button>
-        </el-form-item>
-      </el-form>
+      <LoginFormFields
+        ref="loginFieldsRef"
+        v-model="loginForm"
+        :config="loginThemeStore.config"
+        :loading="loading"
+        @submit="handleLogin"
+        @forgot="handleForgot"
+      />
     </template>
 
-    <!-- dev 环境演示角色快捷填充（原版行为：仅填充账号，不直接登录） -->
+    <!-- dev 环境演示角色快捷填充（原版行为：仅填充账号，不直接登录；UAT/生产不显示） -->
     <template #roles>
       <div class="lf-roles" v-if="isDev">
         <div class="lf-roles-title">— 演示角色快捷登录 —</div>
@@ -83,12 +31,12 @@
 import Cookies from "js-cookie"
 import { encrypt, decrypt } from "@/utils/jsencrypt"
 import {
-  User, Lock, View, Hide, CircleCheck, Check, TrendCharts, Key, Document
+  User, CircleCheck, Check, TrendCharts, Key, Document
 } from '@element-plus/icons-vue'
 import useUserStore from '@/store/modules/user'
 import LoginRenderer from './login/LoginRenderer.vue'
+import LoginFormFields from './login/LoginFormFields.vue'
 import useLoginThemeStore from '@/store/modules/loginTheme'
-import { safeUrl } from './login/login.utils'
 
 const userStore = useUserStore()
 const loginThemeStore = useLoginThemeStore()
@@ -107,7 +55,7 @@ const roles = [
   { key: 'research', name: '科研', icon: 'Check' },
 ]
 
-const showPassword = ref(false)
+const loginFieldsRef = ref(null)
 
 const loginForm = ref({
   username: "admin",
@@ -115,19 +63,9 @@ const loginForm = ref({
   rememberMe: false
 })
 
-const loginRules = reactive({
-  username: [{ required: true, trigger: "blur", message: "请输入您的账号" }],
-  password: [{ required: true, trigger: "blur", message: "请输入您的密码" }]
-})
-
 const loading = ref(false)
 const register = ref(false)
 const redirect = ref(undefined)
-
-// 登录页文案/链接（来自配置，空表时默认值与改造前硬编码一致）
-const form = computed(() => loginThemeStore.config.form)
-const forgot = computed(() => form.value.forgot)
-const safeForgotUrl = computed(() => safeUrl(forgot.value.url))
 
 watch(route, (newRoute) => {
   redirect.value = newRoute.query && newRoute.query.redirect
@@ -139,7 +77,7 @@ onMounted(() => {
 })
 
 function handleLogin() {
-  proxy.$refs.loginRef.validate(valid => {
+  loginFieldsRef.value.validate(valid => {
     if (valid) {
       loading.value = true
       if (loginForm.value.rememberMe) {
@@ -185,77 +123,15 @@ function quickFill(role, name) {
 }
 
 function handleForgot() {
-  proxy.$modal.msgWarning(forgot.value.alertMessage || '请联系管理员重置密码')
+  const msg = loginThemeStore.config.form.forgot.alertMessage || '请联系管理员重置密码'
+  proxy.$modal.msgWarning(msg)
 }
 
 getCookie()
 </script>
 
 <style lang='scss' scoped>
-.lf-form {
-  margin-top: 30px;
-}
-
-/* 输入框（数值与改造前一致，颜色走登录页 CSS 变量） */
-:deep(.el-input__wrapper) {
-  border-radius: var(--login-radius);
-  height: 44px;
-  box-shadow: 0 0 0 1px var(--login-border) inset;
-  &:hover, &.is-focus {
-    box-shadow: 0 0 0 1px var(--login-input-focus) inset;
-  }
-}
-:deep(.el-input__inner) {
-  height: 44px;
-  font-size: 14px;
-}
-:deep(.el-input__prefix-inner) {
-  color: var(--login-text-2);
-  font-size: 17px;
-  margin-right: 6px;
-}
-.lf-eye {
-  color: var(--login-text-2);
-  cursor: pointer;
-  &:hover { color: var(--login-link); }
-}
-
-/* 记住我 + 忘记密码 */
-.lf-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 22px;
-  font-size: 13px;
-}
-.lf-forgot {
-  color: var(--login-link);
-  font-weight: 500;
-  &:hover { color: var(--login-btn-hover); text-decoration: underline; }
-}
-
-/* 登录按钮 */
-.lf-submit {
-  height: 46px;
-  width: 100%;
-  border-radius: var(--login-radius);
-  font-size: 14.5px;
-  font-weight: 600;
-  letter-spacing: 1px;
-  background: var(--login-btn-bg);
-  border-color: var(--login-btn-bg);
-  &:hover, &:focus {
-    background: var(--login-btn-hover);
-    border-color: var(--login-btn-hover);
-  }
-  &.is-loading {
-    background: var(--login-btn-loading);
-    border-color: var(--login-btn-loading);
-    opacity: .85;
-  }
-}
-
-/* 演示角色按钮 */
+/* 演示角色按钮（仅 dev；UAT/生产不渲染） */
 .lf-roles {
   margin-top: 22px;
   border-top: 1px dashed var(--login-border);

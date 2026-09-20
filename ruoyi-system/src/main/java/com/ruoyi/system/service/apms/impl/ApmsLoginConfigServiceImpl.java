@@ -1,19 +1,28 @@
 package com.ruoyi.system.service.apms.impl;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.system.domain.apms.ApmsLoginConfig;
 import com.ruoyi.system.mapper.apms.ApmsLoginConfigMapper;
 import com.ruoyi.system.service.apms.IApmsLoginConfigService;
 
 /**
  * 登录页页面配置 Service 实现
+ *
+ * 职责边界：读取（无行返回 {}）、upsert 保存、只校验形态不补默认值。
+ * 视觉默认值的唯一真相源在前端 login.defaults.js。
  *
  * @author apms
  */
@@ -25,8 +34,48 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
     /** 单例配置标识 */
     private static final String DEFAULT_CONFIG_KEY = "default";
 
-    /** ObjectMapper 线程安全，配置读取只需最简解析，直接持有实例，不依赖容器 Bean */
+    /** config_json 上限 64KB（UTF-8） */
+    private static final int MAX_JSON_BYTES = 64 * 1024;
+
+    private static final int SCHEMA_VER = 1;
+
+    /** ObjectMapper 线程安全，直接持有实例，不依赖容器 Bean */
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    /** 布局模板枚举（M2 仅 split；centered/fullscreen 在 M3 放开） */
+    private static final Set<String> TEMPLATES = Set.of("split");
+    private static final Set<String> FONT_FAMILIES = Set.of("system", "pingfang", "yahei", "heiti", "songti");
+    private static final Set<String> FORGOT_MODES = Set.of("alert", "link", "hidden");
+
+    /**
+     * 特性图标白名单（均为已全局注册的 Element Plus 图标名）。
+     * 为设计器可选图标（20 个）的超集：另含 View/Hide/Sunny/Moon 四个界面控件类图标，
+     * 不适合做特性条目故设计器不展示，但允许导入的配置中存在，向前兼容。
+     */
+    private static final Set<String> ICONS = Set.of(
+            "Check", "TrendCharts", "Key", "Document", "User", "Lock", "View", "Hide",
+            "CircleCheck", "DataAnalysis", "Medal", "Histogram", "Aim", "Timer",
+            "FirstAidKit", "Monitor", "Cellphone", "Star", "Flag", "Trophy",
+            "MagicStick", "Odometer", "Sunny", "Moon");
+
+    /** #rgb / #rrggbb / rgb()/rgba() */
+    private static final Pattern COLOR = Pattern.compile(
+            "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
+            + "|^rgba?\\(\\s*\\d{1,3}\\s*,\\s*\\d{1,3}\\s*,\\s*\\d{1,3}\\s*(?:,\\s*(?:0|1|0?\\.\\d+)\\s*)?\\)$");
+
+    /** http(s) 绝对地址 */
+    private static final Pattern HTTP_URL = Pattern.compile("^https?://.+$", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * 版权富文本白名单：仅允许 <a>链接</a> 标签（ICP 备案场景）。
+     * 标签体与属性区不允许出现 < >，从结构上杜绝嵌套/属性逃逸。
+     */
+    private static final Pattern FOOTER_ANCHOR = Pattern.compile(
+            "<a\\s+([^<>]*?)>([^<>]*)</a>", Pattern.CASE_INSENSITIVE);
+    private static final Pattern FOOTER_ATTR = Pattern.compile(
+            "\\s*([a-zA-Z:_-]+)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')\\s*", Pattern.CASE_INSENSITIVE);
+    /** 非锚点文本中出现标签起始符则拒绝（只允许 <a>） */
+    private static final Pattern FOOTER_OTHER_TAG = Pattern.compile("<\\s*/?[a-zA-Z]");
 
     @Autowired
     private ApmsLoginConfigMapper apmsLoginConfigMapper;
@@ -52,5 +101,474 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
             log.error("解析登录页配置 config_json 失败，回退空配置: {}", e.getMessage());
             return Collections.emptyMap();
         }
+    }
+
+    @Override
+    public void saveConfig(Map<String, Object> config, String operator)
+    {
+        if (config == null)
+        {
+            throw new ServiceException("配置内容不能为空");
+        }
+        validate(config);
+
+        String json;
+        try
+        {
+            json = OBJECT_MAPPER.writeValueAsString(config);
+        }
+        catch (Exception e)
+        {
+            throw new ServiceException("配置序列化失败：" + e.getMessage());
+        }
+        if (json.getBytes(StandardCharsets.UTF_8).length > MAX_JSON_BYTES)
+        {
+            throw new ServiceException("配置内容超出 64KB 上限");
+        }
+
+        ApmsLoginConfig row = apmsLoginConfigMapper.selectByConfigKey(DEFAULT_CONFIG_KEY);
+        if (row == null)
+        {
+            ApmsLoginConfig entity = new ApmsLoginConfig();
+            entity.setConfigKey(DEFAULT_CONFIG_KEY);
+            entity.setConfigName("默认配置");
+            entity.setConfigJson(json);
+            entity.setSchemaVer(SCHEMA_VER);
+            entity.setStatus("0");
+            entity.setCreateBy(operator);
+            apmsLoginConfigMapper.insertConfig(entity);
+        }
+        else
+        {
+            row.setConfigJson(json);
+            row.setSchemaVer(SCHEMA_VER);
+            row.setUpdateBy(operator);
+            apmsLoginConfigMapper.updateByConfigKey(row);
+        }
+    }
+
+    // ============================ 形态校验 ============================
+    // 说明：只校验已知字段的形态；保存与 JSON 导入共用，导入无法绕过任何限制。
+
+    private void validate(Map<String, Object> root)
+    {
+        Map<String, Object> layout = obj(root.get("layout"), "layout");
+        if (layout != null)
+        {
+            enumStr(layout.get("template"), TEMPLATES, "layout.template", true);
+            number(layout.get("splitRatio"), "layout.splitRatio", 0.5, 3.0);
+            bool(layout.get("showBrandOnMobile"), "layout.showBrandOnMobile");
+            number(layout.get("cardRadius"), "layout.cardRadius", 0, 40);
+        }
+
+        Map<String, Object> brand = obj(root.get("brand"), "brand");
+        if (brand != null)
+        {
+            str(brand.get("name"), "brand.name", 100);
+            str(brand.get("subTitle"), "brand.subTitle", 200);
+            // v1 favicon 仅允许 /profile/ 站内路径
+            mediaUrl(brand.get("favicon"), "brand.favicon", true);
+            Map<String, Object> logo = obj(brand.get("logo"), "brand.logo");
+            if (logo != null)
+            {
+                String type = enumStr(logo.get("type"), Set.of("builtin"), "brand.logo.type", false);
+                if (type != null && !"builtin".equals(type))
+                {
+                    throw new ServiceException("brand.logo.type 仅支持 builtin");
+                }
+                str(logo.get("value"), "brand.logo.value", 50);
+            }
+        }
+
+        Map<String, Object> hero = obj(root.get("hero"), "hero");
+        if (hero != null)
+        {
+            bool(hero.get("visible"), "hero.visible");
+            str(hero.get("description"), "hero.description", 500);
+            List<Object> lines = list(hero.get("lines"), "hero.lines", 1, 6);
+            if (lines != null)
+            {
+                for (int i = 0; i < lines.size(); i++)
+                {
+                    Map<String, Object> line = asObj(lines.get(i), "hero.lines[" + i + "]");
+                    str(line.get("text"), "hero.lines[" + i + "].text", 200);
+                    bool(line.get("accent"), "hero.lines[" + i + "].accent");
+                }
+            }
+            Map<String, Object> features = obj(hero.get("features"), "hero.features");
+            if (features != null)
+            {
+                bool(features.get("visible"), "hero.features.visible");
+                List<Object> items = list(features.get("items"), "hero.features.items", 0, 8);
+                if (items != null)
+                {
+                    for (int i = 0; i < items.size(); i++)
+                    {
+                        Map<String, Object> f = asObj(items.get(i), "hero.features.items[" + i + "]");
+                        enumStr(f.get("icon"), ICONS, "hero.features.items[" + i + "].icon", true);
+                        str(f.get("title"), "hero.features.items[" + i + "].title", 50);
+                        str(f.get("text"), "hero.features.items[" + i + "].text", 200);
+                    }
+                }
+            }
+        }
+
+        Map<String, Object> form = obj(root.get("form"), "form");
+        if (form != null)
+        {
+            str(form.get("title"), "form.title", 100);
+            str(form.get("subtitle"), "form.subtitle", 200);
+            str(form.get("usernamePlaceholder"), "form.usernamePlaceholder", 100);
+            str(form.get("passwordPlaceholder"), "form.passwordPlaceholder", 100);
+            str(form.get("rememberText"), "form.rememberText", 50);
+            str(form.get("buttonText"), "form.buttonText", 50);
+            str(form.get("loadingText"), "form.loadingText", 50);
+            Map<String, Object> forgot = obj(form.get("forgot"), "form.forgot");
+            if (forgot != null)
+            {
+                enumStr(forgot.get("mode"), FORGOT_MODES, "form.forgot.mode", true);
+                str(forgot.get("text"), "form.forgot.text", 50);
+                str(forgot.get("alertMessage"), "form.forgot.alertMessage", 200);
+                // 忘记密码 URL：http(s) 绝对地址或单斜杠站内路径
+                linkUrl(forgot.get("url"), "form.forgot.url");
+            }
+        }
+
+        Map<String, Object> footer = obj(root.get("footer"), "footer");
+        if (footer != null)
+        {
+            richFooter(footer.get("brandText"), "footer.brandText");
+            richFooter(footer.get("copyright"), "footer.copyright");
+            bool(footer.get("showCopyright"), "footer.showCopyright");
+        }
+
+        Map<String, Object> colors = obj(root.get("colors"), "colors");
+        if (colors != null)
+        {
+            color(colors.get("accent"), "colors.accent");
+            color(colors.get("glow2"), "colors.glow2");
+            color(colors.get("textOnBrand"), "colors.textOnBrand");
+            color(colors.get("textOnBrandMuted"), "colors.textOnBrandMuted");
+            color(colors.get("pageBg"), "colors.pageBg");
+            color(colors.get("formTitle"), "colors.formTitle");
+            color(colors.get("formSubText"), "colors.formSubText");
+            color(colors.get("inputBorder"), "colors.inputBorder");
+            color(colors.get("inputFocus"), "colors.inputFocus");
+            color(colors.get("buttonBg"), "colors.buttonBg");
+            color(colors.get("buttonHover"), "colors.buttonHover");
+            color(colors.get("buttonLoading"), "colors.buttonLoading");
+            color(colors.get("link"), "colors.link");
+            Map<String, Object> grad = obj(colors.get("brandGradient"), "colors.brandGradient");
+            if (grad != null)
+            {
+                number(grad.get("angle"), "colors.brandGradient.angle", 0, 360);
+                List<Object> stops = list(grad.get("stops"), "colors.brandGradient.stops", 2, 4);
+                if (stops != null)
+                {
+                    for (int i = 0; i < stops.size(); i++)
+                    {
+                        color(stops.get(i), "colors.brandGradient.stops[" + i + "]");
+                    }
+                }
+            }
+        }
+
+        Map<String, Object> typography = obj(root.get("typography"), "typography");
+        if (typography != null)
+        {
+            enumStr(typography.get("fontFamily"), FONT_FAMILIES, "typography.fontFamily", false);
+            number(typography.get("heroSize"), "typography.heroSize", 8, 80);
+            number(typography.get("heroWeight"), "typography.heroWeight", 100, 900);
+            number(typography.get("brandNameSize"), "typography.brandNameSize", 8, 80);
+            number(typography.get("formTitleSize"), "typography.formTitleSize", 8, 80);
+        }
+
+        Map<String, Object> background = obj(root.get("background"), "background");
+        if (background != null)
+        {
+            // M3 才开放编辑，M2 仅做安全兜底：图片类字段只允许 /profile/ 站内路径
+            enumStr(background.get("type"), Set.of("image", "video"), "background.type", false);
+            mediaUrl(background.get("image"), "background.image", true);
+            number(background.get("overlay"), "background.overlay", 0, 1);
+            Map<String, Object> video = obj(background.get("video"), "background.video");
+            if (video != null)
+            {
+                mediaUrl(video.get("poster"), "background.video.poster", true);
+                // video.url 预留：同样只允许站内 /profile/
+                mediaUrl(video.get("url"), "background.video.url", true);
+                bool(video.get("autoplay"), "background.video.autoplay");
+                bool(video.get("muted"), "background.video.muted");
+                bool(video.get("loop"), "background.video.loop");
+            }
+        }
+    }
+
+    // ============================ 基础工具 ============================
+
+    private Map<String, Object> obj(Object v, String path)
+    {
+        if (v == null)
+        {
+            return null;
+        }
+        if (!(v instanceof Map))
+        {
+            throw new ServiceException(path + " 必须是对象");
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> m = (Map<String, Object>) v;
+        return m;
+    }
+
+    private Map<String, Object> asObj(Object v, String path)
+    {
+        Map<String, Object> m = obj(v, path);
+        if (m == null)
+        {
+            throw new ServiceException(path + " 必须是对象");
+        }
+        return m;
+    }
+
+    private List<Object> list(Object v, String path, int min, int max)
+    {
+        if (v == null)
+        {
+            return null;
+        }
+        if (!(v instanceof List))
+        {
+            throw new ServiceException(path + " 必须是数组");
+        }
+        @SuppressWarnings("unchecked")
+        List<Object> l = (List<Object>) v;
+        if (l.size() < min || l.size() > max)
+        {
+            throw new ServiceException(path + " 元素数量须在 " + min + "~" + max + " 之间");
+        }
+        return l;
+    }
+
+    /** 字符串字段：允许缺省/null；非字符串或超长拒绝（不做 trim 改写，保持所见即所存） */
+    private void str(Object v, String path, int maxLen)
+    {
+        if (v == null)
+        {
+            return;
+        }
+        if (!(v instanceof String))
+        {
+            throw new ServiceException(path + " 必须是字符串");
+        }
+        String s = (String) v;
+        if (s.length() > maxLen)
+        {
+            throw new ServiceException(path + " 长度不能超过 " + maxLen);
+        }
+    }
+
+    private void bool(Object v, String path)
+    {
+        if (v != null && !(v instanceof Boolean))
+        {
+            throw new ServiceException(path + " 必须是布尔值");
+        }
+    }
+
+    private void number(Object v, String path, double min, double max)
+    {
+        if (v == null)
+        {
+            return;
+        }
+        if (!(v instanceof Number))
+        {
+            throw new ServiceException(path + " 必须是数值");
+        }
+        double n = ((Number) v).doubleValue();
+        if (n < min || n > max)
+        {
+            throw new ServiceException(path + " 取值须在 " + min + "~" + max + " 之间");
+        }
+    }
+
+    /** 枚举字符串；required=true 时非空，false 时允许缺省/null */
+    private String enumStr(Object v, Set<String> allowed, String path, boolean required)
+    {
+        if (v == null)
+        {
+            if (required)
+            {
+                throw new ServiceException(path + " 不能为空");
+            }
+            return null;
+        }
+        if (!(v instanceof String) || !allowed.contains(v))
+        {
+            throw new ServiceException(path + " 取值非法：" + v);
+        }
+        return (String) v;
+    }
+
+    private void color(Object v, String path)
+    {
+        if (v == null)
+        {
+            return;
+        }
+        if (!(v instanceof String) || !COLOR.matcher((String) v).matches())
+        {
+            throw new ServiceException(path + " 不是合法颜色值（仅支持 #rgb/#rrggbb/rgb()/rgba()）：" + v);
+        }
+    }
+
+    /**
+     * 页面跳转链接：允许 http(s):// 绝对地址、单斜杠开头站内路径、空串；
+     * 拒绝 javascript:/data:/file: 与 //host 协议相对地址。
+     */
+    private void linkUrl(Object v, String path)
+    {
+        if (v == null)
+        {
+            return;
+        }
+        if (!(v instanceof String))
+        {
+            throw new ServiceException(path + " 必须是字符串");
+        }
+        String u = ((String) v).trim();
+        if (u.isEmpty())
+        {
+            return;
+        }
+        if (HTTP_URL.matcher(u).matches() || u.startsWith("/") && !u.startsWith("//"))
+        {
+            return;
+        }
+        throw new ServiceException(path + " 仅允许 http(s):// 链接或单斜杠开头的站内路径：" + u);
+    }
+
+    /**
+     * 版权富文本校验：纯文本 + 白名单 &lt;a&gt; 链接（ICP 备案）。
+     * - 长度 ≤ 400；
+     * - 仅允许 &lt;a href="http(s)://..." target="_blank" rel="..."&gt;文字&lt;/a&gt;，
+     *   href 必填且必须 http(s)，target 仅 _blank，rel 仅安全字符，其余属性拒绝；
+     * - 锚点之外的文本出现任何标签起始符（&lt;script&gt;、&lt;img&gt; 等）拒绝。
+     * 与前端 parseRichText 白名单保持一致，保存与 JSON 导入共用。
+     */
+    private void richFooter(Object v, String path)
+    {
+        if (v == null)
+        {
+            return;
+        }
+        if (!(v instanceof String))
+        {
+            throw new ServiceException(path + " 必须是字符串");
+        }
+        String s = (String) v;
+        if (s.length() > 400)
+        {
+            throw new ServiceException(path + " 长度不能超过 400");
+        }
+        Matcher anchor = FOOTER_ANCHOR.matcher(s);
+        int last = 0;
+        while (anchor.find())
+        {
+            footerPlainText(s.substring(last, anchor.start()), path);
+            String attrText = anchor.group(1);
+            String label = anchor.group(2);
+            if (label.indexOf('<') >= 0 || label.indexOf('>') >= 0)
+            {
+                throw new ServiceException(path + " 链接文字不合法");
+            }
+            Matcher attr = FOOTER_ATTR.matcher(attrText);
+            int pos = 0;
+            String href = null;
+            String target = null;
+            String rel = null;
+            while (attr.find())
+            {
+                if (attr.start() != pos)
+                {
+                    throw footerAnchorError(path);
+                }
+                pos = attr.end();
+                String name = attr.group(1).toLowerCase();
+                String val = attr.group(2) != null ? attr.group(2) : attr.group(3);
+                if ("href".equals(name))
+                {
+                    href = val.trim();
+                }
+                else if ("target".equals(name))
+                {
+                    target = val.trim();
+                }
+                else if ("rel".equals(name))
+                {
+                    rel = val;
+                }
+                else
+                {
+                    // onclick/style 等白名单外属性
+                    throw footerAnchorError(path);
+                }
+            }
+            if (pos != attrText.length() || href == null || !HTTP_URL.matcher(href).matches())
+            {
+                throw footerAnchorError(path);
+            }
+            if (target != null && !"_blank".equalsIgnoreCase(target))
+            {
+                throw new ServiceException(path + " 链接仅支持 target=\"_blank\"");
+            }
+            if (rel != null && !rel.matches("[A-Za-z0-9 _-]{0,50}"))
+            {
+                throw footerAnchorError(path);
+            }
+            last = anchor.end();
+        }
+        footerPlainText(s.substring(last), path);
+    }
+
+    private void footerPlainText(String text, String path)
+    {
+        if (FOOTER_OTHER_TAG.matcher(text).find())
+        {
+            throw new ServiceException(path
+                    + " 仅支持纯文本与 <a href=\"http(s)://...\">链接</a>，不允许其他标签");
+        }
+    }
+
+    private ServiceException footerAnchorError(String path)
+    {
+        return new ServiceException(path
+                + " 的链接仅允许格式 <a href=\"https://...\" target=\"_blank\">备案号</a>");
+    }
+
+    /**
+     * 媒体 URL（logo/favicon/背景/封面）：v1 仅允许空或 /profile/ 开头站内资源，
+     * 防止导入 JSON 塞 javascript:/data:/file: 或任意外链图片。
+     */
+    private void mediaUrl(Object v, String path, boolean allowNull)
+    {
+        if (v == null || "".equals(v))
+        {
+            if (!allowNull && v == null)
+            {
+                throw new ServiceException(path + " 不能为空");
+            }
+            return;
+        }
+        if (!(v instanceof String))
+        {
+            throw new ServiceException(path + " 必须是字符串");
+        }
+        String u = ((String) v).trim();
+        if (u.isEmpty() || u.startsWith("/profile/") && !u.startsWith("//"))
+        {
+            return;
+        }
+        throw new ServiceException(path + " 仅允许 /profile/ 开头的站内资源地址：" + u);
     }
 }

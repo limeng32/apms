@@ -29,4 +29,25 @@
         LIMIT 1
     </select>
 
+    <!-- 新增配置行 -->
+    <insert id="insertConfig" parameterType="com.ruoyi.system.domain.apms.ApmsLoginConfig"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_login_config
+        (config_key, config_name, config_json, schema_ver, status,
+         create_by, create_time, remark)
+        VALUES
+        (#{configKey}, #{configName}, #{configJson}, #{schemaVer}, #{status},
+         #{createBy}, sysdate(), #{remark})
+    </insert>
+
+    <!-- 按配置标识更新配置内容 -->
+    <update id="updateByConfigKey" parameterType="com.ruoyi.system.domain.apms.ApmsLoginConfig">
+        UPDATE apms_login_config
+        SET config_json  = #{configJson},
+            schema_ver   = #{schemaVer},
+            update_by    = #{updateBy},
+            update_time  = sysdate()
+        WHERE config_key = #{configKey}
+    </update>
+
 </mapper>

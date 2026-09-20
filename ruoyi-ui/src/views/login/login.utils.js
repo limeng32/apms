@@ -124,6 +124,64 @@ export function toCssVars(config) {
 }
 
 /**
+ * 版权富文本解析（ICP 备案链接场景）
+ *
+ * 安全模型：白名单制，绝不使用 v-html。
+ * - 仅识别 <a href="http(s)://...">文字</a>（可带 target="_blank"、rel）；
+ * - 任何其他标签、事件属性、javascript:/data: 链接均不识别，整段按纯文本渲染（Vue 插值自动转义）；
+ * - 返回分段数组，由 FooterRichText 组件渲染：[{type:'text',value}|{type:'link',label,url}]。
+ *
+ * @param {string} source 原始模板（可含 {year} 等占位符）
+ * @param {object} ctx 占位符上下文
+ */
+const ANCHOR_RE = /<a\s+([^<>]*?)>([^<>]*)<\/a>/gi
+const ATTR_RE = /\s*([a-zA-Z:_-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')\s*/y
+
+function parseAnchorAttrs(attrText) {
+  let pos = 0
+  let href = null
+  let target = null
+  let rel = null
+  while (pos < attrText.length) {
+    ATTR_RE.lastIndex = pos
+    const m = ATTR_RE.exec(attrText)
+    if (!m || m.index !== pos) return null
+    pos = m.index + m[0].length
+    const name = m[1].toLowerCase()
+    const val = m[2] !== undefined ? m[2] : m[3]
+    if (name === 'href') href = val
+    else if (name === 'target') target = val
+    else if (name === 'rel') rel = val
+    else return null // 白名单外属性（含 onclick 等）直接判非法
+  }
+  if (!href || !/^https?:\/\/.+$/i.test(href.trim())) return null
+  if (target && !/^_blank$/i.test(target.trim())) return null
+  if (rel && !/^[A-Za-z0-9 _-]{0,50}$/.test(rel)) return null
+  return { href: href.trim() }
+}
+
+export function parseRichText(source, ctx) {
+  const text = interpolate(source == null ? '' : String(source), ctx || {})
+  const segments = []
+  let last = 0
+  ANCHOR_RE.lastIndex = 0
+  let m
+  while ((m = ANCHOR_RE.exec(text)) !== null) {
+    if (m.index > last) segments.push({ type: 'text', value: text.slice(last, m.index) })
+    const parsed = parseAnchorAttrs(m[1])
+    if (parsed) {
+      segments.push({ type: 'link', label: m[2], url: parsed.href })
+    } else {
+      // 非法 <a>：整段原样输出为文本（会被转义显示，不执行）
+      segments.push({ type: 'text', value: m[0] })
+    }
+    last = m.index + m[0].length
+  }
+  if (last < text.length) segments.push({ type: 'text', value: text.slice(last) })
+  return segments
+}
+
+/**
  * 忘记密码链接白名单（渲染层二次防护）：
  * 仅允许 http(s):// 绝对地址或单个 / 开头的站内路径；拒绝 javascript:/data:/file:///host
  * @returns 合法返回原 URL，否则返回空串（调用方退化为纯文本/点击无动作）

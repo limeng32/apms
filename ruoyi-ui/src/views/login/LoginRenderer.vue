@@ -38,7 +38,7 @@
         </div>
       </div>
 
-      <div class="lb-foot">{{ interpolate(cfg.footer.brandText, tplCtx) }}</div>
+      <div class="lb-foot"><FooterRichText :content="cfg.footer.brandText" :ctx="tplCtx" /></div>
     </aside>
 
     <!-- 右侧登录表单区（表单与 dev 角色块由 login.vue 通过 slot 注入） -->
@@ -51,7 +51,7 @@
         <slot name="roles"></slot>
 
         <div class="lf-copyright" v-if="cfg.footer.showCopyright">
-          {{ interpolate(cfg.footer.copyright, tplCtx) }}
+          <FooterRichText :content="cfg.footer.copyright" :ctx="tplCtx" />
         </div>
       </div>
     </main>
@@ -61,6 +61,7 @@
 <script setup>
 import defaultSettings from '@/settings'
 import { toCssVars, interpolate, mergeWithDefaults } from './login.utils'
+import FooterRichText from './FooterRichText.vue'
 
 const props = defineProps({
   config: { type: Object, default: () => ({}) }
@@ -158,6 +159,12 @@ const tplCtx = computed(() => ({
   color: var(--login-brand-foot);
   border-top: 1px solid var(--login-brand-border);
   padding-top: 16px;
+  a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    &:hover { color: var(--login-text-brand); }
+  }
 }
 
 /* ============ 右侧登录表单区 ============ */
@@ -194,6 +201,11 @@ const tplCtx = computed(() => ({
   text-align: center;
   font-size: 11.5px;
   color: var(--login-text-2);
+  a {
+    color: var(--login-link);
+    text-decoration: none;
+    &:hover { text-decoration: underline; }
+  }
 }
 
 /* ============ 移动端响应式 ============ */

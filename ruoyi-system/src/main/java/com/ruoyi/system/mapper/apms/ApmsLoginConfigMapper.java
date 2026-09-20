@@ -16,4 +16,20 @@ public interface ApmsLoginConfigMapper {
      * @return 配置行；无数据返回 null
      */
     public ApmsLoginConfig selectByConfigKey(String configKey);
+
+    /**
+     * 新增配置行
+     *
+     * @param config 配置行
+     * @return 影响行数
+     */
+    public int insertConfig(ApmsLoginConfig config);
+
+    /**
+     * 按配置标识更新配置内容
+     *
+     * @param config 配置行
+     * @return 影响行数
+     */
+    public int updateByConfigKey(ApmsLoginConfig config);
 }
