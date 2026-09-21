@@ -42,10 +42,24 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
     /** ObjectMapper 线程安全，直接持有实例，不依赖容器 Bean */
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    /** 布局模板枚举（M2 仅 split；centered/fullscreen 在 M3 放开） */
-    private static final Set<String> TEMPLATES = Set.of("split");
+    /** 布局模板枚举（M3c 起 split/centered/fullscreen） */
+    private static final Set<String> TEMPLATES = Set.of("split", "centered", "fullscreen");
+    /**
+     * 背景类型：M3c 仅开放 image（整屏背景图 + 遮罩）。
+     * video 为 M4 预留值，当前保存即拒绝，避免库中落入渲染器半支持的状态。
+     */
+    private static final Set<String> BACKGROUND_TYPES = Set.of("image");
     private static final Set<String> FONT_FAMILIES = Set.of("system", "pingfang", "yahei", "heiti", "songti");
     private static final Set<String> FORGOT_MODES = Set.of("alert", "link", "hidden");
+
+    /** logo 类型（M3a：内置矢量 / 上传图片） */
+    private static final Set<String> LOGO_TYPES = Set.of("builtin", "image");
+    /**
+     * 内置 logo 标识（与前端 BUILTIN_LOGOS 一致）：
+     * shield 为定制内联 SVG，其余为全局注册的 Element Plus 图标名
+     */
+    private static final Set<String> LOGO_BUILTINS = Set.of(
+            "shield", "Trophy", "Medal", "Star", "Flag", "Aim", "Basketball", "Football");
 
     /**
      * 特性图标白名单（均为已全局注册的 Element Plus 图标名）。
@@ -171,12 +185,26 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
             Map<String, Object> logo = obj(brand.get("logo"), "brand.logo");
             if (logo != null)
             {
-                String type = enumStr(logo.get("type"), Set.of("builtin"), "brand.logo.type", false);
-                if (type != null && !"builtin".equals(type))
+                // type 缺省按 builtin 处理（兼容 M2 配置）
+                String logoType = enumStr(logo.get("type"), LOGO_TYPES, "brand.logo.type", false);
+                if ("image".equals(logoType))
                 {
-                    throw new ServiceException("brand.logo.type 仅支持 builtin");
+                    Object logoValue = logo.get("value");
+                    if (!(logoValue instanceof String) || ((String) logoValue).isBlank())
+                    {
+                        throw new ServiceException("brand.logo.value 不能为空（image 类型须为 /profile/ 下的图片路径）");
+                    }
+                    mediaUrl(logoValue, "brand.logo.value", false);
                 }
-                str(logo.get("value"), "brand.logo.value", 50);
+                else
+                {
+                    enumStr(logo.get("value"), LOGO_BUILTINS, "brand.logo.value", true);
+                }
+                // 像素级调整范围（与前端 LOGO_LIMITS 一致）
+                number(logo.get("width"), "brand.logo.width", 16, 200);
+                number(logo.get("height"), "brand.logo.height", 16, 200);
+                number(logo.get("offsetX"), "brand.logo.offsetX", -100, 100);
+                number(logo.get("offsetY"), "brand.logo.offsetY", -100, 100);
             }
         }
 
@@ -286,8 +314,8 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
         Map<String, Object> background = obj(root.get("background"), "background");
         if (background != null)
         {
-            // M3 才开放编辑，M2 仅做安全兜底：图片类字段只允许 /profile/ 站内路径
-            enumStr(background.get("type"), Set.of("image", "video"), "background.type", false);
+            // M3c 开放 image 编辑；video 为 M4 预留，当前拒绝（见 BACKGROUND_TYPES）
+            enumStr(background.get("type"), BACKGROUND_TYPES, "background.type", false);
             mediaUrl(background.get("image"), "background.image", true);
             number(background.get("overlay"), "background.overlay", 0, 1);
             Map<String, Object> video = obj(background.get("video"), "background.video");

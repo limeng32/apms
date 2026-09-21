@@ -9,7 +9,7 @@
 export default {
   version: 1,
   layout: {
-    template: 'split',          // split | centered | fullscreen（M1 仅实现 split）
+    template: 'split',          // split（双栏）| centered（居中卡片，M3b）| fullscreen（M3c）
     splitRatio: 1.1,            // 左栏占比
     showBrandOnMobile: false,   // ≤900px 是否显示品牌区
     cardRadius: 10              // 输入框/按钮圆角 px
@@ -17,8 +17,11 @@ export default {
   brand: {
     name: '',                   // 空则回退 VITE_APP_TITLE
     subTitle: 'ATHLETE PERFORMANCE MANAGEMENT SYSTEM',
-    logo: { type: 'builtin', value: 'shield' },  // M1 仅内置盾牌
-    favicon: null               // M1 不启用动态 favicon
+    // type: builtin（内置矢量库）| image（/profile/ 下 jpg/png）
+    // value: builtin 时为内置标识（shield 或 Element Plus 图标名）；image 时为 /profile/ 相对路径
+    // width/height：渲染像素；offsetX/offsetY：相对默认位置的像素偏移（transform，不影响布局流）
+    logo: { type: 'builtin', value: 'shield', width: 42, height: 48, offsetX: 0, offsetY: 0 },
+    favicon: null               // null 保持 /favicon.ico；配置后为 /profile/ 下 PNG
   },
   hero: {
     visible: true,

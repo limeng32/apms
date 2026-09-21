@@ -37,6 +37,7 @@ import useUserStore from '@/store/modules/user'
 import LoginRenderer from './login/LoginRenderer.vue'
 import LoginFormFields from './login/LoginFormFields.vue'
 import useLoginThemeStore from '@/store/modules/loginTheme'
+import { applyLoginHead, restoreLoginHead } from './login/login.utils'
 
 const userStore = useUserStore()
 const loginThemeStore = useLoginThemeStore()
@@ -71,9 +72,20 @@ watch(route, (newRoute) => {
   redirect.value = newRoute.query && newRoute.query.redirect
 }, { immediate: true })
 
+// favicon / 浏览器标题：配置加载后动态替换，离开登录页恢复，不影响全站
+function applyHead() {
+  const c = loginThemeStore.config
+  const title = (c.brand?.name || '').trim() || import.meta.env.VITE_APP_TITLE
+  applyLoginHead({ favicon: c.brand?.favicon, title })
+}
+
 // 进入 /login：首帧用默认配置渲染，挂载后异步拉取（失败静默回退，绝不阻断）
 onMounted(() => {
-  loginThemeStore.loadConfig()
+  applyHead()
+  loginThemeStore.loadConfig().then(applyHead)
+})
+onBeforeUnmount(() => {
+  restoreLoginHead()
 })
 
 function handleLogin() {

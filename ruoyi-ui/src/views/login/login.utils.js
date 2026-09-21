@@ -20,6 +20,37 @@ function isPlainObject(v) {
 }
 
 /**
+ * 内置 logo 库：shield 为定制内联 SVG（Render 中特殊处理），
+ * 其余均为已全局注册的 Element Plus 图标组件名。
+ * 与后端 LOGO_BUILTINS 白名单保持一致。
+ */
+export const BUILTIN_LOGOS = [
+  { value: 'shield', label: '盾牌（默认）', customSvg: true },
+  { value: 'Trophy', label: '奖杯' },
+  { value: 'Medal', label: '奖牌' },
+  { value: 'Star', label: '星星' },
+  { value: 'Flag', label: '旗帜' },
+  { value: 'Aim', label: '目标' },
+  { value: 'Basketball', label: '篮球' },
+  { value: 'Football', label: '足球' }
+]
+export const BUILTIN_LOGO_VALUES = BUILTIN_LOGOS.map((l) => l.value)
+
+/** logo 像素调整范围（与后端校验一致） */
+export const LOGO_LIMITS = { sizeMin: 16, sizeMax: 200, offsetMin: -100, offsetMax: 100 }
+
+export function clampLogoSize(v, fallback = 42) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return fallback
+  return Math.min(LOGO_LIMITS.sizeMax, Math.max(LOGO_LIMITS.sizeMin, Math.round(n)))
+}
+export function clampLogoOffset(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return 0
+  return Math.min(LOGO_LIMITS.offsetMax, Math.max(LOGO_LIMITS.offsetMin, Math.round(n)))
+}
+
+/**
  * 递归合并：对象按 key 深度合并；数组与原始值整体覆盖（与库中保存语义一致）
  */
 export function deepMerge(base, override) {
@@ -179,6 +210,119 @@ export function parseRichText(source, ctx) {
   }
   if (last < text.length) segments.push({ type: 'text', value: text.slice(last) })
   return segments
+}
+
+/**
+ * 上传接口返回的 url 可能是绝对地址（http://host/profile/...）。
+ * 配置中只允许保存环境无关的 /profile/ 相对路径：
+ * 取 URL 的 pathname，必须以 /profile/ 开头才归一化，否则返回空串（调用方报错）。
+ */
+export function normalizeProfileUrl(url) {
+  if (typeof url !== 'string' || !url) return ''
+  if (url.startsWith('/profile/')) return url
+  try {
+    const u = new URL(url, window.location.origin)
+    if (u.pathname.startsWith('/profile/')) return u.pathname
+  } catch (e) { /* 非法 URL 落为空 */ }
+  return ''
+}
+
+/**
+ * 媒体显示地址：库中只存 /profile/ 相对路径；
+ * 显示时按项目惯例前缀 VITE_APP_BASE_API（dev 走 vite 代理，prod 走 nginx）。
+ */
+export function mediaUrl(path) {
+  if (typeof path !== 'string' || !path.startsWith('/profile/')) return ''
+  return import.meta.env.VITE_APP_BASE_API + path
+}
+
+/**
+ * 登录页 favicon / 标题动态化（仅登录路由期间生效，离开时由调用方恢复）
+ * 媒体路径白名单与后端一致：仅 /profile/ 开头。
+ *
+ * 关键点：页面上同时存在多个 rel 含 icon 的 <link> 且都无 sizes 时，
+ * Chrome 等浏览器会采用先声明的那个（index.html 中的 /favicon.ico），
+ * 仅追加新链接不会替换标签页图标。因此启用动态 favicon 时必须先把
+ * 原始 icon 链接「停用」（改写 rel 为非 icon token，原 rel 暂存），
+ * 保证唯一候选；恢复时再还原。
+ */
+const DYN_ICON_FLAG = 'data-login-dynamic'
+const ORIG_REL_ATTR = 'data-login-original-rel'
+// index.html 内联引导脚本（Safari 兼容）写入的初始图标标记
+const BOOT_ATTR = 'data-login-favicon'
+// 与 index.html 内联脚本共用的 localStorage 键：保存解析后的站内媒体 URL
+const FAV_STORAGE_KEY = 'apms_login_favicon'
+const ICON_LINKS = "link[rel~='icon']"
+// 非标准 rel token：浏览器不会把它当 favicon 候选
+const DISABLED_REL = 'login-icon-disabled'
+
+function findDynamicIconLink() {
+  return (
+    document.querySelector(`${ICON_LINKS}[${DYN_ICON_FLAG}]`) ||
+    document.querySelector(`link[${BOOT_ATTR}]`)
+  )
+}
+
+function disableOriginalIconLinks() {
+  document.querySelectorAll(ICON_LINKS).forEach((link) => {
+    if (link.getAttribute(DYN_ICON_FLAG) || link.hasAttribute(BOOT_ATTR)) return
+    if (!link.hasAttribute(ORIG_REL_ATTR)) {
+      link.setAttribute(ORIG_REL_ATTR, link.getAttribute('rel') || 'icon')
+    }
+    link.setAttribute('rel', DISABLED_REL)
+  })
+}
+
+function restoreOriginalIconLinks() {
+  document.querySelectorAll(`link[${ORIG_REL_ATTR}]`).forEach((link) => {
+    link.setAttribute('rel', link.getAttribute(ORIG_REL_ATTR))
+    link.removeAttribute(ORIG_REL_ATTR)
+  })
+}
+
+/**
+ * @param {string=} favicon undefined=配置尚未加载（不触碰图标，保留 index.html
+ *   引导脚本写入的 Safari 兼容链接）；null=明确无配置（清除并恢复 favicon.ico）；
+ *   字符串=/profile/ PNG 相对路径。
+ */
+export function applyLoginHead({ favicon, title }) {
+  // favicon === undefined：配置还没回来，只处理标题，绝不能把引导链接误删
+  if (favicon !== undefined) {
+    const href = mediaUrl(favicon)
+    let dyn = findDynamicIconLink()
+
+    if (href) {
+      disableOriginalIconLinks()
+      // 供下一次整页加载时 index.html 内联引导脚本同步使用（Safari 兼容）
+      try { localStorage.setItem(FAV_STORAGE_KEY, href) } catch (e) { /* ignore */ }
+      if (!dyn) {
+        dyn = document.createElement('link')
+        dyn.setAttribute(DYN_ICON_FLAG, '1')
+        document.getElementsByTagName('head')[0].appendChild(dyn)
+      }
+      // 接管引导链接：补上动态标记（restore 时可识别移除）
+      dyn.setAttribute(DYN_ICON_FLAG, '1')
+      dyn.removeAttribute(BOOT_ATTR)
+      // 先写属性再赋 href，确保插入到 head 后触发一次完整的图标重新选取
+      dyn.setAttribute('rel', 'icon')
+      dyn.setAttribute('type', 'image/png')
+      dyn.href = href
+    } else {
+      // 明确无配置（或被清除）：移除动态/引导链接、恢复原始 favicon、清引导缓存
+      try { localStorage.removeItem(FAV_STORAGE_KEY) } catch (e) { /* ignore */ }
+      if (dyn) dyn.parentNode.removeChild(dyn)
+      restoreOriginalIconLinks()
+    }
+  }
+  if (title) document.title = title
+}
+
+export function restoreLoginHead() {
+  // 注意：不清 localStorage——下次整页加载 /login 时 Safari 引导脚本仍要用它
+  const dyn = findDynamicIconLink()
+  if (dyn) dyn.parentNode.removeChild(dyn)
+  restoreOriginalIconLinks()
+  document.title = import.meta.env.VITE_APP_TITLE
 }
 
 /**
