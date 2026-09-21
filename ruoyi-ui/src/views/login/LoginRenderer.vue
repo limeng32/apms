@@ -38,8 +38,8 @@
           </div>
 
           <div class="lc-card">
-            <div class="lf-title">{{ cfg.form.title }}</div>
-            <div class="lf-subtitle">{{ interpolate(cfg.form.subtitle, tplCtx) }}</div>
+            <div class="lf-title" v-if="!hideCardHeader">{{ cfg.form.title }}</div>
+            <div class="lf-subtitle" v-if="!hideCardHeader">{{ interpolate(cfg.form.subtitle, tplCtx) }}</div>
 
             <slot name="form"></slot>
             <slot name="roles"></slot>
@@ -84,8 +84,8 @@
           </div>
 
           <div class="lc-card">
-            <div class="lf-title">{{ cfg.form.title }}</div>
-            <div class="lf-subtitle">{{ interpolate(cfg.form.subtitle, tplCtx) }}</div>
+            <div class="lf-title" v-if="!hideCardHeader">{{ cfg.form.title }}</div>
+            <div class="lf-subtitle" v-if="!hideCardHeader">{{ interpolate(cfg.form.subtitle, tplCtx) }}</div>
 
             <slot name="form"></slot>
             <slot name="roles"></slot>
@@ -154,8 +154,8 @@
     <!-- 右侧登录表单区（表单与 dev 角色块由 login.vue 通过 slot 注入） -->
     <main class="login-form-side">
       <div class="login-form-box">
-        <div class="lf-title">{{ cfg.form.title }}</div>
-        <div class="lf-subtitle">{{ interpolate(cfg.form.subtitle, tplCtx) }}</div>
+        <div class="lf-title" v-if="!hideCardHeader">{{ cfg.form.title }}</div>
+        <div class="lf-subtitle" v-if="!hideCardHeader">{{ interpolate(cfg.form.subtitle, tplCtx) }}</div>
 
         <slot name="form"></slot>
         <slot name="roles"></slot>
@@ -183,7 +183,9 @@ const props = defineProps({
   /** 设计器预览：允许直接拖拽 logo 调整 offset */
   logoDraggable: { type: Boolean, default: false },
   /** 预览区当前缩放比例（拖拽位移换算为设计像素） */
-  previewScale: { type: Number, default: 1 }
+  previewScale: { type: Number, default: 1 },
+  /** 隐藏卡片标题/副标题（锁屏页使用：卡片顶部改由 slot 内的头像+锁屏提示替代） */
+  hideCardHeader: { type: Boolean, default: false }
 })
 const emit = defineEmits(['logo-offset'])
 
