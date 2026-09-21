@@ -1,10 +1,13 @@
 import defaultSettings from '@/settings'
-import { useDark, useToggle } from '@vueuse/core'
+import { useDark } from '@vueuse/core'
 import { useDynamicTitle } from '@/utils/dynamicTitle'
-import { handleThemeStyle } from '@/utils/theme'
 
-const isDark = useDark()
-const toggleDark = useToggle(isDark)
+// 产品决策：禁用暗色模式，全局永远使用亮色
+// 1. 清除历史持久化的暗色偏好（须在 useDark 初始化前）
+// 2. 关闭 useDark 持久化并以亮色为初始值（不跟随系统暗色偏好）
+localStorage.removeItem('vueuse-color-scheme')
+const isDark = useDark({ initialValue: 'light', storageKey: null })
+isDark.value = false
 
 const { sideTheme, showSettings, navType, tagsView, tagsViewPersist, tagsIcon, tagsViewStyle, fixedHeader, sidebarLogo, dynamicTitle, footerVisible, footerContent } = defaultSettings
 
@@ -42,14 +45,6 @@ const useSettingsStore = defineStore(
       setTitle(title) {
         this.title = title
         useDynamicTitle()
-      },
-      // 切换暗黑模式
-      toggleTheme() {
-        this.isDark = !this.isDark
-        toggleDark()
-        nextTick(() => {
-          handleThemeStyle(this.theme)
-        })
       }
     }
   })
