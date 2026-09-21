@@ -3,9 +3,10 @@
 # APMS UAT 环境部署脚本（本机执行）
 # ------------------------------------------------------------
 # 用法：
-#   bash deploy-uat.sh [--skip-patch] [--skip-cache] [--version X.Y.Z-TIMESTAMP]
+#   bash deploy-uat.sh [--build] [--skip-patch] [--skip-cache] [--version X.Y.Z-TIMESTAMP]
 #
-# 前提：已执行 build.sh 完成打包，产物在 upload/ 目录
+# 默认智能构建：产物缺失或源码比产物新时，自动执行 build.sh --only-build；
+# --build 强制重新构建。start/stop/restart 子命令不触发构建。
 #
 # 目录结构:
 #   /opt/apms-uat/
@@ -38,9 +39,11 @@ else
 fi
 SKIP_PATCH=0
 SKIP_CACHE=0
+FORCE_BUILD=0
 TARGET_VERSION=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --build)      FORCE_BUILD=1; shift ;;
         --skip-patch) SKIP_PATCH=1; shift ;;
         --skip-cache) SKIP_CACHE=1; shift ;;
         --version) TARGET_VERSION="$2"; shift 2 ;;
@@ -283,6 +286,27 @@ case "$CMD" in
     deploy|"")       : ;;  # 走下面的完整部署流程
     *)               err "未知子命令: $CMD (可用: start|stop|restart|deploy)" ;;
 esac
+
+# ===== 智能构建检查（仅 deploy；start/stop/restart 已在上面退出）=====
+# 检测产物缺失或源码比产物新，命中则自动本地构建；--build 强制构建
+_TARGET_JAR="$PROJECT_ROOT/ruoyi-admin/target/apms.jar"
+_VITE_DIST_IDX="$PROJECT_ROOT/ruoyi-ui/dist/index.html"
+NEED_BUILD=0
+if [ "$FORCE_BUILD" -eq 1 ]; then
+    NEED_BUILD=1
+elif [ ! -f "$_TARGET_JAR" ] || [ ! -f "$_VITE_DIST_IDX" ]; then
+    NEED_BUILD=1
+elif [ "$PROJECT_ROOT/pom.xml" -nt "$_TARGET_JAR" ] \
+  || [ -n "$(find "$PROJECT_ROOT" -path '*/src/*' -type f -not -path '*/ruoyi-ui/*' -newer "$_TARGET_JAR" -print -quit 2>/dev/null)" ] \
+  || [ -n "$(find "$PROJECT_ROOT/ruoyi-ui/src" "$PROJECT_ROOT/ruoyi-ui/index.html" "$PROJECT_ROOT/ruoyi-ui/vite.config.js" -type f -newer "$_VITE_DIST_IDX" -print -quit 2>/dev/null)" ]; then
+    NEED_BUILD=1
+fi
+if [ "$NEED_BUILD" -eq 1 ]; then
+    log "产物缺失或源码已更新 → 本地构建 (build.sh --only-build)..."
+    bash "$_SCRIPT_DIR/build.sh" --only-build
+else
+    log "构建产物为最新，跳过构建"
+fi
 
 # ===== 版本号推导（优先从 mvn target 读，避免 upload 里是旧 jar）=====
 _TARGET_JAR="$PROJECT_ROOT/ruoyi-admin/target/apms.jar"
