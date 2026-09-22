@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>APMS 字体选型对比样张</title>
+
+  <!-- 候选字体（全部免费商用；分片 woff2，按需加载） -->
+  <!-- 思源黑体 Noto Sans SC（Google Fonts 国内镜像 loli） -->
+  <link rel="stylesheet"
+        href="https://fonts.loli.net/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" />
+  <!-- MiSans（小米，jsDelivr 社区分片包） -->
+  <link rel="stylesheet" crossorigin="anonymous"
+        href="https://cdn.jsdelivr.net/npm/misans@5.0.0/lib/Normal/MiSans-Regular.min.css" />
+  <link rel="stylesheet" crossorigin="anonymous"
+        href="https://cdn.jsdelivr.net/npm/misans@5.0.0/lib/Normal/MiSans-Medium.min.css" />
+  <link rel="stylesheet" crossorigin="anonymous"
+        href="https://cdn.jsdelivr.net/npm/misans@5.0.0/lib/Normal/MiSans-Bold.min.css" />
+  <!-- HarmonyOS Sans（华为，B 站 CDN 分片；Regular/Medium 两个族名） -->
+  <link rel="stylesheet" href="https://s1.hdslb.com/bfs/static/jinkela/long/font/regular.css" />
+  <link rel="stylesheet" href="https://s1.hdslb.com/bfs/static/jinkela/long/font/medium.css" />
+  <!-- 阿里巴巴普惠体 2.0（unpkg 第三方分片包，仅用于样张演示） -->
+  <link rel="stylesheet"
+        href="https://unpkg.com/common_word_font@latest/alibaba-puhuiti/stylesheetforall.css" />
+  <!-- 霞鹜文楷（OFL，展示"另一种气质"） -->
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css" />
+  <!-- 思源宋体 Noto Serif SC（Google Fonts 国内镜像 loli） -->
+  <link rel="stylesheet"
+        href="https://fonts.loli.net/css2?family=Noto+Serif+SC:wght@400;600;700&display=swap" />
+  <!-- 朱雀仿宋（jsDelivr 分片 woff2，OFL；当前为上游预览版） -->
+  <link rel="stylesheet" crossorigin="anonymous"
+        href="https://cdn.jsdelivr.net/npm/@free-fonts/zhuque-fangsong/zhuque-fangsong.css" />
+  <!-- 不寐仿宋：按样张用字本地子集化（X11 许可，墨豹堂） -->
+
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 28px 32px 48px;
+      background: #f2f4f6;
+      color: #1f2d3d;
+      font-family: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB",
+                   "Microsoft YaHei", Arial, sans-serif;
+    }
+    .page-head h1 { margin: 0 0 6px; font-size: 22px; }
+    .page-head p { margin: 0; font-size: 13px; color: #7a8a99; line-height: 1.7; }
+
+    .grid {
+      margin-top: 22px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .card {
+      background: #fff;
+      border: 1px solid #e8edf0;
+      border-radius: 12px;
+      padding: 18px 20px 16px;
+      box-shadow: 0 2px 8px rgba(30, 50, 60, .04);
+    }
+    .card-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      padding-bottom: 10px;
+      margin-bottom: 14px;
+      border-bottom: 1px dashed #e6ebef;
+    }
+    .card-head .fname { font-size: 16px; font-weight: 700; }
+    .card-head .flic { font-size: 11px; color: #97a3ad; white-space: nowrap; }
+
+    .demo-title { font-size: 22px; font-weight: 700; line-height: 1.25; }
+    .demo-sub { font-size: 15px; font-weight: 500; margin-top: 6px; color: #364757; }
+    .demo-body { font-size: 13.5px; line-height: 1.75; margin-top: 10px; color: #4a5763; }
+    .demo-body b { font-weight: 700; color: #1f2d3d; }
+
+    .row { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+    .btn {
+      font-size: 13px; padding: 8px 18px; border-radius: 6px;
+      border: none; background: #2f6b57; color: #fff; cursor: default;
+    }
+    .btn.plain { background: #fff; color: #2f6b57; border: 1px solid #c3d6ce; }
+    .tag {
+      font-size: 12px; padding: 3px 10px; border-radius: 4px;
+      border: 1px solid #d9dee3; color: #5a6874; background: #fafbfc;
+    }
+    .tag.green { color: #2f6b57; border-color: #b7d8ca; background: #f1f8f5; }
+    .tag.red { color: #c05063; border-color: #f0c6cd; background: #fdf3f5; }
+
+    table.dt { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12.5px; }
+    table.dt th, table.dt td {
+      border: 1px solid #ebeff2; padding: 6px 8px; text-align: left;
+    }
+    table.dt th { background: #f7f9fa; font-weight: 600; color: #53626e; }
+
+    .bignum-row { display: flex; gap: 26px; margin-top: 12px; }
+    .bignum .v {
+      font-size: 24px; font-weight: 700; color: #1f2d3d;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+    }
+    .bignum .l { font-size: 11.5px; color: #8a97a1; margin-top: 1px; }
+
+    .chart { width: 100%; height: 190px; margin-top: 10px; }
+
+    /* ===== 不寐仿宋（本地子集，仅含样张用字） ===== */
+    @font-face {
+      font-family: "Insomnia FangSong";
+      font-weight: 400;
+      src: url("/fonts/insomnia-fangsong-book.woff2") format("woff2");
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Insomnia FangSong";
+      font-weight: 600;
+      src: url("/fonts/insomnia-fangsong-demi.woff2") format("woff2");
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Alimama DaoLiTi";
+      font-weight: 400;
+      src: url("/fonts/alimama-daoliti.woff2") format("woff2");
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "LinHai LiShu";
+      font-weight: 400;
+      src: url("/fonts/linhai-lishu.woff2") format("woff2");
+      font-display: swap;
+    }
+
+    /* ===== 各字体族 ===== */
+    .f-current { font-family: "Helvetica Neue", Helvetica, "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif; }
+    .f-noto { font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif; }
+    .f-misans { font-family: "MiSans", "Microsoft YaHei", sans-serif; }
+    .f-harmony { font-family: "HarmonyOS_Regular", "Microsoft YaHei", sans-serif; }
+    .f-harmony .demo-title { font-family: "HarmonyOS_Medium", "HarmonyOS_Regular", sans-serif; }
+    .f-puhuiti { font-family: "Alibaba PuHuiTi 2.0", "Microsoft YaHei", sans-serif; }
+    .f-wenkai { font-family: "LXGW WenKai", "Microsoft YaHei", sans-serif; }
+    .f-serif { font-family: "Noto Serif SC", "SimSun", serif; }
+    .f-zhuque { font-family: "Zhuque Fangsong", "SimSun", serif; }
+    .f-insomnia { font-family: "Insomnia FangSong", "SimSun", serif; }
+    .f-daoliti { font-family: "Alimama DaoLiTi", "SimSun", serif; }
+    .f-linhai { font-family: "LinHai LiShu", "SimSun", serif; }
+
+    .note {
+      margin-top: 20px; font-size: 12px; color: #97a3ad; line-height: 1.8;
+    }
+  </style>
+</head>
+<body>
+  <div class="page-head">
+    <h1>APMS 字体选型对比样张</h1>
+    <p>
+      每个卡片使用同一份界面元素与同一张 ECharts 图表，仅字体不同。所有候选字体均为免费商用。
+      字体分片从公网 CDN 加载，首次打开需等待几秒；<b>最终交付给 Windows 客户的观感请以 Windows 上 Chrome/Edge 实际渲染为准</b>。
+    </p>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <p class="note">
+    说明：MiSans / HarmonyOS Sans / 阿里普惠体 / 刀隶体为厂商免费商用授权（条款各有要求，如 MiSans 需署名）；
+    思源黑体、思源宋体、朱雀仿宋、霞鹜文楷为 SIL OFL 开源许可；不寐仿宋为 X11 许可；临海隶书的网页嵌入授权需联系创作者。
+    本页为临时选型样张，确定字体后正式方案采用「字体分片自托管」，不依赖外部 CDN。
+  </p>
+
+  <script>
+    // 统一演示文案
+    const BODY_TEXT =
+      'APMS 运动员表现管理系统覆盖数字档案、生长发育（PHV）、科研测试、RTP 参训状态、' +
+      '组合评价与 PDF 报告。中英文混排 APM Athlete Performance，数字 0123456789，' +
+      '常用标点：（）、，。：；“引号”……';
+
+    const CARDS = [
+      { id: 'current', name: '当前系统字体（对照）', lic: 'Win=微软雅黑 / Mac=苹方', ff400: 'Arial' },
+      { id: 'noto',    name: '思源黑体 Noto Sans SC', lic: 'SIL OFL 开源 · Adobe/Google', ff400: '"Noto Sans SC"' },
+      { id: 'misans',  name: 'MiSans', lic: '小米免费商用（需署名）', ff400: 'MiSans' },
+      { id: 'harmony', name: 'HarmonyOS Sans', lic: '华为免费商用', ff400: 'HarmonyOS_Regular' },
+      { id: 'puhuiti', name: '阿里巴巴普惠体 2.0', lic: '阿里免费全场景授权', ff400: '"Alibaba PuHuiTi 2.0"' },
+      { id: 'wenkai',  name: '霞鹜文楷 LXGW WenKai', lic: 'SIL OFL 开源 · 标题气质参考', ff400: '"LXGW WenKai"' },
+      { id: 'serif',    name: '思源宋体 Noto Serif SC', lic: 'SIL OFL 开源 · Adobe/Google', ff400: '"Noto Serif SC"' },
+      { id: 'zhuque',   name: '朱雀仿宋 Zhuque Fangsong', lic: 'SIL OFL 开源 · 预览版', ff400: '"Zhuque Fangsong"' },
+      { id: 'insomnia', name: '不寐仿宋 Insomnia FangSong', lic: 'X11 许可 · 墨豹堂', ff400: '"Insomnia FangSong"' },
+      { id: 'daoliti',  name: '阿里妈妈刀隶体', lic: '阿里免费授权 · 允许嵌入', ff400: '"Alimama DaoLiTi"' },
+      { id: 'linhai',   name: '临海隶书', lic: '作者声明 · 嵌入需联系授权', ff400: '"LinHai LiShu"' }
+    ];
+
+    // 各卡片 demo HTML
+    function cardHtml(c) {
+      return `
+        <div class="card f-${c.id}">
+          <div class="card-head">
+            <span class="fname">${c.name}</span>
+            <span class="flic">${c.lic}</span>
+          </div>
+
+          <div class="demo-title">组合分 TOP 10 排名</div>
+          <div class="demo-sub">PHV 成熟度散点图 · 指标雷达</div>
+          <div class="demo-body">${BODY_TEXT}</div>
+
+          <div class="row">
+            <button class="btn">查 看</button>
+            <button class="btn plain">导出</button>
+            <span class="tag green">已完成</span>
+            <span class="tag">进行中</span>
+            <span class="tag red">需关注</span>
+          </div>
+
+          <table class="dt">
+            <tr><th>任务名称</th><th>日期</th><th>完成率</th></tr>
+            <tr><td>2026 秋季赛季基础体能测试</td><td>09-18</td><td>86%</td></tr>
+            <tr><td>Yo-Yo 间歇恢复测试</td><td>09-20</td><td>62%</td></tr>
+          </table>
+
+          <div class="bignum-row">
+            <div class="bignum"><div class="v">15</div><div class="l">覆盖队员数</div></div>
+            <div class="bignum"><div class="v">0.218</div><div class="l">平均组合分</div></div>
+            <div class="bignum"><div class="v">3</div><div class="l">需关注</div></div>
+          </div>
+
+          <div class="chart" id="chart-${c.id}"></div>
+        </div>`;
+    }
+
+    document.getElementById('grid').innerHTML = CARDS.map(cardHtml).join('');
+
+    // 统一图表数据：横向柱（模拟 TOP 排名，含长短名字 + 数值标签）
+    const CHART_NAMES = ['张伟豪 (#18)', '李沐阳 (#7)', 'Ahmed Hassan (#23)',
+                         '王梓轩 (#10)', 'Alex O\'Connor (#31)'];
+    const CHART_VALUES = [0.821, 0.546, 0.133, -0.214, -0.672];
+
+    function buildChart(id, fontFamily) {
+      const el = document.getElementById('chart-' + id);
+      const chart = echarts.init(el);
+      chart.setOption({
+        textStyle: { fontFamily },
+        title: { text: '同款图表 · TOP 排名', left: 0, top: 0,
+                 textStyle: { fontSize: 12, fontWeight: 600, color: '#53626e', fontFamily } },
+        tooltip: { trigger: 'axis' },
+        grid: { left: 118, right: 44, top: 30, bottom: 18 },
+        xAxis: { type: 'value', splitLine: { lineStyle: { color: '#f0f0f0' } },
+                 axisLabel: { fontSize: 10, fontFamily } },
+        yAxis: { type: 'category', data: CHART_NAMES.slice().reverse(),
+                 axisLabel: { fontSize: 11, fontFamily } },
+        series: [{
+          type: 'bar',
+          barWidth: '58%',
+          data: CHART_VALUES.slice().reverse(),
+          itemStyle: {
+            borderRadius: [0, 4, 4, 0],
+            color: (p) => p.value >= 0
+              ? new echarts.graphic.LinearGradient(0, 0, 1, 0,
+                  [{ offset: 0, color: '#43e97b' }, { offset: 1, color: '#38f9d7' }])
+              : new echarts.graphic.LinearGradient(0, 0, 1, 0,
+                  [{ offset: 0, color: '#fa709a' }, { offset: 1, color: '#fee140' }])
+          },
+          label: { show: true, position: 'right', fontSize: 10, fontFamily,
+                   formatter: (p) => Number(p.value).toFixed(3) }
+        }]
+      });
+      return chart;
+    }
+
+    const charts = [];
+    function renderAll() {
+      CARDS.forEach((c) => {
+        // 用真实 family 名（current 在图表里走 Arial/sans-serif 默认）
+        const ff = c.id === 'current' ? 'Arial' :
+                   c.id === 'harmony' ? 'HarmonyOS_Regular' :
+                   c.id === 'noto'    ? 'Noto Sans SC' :
+                   c.id === 'misans'  ? 'MiSans' :
+                   c.id === 'serif'    ? 'Noto Serif SC' :
+                   c.id === 'zhuque'   ? 'Zhuque Fangsong' :
+                   c.id === 'insomnia' ? 'Insomnia FangSong' :
+                   c.id === 'daoliti'  ? 'Alimama DaoLiTi' :
+                   c.id === 'linhai'   ? 'LinHai LiShu' :
+                   c.id === 'puhuiti' ? 'Alibaba PuHuiTi 2.0' : 'LXGW WenKai';
+        charts.push(buildChart(c.id, ff));
+      });
+    }
+
+    // 等字体加载完毕再渲染图表，保证图表内文字也用目标字体
+    if (document.fonts && document.fonts.ready) {
+      Promise.all([
+        document.fonts.load('12px "Noto Sans SC"'),
+        document.fonts.load('12px MiSans'),
+        document.fonts.load('12px HarmonyOS_Regular'),
+        document.fonts.load('12px "Alibaba PuHuiTi 2.0"'),
+        document.fonts.load('12px "LXGW WenKai"'),
+        document.fonts.load('12px "Noto Serif SC"'),
+        document.fonts.load('12px "Zhuque Fangsong"'),
+        document.fonts.load('12px "Insomnia FangSong"'),
+        document.fonts.load('12px "Alimama DaoLiTi"'),
+        document.fonts.load('12px "LinHai LiShu"')
+      ]).catch(() => {}).then(() => renderAll());
+    } else {
+      renderAll();
+    }
+
+    window.addEventListener('resize', () => charts.forEach(c => c.resize()));
+  </script>
+</body>
+</html>

@@ -67,3 +67,4 @@ deploy/env.conf
 
 # 远程部署备份目录（不应进入 git）
 /backup/
+*.woff2

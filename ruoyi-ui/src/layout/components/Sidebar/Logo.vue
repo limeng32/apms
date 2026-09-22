@@ -70,33 +70,40 @@ const getLogoTextColor = computed(() => {
   text-align: center;
   overflow: hidden;
 
-  & .sidebar-logo-link {
+  /* #app 前缀用于压过全局 sidebar.scss 中 #app .sidebar-container a 的 inline-block */
+  #app & .sidebar-logo-link {
     height: 100%;
     width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 
     & .sidebar-logo {
-      width: 32px;
-      height: 32px;
-      vertical-align: middle;
-      margin-right: 12px;
+      /* Logo 为 2:1 横版标志：按高度等比缩放，避免拉伸变形 */
+      height: 24px;
+      width: auto;
+      flex: none;
+      margin-right: 8px;
     }
 
     & .sidebar-title {
-      display: inline-block;
       margin: 0;
       color: v-bind(getLogoTextColor);
       font-weight: 600;
       line-height: 50px;
       font-size: 14px;
       font-family: Avenir, Helvetica Neue, Arial, Helvetica, sans-serif;
-      vertical-align: middle;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
   }
 
-  &.collapse {
-    .sidebar-logo {
-      margin-right: 0px;
-    }
+  #app &.collapse .sidebar-logo-link .sidebar-logo {
+    /* 折叠侧栏宽 54px：按宽度等比缩放（44×22），完整不裁切 */
+    width: 44px;
+    height: auto;
+    margin-right: 0px;
   }
 }
 </style>
