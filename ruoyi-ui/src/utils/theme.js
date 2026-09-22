@@ -11,6 +11,55 @@ export function handleThemeStyle(theme) {
   }
 }
 
+/**
+ * 将首页设计器配置推广到系统全局：
+ * - 品牌色 colors.accent        → Element 主色（--el-color-primary 及明暗派生）+ 菜单激活辅助变量
+ * - 品牌渐变 colors.brandGradient（含角度）→ --brand-gradient（侧栏深色主题等全局消费）
+ * - 圆角 layout.cardRadius      → Element 圆角变量（按钮/输入框/卡片/弹窗）
+ */
+export function applyGlobalBrand(config) {
+  if (typeof document === 'undefined') return
+  const root = document.documentElement
+  const colors = (config && config.colors) || {}
+  const layout = (config && config.layout) || {}
+
+  // 品牌色：仅接受合法 6 位十六进制，脏数据回退系统默认主色
+  const brandColor = /^#[0-9a-fA-F]{6}$/.test(String(colors.accent)) ? colors.accent : '#2c8a57'
+  handleThemeStyle(brandColor)
+  root.style.setProperty('--brand-color', brandColor)
+  // 侧栏激活态文字与底色（sidebar.scss 消费；浅/深侧栏通用）
+  root.style.setProperty('--current-color', brandColor)
+  root.style.setProperty('--current-color-dark-bg', hexWithAlpha(brandColor, 0.18))
+  root.style.setProperty('--current-color-light', getLightColor(brandColor, 0.82))
+
+  // 品牌渐变 + 角度
+  const g = colors.brandGradient || {}
+  const stops = Array.isArray(g.stops)
+    ? g.stops.filter((s) => typeof s === 'string' && /^#[0-9a-fA-F]{6}$/.test(s))
+    : []
+  const angle = Number(g.angle)
+  if (stops.length >= 2 && Number.isFinite(angle)) {
+    root.style.setProperty('--brand-gradient', `linear-gradient(${angle}deg, ${stops.join(', ')})`)
+  }
+
+  // 圆角：base 同步 small 派生（small 约为 base 的一半）
+  const radius = Number(layout.cardRadius)
+  if (Number.isFinite(radius)) {
+    const r = Math.max(0, Math.round(radius))
+    root.style.setProperty('--brand-radius', `${r}px`)
+    root.style.setProperty('--el-border-radius-base', `${r}px`)
+    root.style.setProperty('--el-border-radius-small', `${Math.round(r / 2)}px`)
+    root.style.setProperty('--el-card-border-radius', `${r}px`)
+    root.style.setProperty('--el-dialog-border-radius', `${r}px`)
+  }
+}
+
+/** hex 颜色转 rgba() 字符串 */
+function hexWithAlpha(hex, alpha) {
+  const [r, g, b] = hexToRgb(hex)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
 /** 混合两种十六进制颜色 */
 export function mixHexColors(fg, bg, t) {
   const a = hexToRgb(String(fg).replace('#', ''))

@@ -5,7 +5,7 @@
       <el-menu
         :default-active="activeMenu"
         :collapse="isCollapse"
-        :background-color="getMenuBackground"
+        :background-color="menuBgForProp"
         :text-color="getMenuTextColor"
         :unique-opened="true"
         :active-text-color="theme"
@@ -43,12 +43,20 @@ const sideTheme = computed(() => settingsStore.sideTheme)
 const theme = computed(() => settingsStore.theme)
 const isCollapse = computed(() => !appStore.sidebar.opened)
 
-// 获取菜单背景色
+// 获取菜单背景色（容器/滚动条底色：渐变加载前的兜底色，避免白闪）
 const getMenuBackground = computed(() => {
   if (settingsStore.isDark) {
     return 'var(--sidebar-bg)'
   }
   return sideTheme.value === 'theme-dark' ? variables.menuBg : variables.menuLightBg
+})
+
+// el-menu 背景色 prop：深色侧栏传 transparent，使菜单/菜单项透明、露出容器上的品牌渐变
+const menuBgForProp = computed(() => {
+  if (settingsStore.isDark) {
+    return 'var(--sidebar-bg)'
+  }
+  return sideTheme.value === 'theme-dark' ? 'transparent' : variables.menuLightBg
 })
 
 // 获取菜单文字颜色

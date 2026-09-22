@@ -274,7 +274,8 @@ function taskStatusType(s) {
   return map[(s || '').toLowerCase()] || 'info'
 }
 function taskBarColor(bar) {
-  return bar === 'amber' ? '#f0a23a' : bar === 'red' ? '#c14747' : '#4a9a78'
+  // 正常进度条跟随品牌主色；黄/红为状态预警语义色，保持固定
+  return bar === 'amber' ? '#f0a23a' : bar === 'red' ? '#c14747' : 'var(--el-color-primary)'
 }
 
 // 首次加载
@@ -300,7 +301,8 @@ onActivated(() => {
   align-items: center;
   gap: 16px;
   padding: 18px 22px;
-  background: linear-gradient(135deg, #1d3b33 0%, #27503f 100%);
+  /* 由首页设计器「主题色-品牌渐变」控制（含角度）；加载前用墨绿渐变兜底 */
+  background: var(--brand-gradient, linear-gradient(135deg, #1d3b33 0%, #27503f 100%));
   border-radius: 12px;
   color: #fff;
   margin-bottom: 16px;
@@ -316,7 +318,8 @@ onActivated(() => {
   color: rgba(255,255,255,.78);
   line-height: 1.6;
 }
-.hl { color: #9edbbf; font-weight: 600; }
+/* 强调文字跟随品牌色（EP light-3 为品牌主色提亮 30%，在深色渐变上可读） */
+.hl { color: var(--el-color-primary-light-3, #9edbbf); font-weight: 600; }
 .hl-amber { color: #f5c87a; font-weight: 600; }
 .btn-goals {
   background: rgba(255,255,255,.12) !important;

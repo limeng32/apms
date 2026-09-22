@@ -91,7 +91,7 @@
     }
 
     & .theme-dark .is-active > .el-sub-menu__title {
-      color: vars.$base-menu-color-active !important;
+      color: var(--current-color, vars.$base-menu-color-active) !important;
     }
 
     & .nest-menu .el-sub-menu>.el-sub-menu__title,
@@ -105,15 +105,18 @@
 
     & .theme-dark .nest-menu .el-sub-menu>.el-sub-menu__title,
     & .theme-dark .el-sub-menu .el-menu-item {
-      background-color: vars.$base-sub-menu-background;
+      // 半透明黑底，让品牌渐变隐约透出，层级感与渐变底兼顾
+      background-color: rgba(0, 0, 0, 0.22);
 
       &:hover {
-        background-color: vars.$base-sub-menu-hover !important;
+        background-color: rgba(0, 0, 0, 0.32) !important;
       }
     }
 
     // theme-dark 深色主题
     &.theme-dark {
+      // 品牌渐变（含角度）覆盖侧栏；渐变未就绪时由容器兜底色 #{$menuBg} 承接
+      background-image: var(--brand-gradient, none);
       box-shadow: 2px 0 8px rgba(0, 0, 0, 0.4);
       border-right: none;
 

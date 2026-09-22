@@ -50,7 +50,7 @@
             </div>
           </div>
         </div>
-        <div class="preview-tip">预览为真实登录页等比缩放，所有修改即时生效；可直接按住左上角 logo 拖动调整位置；保存后退出登录即可看到线上效果</div>
+        <div class="preview-tip">预览为真实登录页等比缩放，所有修改即时生效；可直接按住左上角 logo 拖动调整位置；保存后登录页与全系统品牌即时生效</div>
       </div>
 
       <!-- 右侧：属性面板 -->
@@ -390,51 +390,6 @@
               </div>
               <div class="ld-hint">仅登录页标签页生效；浏览器标题使用上方「品牌名称」，离开登录页自动恢复</div>
 
-              <div class="ld-section">
-                全屏背景图
-                <el-tag v-if="!isFullscreenTpl" size="small" type="info" effect="plain" style="margin-left:8px">
-                  需在「布局」页签选择全屏背景模板
-                </el-tag>
-              </div>
-              <div class="ld-upload-row">
-                <el-image
-                  v-if="localConfig.background.image"
-                  :src="mediaUrl(localConfig.background.image)"
-                  fit="cover"
-                  class="ld-bg-preview"
-                />
-                <div v-else class="ld-logo-empty">未设置</div>
-                <el-upload
-                  name="file"
-                  :action="uploadAction"
-                  :headers="uploadHeaders"
-                  :show-file-list="false"
-                  :disabled="!isFullscreenTpl"
-                  accept="image/jpeg,image/png"
-                  :before-upload="beforeBgUpload"
-                  :on-success="onBgUploaded"
-                >
-                  <el-button size="small" type="primary" plain :disabled="!isFullscreenTpl">上传背景图（jpg/png）</el-button>
-                </el-upload>
-                <el-button
-                  size="small"
-                  :disabled="!isFullscreenTpl || !localConfig.background.image"
-                  @click="localConfig.background.image = null"
-                >清除</el-button>
-              </div>
-              <div class="ld-px-item" style="margin-top:6px">
-                <div class="ld-px-label">遮罩浓度：{{ Math.round(localConfig.background.overlay * 100) }}%</div>
-                <el-slider
-                  v-model="localConfig.background.overlay"
-                  :min="0" :max="1" :step="0.05"
-                  :disabled="!isFullscreenTpl"
-                />
-                <div class="ld-hint">
-                  遮罩为「主题色」中的品牌渐变：数值越大背景图越暗、白色文字对比越强；
-                  不上传背景图时整页为纯品牌渐变。建议横版大图（桌面 16:9），不超过 5MB
-                </div>
-              </div>
-
               <div class="ld-section ld-section-disabled">
                 视频背景
                 <el-tag size="small" type="info" effect="plain" style="margin-left:8px">规划中（M4）</el-tag>
@@ -457,9 +412,47 @@
                 </div>
                 <div class="ld-hint" v-else-if="localConfig.layout.template === 'fullscreen'">
                   整屏背景图 + 品牌渐变遮罩 + 浮层登录卡片；不显示 Hero 标语/特性列表。
-                  背景图与遮罩浓度在「图标与图片」页签上传和调整；未上传背景图时整页为品牌渐变
+                  背景图与遮罩浓度在下方「全屏背景」区域上传和调整；未上传背景图时整页为品牌渐变
                 </div>
               </el-form-item>
+              <template v-if="localConfig.layout.template === 'fullscreen'">
+                <div class="ld-section">全屏背景</div>
+                <div class="ld-upload-row">
+                  <el-image
+                    v-if="localConfig.background.image"
+                    :src="mediaUrl(localConfig.background.image)"
+                    fit="cover"
+                    class="ld-bg-preview"
+                  />
+                  <div v-else class="ld-logo-empty">未设置</div>
+                  <el-upload
+                    name="file"
+                    :action="uploadAction"
+                    :headers="uploadHeaders"
+                    :show-file-list="false"
+                    accept="image/jpeg,image/png"
+                    :before-upload="beforeBgUpload"
+                    :on-success="onBgUploaded"
+                  >
+                    <el-button size="small" type="primary" plain>上传背景图（jpg/png）</el-button>
+                  </el-upload>
+                  <el-button
+                    size="small"
+                    :disabled="!localConfig.background.image"
+                    @click="localConfig.background.image = null"
+                  >清除</el-button>
+                </div>
+                <el-form-item :label="`遮罩浓度：${Math.round(localConfig.background.overlay * 100)}%`" style="margin-top:10px">
+                  <el-slider
+                    v-model="localConfig.background.overlay"
+                    :min="0" :max="1" :step="0.05"
+                  />
+                  <div class="ld-hint">
+                    遮罩为「主题色」中的品牌渐变：数值越大背景图越暗、白色文字对比越强；
+                    不上传背景图时整页为纯品牌渐变。建议横版大图（桌面 16:9），不超过 5MB
+                  </div>
+                </el-form-item>
+              </template>
               <template v-if="localConfig.layout.template === 'split'">
                 <el-form-item :label="`左右分栏比例（左:右）：${localConfig.layout.splitRatio} : 1`">
                   <el-slider v-model="localConfig.layout.splitRatio" :min="0.5" :max="3" :step="0.1" />
@@ -471,7 +464,7 @@
               </template>
               <el-form-item :label="`圆角：${localConfig.layout.cardRadius}px`">
                 <el-slider v-model="localConfig.layout.cardRadius" :min="0" :max="40" :step="1" />
-                <div class="ld-hint">作用于输入框、按钮；居中卡片模板下同时决定卡片圆角</div>
+                <div class="ld-hint">系统全局生效：按钮、输入框、卡片、弹窗圆角；登录页同样使用该圆角</div>
               </el-form-item>
             </el-form>
           </el-tab-pane>
@@ -524,7 +517,7 @@ const ICON_OPTIONS = [
 
 // 可编辑颜色字段（path 对应 localConfig.colors.*）
 const COLOR_FIELDS = [
-  { path: 'accent', label: '强调色' },
+  { path: 'accent', label: '品牌色（全局主色）' },
   { path: 'glow2', label: '第二光晕' },
   { path: 'textOnBrand', label: '品牌区主文字' },
   { path: 'textOnBrandMuted', label: '品牌区描述文字' },
@@ -712,8 +705,7 @@ function onFaviconUploaded(res) {
   }
 }
 
-// 全屏背景图（M3c，仅 fullscreen 模板下启用）
-const isFullscreenTpl = computed(() => localConfig.value.layout.template === 'fullscreen')
+// 全屏背景图（M3c，布局页签「全屏背景」区域使用，仅 fullscreen 模板下显示）
 function beforeBgUpload(file) {
   return validateImageFile(file, ['image/jpeg', 'image/png'])
 }
