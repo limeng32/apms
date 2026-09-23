@@ -58,7 +58,7 @@
             <template #default="scope">
               <el-switch
                 v-model="scope.row.status"
-                :disabled="isProtectedUser(scope.row)"
+                :disabled="isProtectedUser(scope.row) || isStatusProtected(scope.row)"
                 active-value="0"
                 inactive-value="1"
                 @change="handleStatusChange(scope.row)"
@@ -140,7 +140,7 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="状态">
-              <el-radio-group v-model="form.status">
+              <el-radio-group v-model="form.status" :disabled="isStatusProtected(form)">
                 <el-radio v-for="dict in sys_normal_disable" :key="dict.value" :value="dict.value">{{ dict.label }}</el-radio>
               </el-radio-group>
             </el-form-item>
@@ -209,6 +209,11 @@ function checkRowSelectable(row) {
   return !isProtectedUser(row)
 }
 const isPlatformAdmin = computed(() => useUserStore().roles.includes('admin'))
+const currentUserId = computed(() => useUserStore().id)
+/** 状态开关保护：超级管理员(userId=1)恒不可停用；任何人不可停用自己（与后端 checkUserAllowed/自停用口径一致） */
+function isStatusProtected(row) {
+  return !!row && (row.userId === 1 || row.userId === currentUserId.value)
+}
 const isProtectedFormUser = computed(() => isProtectedUser({ userName: form.value.userName }))
 // 平台管理员保持多选；专岗账号强制单选（提交时仍转为roleIds数组）
 const roleSelectModel = computed({

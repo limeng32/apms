@@ -168,6 +168,11 @@ public class SysUserController extends BaseController
         managedBoundary.assertRolesManageable(user.getRoleIds(), Access.GRANT);
         userService.checkUserAllowed(user);
         userService.checkUserDataScope(user.getUserId());
+        // 与 changeStatus 同口径：禁止通过编辑资料停用当前登录用户自己
+        if (user.getUserId().equals(getUserId()) && "1".equals(user.getStatus()))
+        {
+            return error("当前用户不能停用");
+        }
         deptService.checkDeptDataScope(user.getDeptId());
         roleService.checkRoleDataScope(user.getRoleIds());
         if (!userService.checkUserNameUnique(user))
