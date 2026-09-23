@@ -19,12 +19,13 @@ import Sidebar from './components/Sidebar/index.vue'
 import { AppMain, Navbar, Settings, TagsView } from './components'
 import useAppStore from '@/store/modules/app'
 import useSettingsStore from '@/store/modules/settings'
+import useUserStore from '@/store/modules/user'
 
 const settingsStore = useSettingsStore()
 const theme = computed(() => settingsStore.theme)
 const sidebar = computed(() => useAppStore().sidebar)
 const device = computed(() => useAppStore().device)
-const needTagsView = computed(() => settingsStore.tagsView)
+const needTagsView = computed(() => !useUserStore().portalMode && settingsStore.tagsView)
 const fixedHeader = computed(() => settingsStore.fixedHeader)
 
 const classObj = computed(() => ({

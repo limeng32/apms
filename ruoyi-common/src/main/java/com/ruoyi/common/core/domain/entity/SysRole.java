@@ -49,6 +49,12 @@ public class SysRole extends BaseEntity
     @Excel(name = "角色状态", readConverterExp = "0=正常,1=停用")
     private String status;
 
+    /** 是否Portal无导航模式（0标准模式 1Portal模式） */
+    private String portalMode;
+
+    /** Portal模式登录落地路由 */
+    private String homePath;
+
     /** 删除标志（0代表存在 2代表删除） */
     private String delFlag;
 
@@ -169,6 +175,26 @@ public class SysRole extends BaseEntity
         this.status = status;
     }
 
+    public String getPortalMode()
+    {
+        return portalMode;
+    }
+
+    public void setPortalMode(String portalMode)
+    {
+        this.portalMode = portalMode;
+    }
+
+    public String getHomePath()
+    {
+        return homePath;
+    }
+
+    public void setHomePath(String homePath)
+    {
+        this.homePath = homePath;
+    }
+
     public String getDelFlag()
     {
         return delFlag;
@@ -230,6 +256,8 @@ public class SysRole extends BaseEntity
             .append("menuCheckStrictly", isMenuCheckStrictly())
             .append("deptCheckStrictly", isDeptCheckStrictly())
             .append("status", getStatus())
+            .append("portalMode", getPortalMode())
+            .append("homePath", getHomePath())
             .append("delFlag", getDelFlag())
             .append("createBy", getCreateBy())
             .append("createTime", getCreateTime())

@@ -1,8 +1,11 @@
 package com.ruoyi.framework.web.service;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -265,6 +268,67 @@ public class TokenService
             loginUser.setPermissions(permissionService.getMenuPermission(loginUser.getUser()));
             refreshToken(loginUser);
             log.info("角色[{}]权限变更，已刷新在线用户[{}]的权限缓存", roleId, loginUser.getUsername());
+        }
+    }
+
+    /**
+     * 按用户ID强制下线：删除目标用户的全部在线会话（多端一次性踢出）
+     *
+     * @param userIds 目标用户ID数组
+     */
+    public void forceLogoutByUserIds(Long[] userIds)
+    {
+        if (userIds == null || userIds.length == 0)
+        {
+            return;
+        }
+        Set<Long> targetUserIds = new HashSet<>(Arrays.asList(userIds));
+        Collection<String> keys = redisCache.keys(CacheConstants.LOGIN_TOKEN_KEY + "*");
+        if (keys == null || keys.isEmpty())
+        {
+            return;
+        }
+        for (String key : keys)
+        {
+            LoginUser loginUser = redisCache.getCacheObject(key);
+            if (loginUser == null || loginUser.getUser() == null)
+            {
+                continue;
+            }
+            if (targetUserIds.contains(loginUser.getUser().getUserId()))
+            {
+                redisCache.deleteObject(key);
+                log.info("用户[{}]被强制下线", loginUser.getUsername());
+            }
+        }
+    }
+
+    /**
+     * 按角色ID强制下线：删除持有该角色用户的全部在线会话
+     *
+     * @param roleId 目标角色ID
+     */
+    public void forceLogoutByRoleId(Long roleId)
+    {
+        Collection<String> keys = redisCache.keys(CacheConstants.LOGIN_TOKEN_KEY + "*");
+        if (keys == null || keys.isEmpty())
+        {
+            return;
+        }
+        for (String key : keys)
+        {
+            LoginUser loginUser = redisCache.getCacheObject(key);
+            if (loginUser == null || loginUser.getUser() == null)
+            {
+                continue;
+            }
+            boolean hasRole = loginUser.getUser().getRoles() != null
+                    && loginUser.getUser().getRoles().stream().anyMatch(r -> roleId.equals(r.getRoleId()));
+            if (hasRole)
+            {
+                redisCache.deleteObject(key);
+                log.info("角色[{}]相关用户[{}]被强制下线", roleId, loginUser.getUsername());
+            }
         }
     }
 }

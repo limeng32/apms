@@ -44,7 +44,7 @@
         </el-row>
 
         <el-table v-loading="loading" :data="userList" @selection-change="handleSelectionChange">
-          <el-table-column type="selection" width="50" align="center" />
+          <el-table-column type="selection" width="50" align="center" :selectable="checkRowSelectable" />
           <el-table-column label="用户编号" align="center" key="userId" prop="userId" v-if="columns.userId.visible" />
           <el-table-column label="用户名称" align="center" key="userName" v-if="columns.userName.visible" :show-overflow-tooltip="true">
             <template #default="scope">
@@ -58,6 +58,7 @@
             <template #default="scope">
               <el-switch
                 v-model="scope.row.status"
+                :disabled="isProtectedUser(scope.row)"
                 active-value="0"
                 inactive-value="1"
                 @change="handleStatusChange(scope.row)"
@@ -74,13 +75,13 @@
               <el-tooltip content="修改" placement="top" v-if="scope.row.userId !== 1">
                 <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['system:user:edit']"></el-button>
               </el-tooltip>
-              <el-tooltip content="删除" placement="top" v-if="scope.row.userId !== 1">
+              <el-tooltip content="删除" placement="top" v-if="scope.row.userId !== 1 && !isProtectedUser(scope.row)">
                 <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['system:user:remove']"></el-button>
               </el-tooltip>
-              <el-tooltip content="重置密码" placement="top" v-if="scope.row.userId !== 1">
+              <el-tooltip content="重置密码" placement="top" v-if="scope.row.userId !== 1 && !isProtectedUser(scope.row)">
                 <el-button link type="primary" icon="Key" @click="handleResetPwd(scope.row)" v-hasPermi="['system:user:resetPwd']"></el-button>
               </el-tooltip>
-              <el-tooltip content="分配角色" placement="top" v-if="scope.row.userId !== 1">
+              <el-tooltip content="分配角色" placement="top" v-if="scope.row.userId !== 1 && !isProtectedUser(scope.row)">
                 <el-button link type="primary" icon="CircleCheck" @click="handleAuthRole(scope.row)" v-hasPermi="['system:user:edit']"></el-button>
               </el-tooltip>
             </template>
@@ -155,9 +156,10 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="角色">
-              <el-select v-model="form.roleIds" multiple placeholder="请选择">
+              <el-select v-model="roleSelectModel" :multiple="isPlatformAdmin" placeholder="请选择" :disabled="isProtectedFormUser">
                 <el-option v-for="item in roleOptions" :key="item.roleId" :label="item.roleName" :value="item.roleId" :disabled="item.status == 1"></el-option>
               </el-select>
+              <div v-if="!isPlatformAdmin" class="form-tip">专岗账号只能分配一个角色</div>
             </el-form-item>
           </el-col>
         </el-row>
@@ -191,10 +193,37 @@ import UserViewDrawer from "./view"
 import { usePasswordRule } from "@/utils/passwordRule"
 import { changeUserStatus, listUser, resetUserPwd, delUser, getUser, updateUser, addUser, deptTreeSelect } from "@/api/system/user"
 
+import useUserStore from "@/store/modules/user"
+
 const router = useRouter()
 const { proxy } = getCurrentInstance()
 const { pwdValidator, pwdPromptValidator } = usePasswordRule()
 const { sys_normal_disable, sys_user_sex } = useDict("sys_normal_disable", "sys_user_sex")
+
+/** super为客户侧保留账号：不可删除/停用/改角色 */
+function isProtectedUser(row) {
+  // admin 可管理一切；仅非 admin 操作者视角下保护 super 自身
+  return !isPlatformAdmin.value && row && row.userName === 'super'
+}
+function checkRowSelectable(row) {
+  return !isProtectedUser(row)
+}
+const isPlatformAdmin = computed(() => useUserStore().roles.includes('admin'))
+const isProtectedFormUser = computed(() => isProtectedUser({ userName: form.value.userName }))
+// 平台管理员保持多选；专岗账号强制单选（提交时仍转为roleIds数组）
+const roleSelectModel = computed({
+  get() {
+    const ids = form.value.roleIds || []
+    return isPlatformAdmin.value ? ids : ids[0]
+  },
+  set(val) {
+    if (Array.isArray(val)) {
+      form.value.roleIds = val
+    } else {
+      form.value.roleIds = val !== undefined && val !== null ? [val] : []
+    }
+  }
+})
 
 const userList = ref([])
 const open = ref(false)
@@ -457,3 +486,11 @@ onMounted(() => {
   })
 })
 </script>
+
+<style lang="scss" scoped>
+.form-tip {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--el-text-color-secondary);
+}
+</style>

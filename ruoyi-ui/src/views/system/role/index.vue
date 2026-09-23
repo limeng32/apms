@@ -93,7 +93,7 @@
 
       <!-- 表格数据 -->
       <el-table v-loading="loading" :data="roleList" @selection-change="handleSelectionChange">
-         <el-table-column type="selection" width="55" align="center" />
+         <el-table-column type="selection" width="55" align="center" :selectable="checkRowSelectable" />
          <el-table-column label="角色编号" prop="roleId" width="120" />
          <el-table-column label="角色名称" prop="roleName" :show-overflow-tooltip="true" width="150" />
          <el-table-column label="权限字符" prop="roleKey" :show-overflow-tooltip="true" width="150" />
@@ -102,6 +102,7 @@
             <template #default="scope">
                <el-switch
                   v-model="scope.row.status"
+                  :disabled="isReadonlyRole(scope.row)"
                   active-value="0"
                   inactive-value="1"
                   @change="handleStatusChange(scope.row)"
@@ -115,18 +116,23 @@
          </el-table-column>
          <el-table-column label="操作" align="center" class-name="small-padding fixed-width">
             <template #default="scope">
-              <el-tooltip content="修改" placement="top" v-if="scope.row.roleId !== 1">
-                <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['system:role:edit']"></el-button>
-              </el-tooltip>
-              <el-tooltip content="删除" placement="top" v-if="scope.row.roleId !== 1">
-                <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['system:role:remove']"></el-button>
-              </el-tooltip>
-              <el-tooltip content="数据权限" placement="top" v-if="scope.row.roleId !== 1">
-                <el-button link type="primary" icon="CircleCheck" @click="handleDataScope(scope.row)" v-hasPermi="['system:role:edit']"></el-button>
-              </el-tooltip>
-              <el-tooltip content="分配用户" placement="top" v-if="scope.row.roleId !== 1">
-                <el-button link type="primary" icon="User" @click="handleAuthUser(scope.row)" v-hasPermi="['system:role:edit']"></el-button>
-              </el-tooltip>
+              <template v-if="isReadonlyRole(scope.row)">
+                <el-tag type="info" size="small">系统内置（只读）</el-tag>
+              </template>
+              <template v-else>
+                <el-tooltip content="修改" placement="top" v-if="scope.row.roleId !== 1">
+                  <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['system:role:edit']"></el-button>
+                </el-tooltip>
+                <el-tooltip content="删除" placement="top" v-if="scope.row.roleId !== 1">
+                  <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['system:role:remove']"></el-button>
+                </el-tooltip>
+                <el-tooltip content="数据权限" placement="top" v-if="scope.row.roleId !== 1">
+                  <el-button link type="primary" icon="CircleCheck" @click="handleDataScope(scope.row)" v-hasPermi="['system:role:edit']"></el-button>
+                </el-tooltip>
+                <el-tooltip content="分配用户" placement="top" v-if="scope.row.roleId !== 1">
+                  <el-button link type="primary" icon="User" @click="handleAuthUser(scope.row)" v-hasPermi="['system:role:edit']"></el-button>
+                </el-tooltip>
+              </template>
             </template>
          </el-table-column>
       </el-table>
@@ -168,6 +174,20 @@
                   >{{ dict.label }}</el-radio>
                </el-radio-group>
             </el-form-item>
+            <el-form-item label="Portal模式">
+               <el-switch v-model="form.portalMode" active-value="1" inactive-value="0" />
+               <span class="form-tip">开启后为专岗账号（无导航精简界面、强制单角色）</span>
+            </el-form-item>
+            <el-form-item v-if="form.portalMode === '1'" label="落地页" prop="homePath">
+               <el-select v-model="form.homePath" placeholder="请先勾选菜单，再选择落地页">
+                  <el-option
+                     v-for="item in homePathOptions"
+                     :key="item.menuId"
+                     :label="item.fullPath"
+                     :value="item.fullPath"
+                  />
+               </el-select>
+            </el-form-item>
             <el-form-item label="菜单权限">
                <el-checkbox v-model="menuExpand" @change="handleCheckedTreeExpand($event, 'menu')">展开/折叠</el-checkbox>
                <el-checkbox v-model="menuNodeAll" @change="handleCheckedTreeNodeAll($event, 'menu')">全选/全不选</el-checkbox>
@@ -181,6 +201,7 @@
                   :check-strictly="!form.menuCheckStrictly"
                   empty-text="加载中，请稍候"
                   :props="{ label: 'label', children: 'children' }"
+                  @check="handleMenuCheck"
                ></el-tree>
             </el-form-item>
             <el-form-item label="备注">
@@ -243,7 +264,8 @@
 
 <script setup name="Role">
 import { addRole, changeRoleStatus, dataScope, delRole, getRole, listRole, updateRole, deptTreeSelect } from "@/api/system/role"
-import { roleMenuTreeselect, treeselect as menuTreeselect } from "@/api/system/menu"
+import { roleMenuTreeselect, treeselect as menuTreeselect, roleMenuFlatList } from "@/api/system/menu"
+import useUserStore from "@/store/modules/user"
 
 const router = useRouter()
 const { proxy } = getCurrentInstance()
@@ -268,6 +290,9 @@ const deptOptions = ref([])
 const openDataScope = ref(false)
 const menuRef = ref(null)
 const deptRef = ref(null)
+// 全量菜单平铺数据（用于落地页路径拼接），当前树勾选的菜单ID
+const menuAllList = ref([])
+const checkedMenuIds = ref([])
 
 /** 数据范围选项*/
 const dataScopeOptions = ref([
@@ -295,6 +320,49 @@ const data = reactive({
 })
 
 const { queryParams, form, rules } = toRefs(data)
+
+/** business_admin 对 super 只读；平台 admin 可正常管理（用于交付方调整 super 权限） */
+const isPlatformAdmin = computed(() => useUserStore().roles.includes('admin'))
+function isReadonlyRole(row) {
+  return row.roleKey === 'business_admin' && !isPlatformAdmin.value
+}
+function checkRowSelectable(row) {
+  return !isReadonlyRole(row)
+}
+
+/** 菜单树勾选变化：同步落地页候选 */
+function handleMenuCheck() {
+  // 含半选父节点：带 F 子权限的 C 菜单处于半选态，仍可作为落地页候选
+  checkedMenuIds.value = [...menuRef.value.getCheckedKeys(), ...menuRef.value.getHalfCheckedKeys()]
+}
+
+/** 查询全量菜单平铺数据 */
+function getMenuList() {
+  return roleMenuFlatList().then(response => {
+    menuAllList.value = response.data
+  })
+}
+
+/** 沿父链拼菜单完整路由（与后端校验逻辑一致） */
+function buildMenuFullPath(menu) {
+  const parts = []
+  let current = menu
+  const guard = new Set()
+  while (current && !guard.has(current.menuId)) {
+    guard.add(current.menuId)
+    if (current.path) parts.unshift(current.path)
+    current = menuAllList.value.find(item => item.menuId === current.parentId)
+  }
+  return '/' + parts.join('/')
+}
+
+/** 落地页候选：当前已勾选的C型菜单 */
+const homePathOptions = computed(() => {
+  const idSet = new Set(checkedMenuIds.value)
+  return menuAllList.value
+    .filter(menu => menu.menuType === 'C' && idSet.has(menu.menuId))
+    .map(menu => ({ menuId: menu.menuId, fullPath: buildMenuFullPath(menu) }))
+})
 
 /** 查询角色列表 */
 function getList() {
@@ -401,12 +469,15 @@ function reset() {
   menuNodeAll.value = false
   deptExpand.value = true
   deptNodeAll.value = false
+  checkedMenuIds.value = []
   form.value = {
     roleId: undefined,
     roleName: undefined,
     roleKey: undefined,
     roleSort: 0,
     status: "0",
+    portalMode: "0",
+    homePath: undefined,
     menuIds: [],
     deptIds: [],
     menuCheckStrictly: true,
@@ -420,6 +491,7 @@ function reset() {
 function handleAdd() {
   reset()
   getMenuTreeselect()
+  getMenuList()
   open.value = true
   title.value = "添加角色"
 }
@@ -429,18 +501,15 @@ function handleUpdate(row) {
   reset()
   const roleId = row.roleId || ids.value
   const roleMenu = getRoleMenuTreeselect(roleId)
+  getMenuList()
   getRole(roleId).then(response => {
     form.value = response.data
     form.value.roleSort = Number(form.value.roleSort)
     open.value = true
     nextTick(() => {
       roleMenu.then((res) => {
-        let checkedKeys = res.checkedKeys
-        checkedKeys.forEach((v) => {
-          nextTick(() => {
-            menuRef.value.setChecked(v, true, false)
-          })
-        })
+        menuRef.value.setCheckedKeys(res.checkedKeys)
+        checkedMenuIds.value = [...menuRef.value.getCheckedKeys(), ...menuRef.value.getHalfCheckedKeys()]
       })
     })
   })
@@ -582,3 +651,11 @@ function cancelDataScope() {
 
 getList()
 </script>
+
+<style lang="scss" scoped>
+.form-tip {
+  margin-left: 10px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+</style>

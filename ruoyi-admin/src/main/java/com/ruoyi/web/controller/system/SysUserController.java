@@ -1,6 +1,8 @@
 package com.ruoyi.web.controller.system;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 import jakarta.servlet.http.HttpServletResponse;
 import org.apache.commons.lang3.ArrayUtils;
@@ -27,6 +29,9 @@ import com.ruoyi.common.enums.BusinessType;
 import com.ruoyi.common.utils.SecurityUtils;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.common.utils.poi.ExcelUtil;
+import com.ruoyi.framework.web.service.ManagedBoundary;
+import com.ruoyi.framework.web.service.ManagedBoundary.Access;
+import com.ruoyi.framework.web.service.TokenService;
 import com.ruoyi.system.service.ISysDeptService;
 import com.ruoyi.system.service.ISysPostService;
 import com.ruoyi.system.service.ISysRoleService;
@@ -52,6 +57,12 @@ public class SysUserController extends BaseController
 
     @Autowired
     private ISysPostService postService;
+
+    @Autowired
+    private ManagedBoundary managedBoundary;
+
+    @Autowired
+    private TokenService tokenService;
 
     /**
      * 获取用户列表
@@ -104,6 +115,7 @@ public class SysUserController extends BaseController
         AjaxResult ajax = AjaxResult.success();
         if (StringUtils.isNotNull(userId))
         {
+            managedBoundary.assertUserManageable(userId, Access.READ);
             userService.checkUserDataScope(userId);
             SysUser sysUser = userService.selectUserById(userId);
             ajax.put(AjaxResult.DATA_TAG, sysUser);
@@ -111,7 +123,7 @@ public class SysUserController extends BaseController
             ajax.put("roleIds", sysUser.getRoles().stream().map(SysRole::getRoleId).collect(Collectors.toList()));
         }
         List<SysRole> roles = roleService.selectRoleAll();
-        ajax.put("roles", SecurityUtils.isAdmin(userId) ? roles : roles.stream().filter(r -> !r.isAdmin()).collect(Collectors.toList()));
+        ajax.put("roles", managedBoundary.filterRoles(roles, true));
         ajax.put("posts", postService.selectPostAll());
         return ajax;
     }
@@ -124,6 +136,7 @@ public class SysUserController extends BaseController
     @PostMapping
     public AjaxResult add(@Validated @RequestBody SysUser user)
     {
+        managedBoundary.assertRolesManageable(user.getRoleIds(), Access.GRANT);
         deptService.checkDeptDataScope(user.getDeptId());
         roleService.checkRoleDataScope(user.getRoleIds());
         if (!userService.checkUserNameUnique(user))
@@ -151,6 +164,8 @@ public class SysUserController extends BaseController
     @PutMapping
     public AjaxResult edit(@Validated @RequestBody SysUser user)
     {
+        managedBoundary.assertUserManageable(user.getUserId(), Access.WRITE);
+        managedBoundary.assertRolesManageable(user.getRoleIds(), Access.GRANT);
         userService.checkUserAllowed(user);
         userService.checkUserDataScope(user.getUserId());
         deptService.checkDeptDataScope(user.getDeptId());
@@ -168,7 +183,36 @@ public class SysUserController extends BaseController
             return error("修改用户'" + user.getUserName() + "'失败，邮箱账号已存在");
         }
         user.setUpdateBy(getUsername());
-        return toAjax(userService.updateUser(user));
+        // F3 变更前角色快照（自身编辑不比较：角色集合恒锁定）
+        boolean compareRoles = !user.getUserId().equals(getUserId());
+        List<Long> oldRoleIds = compareRoles ? roleService.selectRoleListByUserId(user.getUserId()) : null;
+        int rows = userService.updateUser(user);
+        // F3 角色集合变更：目标强制下线；仅改昵称等资料不踢
+        if (rows > 0 && compareRoles && isRolesChanged(oldRoleIds, user.getRoleIds()))
+        {
+            tokenService.forceLogoutByUserIds(new Long[] { user.getUserId() });
+        }
+        return toAjax(rows);
+    }
+
+    /**
+     * 比对用户角色集合是否发生变化
+     */
+    private boolean isRolesChanged(List<Long> oldRoleIds, Long[] newRoleIds)
+    {
+        if (newRoleIds == null || oldRoleIds.size() != newRoleIds.length)
+        {
+            return true;
+        }
+        Set<Long> oldSet = new HashSet<>(oldRoleIds);
+        for (Long newRoleId : newRoleIds)
+        {
+            if (!oldSet.contains(newRoleId))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -183,7 +227,14 @@ public class SysUserController extends BaseController
         {
             return error("当前用户不能删除");
         }
-        return toAjax(userService.deleteUserByIds(userIds));
+        managedBoundary.assertUsersManageable(userIds, Access.DELETE);
+        int rows = userService.deleteUserByIds(userIds);
+        // F2 删除用户：目标全部强制下线
+        if (rows > 0)
+        {
+            tokenService.forceLogoutByUserIds(userIds);
+        }
+        return toAjax(rows);
     }
 
     /**
@@ -194,11 +245,18 @@ public class SysUserController extends BaseController
     @PutMapping("/resetPwd")
     public AjaxResult resetPwd(@RequestBody SysUser user)
     {
+        managedBoundary.assertUserManageable(user.getUserId(), Access.WRITE);
         userService.checkUserAllowed(user);
         userService.checkUserDataScope(user.getUserId());
         user.setPassword(SecurityUtils.encryptPassword(user.getPassword()));
         user.setUpdateBy(getUsername());
-        return toAjax(userService.resetPwd(user));
+        int rows = userService.resetPwd(user);
+        // F6 重置密码：目标强制下线，以新密码重新登录
+        if (rows > 0)
+        {
+            tokenService.forceLogoutByUserIds(new Long[] { user.getUserId() });
+        }
+        return toAjax(rows);
     }
 
     /**
@@ -209,10 +267,21 @@ public class SysUserController extends BaseController
     @PutMapping("/changeStatus")
     public AjaxResult changeStatus(@RequestBody SysUser user)
     {
+        managedBoundary.assertUserManageable(user.getUserId(), Access.WRITE);
         userService.checkUserAllowed(user);
         userService.checkUserDataScope(user.getUserId());
+        if (user.getUserId().equals(getUserId()) && "1".equals(user.getStatus()))
+        {
+            return error("当前用户不能停用");
+        }
         user.setUpdateBy(getUsername());
-        return toAjax(userService.updateUserStatus(user));
+        int rows = userService.updateUserStatus(user);
+        // F1 停用用户：目标强制下线（启用不踢）
+        if (rows > 0 && "1".equals(user.getStatus()))
+        {
+            tokenService.forceLogoutByUserIds(new Long[] { user.getUserId() });
+        }
+        return toAjax(rows);
     }
 
     /**
@@ -222,11 +291,12 @@ public class SysUserController extends BaseController
     @GetMapping("/authRole/{userId}")
     public AjaxResult authRole(@PathVariable("userId") Long userId)
     {
+        managedBoundary.assertUserManageable(userId, Access.READ);
         AjaxResult ajax = AjaxResult.success();
         SysUser user = userService.selectUserById(userId);
         List<SysRole> roles = roleService.selectRolesByUserId(userId);
         ajax.put("user", user);
-        ajax.put("roles", SecurityUtils.isAdmin(userId) ? roles : roles.stream().filter(r -> !r.isAdmin()).collect(Collectors.toList()));
+        ajax.put("roles", managedBoundary.filterRoles(roles, true));
         return ajax;
     }
 
@@ -238,9 +308,13 @@ public class SysUserController extends BaseController
     @PutMapping("/authRole")
     public AjaxResult insertAuthRole(Long userId, Long[] roleIds)
     {
+        managedBoundary.assertUserManageable(userId, Access.GRANT);
+        managedBoundary.assertRolesManageable(roleIds, Access.GRANT);
         userService.checkUserDataScope(userId);
         roleService.checkRoleDataScope(roleIds);
         userService.insertUserAuth(userId, roleIds);
+        // F4 用户授权角色：目标强制下线
+        tokenService.forceLogoutByUserIds(new Long[] { userId });
         return success();
     }
 

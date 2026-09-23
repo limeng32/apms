@@ -9,6 +9,14 @@ export function listMenu(query) {
   })
 }
 
+// 查询当前用户可见菜单的平铺轻量列表（角色配置落地页用）
+export function roleMenuFlatList() {
+  return request({
+    url: '/system/menu/roleMenuList',
+    method: 'get'
+  })
+}
+
 // 查询菜单详细
 export function getMenu(menuId) {
   return request({

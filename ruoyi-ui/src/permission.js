@@ -6,6 +6,7 @@ import { getToken } from '@/utils/auth'
 import { isHttp, isPathMatch } from '@/utils/validate'
 import { isRelogin } from '@/utils/request'
 import useUserStore from '@/store/modules/user'
+import useAppStore from '@/store/modules/app'
 import useLockStore from '@/store/modules/lock'
 import useSettingsStore from '@/store/modules/settings'
 import usePermissionStore from '@/store/modules/permission'
@@ -58,6 +59,22 @@ router.beforeEach(async (to, from) => {
         ElMessage.error(err)
         return { path: '/' }
       }
+    }
+    // Portal模式：隐藏侧栏，未注册路由一律回落地页；标准模式确保侧栏显示
+    const userStore = useUserStore()
+    if (userStore.portalMode)
+    {
+      useAppStore().toggleSideBarHide(true)
+      const accessiblePaths = router.getRoutes().map(route => route.path)
+      if (!accessiblePaths.includes(to.path) || to.path === '/' || to.path === '/index')
+      {
+        NProgress.done()
+        return { path: userStore.homePath, replace: true }
+      }
+    }
+    else
+    {
+      useAppStore().toggleSideBarHide(false)
     }
     return true
   } else {

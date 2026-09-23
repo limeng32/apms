@@ -3,13 +3,16 @@ package com.ruoyi.system.service.impl;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.ruoyi.common.annotation.DataScope;
+import com.ruoyi.common.constant.DelegationConstants;
 import com.ruoyi.common.constant.UserConstants;
+import com.ruoyi.common.core.domain.entity.SysMenu;
 import com.ruoyi.common.core.domain.entity.SysRole;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.SecurityUtils;
@@ -22,6 +25,7 @@ import com.ruoyi.system.mapper.SysRoleDeptMapper;
 import com.ruoyi.system.mapper.SysRoleMapper;
 import com.ruoyi.system.mapper.SysRoleMenuMapper;
 import com.ruoyi.system.mapper.SysUserRoleMapper;
+import com.ruoyi.system.service.ISysMenuService;
 import com.ruoyi.system.service.ISysRoleService;
 
 /**
@@ -43,6 +47,9 @@ public class SysRoleServiceImpl implements ISysRoleService
 
     @Autowired
     private SysRoleDeptMapper roleDeptMapper;
+
+    @Autowired
+    private ISysMenuService menuService;
 
     /**
      * 根据条件分页查询角色数据
@@ -233,6 +240,7 @@ public class SysRoleServiceImpl implements ISysRoleService
     @Transactional
     public int insertRole(SysRole role)
     {
+        checkRoleDefinition(role, false);
         // 新增角色信息
         roleMapper.insertRole(role);
         return insertRoleMenu(role);
@@ -248,6 +256,7 @@ public class SysRoleServiceImpl implements ISysRoleService
     @Transactional
     public int updateRole(SysRole role)
     {
+        checkRoleDefinition(role, true);
         // 修改角色信息
         roleMapper.updateRole(role);
         // 删除角色与菜单关联
@@ -286,8 +295,154 @@ public class SysRoleServiceImpl implements ISysRoleService
     }
 
     /**
+     * 角色保存前置校验：对象类型 + Portal模式 + DELEGATABLE权限内容 + 落地页（admin操作者放行）
+     *
+     * @param role 角色对象
+     * @param isUpdate 是否修改操作
+     */
+    private void checkRoleDefinition(SysRole role, boolean isUpdate)
+    {
+        if (SecurityUtils.isAdmin())
+        {
+            return;
+        }
+        if (isUpdate)
+        {
+            SysRole oldRole = roleMapper.selectRoleById(role.getRoleId());
+            if (StringUtils.isNull(oldRole))
+            {
+                throw new ServiceException("角色不存在或已被删除");
+            }
+            if (!DelegationConstants.isPortalRole(oldRole.getRoleKey()))
+            {
+                throw new ServiceException("仅可维护专岗角色");
+            }
+            if (!DelegationConstants.isPortalRole(role.getRoleKey()))
+            {
+                throw new ServiceException("专岗角色不可变更为其他类型");
+            }
+        }
+        else if (!DelegationConstants.isPortalRole(role.getRoleKey()))
+        {
+            throw new ServiceException("仅允许创建专岗角色（角色权限须以 portal_ 开头）");
+        }
+        if (!"1".equals(role.getPortalMode()))
+        {
+            throw new ServiceException("专岗角色必须为Portal无导航模式");
+        }
+        checkDelegatableMenus(role);
+        checkHomePath(role);
+    }
+
+    /**
+     * D9 委派权限内容校验：C/F功能节点须在白名单内，M目录经祖先闭包判定
+     *
+     * @param role 角色对象
+     */
+    private void checkDelegatableMenus(SysRole role)
+    {
+        Long[] menuIds = role.getMenuIds();
+        if (menuIds == null || menuIds.length == 0)
+        {
+            throw new ServiceException("请至少勾选一个功能菜单");
+        }
+        Set<Long> allowedMenuIds = new HashSet<>();
+        for (Long menuId : menuIds)
+        {
+            SysMenu menu = menuService.selectMenuById(menuId);
+            if (StringUtils.isNull(menu))
+            {
+                throw new ServiceException("菜单不存在：" + menuId);
+            }
+            // 目录节点留待闭包判定
+            if (UserConstants.TYPE_DIR.equals(menu.getMenuType()))
+            {
+                continue;
+            }
+            boolean allowed = DelegationConstants.DELEGATABLE_PERMS.contains(menu.getPerms())
+                    || DelegationConstants.DELEGATABLE_COMPONENTS.contains(menu.getComponent());
+            if (!allowed)
+            {
+                String identity = StringUtils.isNotEmpty(menu.getPerms()) ? menu.getPerms() : menu.getComponent();
+                throw new ServiceException("包含无权委派的权限：" + identity);
+            }
+            allowedMenuIds.add(menu.getMenuId());
+            // 沿parent_id向上追溯M祖先并入闭包
+            Long parentId = menu.getParentId();
+            while (parentId != null && parentId != 0L)
+            {
+                SysMenu parent = menuService.selectMenuById(parentId);
+                if (StringUtils.isNull(parent))
+                {
+                    break;
+                }
+                allowedMenuIds.add(parent.getMenuId());
+                parentId = parent.getParentId();
+            }
+        }
+        for (Long menuId : menuIds)
+        {
+            if (!allowedMenuIds.contains(menuId))
+            {
+                SysMenu menu = menuService.selectMenuById(menuId);
+                throw new ServiceException("包含无权委派的菜单目录："
+                        + (StringUtils.isNotNull(menu) ? menu.getMenuName() : menuId));
+            }
+        }
+    }
+
+    /**
+     * BE-7 落地页校验：必填且为已授权C型菜单的完整路由
+     *
+     * @param role 角色对象
+     */
+    private void checkHomePath(SysRole role)
+    {
+        String homePath = role.getHomePath();
+        if (StringUtils.isEmpty(homePath))
+        {
+            throw new ServiceException("专岗角色必须配置登录落地页");
+        }
+        for (Long menuId : role.getMenuIds())
+        {
+            SysMenu menu = menuService.selectMenuById(menuId);
+            if (StringUtils.isNotNull(menu) && UserConstants.TYPE_MENU.equals(menu.getMenuType())
+                    && homePath.equals(buildMenuFullPath(menu)))
+            {
+                return;
+            }
+        }
+        throw new ServiceException("落地页无效：须为本角色已授权的菜单页面");
+    }
+
+    /**
+     * 由菜单沿父级链构造完整路由，如 /apms/testTask
+     *
+     * @param menu 菜单对象
+     * @return 完整路由
+     */
+    private String buildMenuFullPath(SysMenu menu)
+    {
+        LinkedList<String> segments = new LinkedList<>();
+        SysMenu current = menu;
+        while (current.getParentId() != null && current.getParentId() != 0L)
+        {
+            if (StringUtils.isNotEmpty(current.getPath()))
+            {
+                segments.addFirst(current.getPath());
+            }
+            current = menuService.selectMenuById(current.getParentId());
+        }
+        if (StringUtils.isNotEmpty(current.getPath()))
+        {
+            segments.addFirst(current.getPath());
+        }
+        return "/" + String.join("/", segments);
+    }
+
+    /**
      * 新增角色菜单信息
-     * 
+     *
      * @param role 角色对象
      */
     public int insertRoleMenu(SysRole role)

@@ -1,15 +1,18 @@
 <template>
   <div class="navbar" :class="'nav' + settingsStore.navType">
-    <hamburger id="hamburger-container" :is-active="appStore.sidebar.opened" class="hamburger-container" @toggleClick="toggleSideBar" />
-    <breadcrumb v-if="settingsStore.navType == 1" id="breadcrumb-container" class="breadcrumb-container" />
-    <top-nav v-if="settingsStore.navType == 2" id="topmenu-container" class="topmenu-container" />
-    <template v-if="settingsStore.navType == 3">
+    <hamburger v-if="!userStore.portalMode" id="hamburger-container" :is-active="appStore.sidebar.opened" class="hamburger-container" @toggleClick="toggleSideBar" />
+    <breadcrumb v-if="settingsStore.navType == 1 && !userStore.portalMode" id="breadcrumb-container" class="breadcrumb-container" />
+    <top-nav v-if="settingsStore.navType == 2 && !userStore.portalMode" id="topmenu-container" class="topmenu-container" />
+    <template v-if="settingsStore.navType == 3 && !userStore.portalMode">
       <logo v-show="settingsStore.sidebarLogo" :collapse="false"></logo>
       <top-bar id="topbar-container" class="topbar-container" />
     </template>
 
+    <!-- Portal模式：仅显示品牌名 -->
+    <span v-if="userStore.portalMode" class="portal-brand">{{ brandName }}</span>
+
     <div class="right-menu">
-      <template v-if="appStore.device !== 'mobile'">
+      <template v-if="appStore.device !== 'mobile' && !userStore.portalMode">
         <header-search id="header-search" class="right-menu-item" />
 
         <screenfull id="screenfull" class="right-menu-item hover-effect" />
@@ -33,10 +36,10 @@
             <router-link to="/user/profile">
               <el-dropdown-item>个人中心</el-dropdown-item>
             </router-link>
-            <el-dropdown-item command="setLayout" v-if="settingsStore.showSettings">
+            <el-dropdown-item command="setLayout" v-if="settingsStore.showSettings && !userStore.portalMode">
                 <span>布局设置</span>
             </el-dropdown-item>
-            <el-dropdown-item command="lockScreen">
+            <el-dropdown-item command="lockScreen" v-if="!userStore.portalMode">
                 <span>锁定屏幕</span>
             </el-dropdown-item>
             <el-dropdown-item divided command="logout">
@@ -63,6 +66,7 @@ import useAppStore from '@/store/modules/app'
 import useUserStore from '@/store/modules/user'
 import useLockStore from '@/store/modules/lock'
 import useSettingsStore from '@/store/modules/settings'
+import useLoginThemeStore from '@/store/modules/loginTheme'
 import HeaderNotice from './HeaderNotice'
 
 const route = useRoute()
@@ -71,6 +75,7 @@ const appStore = useAppStore()
 const userStore = useUserStore()
 const lockStore = useLockStore()
 const settingsStore = useSettingsStore()
+const brandName = computed(() => useLoginThemeStore().config.brand.name || import.meta.env.VITE_APP_TITLE)
 
 function toggleSideBar() {
   appStore.toggleSideBar()
@@ -121,6 +126,16 @@ function lockScreen() {
   .hamburger-container {
     display: none !important;
   }
+}
+
+.portal-brand {
+  margin-left: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .navbar {

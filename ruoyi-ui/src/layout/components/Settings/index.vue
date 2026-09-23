@@ -125,12 +125,14 @@
 
 <script setup>
 import useAppStore from '@/store/modules/app'
+import useUserStore from '@/store/modules/user'
 import useSettingsStore from '@/store/modules/settings'
 import usePermissionStore from '@/store/modules/permission'
 import { handleThemeStyle } from '@/utils/theme'
 
 const { proxy } = getCurrentInstance()
 const appStore = useAppStore()
+const userStore = useUserStore()
 const settingsStore = useSettingsStore()
 const permissionStore = usePermissionStore()
 const showSettings = ref(false)
@@ -168,6 +170,10 @@ function handleNavType(val) {
 
 /** 菜单导航设置 */
 watch(() => navType, val => {
+  if (userStore.portalMode) {
+    appStore.toggleSideBarHide(true)
+    return
+  }
   if (val.value == 1) {
     appStore.sidebar.opened = true
     appStore.toggleSideBarHide(false)

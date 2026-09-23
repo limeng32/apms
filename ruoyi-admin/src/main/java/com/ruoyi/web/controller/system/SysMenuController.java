@@ -79,6 +79,20 @@ public class SysMenuController extends BaseController
     }
 
     /**
+     * 获取当前登录用户可见菜单的平铺轻量列表（供角色配置落地页路径拼接，无需菜单管理权限）
+     */
+    @GetMapping("/roleMenuList")
+    public AjaxResult roleMenuList()
+    {
+        List<SysMenu> menus = menuService.selectMenuList(getUserId());
+        return success(menus.stream().map(m -> Map.of(
+                "menuId", m.getMenuId(),
+                "parentId", m.getParentId(),
+                "path", StringUtils.isNotEmpty(m.getPath()) ? m.getPath() : "",
+                "menuType", m.getMenuType())).toList());
+    }
+
+    /**
      * 新增菜单
      */
     @PreAuthorize("@ss.hasPermi('system:menu:add')")

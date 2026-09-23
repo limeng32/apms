@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 import com.ruoyi.common.annotation.DataScope;
+import com.ruoyi.common.constant.DelegationConstants;
 import com.ruoyi.common.constant.UserConstants;
 import com.ruoyi.common.core.domain.entity.SysRole;
 import com.ruoyi.common.core.domain.entity.SysUser;
@@ -261,6 +262,7 @@ public class SysUserServiceImpl implements ISysUserService
     @Transactional
     public int insertUser(SysUser user)
     {
+        checkAssignedRoles(user.getRoleIds());
         // 新增用户信息
         int rows = userMapper.insertUser(user);
         // 新增用户岗位关联
@@ -293,6 +295,28 @@ public class SysUserServiceImpl implements ISysUserService
     public int updateUser(SysUser user)
     {
         Long userId = user.getUserId();
+        if (!SecurityUtils.isAdmin())
+        {
+            List<SysRole> currentRoles = roleMapper.selectRolePermissionByUserId(userId);
+            boolean isBusinessAdmin = false;
+            for (SysRole currentRole : currentRoles)
+            {
+                if ("business_admin".equals(currentRole.getRoleKey()))
+                {
+                    isBusinessAdmin = true;
+                    break;
+                }
+            }
+            if (isBusinessAdmin)
+            {
+                // super用户角色集合锁定，忽略提交的roleIds
+                user.setRoleIds(currentRoles.stream().map(SysRole::getRoleId).toArray(Long[]::new));
+            }
+            else
+            {
+                checkAssignedRoles(user.getRoleIds());
+            }
+        }
         // 删除用户与角色关联
         userRoleMapper.deleteUserRoleByUserId(userId);
         // 新增用户与角色管理
@@ -314,8 +338,53 @@ public class SysUserServiceImpl implements ISysUserService
     @Transactional
     public void insertUserAuth(Long userId, Long[] roleIds)
     {
+        if (!SecurityUtils.isAdmin())
+        {
+            if (SecurityUtils.isAdmin(userId))
+            {
+                throw new ServiceException("无权操作平台保留账号");
+            }
+            List<SysRole> currentRoles = roleMapper.selectRolePermissionByUserId(userId);
+            for (SysRole currentRole : currentRoles)
+            {
+                if ("business_admin".equals(currentRole.getRoleKey()))
+                {
+                    throw new ServiceException("业务管理账号的角色不可变更");
+                }
+            }
+        }
+        checkAssignedRoles(roleIds);
         userRoleMapper.deleteUserRoleByUserId(userId);
         insertUserRole(userId, roleIds);
+    }
+
+    /**
+     * BE-6 校验提交的角色：非admin操作者仅可分配单个portal_*专岗角色
+     *
+     * @param roleIds 角色ID数组
+     */
+    private void checkAssignedRoles(Long[] roleIds)
+    {
+        if (SecurityUtils.isAdmin())
+        {
+            return;
+        }
+        if (StringUtils.isEmpty(roleIds))
+        {
+            throw new ServiceException("请选择一个专岗角色");
+        }
+        if (roleIds.length > 1)
+        {
+            throw new ServiceException("专岗账号只能分配一个角色");
+        }
+        for (Long roleId : roleIds)
+        {
+            SysRole role = roleMapper.selectRoleById(roleId);
+            if (StringUtils.isNull(role) || !DelegationConstants.isPortalRole(role.getRoleKey()))
+            {
+                throw new ServiceException("仅可分配专岗角色");
+            }
+        }
     }
 
     /**

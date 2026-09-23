@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ruoyi.common.constant.Constants;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.domain.entity.SysMenu;
+import com.ruoyi.common.core.domain.entity.SysRole;
 import com.ruoyi.common.core.domain.entity.SysUser;
 import com.ruoyi.common.core.domain.model.LoginBody;
 import com.ruoyi.common.core.domain.model.LoginUser;
@@ -23,6 +24,7 @@ import com.ruoyi.framework.web.service.SysPermissionService;
 import com.ruoyi.framework.web.service.TokenService;
 import com.ruoyi.system.service.ISysConfigService;
 import com.ruoyi.system.service.ISysMenuService;
+import com.ruoyi.system.service.ISysRoleService;
 
 /**
  * 登录验证
@@ -46,6 +48,9 @@ public class SysLoginController
 
     @Autowired
     private ISysConfigService configService;
+
+    @Autowired
+    private ISysRoleService roleService;
 
     /**
      * 登录方法
@@ -90,6 +95,23 @@ public class SysLoginController
         ajax.put("pwdChrtype", getSysAccountChrtype());
         ajax.put("isDefaultModifyPwd", initPasswordIsModify(user.getPwdUpdateDate()));
         ajax.put("isPasswordExpired", passwordIsExpiration(user.getPwdUpdateDate()));
+        // Portal模式与落地页：任一已分配角色 portal_mode=1 即生效
+        // 注意：selectRolesByUserId 返回全部角色（供用户表单勾选），此处须用实际分配的角色
+        boolean portalMode = false;
+        String homePath = null;
+        List<Long> assignedRoleIds = roleService.selectRoleListByUserId(user.getUserId());
+        for (Long roleId : assignedRoleIds)
+        {
+            SysRole userRole = roleService.selectRoleById(roleId);
+            if (userRole != null && "1".equals(userRole.getPortalMode()))
+            {
+                portalMode = true;
+                homePath = userRole.getHomePath();
+                break;
+            }
+        }
+        ajax.put("portalMode", portalMode);
+        ajax.put("homePath", homePath);
         return ajax;
     }
 
