@@ -39,6 +39,12 @@ export const BUILTIN_LOGO_VALUES = BUILTIN_LOGOS.map((l) => l.value)
 /** logo 像素调整范围（与后端校验一致） */
 export const LOGO_LIMITS = { sizeMin: 16, sizeMax: 200, offsetMin: -100, offsetMax: 100 }
 
+/**
+ * Logo 上下留白范围（与后端校验一致）。
+ * 上方高度最小 0；下方高度允许 -100（负 margin，可把下一区块上提/叠加）；上限均 200。
+ */
+export const LOGO_SPACE_LIMITS = { topMin: 0, bottomMin: -100, max: 200 }
+
 export function clampLogoSize(v, fallback = 42) {
   const n = Number(v)
   if (!Number.isFinite(n)) return fallback
@@ -78,6 +84,30 @@ export function cloneDefaults() {
  */
 export function mergeWithDefaults(raw) {
   return deepMerge(cloneDefaults(), isPlainObject(raw) ? raw : {})
+}
+
+/**
+ * 按设备解析最终配置：
+ * - 桌面端：完整配置原样返回（mobile 子树不参与渲染）；
+ * - 移动端：以完整配置为底，用 mobile 子树覆盖「布局相关」四类字段
+ *   （layout、brand.logo、brand.logoSpace、background），
+ *   品牌名/副标题、Hero、表单、版权、主题色、字体、favicon、圆角仍共享。
+ *
+ * @param {object} raw 库中/编辑器原始配置
+ * @param {boolean} isMobile 当前是否按移动端渲染
+ */
+export function resolveDeviceConfig(raw, isMobile) {
+  const full = mergeWithDefaults(raw)
+  if (!isMobile || !isPlainObject(full.mobile)) return full
+  const m = full.mobile
+  return deepMerge(full, {
+    layout: m.layout,
+    brand: {
+      logo: m.brand && m.brand.logo,
+      logoSpace: m.brand && m.brand.logoSpace
+    },
+    background: m.background
+  })
 }
 
 /**
@@ -150,7 +180,12 @@ export function toCssVars(config) {
     '--login-form-title-size': px(ty.formTitleSize, '24px'),
     '--login-font-family': FONT_STACKS[ty.fontFamily] || FONT_STACKS.system,
     // 直接输出完整的两栏轨道值（1.1fr 合法且全浏览器兼容；不要用 calc(1.1 * 1fr)）
-    '--login-split': `${Number(c.layout.splitRatio) || 1.1}fr 1fr`
+    '--login-split': `${Number(c.layout.splitRatio) || 1.1}fr 1fr`,
+    // Logo 上下留白：split（左右分栏）与 overlay（居中卡片/全屏背景）各自独立
+    '--login-logo-top-split': px(c.brand?.logoSpace?.split?.top, '56px'),
+    '--login-logo-bottom-split': px(c.brand?.logoSpace?.split?.bottom, '0px'),
+    '--login-logo-top-overlay': px(c.brand?.logoSpace?.overlay?.top, '40px'),
+    '--login-logo-bottom-overlay': px(c.brand?.logoSpace?.overlay?.bottom, '22px')
   }
 }
 

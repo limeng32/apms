@@ -182,29 +182,33 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
             str(brand.get("subTitle"), "brand.subTitle", 200);
             // v1 favicon 仅允许 /profile/ 站内路径
             mediaUrl(brand.get("favicon"), "brand.favicon", true);
-            Map<String, Object> logo = obj(brand.get("logo"), "brand.logo");
-            if (logo != null)
+            // Logo 与上下留白（桌面端）：复用校验方法，移动端共用同一套口径
+            validateLogo(obj(brand.get("logo"), "brand.logo"), "brand.logo");
+            validateLogoSpace(obj(brand.get("logoSpace"), "brand.logoSpace"), "brand.logoSpace");
+        }
+
+        // 移动端独立布局配置（与桌面端同一次保存提交）
+        Map<String, Object> mobile = obj(root.get("mobile"), "mobile");
+        if (mobile != null)
+        {
+            Map<String, Object> mobileLayout = obj(mobile.get("layout"), "mobile.layout");
+            if (mobileLayout != null)
             {
-                // type 缺省按 builtin 处理（兼容 M2 配置）
-                String logoType = enumStr(logo.get("type"), LOGO_TYPES, "brand.logo.type", false);
-                if ("image".equals(logoType))
-                {
-                    Object logoValue = logo.get("value");
-                    if (!(logoValue instanceof String) || ((String) logoValue).isBlank())
-                    {
-                        throw new ServiceException("brand.logo.value 不能为空（image 类型须为 /profile/ 下的图片路径）");
-                    }
-                    mediaUrl(logoValue, "brand.logo.value", false);
-                }
-                else
-                {
-                    enumStr(logo.get("value"), LOGO_BUILTINS, "brand.logo.value", true);
-                }
-                // 像素级调整范围（与前端 LOGO_LIMITS 一致）
-                number(logo.get("width"), "brand.logo.width", 16, 200);
-                number(logo.get("height"), "brand.logo.height", 16, 200);
-                number(logo.get("offsetX"), "brand.logo.offsetX", -100, 100);
-                number(logo.get("offsetY"), "brand.logo.offsetY", -100, 100);
+                enumStr(mobileLayout.get("template"), TEMPLATES, "mobile.layout.template", true);
+                number(mobileLayout.get("splitRatio"), "mobile.layout.splitRatio", 0.5, 3.0);
+            }
+            Map<String, Object> mobileBrand = obj(mobile.get("brand"), "mobile.brand");
+            if (mobileBrand != null)
+            {
+                validateLogo(obj(mobileBrand.get("logo"), "mobile.brand.logo"), "mobile.brand.logo");
+                validateLogoSpace(obj(mobileBrand.get("logoSpace"), "mobile.brand.logoSpace"), "mobile.brand.logoSpace");
+            }
+            Map<String, Object> mobileBg = obj(mobile.get("background"), "mobile.background");
+            if (mobileBg != null)
+            {
+                enumStr(mobileBg.get("type"), BACKGROUND_TYPES, "mobile.background.type", false);
+                mediaUrl(mobileBg.get("image"), "mobile.background.image", true);
+                number(mobileBg.get("overlay"), "mobile.background.overlay", 0, 1);
             }
         }
 
@@ -332,6 +336,62 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
     }
 
     // ============================ 基础工具 ============================
+
+    /**
+     * Logo 校验（桌面 brand.logo 与移动 mobile.brand.logo 共用）。
+     * prefix 为字段路径前缀（如 "brand.logo"），错误信息与之拼接。
+     */
+    private void validateLogo(Map<String, Object> logo, String prefix)
+    {
+        if (logo == null)
+        {
+            return;
+        }
+        // type 缺省按 builtin 处理（兼容 M2 配置）
+        String logoType = enumStr(logo.get("type"), LOGO_TYPES, prefix + ".type", false);
+        if ("image".equals(logoType))
+        {
+            Object logoValue = logo.get("value");
+            if (!(logoValue instanceof String) || ((String) logoValue).isBlank())
+            {
+                throw new ServiceException(prefix + ".value 不能为空（image 类型须为 /profile/ 下的图片路径）");
+            }
+            mediaUrl(logoValue, prefix + ".value", false);
+        }
+        else
+        {
+            enumStr(logo.get("value"), LOGO_BUILTINS, prefix + ".value", true);
+        }
+        // 像素级调整范围（与前端 LOGO_LIMITS 一致）
+        number(logo.get("width"), prefix + ".width", 16, 200);
+        number(logo.get("height"), prefix + ".height", 16, 200);
+        number(logo.get("offsetX"), prefix + ".offsetX", -100, 100);
+        number(logo.get("offsetY"), prefix + ".offsetY", -100, 100);
+    }
+
+    /**
+     * Logo 上下留白校验（桌面/移动共用）。
+     * 上方高度 0~200；下方高度 -100~200（负值允许下一区块上提）。
+     */
+    private void validateLogoSpace(Map<String, Object> logoSpace, String prefix)
+    {
+        if (logoSpace == null)
+        {
+            return;
+        }
+        Map<String, Object> spaceSplit = obj(logoSpace.get("split"), prefix + ".split");
+        if (spaceSplit != null)
+        {
+            number(spaceSplit.get("top"), prefix + ".split.top", 0, 200);
+            number(spaceSplit.get("bottom"), prefix + ".split.bottom", -100, 200);
+        }
+        Map<String, Object> spaceOverlay = obj(logoSpace.get("overlay"), prefix + ".overlay");
+        if (spaceOverlay != null)
+        {
+            number(spaceOverlay.get("top"), prefix + ".overlay.top", 0, 200);
+            number(spaceOverlay.get("bottom"), prefix + ".overlay.bottom", -100, 200);
+        }
+    }
 
     private Map<String, Object> obj(Object v, String path)
     {

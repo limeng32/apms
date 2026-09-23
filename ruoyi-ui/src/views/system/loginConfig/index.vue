@@ -31,9 +31,31 @@
       <!-- 左侧：实时预览（与真实登录页共用 LoginRenderer + LoginFormFields） -->
       <div class="ld-preview">
         <div class="preview-stage" ref="stageRef">
-          <div class="preview-canvas" :style="canvasStyle">
-            <div class="preview-scaler" :style="scalerStyle">
+          <div class="preview-canvas" :class="{ 'canvas-mobile': isMobileView }" :style="canvasStyle">
+            <div class="preview-scaler" :class="scalerClass" :style="scalerStyle">
+              <!-- 移动端：手机外框内渲染 H5 登录页 -->
+              <div v-if="isMobileView" class="phone-bezel">
+                <div class="phone-screen">
+                  <LoginRenderer
+                    :config="localConfig"
+                    device="mobile"
+                    logo-draggable
+                    :preview-scale="scale"
+                    @logo-offset="onLogoOffset"
+                  >
+                    <template #form>
+                      <LoginFormFields
+                        :model-value="previewForm"
+                        :config="localConfig"
+                        preview
+                      />
+                    </template>
+                  </LoginRenderer>
+                </div>
+              </div>
+              <!-- 桌面端：1280×800 设计稿 -->
               <LoginRenderer
+                v-else
                 :config="localConfig"
                 logo-draggable
                 :preview-scale="scale"
@@ -50,7 +72,7 @@
             </div>
           </div>
         </div>
-        <div class="preview-tip">预览为真实登录页等比缩放，所有修改即时生效；可直接按住左上角 logo 拖动调整位置；保存后登录页与全系统品牌即时生效</div>
+        <div class="preview-tip">{{ previewTip }}</div>
       </div>
 
       <!-- 右侧：属性面板 -->
@@ -274,199 +296,44 @@
             </el-form>
           </el-tab-pane>
 
-          <!-- ======================== 图标与图片 ======================== -->
-          <el-tab-pane label="图标与图片" name="media">
-            <el-form label-position="top" class="ld-form">
-              <div class="ld-section">品牌 Logo</div>
-
-              <el-form-item label="Logo 来源">
-                <el-radio-group v-model="localConfig.brand.logo.type" size="small" @change="onLogoTypeChange">
-                  <el-radio-button value="builtin">内置图标</el-radio-button>
-                  <el-radio-button value="image">上传图片</el-radio-button>
-                </el-radio-group>
-              </el-form-item>
-
-              <!-- 内置图标库 -->
-              <template v-if="localConfig.brand.logo.type === 'builtin'">
-                <div class="ld-logo-grid">
-                  <div
-                    v-for="l in BUILTIN_LOGOS"
-                    :key="l.value"
-                    class="ld-logo-cell"
-                    :class="{ active: localConfig.brand.logo.value === l.value }"
-                    :title="l.label"
-                    @click="selectBuiltinLogo(l.value)"
-                  >
-                    <svg v-if="l.customSvg" viewBox="0 0 40 46" class="ld-logo-shield">
-                      <path d="M20 1.5L37 7v13c0 12-7.5 19-17 24C10.5 39 3 32 3 20V7l17-5.5z"
-                        fill="#2c5a4b" stroke="#7fc7ad" stroke-width="1.4"/>
-                      <circle cx="20" cy="20" r="8" fill="none" stroke="#d8efe4" stroke-width="1.3"/>
-                      <path d="M20 12l4 3-1.5 5h-5L16 15l4-3z" fill="#d8efe4"/>
-                      <path d="M14.5 29c1.6-2.2 3.4-3.3 5.5-3.3s3.9 1.1 5.5 3.3" stroke="#d8efe4" stroke-width="1.3" fill="none"/>
-                    </svg>
-                    <el-icon v-else :size="26"><component :is="l.value" /></el-icon>
-                    <span class="ld-logo-name">{{ l.label }}</span>
-                  </div>
-                </div>
-              </template>
-
-              <!-- 自定义上传 -->
-              <template v-else>
-                <div class="ld-upload-row">
-                  <el-image
-                    v-if="localConfig.brand.logo.value"
-                    :src="mediaUrl(localConfig.brand.logo.value)"
-                    fit="contain"
-                    class="ld-logo-preview"
-                  />
-                  <div v-else class="ld-logo-empty">未上传</div>
-                  <el-upload
-                    name="file"
-                    :action="uploadAction"
-                    :headers="uploadHeaders"
-                    :show-file-list="false"
-                    accept="image/jpeg,image/png"
-                    :before-upload="beforeLogoUpload"
-                    :on-success="onLogoUploaded"
-                  >
-                    <el-button size="small" type="primary" plain>上传 Logo（jpg/png）</el-button>
-                  </el-upload>
-                  <el-button size="small" @click="resetLogoBuiltin">恢复内置盾牌</el-button>
-                </div>
-                <div class="ld-hint">建议使用正方形或接近 42:48 比例的透明 PNG；图片经系统统一上传通道，匿名登录页可显示</div>
-              </template>
-
-              <div class="ld-section">
-                像素级调整
-                <el-button link type="primary" size="small" style="margin-left:8px" @click="resetLogoGeometry">归零</el-button>
-              </div>
-              <div class="ld-hint" style="margin-bottom:10px">
-                也可以直接在左侧预览中按住 logo 拖动（自动吸附到整数像素）；偏移不影响周围文字排版
-              </div>
-              <div class="ld-px-grid">
-                <div class="ld-px-item">
-                  <div class="ld-px-label">水平偏移 X：{{ localConfig.brand.logo.offsetX }}px</div>
-                  <el-input-number v-model="localConfig.brand.logo.offsetX" :min="LOGO_LIMITS.offsetMin" :max="LOGO_LIMITS.offsetMax" :step="1" size="small" controls-position="right" style="width:130px" />
-                  <el-slider v-model="localConfig.brand.logo.offsetX" :min="LOGO_LIMITS.offsetMin" :max="LOGO_LIMITS.offsetMax" :step="1" />
-                </div>
-                <div class="ld-px-item">
-                  <div class="ld-px-label">垂直偏移 Y：{{ localConfig.brand.logo.offsetY }}px</div>
-                  <el-input-number v-model="localConfig.brand.logo.offsetY" :min="LOGO_LIMITS.offsetMin" :max="LOGO_LIMITS.offsetMax" :step="1" size="small" controls-position="right" style="width:130px" />
-                  <el-slider v-model="localConfig.brand.logo.offsetY" :min="LOGO_LIMITS.offsetMin" :max="LOGO_LIMITS.offsetMax" :step="1" />
-                </div>
-                <div class="ld-px-item">
-                  <div class="ld-px-label">宽度：{{ localConfig.brand.logo.width }}px</div>
-                  <el-input-number v-model="localConfig.brand.logo.width" :min="LOGO_LIMITS.sizeMin" :max="LOGO_LIMITS.sizeMax" :step="1" size="small" controls-position="right" style="width:130px" />
-                  <el-slider v-model="localConfig.brand.logo.width" :min="LOGO_LIMITS.sizeMin" :max="LOGO_LIMITS.sizeMax" :step="1" />
-                </div>
-                <div class="ld-px-item">
-                  <div class="ld-px-label">高度：{{ localConfig.brand.logo.height }}px</div>
-                  <el-input-number v-model="localConfig.brand.logo.height" :min="LOGO_LIMITS.sizeMin" :max="LOGO_LIMITS.sizeMax" :step="1" size="small" controls-position="right" style="width:130px" />
-                  <el-slider v-model="localConfig.brand.logo.height" :min="LOGO_LIMITS.sizeMin" :max="LOGO_LIMITS.sizeMax" :step="1" />
-                </div>
-              </div>
-
-              <div class="ld-section">浏览器图标 Favicon</div>
-              <div class="ld-upload-row">
-                <el-image
-                  v-if="localConfig.brand.favicon"
-                  :src="mediaUrl(localConfig.brand.favicon)"
-                  fit="contain"
-                  class="ld-favicon-preview"
-                />
-                <div v-else class="ld-logo-empty">默认 ico</div>
-                <el-upload
-                  name="file"
-                  :action="uploadAction"
-                  :headers="uploadHeaders"
-                  :show-file-list="false"
-                  accept="image/png"
-                  :before-upload="beforeFaviconUpload"
-                  :on-success="onFaviconUploaded"
-                >
-                  <el-button size="small" type="primary" plain>上传 PNG（建议 64×64）</el-button>
-                </el-upload>
-                <el-button size="small" :disabled="!localConfig.brand.favicon" @click="localConfig.brand.favicon = null">清除</el-button>
-              </div>
-              <div class="ld-hint">仅登录页标签页生效；浏览器标题使用上方「品牌名称」，离开登录页自动恢复</div>
-
-              <div class="ld-section ld-section-disabled">
-                视频背景
-                <el-tag size="small" type="info" effect="plain" style="margin-left:8px">规划中（M4）</el-tag>
-              </div>
-              <div class="ld-hint">未来支持自动播放、静音、循环 mp4 + 封面图兜底，当前版本暂不开放</div>
-            </el-form>
+          <!-- ======================== 浏览器端布局 ======================== -->
+          <el-tab-pane label="浏览器端布局" name="layout">
+            <LoginLayoutFields
+              :layout="localConfig.layout"
+              :logo="localConfig.brand.logo"
+              :logo-space="localConfig.brand.logoSpace"
+              :background="localConfig.background"
+              :favicon="localConfig.brand.favicon"
+              @patch="onFieldPatch"
+              @logo-type-change="onLogoTypeChange"
+              @select-builtin="selectBuiltinLogo"
+              @reset-builtin="resetLogoBuiltin"
+              @reset-geometry="resetLogoGeometry"
+              @logo-uploaded="onLogoUploaded"
+              @bg-uploaded="onBgUploaded"
+              @clear-bg="clearBg"
+              @favicon-uploaded="onFaviconUploaded"
+              @clear-favicon="clearFavicon"
+            />
           </el-tab-pane>
 
-          <!-- ======================== 布局 ======================== -->
-          <el-tab-pane label="布局" name="layout">
-            <el-form label-position="top" class="ld-form">
-              <el-form-item label="布局模板">
-                <el-radio-group v-model="localConfig.layout.template">
-                  <el-radio-button value="split">左右分栏</el-radio-button>
-                  <el-radio-button value="centered">居中卡片</el-radio-button>
-                  <el-radio-button value="fullscreen">全屏背景</el-radio-button>
-                </el-radio-group>
-                <div class="ld-hint" v-if="localConfig.layout.template === 'centered'">
-                  居中卡片不显示左侧品牌区（Hero 标语/特性列表/左下版权）；整页背景为「主题色」中的品牌渐变，卡片底色为页面底色
-                </div>
-                <div class="ld-hint" v-else-if="localConfig.layout.template === 'fullscreen'">
-                  整屏背景图 + 品牌渐变遮罩 + 浮层登录卡片；不显示 Hero 标语/特性列表。
-                  背景图与遮罩浓度在下方「全屏背景」区域上传和调整；未上传背景图时整页为品牌渐变
-                </div>
-              </el-form-item>
-              <template v-if="localConfig.layout.template === 'fullscreen'">
-                <div class="ld-section">全屏背景</div>
-                <div class="ld-upload-row">
-                  <el-image
-                    v-if="localConfig.background.image"
-                    :src="mediaUrl(localConfig.background.image)"
-                    fit="cover"
-                    class="ld-bg-preview"
-                  />
-                  <div v-else class="ld-logo-empty">未设置</div>
-                  <el-upload
-                    name="file"
-                    :action="uploadAction"
-                    :headers="uploadHeaders"
-                    :show-file-list="false"
-                    accept="image/jpeg,image/png"
-                    :before-upload="beforeBgUpload"
-                    :on-success="onBgUploaded"
-                  >
-                    <el-button size="small" type="primary" plain>上传背景图（jpg/png）</el-button>
-                  </el-upload>
-                  <el-button
-                    size="small"
-                    :disabled="!localConfig.background.image"
-                    @click="localConfig.background.image = null"
-                  >清除</el-button>
-                </div>
-                <el-form-item :label="`遮罩浓度：${Math.round(localConfig.background.overlay * 100)}%`" style="margin-top:10px">
-                  <el-slider
-                    v-model="localConfig.background.overlay"
-                    :min="0" :max="1" :step="0.05"
-                  />
-                  <div class="ld-hint">
-                    遮罩为「主题色」中的品牌渐变：数值越大背景图越暗、白色文字对比越强；
-                    不上传背景图时整页为纯品牌渐变。建议横版大图（桌面 16:9），不超过 5MB
-                  </div>
-                </el-form-item>
-              </template>
-              <template v-if="localConfig.layout.template === 'split'">
-                <el-form-item :label="`左右分栏比例（左:右）：${localConfig.layout.splitRatio} : 1`">
-                  <el-slider v-model="localConfig.layout.splitRatio" :min="0.5" :max="3" :step="0.1" />
-                </el-form-item>
-                <el-form-item label="窄屏（≤900px）显示品牌区">
-                  <el-switch v-model="localConfig.layout.showBrandOnMobile" />
-                  <div class="ld-hint">默认隐藏品牌区，仅显示登录表单</div>
-                </el-form-item>
-              </template>
-              <el-form-item :label="`圆角：${localConfig.layout.cardRadius}px`">
-                <el-slider v-model="localConfig.layout.cardRadius" :min="0" :max="40" :step="1" />
-                <div class="ld-hint">系统全局生效：按钮、输入框、卡片、弹窗圆角；登录页同样使用该圆角</div>
-              </el-form-item>
-            </el-form>
+          <!-- ======================== 移动端布局 ======================== -->
+          <el-tab-pane label="移动端布局" name="mobileLayout">
+            <LoginLayoutFields
+              mobile
+              :layout="localConfig.mobile.layout"
+              :logo="localConfig.mobile.brand.logo"
+              :logo-space="localConfig.mobile.brand.logoSpace"
+              :background="localConfig.mobile.background"
+              @patch="onFieldPatch"
+              @logo-type-change="onLogoTypeChange"
+              @select-builtin="selectBuiltinLogo"
+              @reset-builtin="resetLogoBuiltin"
+              @reset-geometry="resetLogoGeometry"
+              @logo-uploaded="onLogoUploaded"
+              @bg-uploaded="onBgUploaded"
+              @clear-bg="clearBg"
+            />
           </el-tab-pane>
         </el-tabs>
       </div>
@@ -477,13 +344,13 @@
 <script setup name="LoginConfig">
 import LoginRenderer from '@/views/login/LoginRenderer.vue'
 import LoginFormFields from '@/views/login/LoginFormFields.vue'
+import LoginLayoutFields from '@/views/login/LoginLayoutFields.vue'
 import { getManagedLoginConfig, updateLoginConfig } from '@/api/loginConfig'
 import useLoginThemeStore from '@/store/modules/loginTheme'
-import { getToken } from '@/utils/auth'
 import {
   cloneDefaults, mergeWithDefaults,
-  BUILTIN_LOGOS, BUILTIN_LOGO_VALUES, LOGO_LIMITS,
-  normalizeProfileUrl, mediaUrl,
+  BUILTIN_LOGO_VALUES,
+  normalizeProfileUrl,
   applyLoginHead, restoreLoginHead
 } from '@/views/login/login.utils'
 
@@ -616,6 +483,42 @@ let savedSnapshot = JSON.stringify(localConfig.value)
 
 const previewForm = { username: 'admin', password: 'admin123', rememberMe: false }
 
+/* ============ 设备视图（由当前页签决定；点击「移动端布局」即切 H5 预览） ============ */
+const isMobileView = computed(() => activeTab.value === 'mobileLayout')
+
+/**
+ * 当前设备下四个可独立编辑的布局根。
+ * 桌面 → 顶层 layout/brand.logo/brand.logoSpace/background；
+ * 移动 → mobile 子树对应字段。
+ */
+const editRoots = computed(() => {
+  const c = localConfig.value
+  return isMobileView.value
+    ? {
+        layout: c.mobile.layout,
+        logo: c.mobile.brand.logo,
+        logoSpace: c.mobile.brand.logoSpace,
+        background: c.mobile.background
+      }
+    : {
+        layout: c.layout,
+        logo: c.brand.logo,
+        logoSpace: c.brand.logoSpace,
+        background: c.background
+      }
+})
+
+// 子组件通用改写：{ section, sub?, key, value }
+function onFieldPatch({ section, sub, key, value }) {
+  const root = editRoots.value[section]
+  if (sub) root[sub][key] = value
+  else root[key] = value
+}
+
+const previewTip = computed(() => isMobileView.value
+  ? '当前为移动端 H5 登录页预览（375×812）；此处修改仅作用于移动端，点击「保存」后与浏览器端配置一起生效'
+  : '预览为真实登录页等比缩放，所有修改即时生效；可直接按住 logo 拖动调整位置；保存后登录页与全系统品牌即时生效')
+
 const dirty = computed(() => JSON.stringify(localConfig.value) !== savedSnapshot)
 
 function markSaved() {
@@ -664,22 +567,26 @@ function appendIcp(key) {
   localConfig.value.footer[key] = (localConfig.value.footer[key] || '') + ICP_SNIPPET
 }
 
-// ============================ Logo / Favicon（M3a） ============================
+// ============================ Logo / 背景 / Favicon ============================
+// 所有编辑动作通过 editRoots 路由到当前设备（浏览器端顶层 / mobile 子树）；
+// 上传通道与文件校验在 LoginLayoutFields 内，此处只处理上传成功后的落库。
 
 // 预览区拖拽 logo → 像素偏移；位移已在 Renderer 内按 previewScale 换算
 function onLogoOffset({ offsetX, offsetY }) {
-  localConfig.value.brand.logo.offsetX = offsetX
-  localConfig.value.brand.logo.offsetY = offsetY
+  const logo = editRoots.value.logo
+  logo.offsetX = offsetX
+  logo.offsetY = offsetY
 }
 
 function selectBuiltinLogo(value) {
-  const logo = localConfig.value.brand.logo
+  const logo = editRoots.value.logo
   logo.type = 'builtin'
   logo.value = value
 }
 // 切换来源时保持 type/value 一致，避免「builtin + 图片路径」的瞬态把路径当组件名渲染
 function onLogoTypeChange(type) {
-  const logo = localConfig.value.brand.logo
+  const logo = editRoots.value.logo
+  logo.type = type
   if (type === 'builtin') {
     if (!BUILTIN_LOGO_VALUES.includes(logo.value)) logo.value = 'shield'
   } else if (typeof logo.value !== 'string' || !logo.value.startsWith('/profile/')) {
@@ -687,43 +594,21 @@ function onLogoTypeChange(type) {
   }
 }
 function resetLogoBuiltin() {
-  const logo = localConfig.value.brand.logo
+  const logo = editRoots.value.logo
   logo.type = 'builtin'
   logo.value = 'shield'
 }
 function resetLogoGeometry() {
-  const logo = localConfig.value.brand.logo
+  const logo = editRoots.value.logo
   logo.offsetX = 0
   logo.offsetY = 0
 }
 
-// 复用系统统一上传通道（/common/upload 返回 /profile/... 站内路径，匿名可读）
-const uploadAction = import.meta.env.VITE_APP_BASE_API + '/common/upload'
-const uploadHeaders = computed(() => ({ Authorization: 'Bearer ' + getToken() }))
-const UPLOAD_MAX_MB = 5
-
-function validateImageFile(file, allowTypes) {
-  if (!allowTypes.includes(file.type)) {
-    proxy.$modal.msgError('仅支持 ' + allowTypes.map((t) => t.replace('image/', '')).join('/') + ' 格式')
-    return false
-  }
-  if (file.size / 1024 / 1024 > UPLOAD_MAX_MB) {
-    proxy.$modal.msgError(`图片大小不能超过 ${UPLOAD_MAX_MB}MB`)
-    return false
-  }
-  return true
-}
-function beforeLogoUpload(file) {
-  return validateImageFile(file, ['image/jpeg', 'image/png'])
-}
-function beforeFaviconUpload(file) {
-  return validateImageFile(file, ['image/png'])
-}
 function onLogoUploaded(res) {
   // 优先取相对路径 fileName；绝对 url 归一化为 /profile/ 相对路径（配置不允许存环境相关地址）
   const rel = normalizeProfileUrl(res && (res.fileName || res.url))
   if (res && res.code === 200 && rel) {
-    const logo = localConfig.value.brand.logo
+    const logo = editRoots.value.logo
     logo.type = 'image'
     logo.value = rel
     proxy.$modal.msgSuccess('Logo 已上传，点击「保存」后正式生效')
@@ -731,6 +616,24 @@ function onLogoUploaded(res) {
     proxy.$modal.msgError((res && res.msg) || '上传返回地址非法')
   }
 }
+
+function onBgUploaded(res) {
+  const rel = normalizeProfileUrl(res && (res.fileName || res.url))
+  if (res && res.code === 200 && rel) {
+    const bg = editRoots.value.background
+    bg.type = 'image'
+    bg.image = rel
+    proxy.$modal.msgSuccess('背景图已上传，点击「保存」后正式生效')
+  } else {
+    proxy.$modal.msgError((res && res.msg) || '上传返回地址非法')
+  }
+}
+
+function clearBg() {
+  editRoots.value.background.image = null
+}
+
+// Favicon 两端共享，始终落在顶层 brand
 function onFaviconUploaded(res) {
   const rel = normalizeProfileUrl(res && (res.fileName || res.url))
   if (res && res.code === 200 && rel) {
@@ -740,20 +643,8 @@ function onFaviconUploaded(res) {
     proxy.$modal.msgError((res && res.msg) || '上传返回地址非法')
   }
 }
-
-// 全屏背景图（M3c，布局页签「全屏背景」区域使用，仅 fullscreen 模板下显示）
-function beforeBgUpload(file) {
-  return validateImageFile(file, ['image/jpeg', 'image/png'])
-}
-function onBgUploaded(res) {
-  const rel = normalizeProfileUrl(res && (res.fileName || res.url))
-  if (res && res.code === 200 && rel) {
-    localConfig.value.background.type = 'image'
-    localConfig.value.background.image = rel
-    proxy.$modal.msgSuccess('背景图已上传，点击「保存」后正式生效')
-  } else {
-    proxy.$modal.msgError((res && res.msg) || '上传返回地址非法')
-  }
+function clearFavicon() {
+  localConfig.value.brand.favicon = null
 }
 
 // ============================ 导入 / 导出 ============================
@@ -825,22 +716,28 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload)
 
 // ============================ 预览缩放 ============================
 
-const DESIGN_W = 1280
-const DESIGN_H = 800
+// 桌面设计稿 1280×800；移动端手机外框（含边框，屏幕 375×814）399×852
+const DESIGN_DIMS = {
+  desktop: { w: 1280, h: 800 },
+  mobile: { w: 399, h: 852 }
+}
 const stageRef = ref(null)
 const scale = ref(0.5)
 
+const designDims = computed(() => (isMobileView.value ? DESIGN_DIMS.mobile : DESIGN_DIMS.desktop))
+
 const canvasStyle = computed(() => ({
-  width: `${DESIGN_W * scale.value}px`,
-  height: `${DESIGN_H * scale.value}px`
+  width: `${designDims.value.w * scale.value}px`,
+  height: `${designDims.value.h * scale.value}px`
 }))
 
-// 1280×800 设计稿等比缩放进画布（transform 不影响布局，需配合外层缩放后尺寸 + overflow:hidden）
+// 设计稿等比缩放进画布（transform 不影响布局，需配合外层缩放后尺寸 + overflow:hidden）
 const scalerStyle = computed(() => ({
-  width: `${DESIGN_W}px`,
-  height: `${DESIGN_H}px`,
+  width: `${designDims.value.w}px`,
+  height: `${designDims.value.h}px`,
   transform: `scale(${scale.value})`
 }))
+const scalerClass = computed(() => (isMobileView.value ? 'scaler-mobile' : 'scaler-desktop'))
 
 let resizeObserver = null
 onMounted(() => {
@@ -855,6 +752,9 @@ onBeforeUnmount(() => {
   restoreLoginHead()
 })
 
+// 切换设备后画布尺寸改变，立即重新测量缩放
+watch(isMobileView, () => nextTick(measure))
+
 // favicon 所见即所得：上传/清除即时反映到当前标签页（仅图标，不改设计器标签标题）
 watch(
   () => localConfig.value.brand?.favicon,
@@ -867,7 +767,7 @@ function measure() {
   const w = el.clientWidth - 24
   const h = el.clientHeight - 24
   if (w > 0 && h > 0) {
-    scale.value = Math.min(w / DESIGN_W, h / DESIGN_H)
+    scale.value = Math.min(w / designDims.value.w, h / designDims.value.h)
   }
 }
 </script>
@@ -926,13 +826,18 @@ function measure() {
   box-shadow: 0 8px 30px rgba(0, 0, 0, .18);
   overflow: hidden;
 }
+/* 手机画布整体圆角（包住内部深色外框） */
+.preview-canvas.canvas-mobile { border-radius: 44px; }
+
 .preview-scaler {
   position: absolute;
   top: 0;
   left: 0;
-  width: 1280px;
   transform-origin: top left;
-  /* 覆盖 Renderer 的 100vh 与真实视口媒体查询，保证设计稿固定 1280×800 双栏形态 */
+}
+
+/* 桌面设计稿：覆盖 Renderer 的 100vh 与真实视口媒体查询，固定 1280×800 双栏形态 */
+.scaler-desktop {
   :deep(.login-wrap) {
     min-height: 800px !important;
     grid-template-columns: var(--login-split) !important;
@@ -940,6 +845,30 @@ function measure() {
   :deep(.login-brand) { display: flex !important; }
   :deep(.login-form-side) { min-height: 800px; }
 }
+
+/* 手机外框：深色边框 + 屏幕区（375×814） */
+.phone-bezel {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 19px 12px;
+  background: #111;
+}
+.phone-screen {
+  width: 375px;
+  height: 814px;
+  border-radius: 28px;
+  overflow: hidden;
+  position: relative;
+}
+/* 屏幕内 Renderer 固定 H5 高度；.force-mobile 负责布局形态 */
+.scaler-mobile :deep(.login-wrap) {
+  min-height: 814px !important;
+}
+.scaler-mobile :deep(.login-form-side) {
+  min-height: 814px;
+}
+
 .preview-tip {
   margin-top: 8px;
   font-size: 12px;
@@ -1053,94 +982,4 @@ function measure() {
     height: 18px;
   }
 }
-
-/* ============ Logo 内置库 / 上传 ============ */
-.ld-logo-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-  margin-bottom: 8px;
-}
-.ld-logo-cell {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 4px 8px;
-  border: 1px solid #ebeef5;
-  border-radius: 8px;
-  background: #fafbfc;
-  cursor: pointer;
-  transition: border-color .15s, box-shadow .15s;
-  &:hover { border-color: #4aa886; }
-  &.active {
-    border-color: #2f6b57;
-    box-shadow: 0 0 0 2px rgba(47, 107, 87, .15);
-    background: #f2f8f5;
-  }
-}
-.ld-logo-shield { width: 28px; height: 32px; }
-.ld-logo-name { font-size: 12px; color: #606266; text-align: center; line-height: 1.2; }
-
-.ld-upload-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
-  flex-wrap: wrap;
-}
-.ld-logo-preview {
-  width: 72px;
-  height: 72px;
-  border: 1px solid #ebeef5;
-  border-radius: 6px;
-  background: #fafbfc;
-  padding: 6px;
-}
-.ld-favicon-preview {
-  width: 40px;
-  height: 40px;
-  border: 1px solid #ebeef5;
-  border-radius: 6px;
-  background: #fafbfc;
-  padding: 4px;
-}
-.ld-logo-empty {
-  width: 72px;
-  height: 72px;
-  border: 1px dashed #dcdfe6;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  color: #909399;
-}
-.ld-bg-preview {
-  width: 96px;
-  height: 54px;
-  border: 1px solid #ebeef5;
-  border-radius: 6px;
-  background: #fafbfc;
-}
-.ld-section-disabled,
-.ld-section-disabled + .ld-hint { opacity: .55; }
-
-/* ============ 像素级调整 ============ */
-.ld-px-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 18px;
-}
-.ld-px-item { margin-bottom: 6px; }
-.ld-px-label {
-  font-size: 12.5px;
-  color: #606266;
-  margin-bottom: 2px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.ld-px-item :deep(.el-slider) { margin: 0 0 10px 0; }
 </style>

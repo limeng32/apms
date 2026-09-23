@@ -21,6 +21,13 @@ export default {
     // value: builtin 时为内置标识（shield 或 Element Plus 图标名）；image 时为 /profile/ 相对路径
     // width/height：渲染像素；offsetX/offsetY：相对默认位置的像素偏移（transform，不影响布局流）
     logo: { type: 'builtin', value: 'shield', width: 42, height: 48, offsetX: 0, offsetY: 0 },
+    // Logo 上下留白（px），按布局族各自独立：
+    //   split  → 左右分栏：top=品牌区顶部间距；bottom=Logo 与 Hero 之间的最小间距
+    //   overlay→ 居中卡片/全屏背景共用：top=Logo 上方间距；bottom=Logo 与登录卡片间距
+    logoSpace: {
+      split: { top: 56, bottom: 0 },
+      overlay: { top: 40, bottom: 22 }
+    },
     favicon: null               // null 保持 /favicon.ico；配置后为 /profile/ 下 PNG
   },
   hero: {
@@ -89,5 +96,35 @@ export default {
     image: null,
     overlay: 0.4,
     video: { url: '', poster: '', autoplay: true, muted: true, loop: true }
+  },
+
+  /*
+   * 移动端（H5，视口 ≤900px）专属配置。
+   * 桌面端使用上方同名字段（layout/brand.logo/brand.logoSpace/background），
+   * 移动端在此整树覆盖这四类「布局相关」字段；其余（品牌名/副标题、Hero、表单、
+   * 版权、主题色、字体、favicon、圆角）两端共享。
+   * 保存时整份 JSON 一次提交，两端配置同生共存。
+   */
+  mobile: {
+    // 移动端布局：默认居中卡片（H5 常见形态）；不携带 showBrandOnMobile/cardRadius
+    layout: {
+      template: 'centered',
+      splitRatio: 1.1
+    },
+    brand: {
+      // 移动端可使用独立 Logo（不同图标/尺寸/偏移）
+      logo: { type: 'builtin', value: 'shield', width: 42, height: 48, offsetX: 0, offsetY: 0 },
+      // 移动端独立上下留白
+      logoSpace: {
+        split: { top: 24, bottom: 0 },
+        overlay: { top: 24, bottom: 28 }
+      }
+    },
+    // 移动端独立全屏背景（竖版图更合适）
+    background: {
+      type: 'image',
+      image: null,
+      overlay: 0.4
+    }
   }
 }

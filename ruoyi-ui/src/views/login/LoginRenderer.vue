@@ -5,7 +5,8 @@
       isFullscreen ? 'login-fullscreen' : (isCentered ? 'login-centered' : 'login-split'),
       {
         'brand-hidden-mobile': !cfg.layout.showBrandOnMobile,
-        'has-bg-image': isFullscreen && bgImage
+        'has-bg-image': isFullscreen && bgImage,
+        'force-mobile': device === 'mobile'
       }
     ]"
     :style="cssVars"
@@ -172,7 +173,7 @@
 <script setup>
 import defaultSettings from '@/settings'
 import {
-  toCssVars, interpolate, mergeWithDefaults,
+  toCssVars, interpolate, resolveDeviceConfig,
   clampLogoSize, clampLogoOffset, mediaUrl,
   BUILTIN_LOGO_VALUES
 } from './login.utils'
@@ -180,6 +181,11 @@ import FooterRichText from './FooterRichText.vue'
 
 const props = defineProps({
   config: { type: Object, default: () => ({}) },
+  /**
+   * 设备强制（设计器预览用）：
+   * 'auto'（默认）= 按真机视口媒体查询判定；'desktop'/'mobile' = 强制按对应端渲染。
+   */
+  device: { type: String, default: 'auto' },
   /** 设计器预览：允许直接拖拽 logo 调整 offset */
   logoDraggable: { type: Boolean, default: false },
   /** 预览区当前缩放比例（拖拽位移换算为设计像素） */
@@ -189,8 +195,28 @@ const props = defineProps({
 })
 const emit = defineEmits(['logo-offset'])
 
-// 始终与默认值合并，保证即使传入部分配置（如设计器回显）也能完整渲染
-const cfg = computed(() => mergeWithDefaults(props.config))
+/* ============ 设备判定（auto 时响应真机视口变化） ============ */
+const MOBILE_QUERY = '(max-width: 900px)'
+const mqMobile = ref(false)
+let mq = null
+function onMqChange(e) { mqMobile.value = e.matches }
+onMounted(() => {
+  mq = window.matchMedia(MOBILE_QUERY)
+  mqMobile.value = mq.matches
+  // Safari 14 以下用 addListener；现代浏览器 addEventListener
+  if (mq.addEventListener) mq.addEventListener('change', onMqChange)
+  else mq.addListener(onMqChange)
+})
+onBeforeUnmount(() => {
+  if (!mq) return
+  if (mq.removeEventListener) mq.removeEventListener('change', onMqChange)
+  else mq.removeListener(onMqChange)
+})
+const isMobileDevice = computed(() =>
+  props.device === 'mobile' ? true : props.device === 'desktop' ? false : mqMobile.value)
+
+// 始终与默认值合并，并按设备解析移动端覆盖，保证部分配置也能完整渲染
+const cfg = computed(() => resolveDeviceConfig(props.config, isMobileDevice.value))
 const cssVars = computed(() => toCssVars(cfg.value))
 
 // 布局模板：split（双栏，默认）/ centered（居中卡片，M3b）/ fullscreen（全屏背景，M3c）
@@ -279,7 +305,7 @@ function onLogoPointerUp() {
   position: relative;
   background: var(--login-brand-bg);
   color: var(--login-text-brand);
-  padding: 56px 64px;
+  padding: var(--login-logo-top-split) 64px 56px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -325,7 +351,7 @@ function onLogoPointerUp() {
 .lb-name { font-size: var(--login-brand-size); font-weight: 700; letter-spacing: 1.5px; line-height: 1.2; }
 .lb-sub { font-size: 11.5px; color: var(--login-brand-sub); letter-spacing: 1px; margin-top: 2px; }
 
-.lb-hero { margin-top: auto; padding-bottom: 24px; }
+.lb-hero { padding-bottom: 24px; }
 .lb-hero h1 {
   font-size: var(--login-hero-size); font-weight: var(--login-hero-weight); line-height: 1.2;
   letter-spacing: 1px; margin: 0;
@@ -373,6 +399,12 @@ function onLogoPointerUp() {
     text-underline-offset: 2px;
     &:hover { color: var(--login-text-brand); }
   }
+}
+
+/* 下方高度（split）：Hero 标语块与底部版权块相对默认位置整体垂直位移，
+   负值上提、正值下移；0 时与默认布局完全一致 */
+.lb-hero, .lb-foot {
+  transform: translateY(var(--login-logo-bottom-split));
 }
 
 /* ============ 右侧登录表单区 ============ */
@@ -440,7 +472,7 @@ function onLogoPointerUp() {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px 20px;
+  padding: var(--login-logo-top-overlay) 20px 40px;
   overflow-y: auto;
 }
 .lc-box {
@@ -454,7 +486,7 @@ function onLogoPointerUp() {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  margin-bottom: 22px;
+  margin-bottom: var(--login-logo-bottom-overlay);
 }
 .lc-logo { margin-bottom: 14px; }
 .lc-name {
@@ -546,6 +578,19 @@ function onLogoPointerUp() {
   .login-form-box { max-width: 100%; }
   .lc-card { padding: 26px 22px 22px; }
 }
+
+/*
+ * 设计器手机预览（device='mobile'）：画布只有 375px 但浏览器真实视口很宽，
+ * 媒体查询不会命中，用 .force-mobile 复刻同样的 H5 形态。
+ */
+.login-wrap.force-mobile.login-split { grid-template-columns: 1fr; }
+.login-wrap.force-mobile.brand-hidden-mobile .login-brand { display: none; }
+.login-wrap.force-mobile .login-form-side {
+  min-height: 100%;
+  padding: 32px 20px;
+}
+.login-wrap.force-mobile .login-form-box { max-width: 100%; }
+.login-wrap.force-mobile .lc-card { padding: 26px 22px 22px; }
 
 /* ============ 暗黑模式 ============ */
 html.dark .login-brand {
