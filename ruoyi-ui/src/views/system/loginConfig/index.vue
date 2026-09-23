@@ -569,6 +569,42 @@ const PALETTES = [
       inputFocus: '#f59e0b', buttonBg: '#d97706', buttonHover: '#f59e0b',
       buttonLoading: '#fbbf24', link: '#d97706'
     }
+  },
+  {
+    name: '运动红',
+    swatches: ['#7f1d1d', '#ef4444', '#c62828'],
+    colors: {
+      brandGradient: { angle: 150, stops: ['#4a0e0e', '#7f1d1d', '#991b1b'] },
+      accent: '#ef4444', glow2: '#dc2626', textOnBrand: '#ffffff',
+      textOnBrandMuted: 'rgba(255,255,255,.72)', pageBg: '#ffffff',
+      formTitle: '#2d1515', formSubText: '#a68484', inputBorder: '#eee3e3',
+      inputFocus: '#ef4444', buttonBg: '#c62828', buttonHover: '#dc2626',
+      buttonLoading: '#ef5350', link: '#c62828'
+    }
+  },
+  {
+    name: '典雅紫',
+    swatches: ['#3b1770', '#8b5cf6', '#6d28d9'],
+    colors: {
+      brandGradient: { angle: 150, stops: ['#2a1057', '#3b1770', '#4c1d95'] },
+      accent: '#8b5cf6', glow2: '#7c3aed', textOnBrand: '#ffffff',
+      textOnBrandMuted: 'rgba(255,255,255,.72)', pageBg: '#ffffff',
+      formTitle: '#241a3d', formSubText: '#8a84a6', inputBorder: '#e6e3f0',
+      inputFocus: '#8b5cf6', buttonBg: '#6d28d9', buttonHover: '#7c3aed',
+      buttonLoading: '#8b5cf6', link: '#6d28d9'
+    }
+  },
+  {
+    name: '碧海青',
+    swatches: ['#0c4a5e', '#06b6d4', '#0e7490'],
+    colors: {
+      brandGradient: { angle: 150, stops: ['#083344', '#0c4a5e', '#0e5c6e'] },
+      accent: '#06b6d4', glow2: '#0891b2', textOnBrand: '#ffffff',
+      textOnBrandMuted: 'rgba(255,255,255,.72)', pageBg: '#ffffff',
+      formTitle: '#15303a', formSubText: '#7d96a0', inputBorder: '#e0ecef',
+      inputFocus: '#06b6d4', buttonBg: '#0e7490', buttonHover: '#0891b2',
+      buttonLoading: '#22b8cf', link: '#0e7490'
+    }
   }
 ]
 
@@ -997,6 +1033,8 @@ function measure() {
 /* 预设色板 */
 .ld-presets {
   display: inline-flex;
+  flex-wrap: wrap;
+  row-gap: 8px;
   align-items: center;
   margin-left: 14px;
   font-weight: 400;
