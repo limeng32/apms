@@ -1,20 +1,20 @@
+-- patch-0.0.4-260923143956.sql 权限体系：Portal字段+F菜单+business_admin/super+三专岗角色授权
 -- =====================================================================
--- APMS 权限体系初始化脚本（依据 PERMISSION_DESIGN.md v1.3，D1–D11）
--- 适用：MySQL 5.7+ / 8.0；执行前请完整备份 sys_role/sys_user/sys_menu 及关联表
--- 本脚本可重复执行（幂等）；仅由客户/DBA 本人执行，交付方不代执行
+-- APMS 权限体系增量 patch（依据 PERMISSION_DESIGN.md v1.3，D1–D11）
+-- 适用：MySQL 5.7+ / 8.0；本 patch 可重复执行（幂等）
 -- 内容：
+--   0. 补建「APMS 总部」部门（dept_id=200，super 归属）
 --   1. sys_role 增加 portal_mode / home_path
---   2. 补齐 APMS 2200 系列缺失的 F 型按钮菜单（现网实测：46 个全缺）
+--   2. 补齐 APMS 2200 系列缺失的 F 型按钮菜单（46 个）
 --   3. 创建 business_admin 角色与 super 用户（初始密码 admin123，首登即改）
 --   4. 创建 portal_coach / portal_tester / portal_medic 三个专岗角色并授权
--- 末尾附「回滚段」
+-- 预期授权计数：business_admin=115，portal_coach=13，portal_tester=20，portal_medic=14
 -- =====================================================================
 
 SET NAMES utf8mb4;
 
 -- ---------------------------------------------------------------------
--- 0. 补建「APMS 总部」部门（dept_id=200；列名显式声明，兼容有无 dept_type 列的环境）
---    全新环境若缺该部门，第 4 节 super 的 dept_id 会落空，故必须先建
+-- 0. 补建「APMS 总部」部门（列名显式声明，兼容有无 dept_type 列的环境）
 -- ---------------------------------------------------------------------
 INSERT IGNORE INTO sys_dept
   (dept_id, parent_id, ancestors, dept_name, order_num, leader, phone, email,
@@ -41,9 +41,6 @@ PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- ---------------------------------------------------------------------
 -- 2. 补齐 APMS 按钮型（F）菜单，固定 ID = 父菜单ID*10 + 序号
---    列顺序：menu_id, menu_name, parent_id, order_num, path, component,
---    query, route_name, is_frame, is_cache, menu_type, visible, status,
---    perms, icon, create_by, create_time, update_by, update_time, remark
 -- ---------------------------------------------------------------------
 INSERT IGNORE INTO sys_menu VALUES
 -- 运动员档案 2210
@@ -294,34 +291,9 @@ WHERE r.role_key = 'portal_medic'
                   WHERE rm.role_id = r.role_id AND rm.menu_id = m.menu_id);
 
 -- =====================================================================
--- 验收查询（执行后人工核对）
+-- 验收查询（patch 应用后人工核对，预期 115/13/20/14）
 -- =====================================================================
 -- SELECT r.role_key, r.portal_mode, r.home_path, COUNT(rm.menu_id) AS menu_cnt
 -- FROM sys_role r LEFT JOIN sys_role_menu rm ON rm.role_id = r.role_id
 -- WHERE r.role_key IN ('business_admin','portal_coach','portal_tester','portal_medic')
 -- GROUP BY r.role_key, r.portal_mode, r.home_path;
--- 预期：business_admin /0 /空，115 行；portal_coach /1 /apms/dashboard，13 行；
---      portal_tester /1 /apms/testTask，20 行；portal_medic /1 /apms/medical，14 行
-
--- =====================================================================
--- 回滚段（仅在需要整体回滚时，去掉注释逐段执行；执行前再次确认已备份）
--- =====================================================================
--- 1) 专岗/业务角色授权
--- DELETE rm FROM sys_role_menu rm
---   JOIN sys_role r ON r.role_id = rm.role_id
---  WHERE r.role_key IN ('business_admin','portal_coach','portal_tester','portal_medic');
--- 2) super 用户关联与账号
--- DELETE ur FROM sys_user_role ur
---   JOIN sys_user u ON u.user_id = ur.user_id
---  WHERE u.user_name = 'super';
--- DELETE FROM sys_user WHERE user_name = 'super';
--- 3) 三个专岗角色与 business_admin
--- DELETE FROM sys_role WHERE role_key IN
---   ('business_admin','portal_coach','portal_tester','portal_medic');
--- 4) 本脚本新增的 F 型菜单（按 perms 精确定位，不按ID范围）
--- DELETE FROM sys_menu
---  WHERE menu_type = 'F' AND perms LIKE 'apms:%'
---    AND menu_id BETWEEN 22101 AND 22814;
--- 5) 回滚 sys_role 字段
--- ALTER TABLE sys_role DROP COLUMN home_path;
--- ALTER TABLE sys_role DROP COLUMN portal_mode;

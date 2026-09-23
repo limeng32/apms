@@ -27,7 +27,7 @@
 
 | 账号 | 密码 | 角色 | 类型 |
 |---|---|---|---|
-| `admin` | `admin123` | admin（平台保留） | 全权限，客户不可见 |
+| `admin` | `1qaz2wsx!@#` | admin（平台保留） | 全权限，客户不可见 |
 | `super` | `admin123` | business_admin（业务管理） | 客户侧最高 |
 | `coach.zhang` | `admin123` | portal_coach（教练） | Portal 专岗 |
 | `tester.li` | `admin123` | portal_tester（测量员） | Portal 专岗 |
