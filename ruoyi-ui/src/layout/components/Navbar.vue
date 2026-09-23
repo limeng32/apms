@@ -8,8 +8,21 @@
       <top-bar id="topbar-container" class="topbar-container" />
     </template>
 
-    <!-- Portal模式：仅显示品牌名 -->
-    <span v-if="userStore.portalMode" class="portal-brand">{{ brandName }}</span>
+    <!-- Portal模式：品牌Logo + 品牌名 -->
+    <div v-if="userStore.portalMode" class="portal-brand">
+      <img v-if="portalLogoImg" :src="portalLogoImg" class="portal-logo" alt="brand logo" />
+      <svg v-else-if="portalBuiltin === 'shield'" viewBox="0 0 40 46" fill="none" class="portal-logo">
+        <path d="M20 1.5L37 7v13c0 12-7.5 19-17 24C10.5 39 3 32 3 20V7l17-5.5z"
+          fill="#2c5a4b" stroke="#7fc7ad" stroke-width="1.4"/>
+        <circle cx="20" cy="20" r="8" fill="none" stroke="#d8efe4" stroke-width="1.3"/>
+        <path d="M20 12l4 3-1.5 5h-5L16 15l4-3z" fill="#d8efe4"/>
+        <path d="M14.5 29c1.6-2.2 3.4-3.3 5.5-3.3s3.9 1.1 5.5 3.3" stroke="#d8efe4" stroke-width="1.3" fill="none"/>
+      </svg>
+      <el-icon v-else class="portal-logo portal-logo-ep">
+        <component :is="portalBuiltin" />
+      </el-icon>
+      <span class="portal-brand-name">{{ brandName }}</span>
+    </div>
 
     <div class="right-menu">
       <template v-if="appStore.device !== 'mobile' && !userStore.portalMode">
@@ -68,6 +81,7 @@ import useLockStore from '@/store/modules/lock'
 import useSettingsStore from '@/store/modules/settings'
 import useLoginThemeStore from '@/store/modules/loginTheme'
 import HeaderNotice from './HeaderNotice'
+import { mediaUrl, BUILTIN_LOGO_VALUES } from '@/views/login/login.utils'
 
 const route = useRoute()
 const router = useRouter()
@@ -75,7 +89,14 @@ const appStore = useAppStore()
 const userStore = useUserStore()
 const lockStore = useLockStore()
 const settingsStore = useSettingsStore()
-const brandName = computed(() => useLoginThemeStore().config.brand.name || import.meta.env.VITE_APP_TITLE)
+const loginThemeStore = useLoginThemeStore()
+const brandName = computed(() => loginThemeStore.config.brand.name || import.meta.env.VITE_APP_TITLE)
+// Portal 品牌Logo：与侧栏Logo同源（首页设计器配置），支持图片/内置盾牌/图标
+const portalLogo = computed(() => loginThemeStore.config.brand.logo || {})
+const portalLogoImg = computed(() =>
+  portalLogo.value.type === 'image' && portalLogo.value.value ? mediaUrl(portalLogo.value.value) : '')
+const portalBuiltin = computed(() =>
+  BUILTIN_LOGO_VALUES.includes(portalLogo.value.value) ? portalLogo.value.value : 'shield')
 
 function toggleSideBar() {
   appStore.toggleSideBar()
@@ -129,13 +150,31 @@ function lockScreen() {
 }
 
 .portal-brand {
+  display: flex;
+  align-items: center;
   margin-left: 12px;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
+
+  .portal-logo {
+    height: 28px;
+    width: auto;
+    flex: none;
+    margin-right: 8px;
+  }
+
+  .portal-logo-ep {
+    height: auto;
+    font-size: 26px;
+  }
+
+  .portal-brand-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 .navbar {

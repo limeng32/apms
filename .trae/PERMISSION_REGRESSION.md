@@ -55,7 +55,7 @@ T=$(curl -s -X POST http://localhost:8080/login -H "Content-Type: application/js
 | S3 | super → 系统管理 → 用户管理 | 列表 4 行：super、coach.zhang、tester.li、medic.wang；**无 admin/ry**；super 行开关灰、无删除按钮 | ☐ |
 | S4 | super → 角色管理 | 4 行：business_admin（带「系统内置（只读）」标签、无操作按钮）+ 3 个 portal 行 | ☐ |
 | S5 | super 打开教练角色修改 | Portal 开关开；落地页 `/apms/dashboard`；落地页下拉恰 6 项；菜单树父菜单半选。看完**取消** | ☐ |
-| S6 | coach.zhang 登录 | 直达 `/apms/dashboard`；**无侧栏、无标签页**；顶部仅品牌名+个人头像菜单；页面内无新增/编辑/删除按钮 | ☐ |
+| S6 | coach.zhang 登录 | 直达 `/apms/dashboard`；**无侧栏、无标签页**；顶部为品牌 Logo+品牌名+个人头像菜单；页面内无新增/编辑/删除按钮 | ☐ |
 | S7 | 教练状态下地址栏输入 `/system/user` 回车 | 被弹回 `/apms/dashboard` | ☐ |
 | S8 | tester.li 登录 | 直达 `/apms/testTask`，无侧栏 | ☐ |
 | S9 | medic.wang 登录 | 直达 `/apms/medical`，无侧栏 | ☐ |
@@ -172,7 +172,7 @@ curl -s -X POST http://localhost:8080/system/role -H "Authorization: Bearer $T" 
 
 | # | 操作 | 预期 |
 |---|---|---|
-| P1 | 登录 | 直达 `/apms/dashboard`；无侧栏、无标签页；顶部仅品牌名+头像（个人中心/修改密码/退出），无搜索/全屏/布局控件 |
+| P1 | 登录 | 直达 `/apms/dashboard`；无侧栏、无标签页；顶部为品牌 Logo+品牌名+头像（个人中心/修改密码/退出），无搜索/全屏/布局控件 |
 | P2 | 各已授页面（运动员档案、测试结果、PHV、RTP、组合评分、报告中心） | 可打开、有数据；工具栏**无**新增/编辑/删除/计算/生成/处置等写按钮 |
 | P3 | 报告中心 | 可查看、可**下载**报告；无「生成」按钮 |
 | P4 | 地址栏依次输入 `/apms/testTask`、`/system/user`、`/apms/medical` | 全部被弹回 `/apms/dashboard` |
