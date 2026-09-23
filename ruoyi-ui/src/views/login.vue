@@ -29,7 +29,6 @@
 
 <script setup name="Login">
 import Cookies from "js-cookie"
-import { encrypt, decrypt } from "@/utils/jsencrypt"
 import {
   User, CircleCheck, Check, TrendCharts, Key, Document
 } from '@element-plus/icons-vue'
@@ -60,7 +59,7 @@ const loginFieldsRef = ref(null)
 
 const loginForm = ref({
   username: "admin",
-  password: "admin123",
+  password: "",
   rememberMe: false
 })
 
@@ -94,13 +93,13 @@ function handleLogin() {
       loading.value = true
       if (loginForm.value.rememberMe) {
         Cookies.set("username", loginForm.value.username, { expires: 30 })
-        Cookies.set("password", encrypt(loginForm.value.password), { expires: 30 })
         Cookies.set("rememberMe", loginForm.value.rememberMe, { expires: 30 })
       } else {
         Cookies.remove("username")
-        Cookies.remove("password")
         Cookies.remove("rememberMe")
       }
+      // 密码不再写入 cookie，并清除历史版本遗留的密码 cookie
+      Cookies.remove("password")
       userStore.login(loginForm.value).then(() => {
         const query = route.query
         const otherQueryParams = Object.keys(query).reduce((acc, cur) => {
@@ -119,12 +118,14 @@ function handleLogin() {
 
 function getCookie() {
   const username = Cookies.get("username")
-  const password = Cookies.get("password")
-  const rememberMe = Cookies.get("rememberMe")
+  // 清除历史版本遗留的密码 cookie；密码不再回填
+  Cookies.remove("password")
+  // “记住我”已禁用：清除遗留 cookie，强制不勾选
+  Cookies.remove("rememberMe")
   loginForm.value = {
     username: username === undefined ? loginForm.value.username : username,
-    password: password === undefined ? loginForm.value.password : decrypt(password),
-    rememberMe: rememberMe === undefined ? false : Boolean(rememberMe)
+    password: loginForm.value.password,
+    rememberMe: false
   }
 }
 

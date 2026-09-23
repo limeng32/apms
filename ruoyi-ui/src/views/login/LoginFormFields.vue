@@ -17,7 +17,7 @@
       <el-input
         :model-value="modelValue.password"
         :type="showPassword ? 'text' : 'password'"
-        auto-complete="off"
+        auto-complete="new-password"
         :placeholder="form.passwordPlaceholder"
         :disabled="preview"
         @update:model-value="patch('password', $event)"
@@ -36,7 +36,7 @@
     <div class="lf-row">
       <el-checkbox
         :model-value="modelValue.rememberMe"
-        :disabled="preview"
+        disabled
         @update:model-value="patch('rememberMe', $event)"
       >{{ form.rememberText }}</el-checkbox>
       <a
