@@ -1,283 +1,347 @@
 <template>
-   <div class="app-container">
-      <el-form :model="queryParams" ref="queryRef" v-show="showSearch" :inline="true" label-width="68px">
-         <el-form-item label="角色名称" prop="roleName">
-            <el-input
-               v-model="queryParams.roleName"
-               placeholder="请输入角色名称"
-               clearable
-               style="width: 240px"
-               @keyup.enter="handleQuery"
-            />
-         </el-form-item>
-         <el-form-item label="权限字符" prop="roleKey">
-            <el-input
-               v-model="queryParams.roleKey"
-               placeholder="请输入权限字符"
-               clearable
-               style="width: 240px"
-               @keyup.enter="handleQuery"
-            />
-         </el-form-item>
-         <el-form-item label="状态" prop="status">
-            <el-select
-               v-model="queryParams.status"
-               placeholder="角色状态"
-               clearable
-               style="width: 240px"
+  <div class="app-container rm-page">
+    <!-- ===== 页头（花名册风格） ===== -->
+    <div class="rk-header">
+      <div>
+        <h1 class="rk-title">角色管理</h1>
+        <p class="rk-subtitle">{{ total }} 个角色</p>
+      </div>
+      <div class="rk-header-actions">
+        <right-toolbar v-model:showSearch="showSearch" @queryTable="getList" class="rm-col-toolbar" />
+        <el-button v-if="ids.length" plain class="rk-btn" :disabled="single" @click="handleUpdate()" v-hasPermi="['system:role:edit']">
+          <el-icon><Edit /></el-icon>修改选中
+        </el-button>
+        <el-button v-if="ids.length" plain class="rk-btn rk-btn-danger" @click="handleDelete()" v-hasPermi="['system:role:remove']">
+          <el-icon><Delete /></el-icon>已选 {{ ids.length }} 项 · 删除
+        </el-button>
+        <el-button plain class="rk-btn" @click="handleExport" v-hasPermi="['system:role:export']">
+          <el-icon><Download /></el-icon>导出
+        </el-button>
+        <el-button type="primary" class="rk-btn rk-btn-primary" :icon="Plus" @click="handleAdd" v-hasPermi="['system:role:add']">新增角色</el-button>
+      </div>
+    </div>
+
+    <!-- ===== 筛选条卡片 ===== -->
+    <div class="rk-filter rm-filter" v-show="showSearch">
+      <label class="rk-group">
+        <span class="rk-label">角色名称</span>
+        <input v-model="queryParams.roleName" class="rk-input" type="text" placeholder="角色名称" @keyup.enter="handleQuery" />
+      </label>
+
+      <label class="rk-group">
+        <span class="rk-label">权限字符</span>
+        <input v-model="queryParams.roleKey" class="rk-input rm-input-key" type="text" placeholder="权限字符" @keyup.enter="handleQuery" />
+      </label>
+
+      <label class="rk-group">
+        <span class="rk-label">状态</span>
+        <select v-model="queryParams.status" class="rk-select">
+          <option value="">全部</option>
+          <option v-for="dict in sys_normal_disable" :key="dict.value" :value="dict.value">{{ dict.label }}</option>
+        </select>
+      </label>
+
+      <label class="rk-group rm-date-field">
+        <span class="rk-label">创建时间</span>
+        <el-date-picker
+          v-model="dateRange"
+          class="rm-date-picker"
+          value-format="YYYY-MM-DD"
+          type="daterange"
+          range-separator="-"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+        />
+      </label>
+
+      <div class="rk-filter-right">
+        <button type="button" class="rk-btn-reset" @click="resetQuery">
+          <el-icon><RefreshLeft /></el-icon>重置
+        </button>
+      </div>
+    </div>
+
+    <!-- ===== 角色表格卡片 ===== -->
+    <div v-loading="loading" class="rk-table-card">
+      <div class="rk-table-scroll">
+        <table class="rk-table rm-table">
+          <thead>
+            <tr>
+              <th class="col-check">
+                <input
+                  ref="headCheckRef"
+                  type="checkbox"
+                  class="rk-check"
+                  :checked="allChecked"
+                  @change="toggleAll($event)"
+                />
+              </th>
+              <th class="text-left col-id">编号</th>
+              <th class="text-left">角色名称</th>
+              <th class="text-left">权限字符</th>
+              <th class="text-left col-sort">顺序</th>
+              <th class="text-left">状态</th>
+              <th class="text-left col-time">创建时间</th>
+              <th class="text-right">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="(row, idx) in roleList"
+              :key="row.roleId"
+              class="rk-row"
+              :class="{ 'is-zebra': idx % 2 === 1 }"
             >
-               <el-option
-                  v-for="dict in sys_normal_disable"
-                  :key="dict.value"
-                  :label="dict.label"
-                  :value="dict.value"
-               />
-            </el-select>
-         </el-form-item>
-         <el-form-item label="创建时间" style="width: 308px">
-            <el-date-picker
-               v-model="dateRange"
-               value-format="YYYY-MM-DD"
-               type="daterange"
-               range-separator="-"
-               start-placeholder="开始日期"
-               end-placeholder="结束日期"
-            ></el-date-picker>
-         </el-form-item>
-         <el-form-item>
-            <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
-            <el-button icon="Refresh" @click="resetQuery">重置</el-button>
-         </el-form-item>
+              <td class="col-check">
+                <input
+                  type="checkbox"
+                  class="rk-check"
+                  :disabled="!checkRowSelectable(row)"
+                  :checked="ids.includes(row.roleId)"
+                  @change="toggleRow(row)"
+                />
+              </td>
+              <td class="col-id">
+                <span class="rk-mono rk-dash">#{{ row.roleId }}</span>
+              </td>
+              <td>
+                <div class="rk-person">
+                  <span class="rk-avatar rm-avatar" :style="{ background: avatarColor(row) }">{{ avatarChar(row) }}</span>
+                  <div class="rk-person-meta">
+                    <span class="rk-person-main rm-name-text" :title="row.roleName">{{ row.roleName }}</span>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <span class="rk-mono rk-soft-chip rm-key-chip" :title="row.roleKey">{{ row.roleKey }}</span>
+              </td>
+              <td class="col-sort">
+                <span class="rk-mono rk-num">{{ row.roleSort }}</span>
+              </td>
+              <td>
+                <button
+                  type="button"
+                  class="rk-status-badge"
+                  :class="'tone-' + statusMeta(row).tone"
+                  :title="isReadonlyRole(row) ? '系统内置角色不可停用' : (row.status === '0' ? '点击停用' : '点击启用')"
+                  :disabled="isReadonlyRole(row)"
+                  @click="toggleStatus(row)"
+                >
+                  <span class="rk-status-dot-wrap"><span class="rk-status-dot"></span></span>
+                  {{ statusMeta(row).label }}
+                </button>
+              </td>
+              <td class="col-time">
+                <span class="rk-mono rk-num rm-cell-time" :title="fmtTime(row.createTime)">{{ fmtDate(row.createTime) }}</span>
+              </td>
+              <td>
+                <div class="rk-actions">
+                  <template v-if="isReadonlyRole(row)">
+                    <span class="rk-dash rm-builtin">系统内置 · 只读</span>
+                  </template>
+                  <template v-else-if="row.roleId === 1">
+                    <span class="rk-dash rm-builtin">内置角色</span>
+                  </template>
+                  <template v-else>
+                    <button type="button" class="rk-link" @click="handleUpdate(row)" v-hasPermi="['system:role:edit']">编辑 →</button>
+                    <div class="rk-menu" @click.stop>
+                      <button type="button" class="rk-menu-btn" aria-label="更多操作" @click="toggleMenu(row.roleId)">
+                        <el-icon><MoreFilled /></el-icon>
+                      </button>
+                      <div v-if="openMenuId === row.roleId" class="rk-menu-pop">
+                        <button
+                          type="button"
+                          class="rk-menu-item is-danger"
+                          @click="onMenu(row, 'delete')"
+                          v-hasPermi="['system:role:remove']"
+                        ><el-icon><Delete /></el-icon>删除</button>
+                        <button
+                          type="button"
+                          class="rk-menu-item"
+                          @click="onMenu(row, 'dataScope')"
+                          v-hasPermi="['system:role:edit']"
+                        ><el-icon><CircleCheck /></el-icon>数据权限</button>
+                        <button
+                          type="button"
+                          class="rk-menu-item"
+                          @click="onMenu(row, 'authUser')"
+                          v-hasPermi="['system:role:edit']"
+                        ><el-icon><User /></el-icon>分配用户</button>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div v-if="!loading && roleList.length === 0" class="rk-empty">
+          <p class="rk-empty-title">没有匹配的角色</p>
+          <p class="rk-empty-desc">请调整筛选条件后重试</p>
+        </div>
+      </div>
+
+      <!-- ===== 分页（花名册风格，每页 12 条） ===== -->
+      <div class="rk-pager">
+        <span class="rk-pager-info">
+          共 <b class="rk-mono">{{ total }}</b> 个角色 · 每页 <span class="rk-mono">{{ queryParams.pageSize }}</span> 条
+        </span>
+        <div class="rk-pager-btns">
+          <button type="button" class="rk-page-btn" :disabled="queryParams.pageNum <= 1" @click="goPage(queryParams.pageNum - 1)">
+            <el-icon><ArrowLeft /></el-icon>
+          </button>
+          <template v-for="p in pageNumbers" :key="p">
+            <span v-if="p === '…'" class="rk-page-btn is-ellipsis rk-mono">…</span>
+            <button
+              v-else
+              type="button"
+              class="rk-page-btn rk-mono"
+              :class="{ 'is-active': p === queryParams.pageNum }"
+              @click="goPage(p)"
+            >{{ p }}</button>
+          </template>
+          <button type="button" class="rk-page-btn" :disabled="queryParams.pageNum >= totalPages" @click="goPage(queryParams.pageNum + 1)">
+            <el-icon><ArrowRight /></el-icon>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 添加或修改角色配置对话框 -->
+    <el-dialog :title="title" v-model="open" width="500px" append-to-body>
+      <el-form ref="roleRef" :model="form" :rules="rules" label-width="100px">
+        <el-form-item label="角色名称" prop="roleName">
+          <el-input v-model="form.roleName" placeholder="请输入角色名称" />
+        </el-form-item>
+        <el-form-item prop="roleKey">
+          <template #label>
+            <span>
+              <el-tooltip content="控制器中定义的权限字符，如：@PreAuthorize(`@ss.hasRole('admin')`)" placement="top">
+                <el-icon><question-filled /></el-icon>
+              </el-tooltip>
+              权限字符
+            </span>
+          </template>
+          <el-input v-model="form.roleKey" placeholder="请输入权限字符" />
+        </el-form-item>
+        <el-form-item label="角色顺序" prop="roleSort">
+          <el-input-number v-model="form.roleSort" controls-position="right" :min="0" />
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-radio-group v-model="form.status">
+            <el-radio
+              v-for="dict in sys_normal_disable"
+              :key="dict.value"
+              :value="dict.value"
+            >{{ dict.label }}</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="Portal模式">
+          <el-switch v-model="form.portalMode" active-value="1" inactive-value="0" />
+          <span class="form-tip">开启后为专岗账号（无导航精简界面、强制单角色）</span>
+        </el-form-item>
+        <el-form-item v-if="form.portalMode === '1'" label="落地页" prop="homePath">
+          <el-select v-model="form.homePath" placeholder="请先勾选菜单，再选择落地页">
+            <el-option
+              v-for="item in homePathOptions"
+              :key="item.menuId"
+              :label="item.fullPath"
+              :value="item.fullPath"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="菜单权限">
+          <el-checkbox v-model="menuExpand" @change="handleCheckedTreeExpand($event, 'menu')">展开/折叠</el-checkbox>
+          <el-checkbox v-model="menuNodeAll" @change="handleCheckedTreeNodeAll($event, 'menu')">全选/全不选</el-checkbox>
+          <el-checkbox v-model="form.menuCheckStrictly" @change="handleCheckedTreeConnect($event, 'menu')">父子联动</el-checkbox>
+          <el-tree
+            class="tree-border"
+            :data="menuOptions"
+            show-checkbox
+            ref="menuRef"
+            node-key="id"
+            :check-strictly="!form.menuCheckStrictly"
+            empty-text="加载中，请稍候"
+            :props="{ label: 'label', children: 'children' }"
+            @check="handleMenuCheck"
+          ></el-tree>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="form.remark" type="textarea" placeholder="请输入内容"></el-input>
+        </el-form-item>
       </el-form>
-      <el-row :gutter="10" class="mb8">
-         <el-col :span="1.5">
-            <el-button
-               type="primary"
-               plain
-               icon="Plus"
-               @click="handleAdd"
-               v-hasPermi="['system:role:add']"
-            >新增</el-button>
-         </el-col>
-         <el-col :span="1.5">
-            <el-button
-               type="success"
-               plain
-               icon="Edit"
-               :disabled="single"
-               @click="handleUpdate"
-               v-hasPermi="['system:role:edit']"
-            >修改</el-button>
-         </el-col>
-         <el-col :span="1.5">
-            <el-button
-               type="danger"
-               plain
-               icon="Delete"
-               :disabled="multiple"
-               @click="handleDelete"
-               v-hasPermi="['system:role:remove']"
-            >删除</el-button>
-         </el-col>
-         <el-col :span="1.5">
-            <el-button
-               type="warning"
-               plain
-               icon="Download"
-               @click="handleExport"
-               v-hasPermi="['system:role:export']"
-            >导出</el-button>
-         </el-col>
-         <right-toolbar v-model:showSearch="showSearch" @queryTable="getList"></right-toolbar>
-      </el-row>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button type="primary" @click="submitForm">确 定</el-button>
+          <el-button @click="cancel">取 消</el-button>
+        </div>
+      </template>
+    </el-dialog>
 
-      <!-- 表格数据 -->
-      <el-table v-loading="loading" :data="roleList" @selection-change="handleSelectionChange">
-         <el-table-column type="selection" width="55" align="center" :selectable="checkRowSelectable" />
-         <el-table-column label="角色编号" prop="roleId" width="120" />
-         <el-table-column label="角色名称" prop="roleName" :show-overflow-tooltip="true" width="150" />
-         <el-table-column label="权限字符" prop="roleKey" :show-overflow-tooltip="true" width="150" />
-         <el-table-column label="显示顺序" prop="roleSort" width="100" />
-         <el-table-column label="状态" align="center" width="100">
-            <template #default="scope">
-               <el-switch
-                  v-model="scope.row.status"
-                  :disabled="isReadonlyRole(scope.row)"
-                  active-value="0"
-                  inactive-value="1"
-                  @change="handleStatusChange(scope.row)"
-               ></el-switch>
-            </template>
-         </el-table-column>
-         <el-table-column label="创建时间" align="center" prop="createTime">
-            <template #default="scope">
-               <span>{{ parseTime(scope.row.createTime) }}</span>
-            </template>
-         </el-table-column>
-         <el-table-column label="操作" align="center" class-name="small-padding fixed-width">
-            <template #default="scope">
-              <template v-if="isReadonlyRole(scope.row)">
-                <el-tag type="info" size="small">系统内置（只读）</el-tag>
-              </template>
-              <template v-else>
-                <el-tooltip content="修改" placement="top" v-if="scope.row.roleId !== 1">
-                  <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['system:role:edit']"></el-button>
-                </el-tooltip>
-                <el-tooltip content="删除" placement="top" v-if="scope.row.roleId !== 1">
-                  <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['system:role:remove']"></el-button>
-                </el-tooltip>
-                <el-tooltip content="数据权限" placement="top" v-if="scope.row.roleId !== 1">
-                  <el-button link type="primary" icon="CircleCheck" @click="handleDataScope(scope.row)" v-hasPermi="['system:role:edit']"></el-button>
-                </el-tooltip>
-                <el-tooltip content="分配用户" placement="top" v-if="scope.row.roleId !== 1">
-                  <el-button link type="primary" icon="User" @click="handleAuthUser(scope.row)" v-hasPermi="['system:role:edit']"></el-button>
-                </el-tooltip>
-              </template>
-            </template>
-         </el-table-column>
-      </el-table>
-
-      <pagination
-         v-show="total > 0"
-         :total="total"
-         v-model:page="queryParams.pageNum"
-         v-model:limit="queryParams.pageSize"
-         @pagination="getList"
-      />
-
-      <!-- 添加或修改角色配置对话框 -->
-      <el-dialog :title="title" v-model="open" width="500px" append-to-body>
-         <el-form ref="roleRef" :model="form" :rules="rules" label-width="100px">
-            <el-form-item label="角色名称" prop="roleName">
-               <el-input v-model="form.roleName" placeholder="请输入角色名称" />
-            </el-form-item>
-            <el-form-item prop="roleKey">
-               <template #label>
-                  <span>
-                     <el-tooltip content="控制器中定义的权限字符，如：@PreAuthorize(`@ss.hasRole('admin')`)" placement="top">
-                        <el-icon><question-filled /></el-icon>
-                     </el-tooltip>
-                     权限字符
-                  </span>
-               </template>
-               <el-input v-model="form.roleKey" placeholder="请输入权限字符" />
-            </el-form-item>
-            <el-form-item label="角色顺序" prop="roleSort">
-               <el-input-number v-model="form.roleSort" controls-position="right" :min="0" />
-            </el-form-item>
-            <el-form-item label="状态">
-               <el-radio-group v-model="form.status">
-                  <el-radio
-                     v-for="dict in sys_normal_disable"
-                     :key="dict.value"
-                     :value="dict.value"
-                  >{{ dict.label }}</el-radio>
-               </el-radio-group>
-            </el-form-item>
-            <el-form-item label="Portal模式">
-               <el-switch v-model="form.portalMode" active-value="1" inactive-value="0" />
-               <span class="form-tip">开启后为专岗账号（无导航精简界面、强制单角色）</span>
-            </el-form-item>
-            <el-form-item v-if="form.portalMode === '1'" label="落地页" prop="homePath">
-               <el-select v-model="form.homePath" placeholder="请先勾选菜单，再选择落地页">
-                  <el-option
-                     v-for="item in homePathOptions"
-                     :key="item.menuId"
-                     :label="item.fullPath"
-                     :value="item.fullPath"
-                  />
-               </el-select>
-            </el-form-item>
-            <el-form-item label="菜单权限">
-               <el-checkbox v-model="menuExpand" @change="handleCheckedTreeExpand($event, 'menu')">展开/折叠</el-checkbox>
-               <el-checkbox v-model="menuNodeAll" @change="handleCheckedTreeNodeAll($event, 'menu')">全选/全不选</el-checkbox>
-               <el-checkbox v-model="form.menuCheckStrictly" @change="handleCheckedTreeConnect($event, 'menu')">父子联动</el-checkbox>
-               <el-tree
-                  class="tree-border"
-                  :data="menuOptions"
-                  show-checkbox
-                  ref="menuRef"
-                  node-key="id"
-                  :check-strictly="!form.menuCheckStrictly"
-                  empty-text="加载中，请稍候"
-                  :props="{ label: 'label', children: 'children' }"
-                  @check="handleMenuCheck"
-               ></el-tree>
-            </el-form-item>
-            <el-form-item label="备注">
-               <el-input v-model="form.remark" type="textarea" placeholder="请输入内容"></el-input>
-            </el-form-item>
-         </el-form>
-         <template #footer>
-            <div class="dialog-footer">
-               <el-button type="primary" @click="submitForm">确 定</el-button>
-               <el-button @click="cancel">取 消</el-button>
-            </div>
-         </template>
-      </el-dialog>
-
-      <!-- 分配角色数据权限对话框 -->
-      <el-dialog :title="title" v-model="openDataScope" width="500px" append-to-body>
-         <el-form :model="form" label-width="80px">
-            <el-form-item label="角色名称">
-               <el-input v-model="form.roleName" :disabled="true" />
-            </el-form-item>
-            <el-form-item label="权限字符">
-               <el-input v-model="form.roleKey" :disabled="true" />
-            </el-form-item>
-            <el-form-item label="权限范围">
-               <el-select v-model="form.dataScope" @change="dataScopeSelectChange">
-                  <el-option
-                     v-for="item in dataScopeOptions"
-                     :key="item.value"
-                     :label="item.label"
-                     :value="item.value"
-                  ></el-option>
-               </el-select>
-            </el-form-item>
-            <el-form-item label="数据权限" v-show="form.dataScope == 2">
-               <el-checkbox v-model="deptExpand" @change="handleCheckedTreeExpand($event, 'dept')">展开/折叠</el-checkbox>
-               <el-checkbox v-model="deptNodeAll" @change="handleCheckedTreeNodeAll($event, 'dept')">全选/全不选</el-checkbox>
-               <el-checkbox v-model="form.deptCheckStrictly" @change="handleCheckedTreeConnect($event, 'dept')">父子联动</el-checkbox>
-               <el-tree
-                  class="tree-border"
-                  :data="deptOptions"
-                  show-checkbox
-                  default-expand-all
-                  ref="deptRef"
-                  node-key="id"
-                  :check-strictly="!form.deptCheckStrictly"
-                  empty-text="加载中，请稍候"
-                  :props="{ label: 'label', children: 'children' }"
-               ></el-tree>
-            </el-form-item>
-         </el-form>
-         <template #footer>
-            <div class="dialog-footer">
-               <el-button type="primary" @click="submitDataScope">确 定</el-button>
-               <el-button @click="cancelDataScope">取 消</el-button>
-            </div>
-         </template>
-      </el-dialog>
-   </div>
+    <!-- 分配角色数据权限对话框 -->
+    <el-dialog :title="title" v-model="openDataScope" width="500px" append-to-body>
+      <el-form :model="form" label-width="80px">
+        <el-form-item label="角色名称">
+          <el-input v-model="form.roleName" :disabled="true" />
+        </el-form-item>
+        <el-form-item label="权限字符">
+          <el-input v-model="form.roleKey" :disabled="true" />
+        </el-form-item>
+        <el-form-item label="权限范围">
+          <el-select v-model="form.dataScope" @change="dataScopeSelectChange">
+            <el-option
+              v-for="item in dataScopeOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            ></el-option>
+          </el-select>
+        </el-form-item>
+        <el-form-item label="数据权限" v-show="form.dataScope == 2">
+          <el-checkbox v-model="deptExpand" @change="handleCheckedTreeExpand($event, 'dept')">展开/折叠</el-checkbox>
+          <el-checkbox v-model="deptNodeAll" @change="handleCheckedTreeNodeAll($event, 'dept')">全选/全不选</el-checkbox>
+          <el-checkbox v-model="form.deptCheckStrictly" @change="handleCheckedTreeConnect($event, 'dept')">父子联动</el-checkbox>
+          <el-tree
+            class="tree-border"
+            :data="deptOptions"
+            show-checkbox
+            default-expand-all
+            ref="deptRef"
+            node-key="id"
+            :check-strictly="!form.deptCheckStrictly"
+            empty-text="加载中，请稍候"
+            :props="{ label: 'label', children: 'children' }"
+          ></el-tree>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button type="primary" @click="submitDataScope">确 定</el-button>
+          <el-button @click="cancelDataScope">取 消</el-button>
+        </div>
+      </template>
+    </el-dialog>
+  </div>
 </template>
 
 <script setup name="Role">
 import { addRole, changeRoleStatus, dataScope, delRole, getRole, listRole, updateRole, deptTreeSelect } from "@/api/system/role"
 import { roleMenuTreeselect, treeselect as menuTreeselect, roleMenuFlatList } from "@/api/system/menu"
+import { Plus, RefreshLeft, MoreFilled, ArrowLeft, ArrowRight, Download, Edit, Delete, CircleCheck, User } from '@element-plus/icons-vue'
 import useUserStore from "@/store/modules/user"
 
 const router = useRouter()
 const { proxy } = getCurrentInstance()
 const { sys_normal_disable } = useDict("sys_normal_disable")
 
+const PAGE_SIZE = 12
 const roleList = ref([])
 const open = ref(false)
 const loading = ref(true)
 const showSearch = ref(true)
 const ids = ref([])
 const single = ref(true)
-const multiple = ref(true)
 const total = ref(0)
 const title = ref("")
 const dateRange = ref([])
@@ -290,6 +354,8 @@ const deptOptions = ref([])
 const openDataScope = ref(false)
 const menuRef = ref(null)
 const deptRef = ref(null)
+const openMenuId = ref(null)
+const headCheckRef = ref(null)
 // 全量菜单平铺数据（用于落地页路径拼接），当前树勾选的菜单ID
 const menuAllList = ref([])
 const checkedMenuIds = ref([])
@@ -307,7 +373,7 @@ const data = reactive({
   form: {},
   queryParams: {
     pageNum: 1,
-    pageSize: 10,
+    pageSize: PAGE_SIZE,
     roleName: undefined,
     roleKey: undefined,
     status: undefined
@@ -328,6 +394,99 @@ function isReadonlyRole(row) {
 }
 function checkRowSelectable(row) {
   return !isReadonlyRole(row)
+}
+
+/* ===== 花名册风格展示辅助 ===== */
+const AVATAR_COLORS = ['#3B82F6', '#8B5CF6', '#06B6D4', '#22C55E', '#F59E0B', '#EF4444', '#EC4899', '#14B8A6']
+function avatarChar(row) {
+  const s = (row.roleName || '?').trim()
+  return s.charAt(0)
+}
+function avatarColor(row) {
+  const s = row.roleName || row.roleKey || ''
+  let hash = 0
+  for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) >>> 0
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length]
+}
+function statusMeta(row) {
+  return row.status === '0' ? { tone: 'green', label: '正常' } : { tone: 'gray', label: '停用' }
+}
+function fmtTime(t) {
+  return t ? proxy.parseTime(t) : '—'
+}
+function fmtDate(t) {
+  return t ? proxy.parseTime(t, '{y}-{m}-{d}') : '—'
+}
+
+/* ===== 分页 ===== */
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)))
+const pageNumbers = computed(() => {
+  const pages = totalPages.value
+  const cur = queryParams.value.pageNum
+  if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1)
+  const start = Math.max(2, Math.min(pages - 4, cur - 2))
+  const nums = [1]
+  if (start > 2) nums.push('…')
+  for (let p = start; p < start + 4 && p < pages; p++) nums.push(p)
+  if (start + 3 < pages - 1) nums.push('…')
+  nums.push(pages)
+  return nums
+})
+function goPage(p) {
+  if (p === '…' || p < 1 || p > totalPages.value || p === queryParams.value.pageNum) return
+  queryParams.value.pageNum = p
+  getList()
+}
+
+/* ===== 多选（当前页可选行） ===== */
+const selectableRows = computed(() => (roleList.value || []).filter(checkRowSelectable))
+const allChecked = computed(() => selectableRows.value.length > 0 && selectableRows.value.every(r => ids.value.includes(r.roleId)))
+const someIndeterminate = computed(() => ids.value.length > 0 && !allChecked.value)
+watch([allChecked, someIndeterminate], () => {
+  nextTick(() => {
+    if (headCheckRef.value) headCheckRef.value.indeterminate = someIndeterminate.value
+  })
+})
+function syncSelectionFlags() {
+  single.value = ids.value.length !== 1
+}
+function toggleRow(row) {
+  const i = ids.value.indexOf(row.roleId)
+  if (i >= 0) ids.value.splice(i, 1)
+  else ids.value.push(row.roleId)
+  syncSelectionFlags()
+}
+function toggleAll(ev) {
+  const checked = ev.target.checked
+  const pageIds = selectableRows.value.map(r => r.roleId)
+  if (checked) {
+    const set = new Set([...ids.value, ...pageIds])
+    ids.value = Array.from(set)
+  } else {
+    ids.value = ids.value.filter(id => !pageIds.includes(id))
+  }
+  syncSelectionFlags()
+}
+
+/* ===== 行内操作菜单 ===== */
+function onDocClick() {
+  openMenuId.value = null
+}
+function toggleMenu(id) {
+  if (openMenuId.value === id) {
+    openMenuId.value = null
+    document.removeEventListener('click', onDocClick)
+  } else {
+    openMenuId.value = id
+    document.addEventListener('click', onDocClick)
+  }
+}
+onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
+function onMenu(row, action) {
+  openMenuId.value = null
+  if (action === 'delete') handleDelete(row)
+  else if (action === 'dataScope') handleDataScope(row)
+  else if (action === 'authUser') handleAuthUser(row)
 }
 
 /** 菜单树勾选变化：同步落地页候选 */
@@ -371,6 +530,13 @@ function getList() {
     roleList.value = response.rows
     total.value = response.total
     loading.value = false
+    // 当前页删除后可能落在空页，自动回退一页
+    if (!response.rows.length && queryParams.value.pageNum > 1) {
+      queryParams.value.pageNum -= 1
+      getList()
+    }
+  }).catch(() => {
+    loading.value = false
   })
 }
 
@@ -380,11 +546,24 @@ function handleQuery() {
   getList()
 }
 
+/* 筛选条件变化（名称/权限字符/状态/创建时间）自动防抖查询 */
+let filterTimer = null
+watch(
+  () => [queryParams.value.roleName, queryParams.value.roleKey, queryParams.value.status, dateRange.value && dateRange.value.join(',')],
+  () => {
+    clearTimeout(filterTimer)
+    filterTimer = setTimeout(handleQuery, 300)
+  }
+)
+
 /** 重置按钮操作 */
 function resetQuery() {
   dateRange.value = []
-  proxy.resetForm("queryRef")
-  handleQuery()
+  queryParams.value.roleName = undefined
+  queryParams.value.roleKey = undefined
+  queryParams.value.status = undefined
+  queryParams.value.pageNum = 1
+  getList()
 }
 
 /** 删除按钮操作 */
@@ -393,6 +572,8 @@ function handleDelete(row) {
   proxy.$modal.confirm('是否确认删除角色编号为"' + roleIds + '"的数据项?').then(function () {
     return delRole(roleIds)
   }).then(() => {
+    ids.value = []
+    syncSelectionFlags()
     getList()
     proxy.$modal.msgSuccess("删除成功")
   }).catch(() => {})
@@ -405,11 +586,11 @@ function handleExport() {
   }, `role_${new Date().getTime()}.xlsx`)
 }
 
-/** 多选框选中数据 */
-function handleSelectionChange(selection) {
-  ids.value = selection.map(item => item.roleId)
-  single.value = selection.length != 1
-  multiple.value = !selection.length
+/** 状态徽章点击：先翻转，沿用原 el-switch 的确认/回滚口径 */
+function toggleStatus(row) {
+  if (isReadonlyRole(row)) return
+  row.status = row.status === "0" ? "1" : "0"
+  handleStatusChange(row)
 }
 
 /** 角色状态修改 */
@@ -422,20 +603,6 @@ function handleStatusChange(row) {
   }).catch(function () {
     row.status = row.status === "0" ? "1" : "0"
   })
-}
-
-/** 更多操作 */
-function handleCommand(command, row) {
-  switch (command) {
-    case "handleDataScope":
-      handleDataScope(row)
-      break
-    case "handleAuthUser":
-      handleAuthUser(row)
-      break
-    default:
-      break
-  }
 }
 
 /** 分配用户 */
@@ -499,7 +666,7 @@ function handleAdd() {
 /** 修改角色 */
 function handleUpdate(row) {
   reset()
-  const roleId = row.roleId || ids.value
+  const roleId = row && row.roleId ? row.roleId : ids.value
   const roleMenu = getRoleMenuTreeselect(roleId)
   getMenuList()
   getRole(roleId).then(response => {
@@ -653,9 +820,100 @@ getList()
 </script>
 
 <style lang="scss" scoped>
+@use "../../../assets/styles/roster-kit.scss" as *;
+
+/* 全宽页面铺满 canvas 底色 */
+.rm-page {
+  min-height: calc(100vh - 84px);
+  margin: -20px;
+  padding: 16px;
+  background: $rk-canvas;
+}
+
 .form-tip {
   margin-left: 10px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+/* 筛选条内 Element 组件收敛到 32px/10px 圆角 */
+.rm-date-field {
+  gap: 6px;
+}
+:deep(.rm-date-picker) {
+  width: 260px;
+
+  .el-range-editor.el-input__wrapper,
+  .el-input__wrapper {
+    height: 32px;
+    border-radius: 10px;
+    box-shadow: 0 0 0 1px $rk-line inset;
+  }
+  .el-range-input {
+    font-size: 13px;
+  }
+}
+.rm-filter :deep(.el-input__wrapper) {
+  border-radius: 10px;
+}
+.rm-input-key {
+  width: 160px;
+}
+
+/* 角色单元格 */
+.rm-avatar {
+  width: 32px;
+  height: 32px;
+  font-size: 13px;
+}
+.rk-person-meta { min-width: 0; }
+.rm-name-text {
+  display: block;
+  max-width: 180px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.rm-key-chip {
+  max-width: 180px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: $rk-text-2;
+}
+.rm-builtin {
+  font-size: 12px;
+}
+.rm-cell-time { white-space: nowrap; }
+
+/* 列宽 */
+.rm-table .col-id { width: 60px; }
+.rm-table .col-sort { width: 64px; }
+.rm-table .col-time { width: 108px; }
+.rm-table :is(thead th, tbody td) { padding-left: 12px; padding-right: 12px; }
+@media (max-width: 1280px) {
+  .rm-table .col-time { display: none; }
+}
+@media (max-width: 1080px) {
+  .rm-table .col-id { display: none; }
+}
+
+/* 右上角工具按钮收敛为描边小按钮 */
+.rm-col-toolbar {
+  margin-right: 2px;
+}
+.rm-col-toolbar :deep(.el-button) {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid $rk-line;
+  border-radius: 10px;
+  background: #fff;
+  color: $rk-text-2;
+  &:hover {
+    background: $rk-canvas;
+    color: $rk-brand-600;
+    border-color: $rk-brand-500;
+  }
 }
 </style>

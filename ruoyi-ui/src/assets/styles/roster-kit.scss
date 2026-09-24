@@ -1,0 +1,518 @@
+/**
+ * 花名册风格共享样式包（rk = roster kit）
+ * 从 apms/athlete 花名册页抽取的统一视觉语言：
+ * 白卡 14px 圆角 + #E5E9F0 描边 + 轻阴影；品牌色 #2563EB；canvas #F8FAFF
+ * 在页面 <style lang="scss" scoped> 中：@use "@/assets/styles/roster-kit.scss" as *;
+ */
+
+$rk-brand-600: #2563eb;
+$rk-brand-700: #1d4ed8;
+$rk-brand-500: #3b82f6;
+$rk-brand-50: #eff5ff;
+$rk-text-1: #0f172a;
+$rk-text-2: #475569;
+$rk-text-3: #94a3b8;
+$rk-line: #e5e9f0;
+$rk-canvas: #f8faff;
+$rk-ok: #16a34a;
+$rk-warn: #d97706;
+$rk-risk: #dc2626;
+
+/* ===== 页面基底 ===== */
+.rk-page {
+  font-size: 14px;
+  color: $rk-text-1;
+}
+.rk-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== 页头 ===== */
+.rk-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.rk-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 30px;
+  color: $rk-text-1;
+}
+.rk-subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: $rk-text-2;
+}
+.rk-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rk-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: $rk-text-2;
+  background: #fff;
+  border: 1px solid $rk-line;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s, border-color .15s, color .15s;
+  &:hover { background: $rk-canvas; border-color: #d6dce8; }
+  &:disabled { opacity: .45; cursor: not-allowed; background: #fff; }
+}
+.rk-btn-primary {
+  color: #fff;
+  font-weight: 600;
+  background: $rk-brand-600;
+  border-color: $rk-brand-600;
+  &:hover { background: $rk-brand-700; border-color: $rk-brand-700; }
+  &:disabled { background: $rk-brand-600; border-color: $rk-brand-600; }
+}
+.rk-btn-danger {
+  color: $rk-risk;
+  border-color: #f3c1c1;
+  &:hover { background: #fef2f2; border-color: #e5a3a3; }
+}
+
+/* ===== 筛选条卡片 ===== */
+.rk-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  background: #fff;
+  border: 1px solid $rk-line;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 1px 3px rgba(15, 23, 42, .06);
+}
+.rk-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rk-label {
+  font-size: 12px;
+  color: $rk-text-3;
+  white-space: nowrap;
+}
+.rk-divider {
+  width: 1px;
+  height: 20px;
+  background: $rk-line;
+}
+.rk-input,
+.rk-select {
+  height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+  color: $rk-text-1;
+  background: #fff;
+  border: 1px solid $rk-line;
+  border-radius: 10px;
+  outline: none;
+  transition: border-color .15s;
+  &::placeholder { color: $rk-text-3; }
+  &:focus { border-color: $rk-brand-500; }
+}
+.rk-input { width: 180px; }
+.rk-select {
+  min-width: 96px;
+  cursor: pointer;
+}
+.rk-filter-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.rk-search { position: relative; }
+.rk-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 13px;
+  color: $rk-text-3;
+  pointer-events: none;
+}
+.rk-search-input {
+  width: 176px;
+  height: 32px;
+  padding: 0 12px 0 30px;
+  font-size: 13px;
+  color: $rk-text-1;
+  border: 1px solid $rk-line;
+  border-radius: 10px;
+  outline: none;
+  transition: border-color .15s;
+  &::placeholder { color: $rk-text-3; }
+  &:focus { border-color: $rk-brand-500; }
+}
+.rk-btn-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: $rk-text-2;
+  background: #fff;
+  border: 1px solid $rk-line;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background .15s;
+  &:hover { background: $rk-canvas; }
+  .el-icon { font-size: 13px; }
+}
+
+/* 通用 pill（筛选 chip / 范围提示） */
+.rk-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  border: 1px solid $rk-line;
+  border-radius: 999px;
+  background: #fff;
+  color: $rk-text-2;
+  cursor: pointer;
+  user-select: none;
+  transition: all .15s;
+  &:hover { border-color: $rk-brand-500; color: $rk-brand-600; }
+  &.is-active {
+    border-color: $rk-brand-600;
+    background: $rk-brand-600;
+    color: #fff;
+  }
+}
+.rk-chip-soft {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: $rk-brand-700;
+  background: $rk-brand-50;
+  border: 1px solid #d4e3ff;
+  border-radius: 999px;
+}
+.rk-chip-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  font-size: 10px;
+  color: $rk-brand-700;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  &:hover { background: #d4e3ff; }
+}
+
+/* ===== 表格卡片 ===== */
+.rk-table-card {
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid $rk-line;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 1px 3px rgba(15, 23, 42, .06);
+}
+.rk-table-scroll { overflow-x: auto; }
+.rk-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.rk-table thead th {
+  padding: 12px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  color: $rk-text-3;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid $rk-line;
+  background: #fff;
+}
+.rk-table th.text-center,
+.rk-table td.text-center { text-align: center; }
+.rk-table th.text-right,
+.rk-table td.text-right { text-align: right; }
+.rk-table .col-check {
+  width: 40px;
+  padding-left: 16px;
+}
+.rk-row {
+  border-bottom: 1px solid $rk-line;
+  transition: background .12s;
+  &:last-child td { border-bottom: none; }
+  &.is-zebra { background: #fafbfd; }
+  &:hover { background: $rk-canvas; }
+}
+.rk-table tbody td {
+  padding: 10px 16px;
+  vertical-align: middle;
+}
+.rk-check {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  &:disabled { cursor: not-allowed; }
+}
+
+/* 人物单元格 */
+.rk-person {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.rk-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+}
+.rk-person-main {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: $rk-text-1;
+}
+.rk-person-link {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: $rk-text-1;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  &:hover { color: $rk-brand-600; }
+}
+.rk-person-sub {
+  margin: 1px 0 0;
+  font-size: 11px;
+  color: $rk-text-3;
+}
+
+/* 软 chip（部门/岗位等短文本） */
+.rk-soft-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: $rk-text-2;
+  background: $rk-canvas;
+  border-radius: 8px;
+}
+
+.rk-num {
+  color: $rk-text-1;
+  font-variant-numeric: tabular-nums;
+}
+.rk-dash { color: $rk-text-3; }
+
+/* ===== 状态徽章（可点击切换 / 锁定） ===== */
+.rk-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 8px;
+  font-size: 12px;
+  line-height: 18px;
+  border: 1px solid;
+  border-radius: 999px;
+  white-space: nowrap;
+  &.tone-green { background: #e8f7ee; border-color: #b7e4c7; color: $rk-ok; .rk-status-dot { background: $rk-ok; } }
+  &.tone-amber { background: #fef3e0; border-color: #f5d9a8; color: $rk-warn; .rk-status-dot { background: $rk-warn; } }
+  &.tone-red   { background: #fcebeb; border-color: #f3c1c1; color: $rk-risk; .rk-status-dot { background: $rk-risk; } }
+  &.tone-gray  { background: #f1f5f9; border-color: #e2e8f0; color: #64748b; .rk-status-dot { background: #94a3b8; } }
+}
+button.rk-status-badge {
+  cursor: pointer;
+  font-family: inherit;
+  &:hover { filter: brightness(.97); }
+}
+.rk-status-badge.is-locked {
+  cursor: not-allowed;
+  opacity: .75;
+}
+.rk-status-dot-wrap {
+  position: relative;
+  display: inline-flex;
+  width: 6px;
+  height: 6px;
+}
+.rk-status-dot {
+  position: relative;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  z-index: 1;
+}
+.rk-status-ping {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: $rk-risk;
+  opacity: .6;
+  animation: rk-ping 1.4s cubic-bezier(0, 0, .2, 1) infinite;
+}
+@keyframes rk-ping {
+  0% { transform: scale(1); opacity: .6; }
+  75%, 100% { transform: scale(2.4); opacity: 0; }
+}
+
+/* ===== 操作列 ===== */
+.rk-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.rk-link {
+  padding: 4px 2px;
+  font-size: 12px;
+  font-weight: 500;
+  color: $rk-brand-600;
+  background: none;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  &:hover { color: $rk-brand-700; }
+}
+.rk-menu { position: relative; }
+.rk-menu-btn {
+  display: inline-flex;
+  padding: 6px;
+  color: $rk-text-3;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  &:hover { background: $rk-canvas; color: $rk-text-1; }
+}
+.rk-menu-pop {
+  position: absolute;
+  right: 0;
+  top: 32px;
+  z-index: 20;
+  min-width: 128px;
+  padding: 4px 0;
+  background: #fff;
+  border: 1px solid $rk-line;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .1);
+}
+.rk-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 14px;
+  font-size: 13px;
+  text-align: left;
+  color: $rk-text-2;
+  background: none;
+  border: none;
+  cursor: pointer;
+  &:hover { background: $rk-canvas; color: $rk-text-1; }
+  &.is-danger { color: $rk-risk; }
+  .el-icon { font-size: 14px; }
+}
+
+/* ===== 空状态 ===== */
+.rk-empty {
+  padding: 48px 0;
+  text-align: center;
+}
+.rk-empty-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: $rk-text-2;
+}
+.rk-empty-desc {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: $rk-text-3;
+}
+
+/* ===== 分页 ===== */
+.rk-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-top: 1px solid $rk-line;
+}
+.rk-pager-info {
+  font-size: 12px;
+  color: $rk-text-3;
+  b { color: $rk-text-2; font-weight: 500; }
+}
+.rk-pager-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rk-page-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  font-size: 12px;
+  color: $rk-text-2;
+  background: #fff;
+  border: 1px solid $rk-line;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  &:hover:not(:disabled):not(.is-active) { background: $rk-canvas; }
+  &:disabled { opacity: .4; cursor: not-allowed; }
+  &.is-active {
+    color: #fff;
+    font-weight: 600;
+    background: $rk-brand-600;
+    border-color: $rk-brand-600;
+  }
+  &.is-ellipsis {
+    border-color: transparent;
+    cursor: default;
+    &:hover { background: #fff; }
+  }
+}
+
+@media (max-width: 1100px) {
+  .rk-filter-right { margin-left: 0; }
+}
