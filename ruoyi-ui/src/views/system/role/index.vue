@@ -822,11 +822,13 @@ getList()
 <style lang="scss" scoped>
 @use "../../../assets/styles/roster-kit.scss" as *;
 
-/* 全宽页面铺满 canvas 底色 */
+/* 全宽页面铺满 canvas 底色：
+   侧栏 fixed（宽 200）+ 固定头部在文档流之外，负 margin 仅用于底色外扩，
+   左/上 padding 必须补偿 20px，否则 hero 内容会钻到侧栏/头部下面 */
 .rm-page {
   min-height: calc(100vh - 84px);
   margin: -20px;
-  padding: 16px;
+  padding: 40px 16px 36px 40px;
   background: $rk-canvas;
 }
 
