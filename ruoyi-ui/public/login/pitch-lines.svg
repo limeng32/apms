@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+  <g fill="none" stroke="#06B6D4" stroke-opacity="0.08" stroke-width="1">
+    <!-- outer boundary -->
+    <rect x="40" y="40" width="720" height="720"/>
+    <!-- halfway line -->
+    <line x1="400" y1="40" x2="400" y2="760"/>
+    <!-- center circle -->
+    <circle cx="400" cy="400" r="100"/>
+    <circle cx="400" cy="400" r="4" fill="#06B6D4" fill-opacity="0.08"/>
+    <!-- left penalty area -->
+    <rect x="40" y="220" width="150" height="360"/>
+    <rect x="40" y="310" width="60" height="180"/>
+    <path d="M 190 340 A 110 110 0 0 1 190 460"/>
+    <circle cx="140" cy="400" r="3" fill="#06B6D4" fill-opacity="0.08"/>
+    <!-- right penalty area -->
+    <rect x="610" y="220" width="150" height="360"/>
+    <rect x="700" y="310" width="60" height="180"/>
+    <path d="M 610 340 A 110 110 0 0 0 610 460"/>
+    <circle cx="660" cy="400" r="3" fill="#06B6D4" fill-opacity="0.08"/>
+    <!-- corner arcs -->
+    <path d="M 40 52 A 12 12 0 0 0 52 40"/>
+    <path d="M 748 40 A 12 12 0 0 0 760 52"/>
+    <path d="M 760 748 A 12 12 0 0 0 748 760"/>
+    <path d="M 52 760 A 12 12 0 0 0 40 748"/>
+  </g>
+</svg>

@@ -49,6 +49,10 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
      * video 为 M4 预留值，当前保存即拒绝，避免库中落入渲染器半支持的状态。
      */
     private static final Set<String> BACKGROUND_TYPES = Set.of("image");
+    /** 内置背景标识（与前端 BUILTIN_BACKGROUNDS 一致）：随包静态资源，非 /profile/ 上传文件 */
+    private static final Set<String> BACKGROUND_BUILTINS = Set.of("tech");
+    /** 背景动态装饰特效（与前端 BACKGROUND_EFFECTS 一致） */
+    private static final Set<String> BACKGROUND_EFFECTS = Set.of("none", "particles", "radar", "all");
     private static final Set<String> FONT_FAMILIES = Set.of("system", "pingfang", "yahei", "heiti", "songti");
     private static final Set<String> FORGOT_MODES = Set.of("alert", "link", "hidden");
 
@@ -183,7 +187,9 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
             // v1 favicon 仅允许 /profile/ 站内路径
             mediaUrl(brand.get("favicon"), "brand.favicon", true);
             // Logo 与上下留白（桌面端）：复用校验方法，移动端共用同一套口径
-            validateLogo(obj(brand.get("logo"), "brand.logo"), "brand.logo");
+            validateLogo(obj(brand.get("logo"), "brand.logo"), "brand.logo", false);
+            // 客户方 Logo（登录区左上，双 logo 方案；enabled=false 时仅校验像素字段）
+            validateLogo(obj(brand.get("logoClient"), "brand.logoClient"), "brand.logoClient", true);
             validateLogoSpace(obj(brand.get("logoSpace"), "brand.logoSpace"), "brand.logoSpace");
         }
 
@@ -200,7 +206,8 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
             Map<String, Object> mobileBrand = obj(mobile.get("brand"), "mobile.brand");
             if (mobileBrand != null)
             {
-                validateLogo(obj(mobileBrand.get("logo"), "mobile.brand.logo"), "mobile.brand.logo");
+                validateLogo(obj(mobileBrand.get("logo"), "mobile.brand.logo"), "mobile.brand.logo", false);
+                validateLogo(obj(mobileBrand.get("logoClient"), "mobile.brand.logoClient"), "mobile.brand.logoClient", true);
                 validateLogoSpace(obj(mobileBrand.get("logoSpace"), "mobile.brand.logoSpace"), "mobile.brand.logoSpace");
             }
             Map<String, Object> mobileBg = obj(mobile.get("background"), "mobile.background");
@@ -209,6 +216,7 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
                 enumStr(mobileBg.get("type"), BACKGROUND_TYPES, "mobile.background.type", false);
                 mediaUrl(mobileBg.get("image"), "mobile.background.image", true);
                 number(mobileBg.get("overlay"), "mobile.background.overlay", 0, 1);
+                validateBackgroundMotion(mobileBg, "mobile.background");
             }
         }
 
@@ -303,6 +311,9 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
                     }
                 }
             }
+            // Hero 强调文字渐变 / 登录按钮渐变（可开关；关闭后前端回退纯色）
+            validateGradient(obj(colors.get("heroGradient"), "colors.heroGradient"), "colors.heroGradient");
+            validateGradient(obj(colors.get("buttonGradient"), "colors.buttonGradient"), "colors.buttonGradient");
         }
 
         Map<String, Object> typography = obj(root.get("typography"), "typography");
@@ -315,6 +326,12 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
             number(typography.get("formTitleSize"), "typography.formTitleSize", 8, 80);
         }
 
+        Map<String, Object> animation = obj(root.get("animation"), "animation");
+        if (animation != null)
+        {
+            bool(animation.get("entrance"), "animation.entrance");
+        }
+
         Map<String, Object> background = obj(root.get("background"), "background");
         if (background != null)
         {
@@ -322,6 +339,7 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
             enumStr(background.get("type"), BACKGROUND_TYPES, "background.type", false);
             mediaUrl(background.get("image"), "background.image", true);
             number(background.get("overlay"), "background.overlay", 0, 1);
+            validateBackgroundMotion(background, "background");
             Map<String, Object> video = obj(background.get("video"), "background.video");
             if (video != null)
             {
@@ -340,10 +358,25 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
     /**
      * Logo 校验（桌面 brand.logo 与移动 mobile.brand.logo 共用）。
      * prefix 为字段路径前缀（如 "brand.logo"），错误信息与之拼接。
+     * clientLogo=true 为客户方 logo：其 X 行程单独放宽（与前端 CLIENT_LOGO_OFFSET_X_LIMITS 一致）。
      */
-    private void validateLogo(Map<String, Object> logo, String prefix)
+    private void validateLogo(Map<String, Object> logo, String prefix, boolean clientLogo)
     {
         if (logo == null)
+        {
+            return;
+        }
+        // enabled 仅客户方 logo（logoClient）携带；显式关闭时不校验来源/取值，
+        // 允许「切到 image 尚未上传就先关闭」这类中间态保存
+        bool(logo.get("enabled"), prefix + ".enabled");
+        boolean logoDisabled = Boolean.FALSE.equals(logo.get("enabled"));
+        // 像素级调整范围（与前端限制一致；无论开关与否均合法）
+        number(logo.get("width"), prefix + ".width", 16, 200);
+        number(logo.get("height"), prefix + ".height", 16, 200);
+        // 客户方 logo 锚定登录框左缘，水平行程放宽到 -200~400；版权方与所有 Y 均为 ±100
+        number(logo.get("offsetX"), prefix + ".offsetX", clientLogo ? -200 : -100, clientLogo ? 400 : 100);
+        number(logo.get("offsetY"), prefix + ".offsetY", -100, 100);
+        if (logoDisabled)
         {
             return;
         }
@@ -362,11 +395,6 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
         {
             enumStr(logo.get("value"), LOGO_BUILTINS, prefix + ".value", true);
         }
-        // 像素级调整范围（与前端 LOGO_LIMITS 一致）
-        number(logo.get("width"), prefix + ".width", 16, 200);
-        number(logo.get("height"), prefix + ".height", 16, 200);
-        number(logo.get("offsetX"), prefix + ".offsetX", -100, 100);
-        number(logo.get("offsetY"), prefix + ".offsetY", -100, 100);
     }
 
     /**
@@ -391,6 +419,39 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
             number(spaceOverlay.get("top"), prefix + ".overlay.top", 0, 200);
             number(spaceOverlay.get("bottom"), prefix + ".overlay.bottom", -100, 200);
         }
+    }
+
+    /**
+     * 渐变配置校验（colors.heroGradient / colors.buttonGradient 共用）：
+     * enabled 可缺省；angle 0~360；stops 2~4 个合法颜色。
+     */
+    private void validateGradient(Map<String, Object> gradient, String prefix)
+    {
+        if (gradient == null)
+        {
+            return;
+        }
+        bool(gradient.get("enabled"), prefix + ".enabled");
+        number(gradient.get("angle"), prefix + ".angle", 0, 360);
+        List<Object> stops = list(gradient.get("stops"), prefix + ".stops", 2, 4);
+        if (stops != null)
+        {
+            for (int i = 0; i < stops.size(); i++)
+            {
+                color(stops.get(i), prefix + ".stops[" + i + "]");
+            }
+        }
+    }
+
+    /**
+     * 背景动态字段校验（桌面 background 与移动 mobile.background 共用）：
+     * builtin 为内置背景枚举（允许 null=不使用）；effect 为特效枚举；kenBurns 布尔。
+     */
+    private void validateBackgroundMotion(Map<String, Object> background, String prefix)
+    {
+        enumStr(background.get("builtin"), BACKGROUND_BUILTINS, prefix + ".builtin", false);
+        enumStr(background.get("effect"), BACKGROUND_EFFECTS, prefix + ".effect", false);
+        bool(background.get("kenBurns"), prefix + ".kenBurns");
     }
 
     private Map<String, Object> obj(Object v, String path)

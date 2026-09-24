@@ -254,6 +254,37 @@
                 >+ 添加渐变色</el-button>
               </div>
 
+              <div class="ld-section">渐变效果</div>
+              <div v-for="g in GRADIENT_FIELDS" :key="g.key" class="ld-grad-block">
+                <div class="ld-grad-head">
+                  <span class="ld-grad-title">{{ g.label }}</span>
+                  <el-switch v-model="localConfig.colors[g.key].enabled" />
+                </div>
+                <template v-if="localConfig.colors[g.key].enabled">
+                  <el-form-item :label="`渐变角度：${localConfig.colors[g.key].angle}°`" style="margin-bottom:8px">
+                    <el-slider v-model="localConfig.colors[g.key].angle" :min="0" :max="360" :step="1" />
+                  </el-form-item>
+                  <div class="ld-stops">
+                    <div v-for="(s, idx) in localConfig.colors[g.key].stops" :key="idx" class="ld-color-row">
+                      <span class="ld-color-label">色标 {{ idx + 1 }}</span>
+                      <el-color-picker v-model="localConfig.colors[g.key].stops[idx]" />
+                      <el-input v-model="localConfig.colors[g.key].stops[idx]" size="small" class="ld-color-input" />
+                      <el-button
+                        link type="danger"
+                        :disabled="localConfig.colors[g.key].stops.length <= 2"
+                        @click="localConfig.colors[g.key].stops.splice(idx, 1)"
+                      >删除</el-button>
+                    </div>
+                    <el-button
+                      size="small" plain
+                      :disabled="localConfig.colors[g.key].stops.length >= 4"
+                      @click="localConfig.colors[g.key].stops.push('#22d3ee')"
+                    >+ 添加色标</el-button>
+                  </div>
+                </template>
+                <div class="ld-hint">{{ g.hint }}</div>
+              </div>
+
               <div class="ld-section">颜色明细</div>
               <div class="ld-color-grid">
                 <div v-for="c in COLOR_FIELDS" :key="c.path" class="ld-color-row">
@@ -296,11 +327,35 @@
             </el-form>
           </el-tab-pane>
 
+          <!-- ======================== 动效 ======================== -->
+          <el-tab-pane label="动效" name="motion">
+            <el-form label-position="top" class="ld-form">
+              <div class="ld-section">入场动效</div>
+              <el-form-item label="文字与卡片入场动画（标语逐字上浮 + 区块依次淡入）">
+                <el-switch v-model="localConfig.animation.entrance" />
+                <div class="ld-hint">
+                  关闭后登录页静态呈现，无任何入场动画；开启时访客系统若设置了「减弱动态效果」也会自动停用。
+                </div>
+              </el-form-item>
+
+              <div class="ld-section">背景动态（按设备分别配置）</div>
+              <div class="ld-hint" style="margin-bottom:12px">
+                科技背景图、粒子漂浮、雷达扫描、Ken Burns 缓推位于
+                「浏览器端布局」「移动端布局」两个页签顶部的「背景与科技动效」分区，桌面与手机可独立设置。
+              </div>
+              <div class="ld-section">渐变效果</div>
+              <div class="ld-hint">
+                标题强调行渐变与登录按钮渐变的开关、角度、色标位于「主题色」页签中部。
+              </div>
+            </el-form>
+          </el-tab-pane>
+
           <!-- ======================== 浏览器端布局 ======================== -->
           <el-tab-pane label="浏览器端布局" name="layout">
             <LoginLayoutFields
               :layout="localConfig.layout"
               :logo="localConfig.brand.logo"
+              :client-logo="localConfig.brand.logoClient"
               :logo-space="localConfig.brand.logoSpace"
               :background="localConfig.background"
               :favicon="localConfig.brand.favicon"
@@ -323,6 +378,7 @@
               mobile
               :layout="localConfig.mobile.layout"
               :logo="localConfig.mobile.brand.logo"
+              :client-logo="localConfig.mobile.brand.logoClient"
               :logo-space="localConfig.mobile.brand.logoSpace"
               :background="localConfig.mobile.background"
               @patch="onFieldPatch"
@@ -399,10 +455,38 @@ const COLOR_FIELDS = [
   { path: 'buttonLoading', label: '按钮加载态' }
 ]
 
+// 渐变构建器字段（path 对应 localConfig.colors.*）
+const GRADIENT_FIELDS = [
+  {
+    key: 'heroGradient',
+    label: 'Hero 强调文字渐变（作用于勾选「强调」的标语行）',
+    hint: '关闭后强调行使用「颜色明细」中的品牌色（纯色）'
+  },
+  {
+    key: 'buttonGradient',
+    label: '登录按钮渐变',
+    hint: '关闭后按钮使用「颜色明细」中的常规/悬停/加载三色（纯色）'
+  }
+]
+
 // 快速预设色板（仅前端编辑辅助，不产生第二份默认值）
 const PALETTES = [
   {
-    name: '默认墨绿',
+    name: '科技蓝（默认）',
+    swatches: ['#0a1120', '#3b82f6', '#22d3ee'],
+    colors: {
+      brandGradient: { angle: 150, stops: ['#0a1120', '#0f172a', '#111b31'] },
+      accent: '#22d3ee', glow2: '#3b82f6', textOnBrand: '#ffffff',
+      textOnBrandMuted: 'rgba(255,255,255,.7)', pageBg: '#ffffff',
+      formTitle: '#0f172a', formSubText: '#94a3b8', inputBorder: '#e5e9f0',
+      inputFocus: '#06b6d4', buttonBg: '#2563eb', buttonHover: '#3b82f6',
+      buttonLoading: '#06b6d4', link: '#2563eb',
+      heroGradient: { enabled: true, angle: 90, stops: ['#3b82f6', '#22d3ee'] },
+      buttonGradient: { enabled: true, angle: 90, stops: ['#2563eb', '#06b6d4'] }
+    }
+  },
+  {
+    name: '经典墨绿',
     swatches: ['#1d3b33', '#4aa886', '#2f6b57'],
     colors: {
       brandGradient: { angle: 150, stops: ['#16302a', '#1d3b33', '#27503f'] },
@@ -410,7 +494,9 @@ const PALETTES = [
       textOnBrandMuted: 'rgba(255,255,255,.7)', pageBg: '#ffffff',
       formTitle: '#1f2c28', formSubText: '#8a9a93', inputBorder: '#e3eae6',
       inputFocus: '#4aa886', buttonBg: '#2f6b57', buttonHover: '#3d8a6e',
-      buttonLoading: '#4aa886', link: '#2f6b57'
+      buttonLoading: '#4aa886', link: '#2f6b57',
+      heroGradient: { enabled: false, angle: 90, stops: ['#4aa886', '#7fd1b4'] },
+      buttonGradient: { enabled: false, angle: 90, stops: ['#2f6b57', '#3d8a6e'] }
     }
   },
   {
@@ -422,7 +508,9 @@ const PALETTES = [
       textOnBrandMuted: 'rgba(255,255,255,.72)', pageBg: '#ffffff',
       formTitle: '#1f2d3d', formSubText: '#8492a6', inputBorder: '#e3e8ee',
       inputFocus: '#3b82c4', buttonBg: '#2563eb', buttonHover: '#3b82f6',
-      buttonLoading: '#4ea3e0', link: '#2563eb'
+      buttonLoading: '#4ea3e0', link: '#2563eb',
+      heroGradient: { enabled: true, angle: 90, stops: ['#4ea3e0', '#7cc4f2'] },
+      buttonGradient: { enabled: true, angle: 90, stops: ['#2563eb', '#3b82c4'] }
     }
   },
   {
@@ -434,7 +522,9 @@ const PALETTES = [
       textOnBrandMuted: 'rgba(255,255,255,.68)', pageBg: '#ffffff',
       formTitle: '#262626', formSubText: '#8c8c8c', inputBorder: '#e5e5e5',
       inputFocus: '#f59e0b', buttonBg: '#d97706', buttonHover: '#f59e0b',
-      buttonLoading: '#fbbf24', link: '#d97706'
+      buttonLoading: '#fbbf24', link: '#d97706',
+      heroGradient: { enabled: true, angle: 90, stops: ['#fbbf24', '#f59e0b'] },
+      buttonGradient: { enabled: true, angle: 90, stops: ['#d97706', '#f59e0b'] }
     }
   },
   {
@@ -446,7 +536,9 @@ const PALETTES = [
       textOnBrandMuted: 'rgba(255,255,255,.72)', pageBg: '#ffffff',
       formTitle: '#2d1515', formSubText: '#a68484', inputBorder: '#eee3e3',
       inputFocus: '#ef4444', buttonBg: '#c62828', buttonHover: '#dc2626',
-      buttonLoading: '#ef5350', link: '#c62828'
+      buttonLoading: '#ef5350', link: '#c62828',
+      heroGradient: { enabled: true, angle: 90, stops: ['#ef4444', '#f87171'] },
+      buttonGradient: { enabled: true, angle: 90, stops: ['#c62828', '#ef4444'] }
     }
   },
   {
@@ -458,7 +550,9 @@ const PALETTES = [
       textOnBrandMuted: 'rgba(255,255,255,.72)', pageBg: '#ffffff',
       formTitle: '#241a3d', formSubText: '#8a84a6', inputBorder: '#e6e3f0',
       inputFocus: '#8b5cf6', buttonBg: '#6d28d9', buttonHover: '#7c3aed',
-      buttonLoading: '#8b5cf6', link: '#6d28d9'
+      buttonLoading: '#8b5cf6', link: '#6d28d9',
+      heroGradient: { enabled: true, angle: 90, stops: ['#8b5cf6', '#c4b5fd'] },
+      buttonGradient: { enabled: true, angle: 90, stops: ['#6d28d9', '#8b5cf6'] }
     }
   },
   {
@@ -470,7 +564,9 @@ const PALETTES = [
       textOnBrandMuted: 'rgba(255,255,255,.72)', pageBg: '#ffffff',
       formTitle: '#15303a', formSubText: '#7d96a0', inputBorder: '#e0ecef',
       inputFocus: '#06b6d4', buttonBg: '#0e7490', buttonHover: '#0891b2',
-      buttonLoading: '#22b8cf', link: '#0e7490'
+      buttonLoading: '#22b8cf', link: '#0e7490',
+      heroGradient: { enabled: true, angle: 90, stops: ['#22d3ee', '#06b6d4'] },
+      buttonGradient: { enabled: true, angle: 90, stops: ['#0e7490', '#06b6d4'] }
     }
   }
 ]
@@ -497,12 +593,14 @@ const editRoots = computed(() => {
     ? {
         layout: c.mobile.layout,
         logo: c.mobile.brand.logo,
+        clientLogo: c.mobile.brand.logoClient,
         logoSpace: c.mobile.brand.logoSpace,
         background: c.mobile.background
       }
     : {
         layout: c.layout,
         logo: c.brand.logo,
+        clientLogo: c.brand.logoClient,
         logoSpace: c.brand.logoSpace,
         background: c.background
       }
@@ -571,21 +669,22 @@ function appendIcp(key) {
 // 所有编辑动作通过 editRoots 路由到当前设备（浏览器端顶层 / mobile 子树）；
 // 上传通道与文件校验在 LoginLayoutFields 内，此处只处理上传成功后的落库。
 
-// 预览区拖拽 logo → 像素偏移；位移已在 Renderer 内按 previewScale 换算
-function onLogoOffset({ offsetX, offsetY }) {
-  const logo = editRoots.value.logo
+// 预览区拖拽 logo → 像素偏移；位移已在 Renderer 内按 previewScale 换算。
+// target='main' 写版权方 logo（左上），'client' 写客户方 logoClient（右上）
+function onLogoOffset({ offsetX, offsetY }, target = 'main') {
+  const logo = target === 'client' ? editRoots.value.clientLogo : editRoots.value.logo
   logo.offsetX = offsetX
   logo.offsetY = offsetY
 }
 
-function selectBuiltinLogo(value) {
-  const logo = editRoots.value.logo
+function selectBuiltinLogo(value, target = 'main') {
+  const logo = target === 'client' ? editRoots.value.clientLogo : editRoots.value.logo
   logo.type = 'builtin'
   logo.value = value
 }
 // 切换来源时保持 type/value 一致，避免「builtin + 图片路径」的瞬态把路径当组件名渲染
-function onLogoTypeChange(type) {
-  const logo = editRoots.value.logo
+function onLogoTypeChange(type, target = 'main') {
+  const logo = target === 'client' ? editRoots.value.clientLogo : editRoots.value.logo
   logo.type = type
   if (type === 'builtin') {
     if (!BUILTIN_LOGO_VALUES.includes(logo.value)) logo.value = 'shield'
@@ -593,22 +692,22 @@ function onLogoTypeChange(type) {
     logo.value = ''
   }
 }
-function resetLogoBuiltin() {
-  const logo = editRoots.value.logo
+function resetLogoBuiltin(target = 'main') {
+  const logo = target === 'client' ? editRoots.value.clientLogo : editRoots.value.logo
   logo.type = 'builtin'
   logo.value = 'shield'
 }
-function resetLogoGeometry() {
-  const logo = editRoots.value.logo
+function resetLogoGeometry(target = 'main') {
+  const logo = target === 'client' ? editRoots.value.clientLogo : editRoots.value.logo
   logo.offsetX = 0
   logo.offsetY = 0
 }
 
-function onLogoUploaded(res) {
+function onLogoUploaded(res, target = 'main') {
   // 优先取相对路径 fileName；绝对 url 归一化为 /profile/ 相对路径（配置不允许存环境相关地址）
   const rel = normalizeProfileUrl(res && (res.fileName || res.url))
   if (res && res.code === 200 && rel) {
-    const logo = editRoots.value.logo
+    const logo = target === 'client' ? editRoots.value.clientLogo : editRoots.value.logo
     logo.type = 'image'
     logo.value = rel
     proxy.$modal.msgSuccess('Logo 已上传，点击「保存」后正式生效')
@@ -958,6 +1057,20 @@ function measure() {
 }
 .ld-color-input { width: 108px; }
 .ld-stops { margin-bottom: 8px; }
+.ld-grad-block {
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  padding: 10px 12px 4px;
+  margin-bottom: 12px;
+  background: #fafbfc;
+}
+.ld-grad-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.ld-grad-title { font-size: 13px; color: #606266; font-weight: 500; }
 
 /* 预设色板 */
 .ld-presets {

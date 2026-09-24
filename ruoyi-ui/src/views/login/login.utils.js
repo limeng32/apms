@@ -36,8 +36,68 @@ export const BUILTIN_LOGOS = [
 ]
 export const BUILTIN_LOGO_VALUES = BUILTIN_LOGOS.map((l) => l.value)
 
-/** logo 像素调整范围（与后端校验一致） */
+/**
+ * 内置背景库：随包发布的静态资源（ruoyi-ui/public/login/），
+ * 不经过 /profile/ 上传通道；value 为配置中保存的枚举 key。
+ * 与后端 BACKGROUND_BUILTINS 白名单保持一致。
+ */
+export const BUILTIN_BACKGROUNDS = [
+  {
+    value: 'tech',
+    label: '深色科技球场（默认）',
+    // 构建后位于站点根路径 /login/ 下（vite public 目录原样拷贝）
+    image: '/login/login-visual.png',
+    texture: '/login/pitch-lines.svg'
+  }
+]
+export const BUILTIN_BACKGROUND_VALUES = BUILTIN_BACKGROUNDS.map((b) => b.value)
+
+/** 动态装饰特效枚举（与后端 BACKGROUND_EFFECTS 一致） */
+export const BACKGROUND_EFFECTS = [
+  { value: 'none', label: '关闭' },
+  { value: 'particles', label: '粒子漂浮' },
+  { value: 'radar', label: '雷达扫描' },
+  { value: 'all', label: '粒子 + 雷达' }
+]
+
+/** 取内置背景主图地址（非白名单 key 返回空串） */
+export function builtinBgImage(key) {
+  const hit = BUILTIN_BACKGROUNDS.find((b) => b.value === key)
+  return hit ? hit.image : ''
+}
+/** 取内置背景线稿纹理地址（非白名单 key 返回空串） */
+export function builtinBgTexture(key) {
+  const hit = BUILTIN_BACKGROUNDS.find((b) => b.value === key)
+  return hit ? hit.texture : ''
+}
+
+/**
+ * 生成稳定的漂浮粒子数据（只在组件挂载时生成一次并缓存，
+ * 模板仅做 CSS transform/opacity 动画，避免闪烁与重排）。
+ */
+export function createParticles(count = 28) {
+  return Array.from({ length: count }, (_, i) => ({
+    id: i,
+    left: Math.random() * 100,
+    top: Math.random() * 100,
+    size: 2 + Math.random() * 3,
+    delay: -Math.random() * 8,
+    duration: 5 + Math.random() * 6,
+    opacity: 0.25 + Math.random() * 0.45,
+    cyan: Math.random() > 0.3
+  }))
+}
+
+/** 版权方 logo 像素调整范围（与后端校验一致） */
 export const LOGO_LIMITS = { sizeMin: 16, sizeMax: 200, offsetMin: -100, offsetMax: 100 }
+
+/**
+ * 客户方 logo 水平偏移单独放宽：
+ * 它锚定在登录框左缘（右栏 360px 居中列），左/右两侧的可用空间都比
+ * 左栏版权方 logo 大，X 需要更大行程（右栏/全屏舞台内横移）。
+ * Y 行程仍与版权方一致（LOGO_LIMITS.offsetMin/Max）。与后端校验一致。
+ */
+export const CLIENT_LOGO_OFFSET_X_LIMITS = { min: -200, max: 400 }
 
 /**
  * Logo 上下留白范围（与后端校验一致）。
@@ -50,10 +110,12 @@ export function clampLogoSize(v, fallback = 42) {
   if (!Number.isFinite(n)) return fallback
   return Math.min(LOGO_LIMITS.sizeMax, Math.max(LOGO_LIMITS.sizeMin, Math.round(n)))
 }
-export function clampLogoOffset(v) {
+export function clampLogoOffset(v, bounds = null) {
   const n = Number(v)
   if (!Number.isFinite(n)) return 0
-  return Math.min(LOGO_LIMITS.offsetMax, Math.max(LOGO_LIMITS.offsetMin, Math.round(n)))
+  const min = bounds && Number.isFinite(bounds.min) ? bounds.min : LOGO_LIMITS.offsetMin
+  const max = bounds && Number.isFinite(bounds.max) ? bounds.max : LOGO_LIMITS.offsetMax
+  return Math.min(max, Math.max(min, Math.round(n)))
 }
 
 /**
@@ -89,9 +151,9 @@ export function mergeWithDefaults(raw) {
 /**
  * 按设备解析最终配置：
  * - 桌面端：完整配置原样返回（mobile 子树不参与渲染）；
- * - 移动端：以完整配置为底，用 mobile 子树覆盖「布局相关」四类字段
- *   （layout、brand.logo、brand.logoSpace、background），
- *   品牌名/副标题、Hero、表单、版权、主题色、字体、favicon、圆角仍共享。
+ * - 移动端：以完整配置为底，用 mobile 子树覆盖「布局相关」字段
+ *   （layout、brand.logo、brand.logoClient、brand.logoSpace、background），
+ * 品牌名/副标题、Hero、表单、版权、主题色、字体、favicon、圆角仍共享。
  *
  * @param {object} raw 库中/编辑器原始配置
  * @param {boolean} isMobile 当前是否按移动端渲染
@@ -104,6 +166,7 @@ export function resolveDeviceConfig(raw, isMobile) {
     layout: m.layout,
     brand: {
       logo: m.brand && m.brand.logo,
+      logoClient: m.brand && m.brand.logoClient,
       logoSpace: m.brand && m.brand.logoSpace
     },
     background: m.background
@@ -142,17 +205,36 @@ const px = (v, fallback) => {
 /**
  * 配置 → CSS 变量键值对（绑定到 Renderer 根节点）
  */
+/** 把渐变配置 {enabled, angle, stops} 拼成 CSS linear-gradient；未启用/非法时返回 'none' 由样式层回退纯色 */
+function gradientCss(g) {
+  if (!g || !g.enabled) return 'none'
+  const gs = Array.isArray(g.stops) && g.stops.length >= 2 ? g.stops : null
+  if (!gs) return 'none'
+  const a = Number(g.angle)
+  return `linear-gradient(${Number.isFinite(a) ? a : 90}deg, ${gs.join(', ')})`
+}
+
 export function toCssVars(config) {
   const c = mergeWithDefaults(config)
   const colors = c.colors
   const ty = c.typography
   const grad = colors.brandGradient
-  const stops = Array.isArray(grad.stops) && grad.stops.length ? grad.stops : ['#16302a', '#1d3b33', '#27503f']
+  const stops = Array.isArray(grad.stops) && grad.stops.length ? grad.stops : ['#0a1120', '#0f172a', '#111b31']
   const angle = Number(grad.angle) || 150
+
+  const heroGradient = gradientCss(colors.heroGradient)
+  const buttonGradient = gradientCss(colors.buttonGradient)
+  // 按钮渐变辉光：取按钮渐变第一色派生阴影（无法解析时给蓝调兜底）
+  const glowFrom = colors.buttonGradient?.enabled && colors.buttonGradient?.stops?.[0]
+  const btnGlow = hexToRgba(typeof glowFrom === 'string' ? glowFrom : '#2563eb', 0.4)
 
   return {
     '--login-brand-bg': `linear-gradient(${angle}deg, ${stops.join(', ')})`,
     '--login-accent': colors.accent,
+    // 渐变文字/按钮（'none' 时样式层回退纯色 accent / buttonBg）
+    '--login-hero-gradient': heroGradient,
+    '--login-btn-gradient': buttonGradient,
+    '--login-btn-glow': btnGlow,
     // 品牌区装饰光晕（由 accent 派生）
     '--login-glow-1': hexToRgba(colors.accent, 0.18),
     // 第二处光晕在原版中是独立色 #3fa96e@0.12，并非 accent 派生

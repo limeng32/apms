@@ -1,5 +1,12 @@
 <template>
-  <el-form ref="loginRef" :model="modelValue" :rules="loginRules" class="lf-form" size="large">
+  <el-form
+    ref="loginRef"
+    :model="modelValue"
+    :rules="loginRules"
+    class="lf-form"
+    :class="{ 'lf-form-flash': flash }"
+    size="large"
+  >
     <el-form-item prop="username">
       <el-input
         :model-value="modelValue.username"
@@ -63,7 +70,17 @@
         class="lf-submit"
         @click.prevent="emit('submit')"
       >
-        <span v-if="!loading">{{ form.buttonText }}</span>
+        <span v-if="!loading" class="lf-submit-label">
+          {{ form.buttonText }}
+          <!-- demo 同款尾部箭头（lucide arrow-right：24 视图盒 + 2px 圆角线性描边） -->
+          <svg
+            class="lf-submit-arrow" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+          </svg>
+        </span>
         <span v-else>{{ form.loadingText }}</span>
       </el-button>
     </el-form-item>
@@ -88,7 +105,9 @@ const props = defineProps({
   /** 预览模式：全部禁用、不触发任何业务动作 */
   preview: { type: Boolean, default: false },
   /** 登录请求中（按钮 loading 态） */
-  loading: { type: Boolean, default: false }
+  loading: { type: Boolean, default: false },
+  /** 切换演示角色时的 150ms 闪烁（demo 同款过渡；仅 login.vue dev 角色块触发） */
+  flash: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['update:modelValue', 'submit', 'forgot'])
@@ -124,7 +143,16 @@ defineExpose({ validate })
 <style lang='scss' scoped>
 .lf-form {
   margin-top: 30px;
+  /* demo 同款：切换演示角色时账号区 150ms 淡入淡出 */
+  transition: opacity .15s ease;
 }
+.lf-form.lf-form-flash { opacity: .4; }
+.lf-submit-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.lf-submit-arrow { width: 15px; height: 15px; flex: none; }
 
 /* 输入框（数值与改造前一致，颜色走登录页 CSS 变量） */
 :deep(.el-input__wrapper) {
@@ -174,6 +202,7 @@ defineExpose({ validate })
   letter-spacing: 1px;
   background: var(--login-btn-bg);
   border-color: var(--login-btn-bg);
+  transition: filter .15s, background .15s, box-shadow .15s, transform .1s;
   &:hover, &:focus {
     background: var(--login-btn-hover);
     border-color: var(--login-btn-hover);
@@ -181,6 +210,23 @@ defineExpose({ validate })
   &.is-loading {
     background: var(--login-btn-loading);
     border-color: var(--login-btn-loading);
+    opacity: .85;
+  }
+}
+/* 渐变形态：根节点 .btn-gradient-on 由 LoginRenderer 按配置添加（关闭时回退上方纯色三态） */
+.btn-gradient-on .lf-submit {
+  background: var(--login-btn-gradient);
+  border-color: transparent;
+  box-shadow: 0 10px 24px -10px var(--login-btn-glow);
+  &:hover, &:focus {
+    background: var(--login-btn-gradient);
+    border-color: transparent;
+    filter: brightness(1.12);
+  }
+  &:active { transform: scale(.985); }
+  &.is-loading {
+    background: var(--login-btn-gradient);
+    border-color: transparent;
     opacity: .85;
   }
 }

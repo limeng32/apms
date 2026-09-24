@@ -5,17 +5,41 @@
       isFullscreen ? 'login-fullscreen' : (isCentered ? 'login-centered' : 'login-split'),
       {
         'brand-hidden-mobile': !cfg.layout.showBrandOnMobile,
-        'has-bg-image': isFullscreen && bgImage,
-        'force-mobile': device === 'mobile'
+        'force-mobile': device === 'mobile',
+        'anim-on': entranceOn,
+        'hero-gradient-on': heroGradientOn,
+        'btn-gradient-on': buttonGradientOn
       }
     ]"
     :style="cssVars"
   >
     <!-- ============ centered：居中卡片模板（无品牌栏） ============ -->
     <template v-if="isCentered">
+      <LoginTechBackground
+        v-if="hasTechLayer"
+        :src="bgSrc"
+        :texture="bgTexture"
+        :overlay="bgOverlay"
+        :show-radar="showRadar"
+        :show-particles="showParticles"
+        :ken-burns="kenBurns"
+      />
       <div class="lc-stage">
+        <!-- 客户方 Logo：登录框左缘正上方（版权方 logo 在品牌区居中，构成双 logo） -->
+        <div
+          class="lc-logo-corner"
+          data-anim
+          :style="entranceOn ? { animationDelay: '0.1s' } : null"
+        >
+          <LoginLogoSlot
+            v-if="clientLogoEnabled"
+            :logo="clientLogo"
+            :draggable="logoDraggable"
+            @logo-pointerdown="onClientLogoPointerDown"
+          />
+        </div>
         <div class="lc-box">
-          <div class="lc-brand">
+          <div class="lc-brand" data-anim :style="entranceOn ? { animationDelay: '0.1s' } : null">
             <div
               class="brand-logo-slot lc-logo"
               :class="{ 'logo-draggable': logoDraggable }"
@@ -38,7 +62,7 @@
             <div class="lc-sub" v-if="cfg.brand.subTitle">{{ cfg.brand.subTitle }}</div>
           </div>
 
-          <div class="lc-card">
+          <div class="lc-card" data-anim :style="entranceOn ? { animationDelay: '0.3s' } : null">
             <div class="lf-title" v-if="!hideCardHeader">{{ cfg.form.title }}</div>
             <div class="lf-subtitle" v-if="!hideCardHeader">{{ interpolate(cfg.form.subtitle, tplCtx) }}</div>
 
@@ -46,7 +70,7 @@
             <slot name="roles"></slot>
           </div>
 
-          <div class="lc-copyright" v-if="cfg.footer.showCopyright">
+          <div class="lc-copyright" v-if="cfg.footer.showCopyright" data-anim :style="entranceOn ? { animationDelay: '0.5s' } : null">
             <FooterRichText :content="cfg.footer.copyright" :ctx="tplCtx" />
           </div>
         </div>
@@ -55,13 +79,33 @@
 
     <!-- ============ fullscreen：整屏背景图 + 遮罩 + 浮层卡片（M3c） ============ -->
     <template v-else-if="isFullscreen">
-      <!-- 背景图层（cover/center）；遮罩为品牌渐变，透明度由 background.overlay 控制 -->
-      <div v-if="bgImage" class="lf-bg-image" :style="{ backgroundImage: `url('${bgImage}')` }"></div>
-      <div v-if="bgImage" class="lf-bg-overlay" :style="{ opacity: bgOverlay }"></div>
+      <!-- 科技动态背景（内置/上传图 + 遮罩 + 粒子/雷达） -->
+      <LoginTechBackground
+        v-if="hasTechLayer"
+        :src="bgSrc"
+        :texture="bgTexture"
+        :overlay="bgOverlay"
+        :show-radar="showRadar"
+        :show-particles="showParticles"
+        :ken-burns="kenBurns"
+      />
 
       <div class="lc-stage">
+        <!-- 客户方 Logo：登录框左缘正上方（版权方 logo 在品牌区居中，构成双 logo） -->
+        <div
+          class="lc-logo-corner"
+          data-anim
+          :style="entranceOn ? { animationDelay: '0.1s' } : null"
+        >
+          <LoginLogoSlot
+            v-if="clientLogoEnabled"
+            :logo="clientLogo"
+            :draggable="logoDraggable"
+            @logo-pointerdown="onClientLogoPointerDown"
+          />
+        </div>
         <div class="lc-box">
-          <div class="lc-brand">
+          <div class="lc-brand" data-anim :style="entranceOn ? { animationDelay: '0.1s' } : null">
             <div
               class="brand-logo-slot lc-logo"
               :class="{ 'logo-draggable': logoDraggable }"
@@ -84,7 +128,7 @@
             <div class="lc-sub" v-if="cfg.brand.subTitle">{{ cfg.brand.subTitle }}</div>
           </div>
 
-          <div class="lc-card">
+          <div class="lc-card" data-anim :style="entranceOn ? { animationDelay: '0.3s' } : null">
             <div class="lf-title" v-if="!hideCardHeader">{{ cfg.form.title }}</div>
             <div class="lf-subtitle" v-if="!hideCardHeader">{{ interpolate(cfg.form.subtitle, tplCtx) }}</div>
 
@@ -92,7 +136,7 @@
             <slot name="roles"></slot>
           </div>
 
-          <div class="lc-copyright" v-if="cfg.footer.showCopyright">
+          <div class="lc-copyright" v-if="cfg.footer.showCopyright" data-anim :style="entranceOn ? { animationDelay: '0.5s' } : null">
             <FooterRichText :content="cfg.footer.copyright" :ctx="tplCtx" />
           </div>
         </div>
@@ -101,9 +145,18 @@
 
     <!-- ============ split：左右双栏模板（默认） ============ -->
     <template v-else>
-    <!-- 左侧品牌区 -->
+    <!-- 左侧品牌区：科技动态背景（主图/遮罩/线稿/雷达/粒子） -->
     <aside class="login-brand">
-      <div class="lb-head">
+      <LoginTechBackground
+        v-if="hasTechLayer"
+        :src="bgSrc"
+        :texture="bgTexture"
+        :overlay="bgOverlay"
+        :show-radar="showRadar"
+        :show-particles="showParticles"
+        :ken-burns="kenBurns"
+      />
+      <div class="lb-head" data-anim data-anim-delay="0.1s">
         <div
           class="brand-logo-slot"
           :class="{ 'logo-draggable': logoDraggable }"
@@ -133,28 +186,58 @@
 
       <div class="lb-hero" v-if="cfg.hero.visible">
         <h1>
-          <template v-for="(line, idx) in cfg.hero.lines" :key="idx">
-            <span v-if="line.accent" class="accent">{{ line.text }}</span>
-            <template v-else>{{ line.text }}</template>
-            <br v-if="idx < cfg.hero.lines.length - 1" />
-          </template>
+          <span
+            v-for="(line, idx) in heroCharModel"
+            :key="idx"
+            class="hero-line"
+            :class="{ accent: line.accent }"
+          ><span
+            v-for="(ch, ci) in line.chars"
+            :key="ci"
+            class="hero-char"
+            :data-anim="entranceOn ? 'char' : null"
+            :style="entranceOn ? { animationDelay: ch.delay + 's' } : null"
+          >{{ ch.ch === ' ' ? '\u00A0' : ch.ch }}</span></span>
         </h1>
-        <p>{{ cfg.hero.description }}</p>
+        <p data-anim :style="entranceOn ? { animationDelay: descDelay + 's' } : null">{{ cfg.hero.description }}</p>
 
         <div class="lb-features" v-if="cfg.hero.features.visible">
-          <div class="lb-feature" v-for="(f, i) in cfg.hero.features.items" :key="i">
+          <div
+            class="lb-feature"
+            v-for="(f, i) in cfg.hero.features.items"
+            :key="i"
+            data-anim
+            :style="entranceOn ? { animationDelay: (descDelay + 0.15 + i * 0.09) + 's' } : null"
+          >
             <el-icon><component :is="f.icon" /></el-icon>
             <span><b>{{ f.title }}</b><template v-if="f.text"> · {{ f.text }}</template></span>
           </div>
         </div>
       </div>
 
-      <div class="lb-foot"><FooterRichText :content="cfg.footer.brandText" :ctx="tplCtx" /></div>
+      <div
+        class="lb-foot"
+        data-anim
+        :style="entranceOn ? { animationDelay: (descDelay + 0.65) + 's' } : null"
+      ><FooterRichText :content="cfg.footer.brandText" :ctx="tplCtx" /></div>
     </aside>
 
     <!-- 右侧登录表单区（表单与 dev 角色块由 login.vue 通过 slot 注入） -->
     <main class="login-form-side">
-      <div class="login-form-box">
+      <!-- 客户方 Logo：右栏头部左侧，与登录框左缘对齐；与左栏版权方 logo 同处文档流顶部、共用同一顶部留白变量 -->
+      <div
+        class="rs-logo-head"
+        data-anim
+        :style="entranceOn ? { animationDelay: '0.1s' } : null"
+      >
+        <LoginLogoSlot
+          v-if="clientLogoEnabled"
+          :logo="clientLogo"
+          :draggable="logoDraggable"
+          @logo-pointerdown="onClientLogoPointerDown"
+        />
+      </div>
+      <div class="login-form-box" data-anim :style="entranceOn ? { animationDelay: '0.35s' } : null">
         <div class="lf-title" v-if="!hideCardHeader">{{ cfg.form.title }}</div>
         <div class="lf-subtitle" v-if="!hideCardHeader">{{ interpolate(cfg.form.subtitle, tplCtx) }}</div>
 
@@ -175,9 +258,13 @@ import defaultSettings from '@/settings'
 import {
   toCssVars, interpolate, resolveDeviceConfig,
   clampLogoSize, clampLogoOffset, mediaUrl,
+  builtinBgImage, builtinBgTexture,
+  CLIENT_LOGO_OFFSET_X_LIMITS,
   BUILTIN_LOGO_VALUES
 } from './login.utils'
 import FooterRichText from './FooterRichText.vue'
+import LoginTechBackground from './LoginTechBackground.vue'
+import LoginLogoSlot from './LoginLogoSlot.vue'
 
 const props = defineProps({
   config: { type: Object, default: () => ({}) },
@@ -223,15 +310,51 @@ const cssVars = computed(() => toCssVars(cfg.value))
 const isCentered = computed(() => cfg.value.layout.template === 'centered')
 const isFullscreen = computed(() => cfg.value.layout.template === 'fullscreen')
 
-/* ============ fullscreen 背景（M3c） ============ */
-// 背景图仅 /profile/ 站内资源；mediaUrl 对空值返回 ''
-const bgImage = computed(() => mediaUrl(cfg.value.background?.image))
-// 遮罩透明度夹取 0~1（脏数据兜底为默认 0.4）
+/* ============ 科技动态背景（split 品牌区 / centered / fullscreen 共用） ============ */
+// 管理员上传图优先（仅 /profile/ 站内资源）；否则取内置背景（随包静态资源）
+const bgUploaded = computed(() => mediaUrl(cfg.value.background?.image))
+const bgBuiltin = computed(() => builtinBgImage(cfg.value.background?.builtin))
+const bgSrc = computed(() => bgUploaded.value || bgBuiltin.value)
+// 线稿纹理仅随内置背景出现，自定义上传图不叠加线稿
+const bgTexture = computed(() => (bgUploaded.value ? '' : builtinBgTexture(cfg.value.background?.builtin)))
+// 遮罩透明度夹取 0~1（脏数据兜底为默认 0.55）
 const bgOverlay = computed(() => {
   const v = Number(cfg.value.background?.overlay)
-  if (!Number.isFinite(v)) return 0.4
+  if (!Number.isFinite(v)) return 0.55
   return Math.min(1, Math.max(0, v))
 })
+const EFFECTS = ['none', 'particles', 'radar', 'all']
+const bgEffect = computed(() =>
+  EFFECTS.includes(cfg.value.background?.effect) ? cfg.value.background.effect : 'none')
+const showParticles = computed(() => bgEffect.value === 'particles' || bgEffect.value === 'all')
+const showRadar = computed(() => bgEffect.value === 'radar' || bgEffect.value === 'all')
+const kenBurns = computed(() => cfg.value.background?.kenBurns !== false)
+// 无主图但仍有粒子/雷达/线稿时，背景层也要渲染（纯渐变底上的科技氛围）
+const hasTechLayer = computed(() =>
+  !!(bgSrc.value || bgTexture.value || showParticles.value || showRadar.value))
+
+/* ============ 入场动效开关与 Hero 逐字模型 ============ */
+const entranceOn = computed(() => cfg.value.animation?.entrance !== false)
+const heroGradientOn = computed(() => !!cfg.value.colors?.heroGradient?.enabled)
+const buttonGradientOn = computed(() => !!cfg.value.colors?.buttonGradient?.enabled)
+
+// 逐字 stagger：每条 Hero 行展开为字符数组，全局累计延迟（与 demo GSAP 时间线观感一致）
+const HERO_CHAR_START = 0.28
+const HERO_CHAR_STEP = 0.06
+const heroCharModel = computed(() => {
+  let order = 0
+  const lines = Array.isArray(cfg.value.hero?.lines) ? cfg.value.hero.lines : []
+  return lines.map((line) => ({
+    accent: !!line.accent,
+    chars: Array.from(String(line.text || '')).map((ch) => ({
+      ch,
+      delay: HERO_CHAR_START + order++ * HERO_CHAR_STEP
+    }))
+  }))
+})
+const totalHeroChars = computed(() => heroCharModel.value.reduce((n, l) => n + l.chars.length, 0))
+// 描述段在全部逐字动画后排入场；特性/版权延迟以此为基准
+const descDelay = computed(() => HERO_CHAR_START + totalHeroChars.value * HERO_CHAR_STEP + 0.12)
 
 const brandName = computed(() => (cfg.value.brand.name || '').trim() || import.meta.env.VITE_APP_TITLE)
 const tplCtx = computed(() => ({
@@ -256,17 +379,33 @@ const logoImageSrc = computed(() => mediaUrl(logo.value.value))
 const builtinName = computed(() =>
   BUILTIN_LOGO_VALUES.includes(logo.value.value) ? logo.value.value : 'shield')
 
+/* ============ 客户方 Logo（双 logo 方案：登录区左上，与登录框左缘对齐，可独立开关/配置） ============ */
+const clientLogo = computed(() => cfg.value.brand.logoClient || {})
+// 启用且可渲染：builtin 始终兜底盾牌；image 必须已有 /profile/ 地址，避免空槽位
+const clientLogoEnabled = computed(() => clientLogo.value.enabled !== false
+  && (clientLogo.value.type !== 'image' || !!mediaUrl(clientLogo.value.value)))
+
+// 客户方 logo 槽拖拽事件由 LoginLogoSlot 转发；target 区分写入哪个配置根
+function onClientLogoPointerDown(e) {
+  onLogoPointerDown(e, 'client')
+}
+
 let dragState = null
-function onLogoPointerDown(e) {
+function onLogoPointerDown(e, target = 'main') {
   if (!props.logoDraggable) return
   // 仅主键触发，避免设计器中右键等操作误拖
   if (e.button !== 0) return
   e.preventDefault()
+  const targetLogo = target === 'client' ? clientLogo.value : logo.value
+  // 客户方 X 行程放宽（-200~400），其余维度均为 ±100
+  const xBounds = target === 'client' ? CLIENT_LOGO_OFFSET_X_LIMITS : null
   dragState = {
+    target,
     startX: e.clientX,
     startY: e.clientY,
-    originX: clampLogoOffset(logo.value.offsetX),
-    originY: clampLogoOffset(logo.value.offsetY)
+    xBounds,
+    originX: clampLogoOffset(targetLogo.offsetX, xBounds),
+    originY: clampLogoOffset(targetLogo.offsetY)
   }
   window.addEventListener('pointermove', onLogoPointerMove)
   window.addEventListener('pointerup', onLogoPointerUp, { once: true })
@@ -275,9 +414,9 @@ function onLogoPointerDown(e) {
 function onLogoPointerMove(e) {
   if (!dragState) return
   const scale = props.previewScale > 0 ? props.previewScale : 1
-  const x = clampLogoOffset(dragState.originX + (e.clientX - dragState.startX) / scale)
+  const x = clampLogoOffset(dragState.originX + (e.clientX - dragState.startX) / scale, dragState.xBounds)
   const y = clampLogoOffset(dragState.originY + (e.clientY - dragState.startY) / scale)
-  emit('logo-offset', { offsetX: x, offsetY: y })
+  emit('logo-offset', { offsetX: x, offsetY: y }, dragState.target)
 }
 function onLogoPointerUp() {
   dragState = null
@@ -319,10 +458,14 @@ function onLogoPointerUp() {
       radial-gradient(circle at 12% 88%, var(--login-glow-2) 0, transparent 42%);
     pointer-events: none;
   }
-  & > * { position: relative; z-index: 1; }
+  /* 仅内容区抬到背景层之上；LoginTechBackground 自身 z-index:0 */
+  > .lb-head, > .lb-hero, > .lb-foot { position: relative; z-index: 1; }
 }
 
-.lb-head { display: flex; align-items: center; gap: 12px; }
+/* 双 logo 方案：左为版权方 logo+品牌名，右为客户方 logo（可在设计器关闭）。
+   顶对齐（flex-start）：左右两栏头部第一个元素都是 logo，顶线严格共线，
+   不再因品牌名文字块高于 logo 而把左 logo 下沉 */
+.lb-head { display: flex; align-items: flex-start; gap: 12px; }
 /* logo 槽位：宽高/位置像素由配置内联控制；transform 偏移不挤压品牌名 */
 .brand-logo-slot {
   flex: none;
@@ -353,9 +496,27 @@ function onLogoPointerUp() {
 
 .lb-hero { padding-bottom: 24px; }
 .lb-hero h1 {
-  font-size: var(--login-hero-size); font-weight: var(--login-hero-weight); line-height: 1.2;
+  font-size: var(--login-hero-size); font-weight: var(--login-hero-weight); line-height: 1.22;
   letter-spacing: 1px; margin: 0;
-  .accent { color: var(--login-accent); }
+}
+/* 每行独立裁切容器，逐字从行内上浮入场（demo GSAP 观感的纯 CSS 实现） */
+.hero-line {
+  display: block;
+  overflow: hidden;
+  padding-bottom: 0.08em;
+}
+.hero-char {
+  display: inline-block;
+  white-space: pre;
+}
+.hero-line.accent .hero-char { color: var(--login-accent); }
+/* 渐变强调文字（设计器可开关/换色）；关闭时回退纯色 accent */
+.hero-gradient-on .hero-line.accent .hero-char {
+  background: var(--login-hero-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
 }
 .lb-hero p {
   margin-top: 14px;
@@ -408,16 +569,33 @@ function onLogoPointerUp() {
 }
 
 /* ============ 右侧登录表单区 ============ */
+/* 与左栏 .login-brand 同机制：flex column 文档流 + 同一顶部留白变量，
+   两个 logo 都锚定各自面板的文档流顶部，屏幕高度变化时相对位置不变且始终顶部对齐 */
 .login-form-side {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px 24px;
+  flex-direction: column;
+  padding: var(--login-logo-top-split) 24px 40px;
   background: var(--login-page-bg);
   height: 100%;
 }
+/* 客户方 Logo 头部行：与登录表单框共享同一条水平基准
+   （同为 max-width 360px 居中列），logo 左对齐 → 其左缘与登录框左缘固定对齐；
+   关闭时为空行（高度 0）不占位 */
+.rs-logo-head {
+  flex: none;
+  align-self: center;
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  justify-content: flex-start;
+}
 
 .login-form-box {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-self: center;
   width: 100%;
   max-width: 360px;
 }
@@ -488,7 +666,15 @@ function onLogoPointerUp() {
   text-align: center;
   margin-bottom: var(--login-logo-bottom-overlay);
 }
-.lc-logo { margin-bottom: 14px; }
+/* 客户方 Logo：居中/全屏模板固定在登录框左缘正上方
+   （.lc-box 宽 400px 居中，左缘即 50%-200px；窄屏不小于 20px 边距）；
+   顶部偏移与 .lc-stage 的 padding-top 同变量，和品牌区主 logo 共用一条顶部基准线 */
+.lc-logo-corner {
+  position: absolute;
+  top: var(--login-logo-top-overlay);
+  left: max(20px, calc(50% - 200px));
+  z-index: 2;
+}
 .lc-name {
   font-size: var(--login-brand-size);
   font-weight: 700;
@@ -542,26 +728,27 @@ function onLogoPointerUp() {
       radial-gradient(circle at 10% 90%, var(--login-glow-2) 0, transparent 42%);
     pointer-events: none;
   }
-  /* 有真实背景图时关闭装饰光晕，避免叠在照片上泛色 */
-  &.has-bg-image::before { display: none; }
+  /* 科技背景层存在时装饰光晕被其覆盖，无需再显隐（组件自带渐变兜底底色） */
 }
-.lf-bg-image {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  background-color: var(--login-brand-bg);
-  background-repeat: no-repeat;
-  background-position: center center;
-  background-size: cover;
+
+/* ============ 入场动效（仅根节点 .anim-on 时生效；延迟由元素内联 animation-delay 控制） ============ */
+@keyframes login-rise {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
-.lf-bg-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  /* 遮罩颜色跟随「主题色」中的品牌渐变；opacity 0=纯图片，1=纯色不可见图 */
-  background: var(--login-brand-bg);
-  transition: opacity .15s ease;
+@keyframes login-char-rise {
+  from { opacity: 0; transform: translateY(28px); }
+  to { opacity: 1; transform: translateY(0); }
 }
+.anim-on [data-anim] {
+  animation: login-rise .6s cubic-bezier(.21, .8, .35, 1) both;
+}
+.anim-on [data-anim="char"] {
+  animation-name: login-char-rise;
+  animation-duration: .55s;
+}
+/* 关闭入场动效时元素默认可见，不残留 transform */
+.login-wrap:not(.anim-on) [data-anim] { opacity: 1; transform: none; }
 
 /* ============ 移动端响应式 ============ */
 @media (max-width: 900px) {
@@ -571,8 +758,9 @@ function onLogoPointerUp() {
   .login-wrap.brand-hidden-mobile .login-brand { display: none; }
   .login-form-side {
     min-height: 100vh;
-    padding: 32px 20px;
+    padding: var(--login-logo-top-split) 20px 32px;
   }
+  .lc-logo-corner { left: 20px; }
 }
 @media (max-width: 480px) {
   .login-form-box { max-width: 100%; }
@@ -587,18 +775,19 @@ function onLogoPointerUp() {
 .login-wrap.force-mobile.brand-hidden-mobile .login-brand { display: none; }
 .login-wrap.force-mobile .login-form-side {
   min-height: 100%;
-  padding: 32px 20px;
+  padding: var(--login-logo-top-split) 20px 32px;
 }
+.login-wrap.force-mobile .lc-logo-corner { left: 20px; }
 .login-wrap.force-mobile .login-form-box { max-width: 100%; }
 .login-wrap.force-mobile .lc-card { padding: 26px 22px 22px; }
 
 /* ============ 暗黑模式 ============ */
 html.dark .login-brand {
-  background: linear-gradient(150deg, #0d1a16 0%, #14241e 55%, #1a3027 100%);
+  background: linear-gradient(150deg, #060b16 0%, #0b1222 55%, #0f172a 100%);
 }
 html.dark .login-centered,
 html.dark .login-fullscreen {
-  background: linear-gradient(150deg, #0d1a16 0%, #14241e 55%, #1a3027 100%);
+  background: linear-gradient(150deg, #060b16 0%, #0b1222 55%, #0f172a 100%);
 }
 html.dark .login-form-side {
   background: var(--el-bg-color);
@@ -608,6 +797,16 @@ html.dark .lc-card {
 }
 html.dark .lf-title { color: var(--el-text-color-primary); }
 html.dark .lf-subtitle { color: var(--el-text-color-secondary); }
+
+/* 系统开启「减弱动态效果」：入场与装饰动画一律停用（元素保持最终可见态） */
+@media (prefers-reduced-motion: reduce) {
+  .anim-on [data-anim],
+  .anim-on [data-anim="char"] {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+  }
+}
 </style>
 
 <!-- 全局样式：非 scoped，确保 html/body/#app 撑满视口，登录页不露白边 -->
@@ -620,6 +819,6 @@ html, body, #app {
 /* 登录路由下给 body 兜底背景色，防止内容超出视口时露出白色 */
 /* 使用 :has 选择器，仅当页面包含 .login-wrap 时生效 */
 body:has(.login-wrap) {
-  background: #1d3b33;
+  background: #0a1120;
 }
 </style>

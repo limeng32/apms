@@ -7,19 +7,33 @@
         v-model="loginForm"
         :config="loginThemeStore.config"
         :loading="loading"
+        :flash="fieldFlash"
         @submit="handleLogin"
         @forgot="handleForgot"
       />
     </template>
 
-    <!-- dev 环境演示角色快捷填充（原版行为：仅填充账号，不直接登录；UAT/生产不显示） -->
+    <!-- dev 环境演示角色快捷填充（demo 同款角色卡：选中描边+对勾+角色色条，仅填充账号；UAT/生产不显示） -->
     <template #roles>
       <div class="lf-roles" v-if="isDev">
-        <div class="lf-roles-title">— 演示角色快捷登录 —</div>
+        <div class="lf-roles-title">— 选择演示角色，自动填充账号 —</div>
         <div class="lf-roles-list">
-          <button v-for="r in roles" :key="r.key" class="lf-role-btn" @click="quickFill(r.key, r.name)">
-            <el-icon class="role-icon"><component :is="r.icon"/></el-icon>
-            {{ r.name }}
+          <button
+            v-for="r in roles"
+            :key="r.key"
+            type="button"
+            class="lf-role-card"
+            :class="{ active: selectedRole === r.key }"
+            :style="{ '--role-color': r.color, '--role-soft': r.color + '1A' }"
+            @click="quickFill(r)"
+          >
+            <span class="role-top">
+              <span class="role-ico"><el-icon><component :is="r.icon"/></el-icon></span>
+              <span v-if="selectedRole === r.key" class="role-check"><el-icon><Check/></el-icon></span>
+              <span v-else class="role-dot"></span>
+            </span>
+            <span class="role-name">{{ r.name }}</span>
+            <span v-if="selectedRole === r.key" class="role-bar"></span>
           </button>
         </div>
       </div>
@@ -30,7 +44,8 @@
 <script setup name="Login">
 import Cookies from "js-cookie"
 import {
-  User, CircleCheck, Check, TrendCharts, Key, Document
+  User, CircleCheck, Check, Key, Document,
+  FirstAidKit, DataAnalysis
 } from '@element-plus/icons-vue'
 import useUserStore from '@/store/modules/user'
 import LoginRenderer from './login/LoginRenderer.vue'
@@ -44,16 +59,21 @@ const route = useRoute()
 const router = useRouter()
 const { proxy } = getCurrentInstance()
 
-// 演示环境角色快捷登录（仅 dev 显示）
+// 演示环境角色快捷登录（仅 dev 显示）；角色色板对齐 demo ROLE_LIST
 const isDev = import.meta.env.DEV
 const roles = [
-  { key: 'admin', name: '管理员', icon: 'Document' },
-  { key: 'coach', name: '体能师', icon: 'User' },
-  { key: 'rehab', name: '康复师', icon: 'CircleCheck' },
-  { key: 'head', name: '主教练', icon: 'Key' },
-  { key: 'doctor', name: '队医', icon: 'TrendCharts' },
-  { key: 'research', name: '科研', icon: 'Check' },
+  { key: 'admin', name: '管理员', icon: 'Document', color: '#2563eb' },
+  { key: 'coach', name: '体能师', icon: 'User', color: '#06b6d4' },
+  { key: 'rehab', name: '康复师', icon: 'CircleCheck', color: '#14b8a6' },
+  { key: 'head', name: '主教练', icon: 'Key', color: '#7c3aed' },
+  { key: 'doctor', name: '队医', icon: 'FirstAidKit', color: '#16a34a' },
+  { key: 'research', name: '科研', icon: 'DataAnalysis', color: '#d97706' },
 ]
+// 当前选中的角色卡（demo 同款选中态）；null=尚未选择
+const selectedRole = ref(null)
+// 切换角色时账号区 150ms 闪烁（demo pickRole 效果）
+const fieldFlash = ref(false)
+let flashTimer = null
 
 const loginFieldsRef = ref(null)
 
@@ -129,10 +149,16 @@ function getCookie() {
   }
 }
 
-function quickFill(role, name) {
-  loginForm.value.username = role
-  loginForm.value.password = role + '123'
-  proxy.$modal.msgSuccess(`已填入演示账号：${name}`)
+function quickFill(r) {
+  // 仅在切换到不同角色时触发闪烁（重复点击当前角色不闪）
+  if (selectedRole.value !== r.key) {
+    fieldFlash.value = true
+    clearTimeout(flashTimer)
+    flashTimer = setTimeout(() => { fieldFlash.value = false }, 150)
+  }
+  selectedRole.value = r.key
+  loginForm.value.username = r.key
+  loginForm.value.password = r.key + '123'
 }
 
 function handleForgot() {
@@ -144,7 +170,7 @@ getCookie()
 </script>
 
 <style lang='scss' scoped>
-/* 演示角色按钮（仅 dev；UAT/生产不渲染） */
+/* 演示角色卡（仅 dev；UAT/生产不渲染）—— demo 同款：图标圆底/右上对勾/底部角色色条 */
 .lf-roles {
   margin-top: 22px;
   border-top: 1px dashed var(--login-border);
@@ -159,28 +185,81 @@ getCookie()
 .lf-roles-list {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  gap: 10px;
 }
-.lf-role-btn {
+.lf-role-card {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 9px 6px;
+  gap: 8px;
+  padding: 11px 12px 13px;
   border: 1px solid var(--login-border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--login-page-bg);
-  font-size: 12px;
-  color: #53655e;
   cursor: pointer;
-  transition: border-color .15s, color .15s;
+  text-align: left;
+  transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
   &:hover {
-    border-color: var(--login-accent);
-    color: var(--login-link);
+    transform: translateY(-2px);
+    border-color: var(--role-color);
+    box-shadow: 0 10px 22px -12px var(--role-color);
   }
-  .role-icon {
-    font-size: 16px;
+  /* 选中：角色色描边（inset 描边避免 1px→2px 布局抖动）+ 辉光 */
+  &.active {
+    border-color: var(--role-color);
+    box-shadow:
+      0 0 0 1px var(--role-color) inset,
+      0 12px 26px -12px var(--role-color);
   }
+}
+.role-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.role-ico {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--role-soft);
+  color: var(--role-color);
+  font-size: 17px;
+}
+.role-dot {
+  margin-top: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--role-color);
+}
+.role-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--role-color);
+  color: #fff;
+  font-size: 12px;
+}
+.role-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--login-text-1);
+  line-height: 1.2;
+}
+.role-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--role-color);
 }
 
 @media (max-width: 480px) {
@@ -188,9 +267,8 @@ getCookie()
 }
 
 /* ============ 暗黑模式（与改造前一致） ============ */
-html.dark .lf-role-btn {
+html.dark .lf-role-card {
   background: var(--el-bg-color-overlay);
   border-color: var(--el-border-color);
-  color: var(--el-text-color-regular);
 }
 </style>

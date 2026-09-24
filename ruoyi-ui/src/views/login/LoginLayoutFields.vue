@@ -20,9 +20,25 @@
       </div>
     </el-form-item>
 
-    <!-- ===== 全屏背景模板专属：背景图 + 遮罩 ===== -->
-    <template v-if="template === 'fullscreen'">
-      <div class="ld-section">全屏背景</div>
+    <!-- ===== 背景（三种模板通用：split 作用于左侧品牌区，centered/fullscreen 作用于整页） ===== -->
+    <div class="ld-section">背景与科技动效</div>
+
+    <el-form-item label="内置背景（随系统发布，可直接使用）">
+      <el-radio-group v-model="bgBuiltin" size="small">
+        <el-radio-button :value="null">不使用</el-radio-button>
+        <el-radio-button
+          v-for="b in BUILTIN_BACKGROUNDS"
+          :key="b.value"
+          :value="b.value"
+        >{{ b.label }}</el-radio-button>
+      </el-radio-group>
+      <div class="ld-builtin-row" v-if="builtinPreview">
+        <el-image :src="builtinPreview" fit="cover" class="ld-bg-preview" />
+        <span class="ld-hint">深色运动科技风：球场大图 + 线稿纹理，搭配粒子/雷达特效</span>
+      </div>
+    </el-form-item>
+
+    <el-form-item label="自定义背景图（设置后优先于内置背景）">
       <div class="ld-upload-row">
         <el-image
           v-if="background.image"
@@ -30,7 +46,7 @@
           fit="cover"
           class="ld-bg-preview"
         />
-        <div v-else class="ld-logo-empty">未设置</div>
+        <div v-else class="ld-logo-empty">未上传</div>
         <el-upload
           name="file"
           :action="uploadAction"
@@ -48,14 +64,31 @@
           @click="emit('clear-bg')"
         >清除</el-button>
       </div>
-      <el-form-item :label="`遮罩浓度：${Math.round(bgOverlay * 100)}%`" style="margin-top:10px">
-        <el-slider v-model="bgOverlay" :min="0" :max="1" :step="0.05" />
-        <div class="ld-hint">
-          遮罩为品牌渐变：数值越大背景图越暗、白色文字对比越强；
-          不上传背景图时整页为纯品牌渐变。建议{{ mobile ? '竖版大图（手机 9:16）' : '横版大图（桌面 16:9）' }}，不超过 5MB
-        </div>
-      </el-form-item>
-    </template>
+      <div class="ld-hint">
+        建议{{ mobile ? '竖版大图（手机 9:16）' : '横版大图（桌面 16:9）' }}，不超过 5MB；
+        自定义图不叠加球场线稿纹理
+      </div>
+    </el-form-item>
+
+    <el-form-item :label="`遮罩浓度：${Math.round(bgOverlay * 100)}%`">
+      <el-slider v-model="bgOverlay" :min="0" :max="1" :step="0.05" />
+      <div class="ld-hint">遮罩为品牌渐变：数值越大背景越暗、白色文字对比越强</div>
+    </el-form-item>
+
+    <el-form-item label="动态装饰特效">
+      <el-radio-group v-model="bgEffect" size="small">
+        <el-radio-button
+          v-for="e in BACKGROUND_EFFECTS"
+          :key="e.value"
+          :value="e.value"
+        >{{ e.label }}</el-radio-button>
+      </el-radio-group>
+      <div class="ld-hint">粒子漂浮 + 雷达扫描为纯 CSS 动效，访客系统开启「减弱动态效果」时自动停用</div>
+    </el-form-item>
+
+    <el-form-item label="背景缓推动效（Ken Burns，缓慢推近/拉远）">
+      <el-switch v-model="kenBurns" />
+    </el-form-item>
 
     <!-- ===== 左右分栏模板专属：分栏比例（桌面端另有窄屏开关） ===== -->
     <template v-if="template === 'split'">
@@ -71,8 +104,8 @@
       </el-form-item>
     </template>
 
-    <!-- ===== 品牌 Logo（通用） ===== -->
-    <div class="ld-section">品牌 Logo</div>
+    <!-- ===== 版权方 Logo（左上，通用） ===== -->
+    <div class="ld-section">版权方 Logo（左上）</div>
 
     <el-form-item label="Logo 来源">
       <el-radio-group
@@ -171,6 +204,118 @@
         />
         <el-slider v-model="logoWidth" :min="LOGO_LIMITS.sizeMin" :max="LOGO_LIMITS.sizeMax" :step="1" />
       </div>
+    </div>
+
+    <!-- ===== 客户方 Logo（登录区左上，与登录框左缘对齐；双 logo 方案，可关闭） ===== -->
+    <div class="ld-section">
+      客户方 Logo（登录区左上）
+      <el-switch v-model="clientEnabled" size="small" style="margin-left:12px" />
+    </div>
+    <template v-if="clientEnabled">
+      <el-form-item label="Logo 来源">
+        <el-radio-group
+          :model-value="clientLogoType"
+          size="small"
+          @update:model-value="(v) => emit('logo-type-change', v, 'client')"
+        >
+          <el-radio-button value="builtin">内置图标</el-radio-button>
+          <el-radio-button value="image">上传图片</el-radio-button>
+        </el-radio-group>
+      </el-form-item>
+
+      <!-- 内置图标库 -->
+      <template v-if="clientLogoType === 'builtin'">
+        <div class="ld-logo-grid">
+          <div
+            v-for="l in BUILTIN_LOGOS"
+            :key="l.value"
+            class="ld-logo-cell"
+            :class="{ active: clientLogo.value === l.value }"
+            :title="l.label"
+            @click="emit('select-builtin', l.value, 'client')"
+          >
+            <svg v-if="l.customSvg" viewBox="0 0 40 46" class="ld-logo-shield">
+              <path d="M20 1.5L37 7v13c0 12-7.5 19-17 24C10.5 39 3 32 3 20V7l17-5.5z"
+                fill="#2c5a4b" stroke="#7fc7ad" stroke-width="1.4"/>
+              <circle cx="20" cy="20" r="8" fill="none" stroke="#d8efe4" stroke-width="1.3"/>
+              <path d="M20 12l4 3-1.5 5h-5L16 15l4-3z" fill="#d8efe4"/>
+              <path d="M14.5 29c1.6-2.2 3.4-3.3 5.5-3.3s3.9 1.1 5.5 3.3" stroke="#d8efe4" stroke-width="1.3" fill="none"/>
+            </svg>
+            <el-icon v-else :size="26"><component :is="l.value" /></el-icon>
+            <span class="ld-logo-name">{{ l.label }}</span>
+          </div>
+        </div>
+      </template>
+
+      <!-- 自定义上传 -->
+      <template v-else>
+        <div class="ld-upload-row">
+          <el-image
+            v-if="clientLogo.value"
+            :src="mediaUrl(clientLogo.value)"
+            fit="contain"
+            class="ld-logo-preview"
+          />
+          <div v-else class="ld-logo-empty">未上传</div>
+          <el-upload
+            name="file"
+            :action="uploadAction"
+            :headers="uploadHeaders"
+            :show-file-list="false"
+            accept="image/jpeg,image/png"
+            :before-upload="beforeLogoUpload"
+            :on-success="(res) => emit('logo-uploaded', res, 'client')"
+          >
+            <el-button size="small" type="primary" plain>上传 Logo（jpg/png）</el-button>
+          </el-upload>
+          <el-button size="small" @click="emit('reset-builtin', 'client')">恢复内置盾牌</el-button>
+        </div>
+        <div class="ld-hint">建议使用透明 PNG；图片经系统统一上传通道，匿名登录页可显示</div>
+      </template>
+
+      <!-- 像素级调整 -->
+      <div class="ld-section">
+        像素级调整
+        <el-button
+          link type="primary" size="small" style="margin-left:8px"
+          @click="emit('reset-geometry', 'client')"
+        >归零</el-button>
+      </div>
+      <div class="ld-hint" style="margin-bottom:10px">
+        也可以直接在预览中按住客户方 logo 拖动；偏移不影响左栏版权方 logo 与文字排版
+      </div>
+      <div class="ld-px-grid">
+        <div class="ld-px-item">
+          <div class="ld-px-label">水平偏移 X：{{ clientOffsetX }}px（{{ CLIENT_X_LIMITS.min }} ~ {{ CLIENT_X_LIMITS.max }}）</div>
+          <el-input-number
+            v-model="clientOffsetX"
+            :min="CLIENT_X_LIMITS.min" :max="CLIENT_X_LIMITS.max" :step="1"
+            size="small" controls-position="right" style="width:130px"
+          />
+          <el-slider v-model="clientOffsetX" :min="CLIENT_X_LIMITS.min" :max="CLIENT_X_LIMITS.max" :step="1" />
+        </div>
+        <div class="ld-px-item">
+          <div class="ld-px-label">垂直偏移 Y：{{ clientOffsetY }}px</div>
+          <el-input-number
+            v-model="clientOffsetY"
+            :min="LOGO_LIMITS.offsetMin" :max="LOGO_LIMITS.offsetMax" :step="1"
+            size="small" controls-position="right" style="width:130px"
+          />
+          <el-slider v-model="clientOffsetY" :min="LOGO_LIMITS.offsetMin" :max="LOGO_LIMITS.offsetMax" :step="1" />
+        </div>
+        <div class="ld-px-item">
+          <div class="ld-px-label">宽度：{{ clientLogoWidth }}px</div>
+          <el-input-number
+            v-model="clientLogoWidth"
+            :min="LOGO_LIMITS.sizeMin" :max="LOGO_LIMITS.sizeMax" :step="1"
+            size="small" controls-position="right" style="width:130px"
+          />
+          <el-slider v-model="clientLogoWidth" :min="LOGO_LIMITS.sizeMin" :max="LOGO_LIMITS.sizeMax" :step="1" />
+        </div>
+      </div>
+    </template>
+    <div class="ld-hint" style="margin-bottom:12px" v-else>
+      关闭后品牌区仅显示左上版权方 Logo（与单 logo 方案外观一致）
     </div>
 
     <!-- Logo 上下留白：仅显示当前模板对应的一组 -->
@@ -277,7 +422,8 @@
  */
 import { getToken } from '@/utils/auth'
 import {
-  BUILTIN_LOGOS, LOGO_LIMITS, LOGO_SPACE_LIMITS, mediaUrl
+  BUILTIN_LOGOS, BUILTIN_BACKGROUNDS, BACKGROUND_EFFECTS,
+  LOGO_LIMITS, LOGO_SPACE_LIMITS, CLIENT_LOGO_OFFSET_X_LIMITS as CLIENT_X_LIMITS, mediaUrl, builtinBgImage
 } from './login.utils'
 
 const props = defineProps({
@@ -285,8 +431,10 @@ const props = defineProps({
   mobile: { type: Boolean, default: false },
   /** 布局根（桌面：template/splitRatio/showBrandOnMobile/cardRadius；移动：template/splitRatio） */
   layout: { type: Object, required: true },
-  /** Logo 根 */
+  /** Logo 根（版权方，左上） */
   logo: { type: Object, required: true },
+  /** 客户方 Logo 根（登录区左上，双 logo 方案；缺省时不渲染编辑区） */
+  clientLogo: { type: Object, default: () => ({}) },
   /** Logo 留白根 */
   logoSpace: { type: Object, required: true },
   /** 背景根 */
@@ -333,11 +481,22 @@ const logoType = bind('logo', 'type')
 const offsetX = bind('logo', 'offsetX')
 const offsetY = bind('logo', 'offsetY')
 const logoWidth = bind('logo', 'width')
+// 客户方 Logo（登录区左上）：写入路由 section=clientLogo，父组件按当前设备落到 brand.logoClient
+const clientEnabled = bind('clientLogo', 'enabled')
+const clientLogoType = bind('clientLogo', 'type')
+const clientOffsetX = bind('clientLogo', 'offsetX')
+const clientOffsetY = bind('clientLogo', 'offsetY')
+const clientLogoWidth = bind('clientLogo', 'width')
 const splitTop = bind2('logoSpace', 'split', 'top')
 const splitBottom = bind2('logoSpace', 'split', 'bottom')
 const overlayTop = bind2('logoSpace', 'overlay', 'top')
 const overlayBottom = bind2('logoSpace', 'overlay', 'bottom')
 const bgOverlay = bind('background', 'overlay')
+const bgBuiltin = bind('background', 'builtin')
+const bgEffect = bind('background', 'effect')
+const kenBurns = bind('background', 'kenBurns')
+// 当前选中内置背景的缩略图地址（非内置 key 时为空，不显示预览）
+const builtinPreview = computed(() => builtinBgImage(props.background.builtin))
 
 // 切换模板（无附加逻辑，单独事件仅为语义清晰；父组件按通用 patch 处理即可）
 function onTemplateChange(v) {
@@ -402,6 +561,12 @@ function beforeFaviconUpload(file) {
 .ld-logo-shield { width: 26px; height: 30px; }
 .ld-logo-preview { width: 64px; height: 64px; border-radius: 6px; border: 1px solid #ebeef5; }
 .ld-bg-preview { width: 96px; height: 60px; border-radius: 6px; border: 1px solid #ebeef5; }
+.ld-builtin-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
 .ld-favicon-preview { width: 40px; height: 40px; border-radius: 6px; border: 1px solid #ebeef5; }
 .ld-logo-empty {
   width: 64px; height: 64px;
