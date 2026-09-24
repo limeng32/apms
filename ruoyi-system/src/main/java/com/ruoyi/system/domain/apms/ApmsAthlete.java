@@ -1,6 +1,8 @@
 package com.ruoyi.system.domain.apms;
 
+import java.math.BigDecimal;
 import java.util.Date;
+import java.util.List;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.ruoyi.common.core.domain.BaseEntity;
 
@@ -59,6 +61,21 @@ public class ApmsAthlete extends BaseEntity {
     /** 年龄（计算字段，非数据库字段） */
     private Integer age;
 
+    /** 当前 RTP 状态（关联 apms_rtp_status：g/y/r；无记录=未评估，null） */
+    private String rtpStatus;
+
+    /** 最近一次体态测量-身高 cm（关联查询，非数据库字段） */
+    private BigDecimal height;
+
+    /** 最近一次体态测量-体重 kg（关联查询，非数据库字段） */
+    private BigDecimal weight;
+
+    /** 最近一次体态测量-体脂率 %（关联查询，非数据库字段） */
+    private BigDecimal bodyFatRate;
+
+    /** 年龄组筛选（U13~U18 去掉 U 的整数列表，如 [13,15]；仅查询入参） */
+    private List<Integer> ageGroups;
+
     public Long getAthleteId() { return athleteId; }
     public void setAthleteId(Long athleteId) { this.athleteId = athleteId; }
     public Long getUserId() { return userId; }
@@ -89,4 +106,14 @@ public class ApmsAthlete extends BaseEntity {
     public void setTeamName(String teamName) { this.teamName = teamName; }
     public Integer getAge() { return age; }
     public void setAge(Integer age) { this.age = age; }
+    public String getRtpStatus() { return rtpStatus; }
+    public void setRtpStatus(String rtpStatus) { this.rtpStatus = rtpStatus; }
+    public BigDecimal getHeight() { return height; }
+    public void setHeight(BigDecimal height) { this.height = height; }
+    public BigDecimal getWeight() { return weight; }
+    public void setWeight(BigDecimal weight) { this.weight = weight; }
+    public BigDecimal getBodyFatRate() { return bodyFatRate; }
+    public void setBodyFatRate(BigDecimal bodyFatRate) { this.bodyFatRate = bodyFatRate; }
+    public List<Integer> getAgeGroups() { return ageGroups; }
+    public void setAgeGroups(List<Integer> ageGroups) { this.ageGroups = ageGroups; }
 }

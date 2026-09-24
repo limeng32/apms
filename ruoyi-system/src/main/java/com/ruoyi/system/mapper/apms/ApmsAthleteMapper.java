@@ -16,6 +16,9 @@ public interface ApmsAthleteMapper {
     /** 列表查询（带 DataScope） */
     List<ApmsAthlete> selectApmsAthleteList(ApmsAthlete apmsAthlete);
 
+    /** RTP 状态人数汇总（g/y/r/未评估，过滤条件与列表一致） */
+    List<java.util.Map<String, Object>> selectRtpSummary(ApmsAthlete apmsAthlete);
+
     /** 新增 */
     int insertApmsAthlete(ApmsAthlete apmsAthlete);
 

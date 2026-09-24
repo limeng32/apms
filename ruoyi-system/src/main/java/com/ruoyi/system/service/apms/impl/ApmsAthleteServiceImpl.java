@@ -30,6 +30,11 @@ public class ApmsAthleteServiceImpl implements IApmsAthleteService {
     }
 
     @Override
+    public List<java.util.Map<String, Object>> selectRtpSummary(ApmsAthlete apmsAthlete) {
+        return athleteMapper.selectRtpSummary(apmsAthlete);
+    }
+
+    @Override
     public int insertApmsAthlete(ApmsAthlete apmsAthlete) {
         // 校验球衣号码同队唯一
         if (!checkJerseyNoUnique(apmsAthlete)) {

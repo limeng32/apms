@@ -9,6 +9,15 @@ export function listAthlete(query) {
   })
 }
 
+// RTP 状态人数汇总（花名册筛选条 chip 计数）
+export function rtpSummaryAthlete(query) {
+  return request({
+    url: '/apms/athlete/rtpSummary',
+    method: 'get',
+    params: query
+  })
+}
+
 // 查询队员档案详情
 export function getAthlete(athleteId) {
   return request({

@@ -22,6 +22,10 @@
         <result property="updateTime"     column="update_time"/>
         <result property="teamName"      column="team_name"/>
         <result property="age"           column="age"/>
+        <result property="rtpStatus"     column="rtp_status"/>
+        <result property="height"        column="height"/>
+        <result property="weight"        column="weight"/>
+        <result property="bodyFatRate"   column="body_fat_rate"/>
     </resultMap>
 
     <sql id="selectApmsAthleteVo">
@@ -34,9 +38,53 @@
             CASE
                 WHEN a.birthday IS NULL THEN NULL
                 ELSE TIMESTAMPDIFF(YEAR, a.birthday, CURDATE())
-            END AS age
+            END AS age,
+            r.status AS rtp_status,
+            bm.height, bm.weight, bm.body_fat_rate
         FROM apms_athlete a
         LEFT JOIN sys_dept d ON a.primary_team_id = d.dept_id
+        <!-- 当前 RTP 状态（一运动员一记录；无记录=未评估） -->
+        LEFT JOIN apms_rtp_status r ON r.athlete_id = a.athlete_id
+        <!-- 最近一次体态测量（按测量日期、id 倒序取首条） -->
+        LEFT JOIN apms_body_measure bm ON bm.id = (
+            SELECT m.id FROM apms_body_measure m
+            WHERE m.athlete_id = a.athlete_id
+            ORDER BY m.measure_date DESC, m.id DESC
+            LIMIT 1
+        )
+    </sql>
+
+    <!-- 花名册列表/汇总共用过滤条件（别名 a 必须存在，DataScope 也挂在 a 上） -->
+    <sql id="rosterFilters">
+        a.status != '2'  <!-- 排除已退役 -->
+        <if test="name != null and name != ''">
+            AND a.name LIKE CONCAT('%', #{name}, '%')
+        </if>
+        <if test="gender != null and gender != ''">
+            AND a.gender = #{gender}
+        </if>
+        <if test="primaryTeamId != null">
+            AND a.primary_team_id = #{primaryTeamId}
+        </if>
+        <if test="jerseyNo != null and jerseyNo != ''">
+            AND a.jersey_no = #{jerseyNo}
+        </if>
+        <if test="position != null and position != ''">
+            AND a.position = #{position}
+        </if>
+        <if test="status != null and status != ''">
+            AND a.status = #{status}
+        </if>
+        <if test="rtpStatus != null and rtpStatus != ''">
+            AND r.status = #{rtpStatus}
+        </if>
+        <!-- 年龄组：U13~U18，前端按 age+1 推导，入参为去 U 后的整数列表 -->
+        <if test="ageGroups != null and ageGroups.size() > 0">
+            AND LEAST(18, GREATEST(13, TIMESTAMPDIFF(YEAR, a.birthday, CURDATE()) + 1)) IN
+            <foreach collection="ageGroups" item="g" open="(" separator="," close=")">
+                #{g}
+            </foreach>
+        </if>
     </sql>
 
     <!-- 根据ID查询 -->
@@ -49,27 +97,21 @@
     <select id="selectApmsAthleteList" parameterType="com.ruoyi.system.domain.apms.ApmsAthlete" resultMap="ApmsAthleteResult">
         <include refid="selectApmsAthleteVo"/>
         <where>
-            a.status != '2'  <!-- 排除已退役 -->
-            <if test="name != null and name != ''">
-                AND a.name LIKE CONCAT('%', #{name}, '%')
-            </if>
-            <if test="gender != null and gender != ''">
-                AND a.gender = #{gender}
-            </if>
-            <if test="primaryTeamId != null">
-                AND a.primary_team_id = #{primaryTeamId}
-            </if>
-            <if test="jerseyNo != null and jerseyNo != ''">
-                AND a.jersey_no = #{jerseyNo}
-            </if>
-            <if test="position != null and position != ''">
-                AND a.position = #{position}
-            </if>
-            <if test="status != null and status != ''">
-                AND a.status = #{status}
-            </if>
+            <include refid="rosterFilters"/>
         </where>
         ORDER BY a.primary_team_id ASC, a.jersey_no ASC
+    </select>
+
+    <!-- RTP 人数汇总（与列表同一套过滤；未评估运动员 status 为 NULL） -->
+    <select id="selectRtpSummary" parameterType="com.ruoyi.system.domain.apms.ApmsAthlete" resultType="java.util.Map">
+        SELECT r.status AS status, COUNT(1) AS cnt
+        FROM apms_athlete a
+        LEFT JOIN apms_rtp_status r ON r.athlete_id = a.athlete_id
+        LEFT JOIN sys_dept d ON a.primary_team_id = d.dept_id
+        <where>
+            <include refid="rosterFilters"/>
+        </where>
+        GROUP BY r.status
     </select>
 
     <!-- 新增 -->

@@ -43,6 +43,16 @@ public class ApmsAthleteController extends BaseController {
     }
 
     /**
+     * RTP 状态人数汇总（花名册筛选条 chip 计数；过滤条件、数据权限与列表一致）
+     */
+    @PreAuthorize("@ss.hasPermi('apms:athlete:list')")
+    @DataScope(deptAlias = "a", deptField = "primary_team_id")
+    @GetMapping("/rtpSummary")
+    public AjaxResult rtpSummary(ApmsAthlete apmsAthlete) {
+        return success(athleteService.selectRtpSummary(apmsAthlete));
+    }
+
+    /**
      * 详情
      */
     @PreAuthorize("@ss.hasPermi('apms:athlete:query')")

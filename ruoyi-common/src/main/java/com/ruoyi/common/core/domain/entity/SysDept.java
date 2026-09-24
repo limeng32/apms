@@ -46,6 +46,9 @@ public class SysDept extends BaseEntity
     /** 部门状态:0正常,1停用 */
     private String status;
 
+    /** 部门类型（20=队伍，30/40/50=训练/科研/力量小组，APMS 扩展） */
+    private String deptType;
+
     /** 删除标志（0代表存在 2代表删除） */
     private String delFlag;
 
@@ -149,6 +152,16 @@ public class SysDept extends BaseEntity
     public void setStatus(String status)
     {
         this.status = status;
+    }
+
+    public String getDeptType()
+    {
+        return deptType;
+    }
+
+    public void setDeptType(String deptType)
+    {
+        this.deptType = deptType;
     }
 
     public String getDelFlag()
