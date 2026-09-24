@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240" width="320" height="240">
+  <g fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <!-- folder -->
+    <path d="M60 150 V96 a8 8 0 0 1 8-8 h40 l10 12 h82 a8 8 0 0 1 8 8 v42 a8 8 0 0 1-8 8 H68 a8 8 0 0 1-8-8 Z"/>
+    <path d="M60 118 h148"/>
+    <!-- papers inside -->
+    <path d="M84 96 l6-14 h52" stroke-opacity="0.55"/>
+    <path d="M150 88 h30" stroke-opacity="0.55"/>
+    <!-- magnifying glass -->
+    <circle cx="222" cy="96" r="30"/>
+    <line x1="244" y1="118" x2="266" y2="140"/>
+    <path d="M212 92 a12 12 0 0 1 12-8" stroke-opacity="0.6"/>
+    <!-- dashed search marks -->
+    <path d="M96 132 h24 M132 132 h10" stroke-opacity="0.5" stroke-dasharray="1 6"/>
+  </g>
+</svg>
