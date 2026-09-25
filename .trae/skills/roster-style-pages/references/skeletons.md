@@ -1,6 +1,6 @@
 # 可复用代码骨架（速查）
 
-以下为字段无关骨架，实际改造时**优先从标杆范例直接复制改名**（role/index.vue、user/index.vue、dept/index.vue）。
+以下为字段无关骨架，实际改造时**优先从标杆范例直接复制改名**（role/index.vue、user/index.vue、dept/index.vue、athlete/detail.vue）。
 
 ## 1. 头像哈希 + 展示辅助
 
@@ -159,7 +159,61 @@ function resetQuery() {
 }
 ```
 
-## 9. right-toolbar 收敛为 32px 描边钮
+## 9b. 详情页壳层结构（athlete/detail 模式）
+
+class 全部已在 roster-kit.scss「详情壳层」段定义，直接使用；结构速查：
+
+```html
+<div class="app-container">
+  <div class="rk-detail-page">
+    <div class="rk-crumb"><a @click="goBack">花名册</a><span>/</span><span>姓名</span></div>
+
+    <section class="rk-profile">
+      <div class="rk-profile-avatar" :style="{background: groupColor}">张</div>
+      <div class="rk-profile-main">
+        <div class="rk-profile-name-row">
+          <h2 class="rk-profile-name">姓名</h2>
+          <span class="rk-status-badge is-tone-green"><i></i>正常参训</span>
+          <span class="rk-soft-chip">男</span>
+        </div>
+        <div class="rk-profile-meta">队伍 · 编号 #1001 · 球衣 10 · 17 岁 · 出生 …</div>
+        <div class="rk-profile-meta-sub">预测 PHV … · 成熟度偏移 … · 评估日 …</div>
+      </div>
+      <div class="rk-profile-side">
+        <div class="rk-mini-stats">
+          <div class="rk-mini-stat"><span class="rk-mini-stat-label">身高</span>
+            <span class="rk-mini-stat-value">175.2<em class="rk-mini-stat-unit">cm</em></span></div>
+          <!-- x4 -->
+        </div>
+        <div class="rk-profile-actions"><button class="rk-btn">返回</button><button class="rk-btn rk-btn-primary">+ 新增测量</button></div>
+      </div>
+    </section>
+
+    <div class="rk-banner is-tone-red">不建议参训 …</div><!-- 仅预警态 -->
+
+    <nav class="rk-tabs">
+      <button class="rk-tab" :class="{ 'is-active': tab==='a' }" @click="tab='a'">小组归属</button>
+      <!-- … -->
+    </nav>
+
+    <div class="rk-tab-panel" v-show="tab==='a'">
+      <div class="rk-toolbar"><button class="rk-btn rk-btn-primary rk-btn-sm">+ 加入</button></div>
+      <div class="rk-card">
+        <div class="rk-card-head"><div class="rk-card-head-main"><h3 class="rk-card-title">标题</h3>
+          <span class="rk-card-sub">共 N 条</span></div><div class="rk-card-actions"></div></div>
+        <div class="rk-card-body flush">
+          <div class="rk-table-scroll"><table class="rk-table">…</table></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- 原 el-dialog 全部保留 -->
+</div>
+```
+
+要点：`.rk-desc-grid` 是 4 列描述网格（≤1200→2 列、≤900→1 列）；`.rk-rtp-panel` 左侧 4px 状态条 + `tone-green/amber/red/gray`；徽章统一 `rk-status-badge is-tone-*`；表格仍包 `rk-table-scroll` 防溢出。
+
+## 10. right-toolbar 收敛为 32px 描边钮
 
 ```scss
 .xx-col-toolbar { margin-right: 2px; }

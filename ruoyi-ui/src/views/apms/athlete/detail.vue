@@ -1,274 +1,354 @@
 <template>
-  <div class="app-container" v-loading="loading">
-    <!-- 顶部：基本信息卡片 -->
-    <div class="athlete-header">
-      <div class="header-left">
-        <el-avatar :size="80" :style="{ backgroundColor: headerBg }" class="avatar">
-          {{ athlete.name ? athlete.name.charAt(0) : '?' }}
-        </el-avatar>
-        <div class="header-info">
-          <div class="name-row">
-            <span class="name">{{ athlete.name || '-' }}</span>
-            <el-tag v-if="athlete.gender === 'M'" type="primary" effect="plain">男</el-tag>
-            <el-tag v-else-if="athlete.gender === 'F'" type="danger" effect="plain">女</el-tag>
-            <el-tag v-if="athlete.position" type="info" effect="plain">{{ positionLabel(athlete.position) }}</el-tag>
-            <el-tag :type="statusTagType(athlete.status)" effect="plain">{{ statusLabel(athlete.status) }}</el-tag>
-          </div>
-          <div class="meta-row">
-            <span><strong>队伍</strong>{{ athlete.teamName || '-' }}</span>
-            <span><strong>球衣号</strong>{{ athlete.jerseyNo || '-' }}</span>
-            <span><strong>年龄</strong>{{ athlete.age ?? '-' }} 岁</span>
-            <span><strong>生日</strong>{{ athlete.birthday || '-' }}</span>
-            <span><strong>电话</strong>{{ athlete.phone || '-' }}</span>
-            <span v-if="athlete.predictedAdultHeight != null" class="khair-row">
-              <strong>预测成年身高</strong>
-              <span class="khair-val">{{ Number(athlete.predictedAdultHeight).toFixed(1) }} cm</span>
-              <span class="khair-sub">Khamis-Roche</span>
-              <span v-if="athlete.adultHeightCalcDate" class="khair-date">· {{ athlete.adultHeightCalcDate }}</span>
+  <div class="app-container rk-detail-page" v-loading="loading">
+    <!-- 返回面包屑 -->
+    <div class="rk-crumb">
+      <button class="rk-crumb-link" @click="goBack"><el-icon><ArrowLeft/></el-icon>花名册</button>
+      <span>/</span>
+      <span class="rk-crumb-current">{{ athlete.name || '运动员档案' }}</span>
+    </div>
+
+    <!-- ===== ProfileHeader 通栏卡 ===== -->
+    <div class="rk-profile">
+      <span class="rk-profile-avatar" :style="{ background: avatarBg }">{{ nameChar }}</span>
+      <div class="rk-profile-main">
+        <div class="rk-profile-name-row">
+          <span class="rk-profile-name">{{ athlete.name || '-' }}</span>
+          <span class="rk-status-badge" :class="'tone-' + rtpTone">
+            <span v-if="rtpTone === 'red'" class="rk-status-dot-wrap">
+              <span class="rk-status-ping"></span><span class="rk-status-dot"></span>
             </span>
-          </div>
+            <span v-else class="rk-status-dot"></span>
+            {{ rtpStatus ? rtpLabel(rtpStatus.status) : '未评估' }}
+          </span>
+          <span class="rk-status-badge" :class="'tone-' + athleteStatusTone">{{ statusLabel(athlete.status) }}</span>
+          <span class="rk-soft-chip">{{ genderLabel }}</span>
+          <span v-if="athlete.position" class="rk-soft-chip">{{ positionLabel(athlete.position) }}</span>
+        </div>
+        <div class="rk-profile-meta">
+          <span>{{ athlete.teamName || '未分配队伍' }}</span>
+          <span>编号 <span class="rk-mono">#{{ athlete.athleteId || athleteId }}</span></span>
+          <span v-if="athlete.jerseyNo">球衣 {{ athlete.jerseyNo }}</span>
+          <span v-if="athlete.age != null">{{ athlete.age }} 岁</span>
+          <span v-if="athlete.birthday">出生 {{ athlete.birthday }}</span>
+          <span v-if="athlete.phone">电话 {{ athlete.phone }}</span>
+          <span v-if="latestPhv" class="rk-profile-meta-sub">
+            预测 PHV <span class="rk-mono">{{ Number(latestPhv.predictedPhvAge).toFixed(2) }}</span> 岁
+            · 成熟度偏移 <span class="rk-mono" :class="offsetClass(latestPhv.maturityOffset)">{{ fmtOffset(latestPhv.maturityOffset) }}</span> 岁
+            · {{ latestPhv.measureDate }} 评估
+          </span>
         </div>
       </div>
-      <div class="header-right">
-        <el-button @click="goBack" icon="Back">返回列表</el-button>
+      <div class="rk-profile-side">
+        <div class="rk-mini-stats">
+          <div class="rk-mini-stat">
+            <span class="rk-mini-stat-label">身高</span>
+            <span class="rk-mini-stat-value">{{ latestBody.height != null ? latestBody.height : '—' }}<span class="rk-mini-stat-unit">cm</span></span>
+          </div>
+          <div class="rk-mini-stat">
+            <span class="rk-mini-stat-label">体重</span>
+            <span class="rk-mini-stat-value">{{ latestBody.weight != null ? latestBody.weight : '—' }}<span class="rk-mini-stat-unit">kg</span></span>
+          </div>
+          <div class="rk-mini-stat">
+            <span class="rk-mini-stat-label">体脂</span>
+            <span class="rk-mini-stat-value">{{ latestBody.bodyFatRate != null ? latestBody.bodyFatRate : '—' }}<span class="rk-mini-stat-unit">%</span></span>
+          </div>
+          <div class="rk-mini-stat">
+            <span class="rk-mini-stat-label">预测成年身高</span>
+            <span class="rk-mini-stat-value">{{ athlete.predictedAdultHeight != null ? Number(athlete.predictedAdultHeight).toFixed(1) : '—' }}<span class="rk-mini-stat-unit">cm</span></span>
+          </div>
+        </div>
+        <div class="rk-profile-actions">
+          <button class="rk-btn" @click="goBack"><el-icon><ArrowLeft/></el-icon>返回列表</button>
+          <button class="rk-btn rk-btn-primary" @click="openBodyMeasureDialog" v-hasPermi="['apms:athlete:edit']">
+            <el-icon><Plus/></el-icon>新增测量
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- 统计卡片区 -->
-    <el-row :gutter="12" class="stat-cards">
-      <el-col :span="6">
-        <div class="stat-card">
-          <div class="stat-num">{{ groupHistory.length }}</div>
-          <div class="stat-label">小组归属次数</div>
-        </div>
-      </el-col>
-      <el-col :span="6">
-        <div class="stat-card">
-          <div class="stat-num">{{ bodyMeasures.length }}</div>
-          <div class="stat-label">体态测量记录</div>
-        </div>
-      </el-col>
-      <el-col :span="6">
-        <div class="stat-card">
-          <div class="stat-num">
-            <el-tag v-if="rtpStatus" :type="rtpTagType(rtpStatus.status)" effect="dark" class="rtp-tag">
-              {{ rtpLabel(rtpStatus.status) }}
-            </el-tag>
-            <span v-else class="rtp-na">未评估</span>
+    <!-- RTP 黄/红预警横幅 -->
+    <div v-if="rtpBanner" class="rk-banner" :class="'tone-' + rtpBanner.tone">
+      <span class="rk-banner-title">{{ rtpBanner.label }}</span>
+      <span v-if="rtpStatus.reason" class="rk-banner-item">原因：{{ rtpStatus.reason }}</span>
+      <span v-if="rtpStatus.trainingLimit" class="rk-banner-item">训练限制：{{ rtpStatus.trainingLimit }}</span>
+      <span v-if="rtpStatus.nextReviewDate" class="rk-banner-item">下次复核 <span class="rk-mono">{{ rtpStatus.nextReviewDate }}</span></span>
+    </div>
+
+    <!-- ===== Tab 栏 ===== -->
+    <div class="rk-tabs">
+      <button
+        v-for="t in tabs"
+        :key="t.key"
+        class="rk-tab"
+        :class="{ 'is-active': activeTab === t.key }"
+        @click="activeTab = t.key"
+      >{{ t.label }}</button>
+    </div>
+
+    <!-- ===== Tab 1: 小组归属 ===== -->
+    <div v-show="activeTab === 'group'" class="rk-tab-panel">
+      <div class="rk-toolbar">
+        <button class="rk-btn rk-btn-primary rk-btn-sm" @click="showJoinDialog = true" v-hasPermi="['apms:athlete:edit']">
+          <el-icon><Plus/></el-icon>加入新小组
+        </button>
+        <button v-if="currentGroup" class="rk-btn rk-btn-danger rk-btn-sm" @click="handleLeave" v-hasPermi="['apms:athlete:edit']">
+          <el-icon><Minus/></el-icon>离开当前小组
+        </button>
+      </div>
+      <div class="rk-card">
+        <div class="rk-table-scroll">
+          <table class="rk-table">
+            <thead>
+              <tr>
+                <th>小组</th><th>类型</th><th>加入日期</th><th>离开日期</th><th>状态</th><th>操作人</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, i) in groupHistory" :key="i" class="rk-row" :class="{ 'is-zebra': i % 2 === 1 }">
+                <td class="ad-cell-strong">{{ row.deptName || '—' }}</td>
+                <td><span class="dt-chip" :class="groupTypeCls(row.deptTypeName)">{{ row.deptTypeName || '—' }}</span></td>
+                <td class="rk-mono">{{ row.joinDate || '—' }}</td>
+                <td>
+                  <span v-if="row.leaveDate" class="rk-mono">{{ row.leaveDate }}</span>
+                  <span v-else class="rk-status-badge tone-green">当前在组</span>
+                </td>
+                <td>
+                  <span class="rk-status-badge" :class="row.status === '0' ? 'tone-green' : 'tone-gray'">
+                    {{ row.status === '0' ? '在组' : '已离组' }}
+                  </span>
+                </td>
+                <td class="rk-text-3">{{ row.createBy || '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-if="groupHistory.length === 0" class="rk-empty">
+            <p class="rk-empty-title">暂无小组归属记录</p>
+            <p class="rk-empty-desc">该运动员尚未加入任何训练或科研小组</p>
           </div>
-          <div class="stat-label">RTP 参训状态</div>
         </div>
-      </el-col>
-      <el-col :span="6">
-        <div class="stat-card" :class="{ 'stat-card-highlight': athlete.predictedAdultHeight != null }">
-          <div class="stat-num">
-            <template v-if="athlete.predictedAdultHeight != null">
-              <span class="khair-stat">{{ Number(athlete.predictedAdultHeight).toFixed(1) }}</span>
-              <span class="khair-unit">cm</span>
-            </template>
-            <span v-else class="stat-na">未计算</span>
+      </div>
+    </div>
+
+    <!-- ===== Tab 2: 体态测量 ===== -->
+    <div v-show="activeTab === 'body'" class="rk-tab-panel">
+      <div class="rk-toolbar">
+        <button class="rk-btn rk-btn-primary rk-btn-sm" @click="openBodyMeasureDialog" v-hasPermi="['apms:athlete:edit']">
+          <el-icon><Plus/></el-icon>新增测量
+        </button>
+        <button class="rk-btn rk-btn-sm" @click="showTrend = !showTrend">
+          <el-icon><DataLine/></el-icon>{{ showTrend ? '隐藏趋势' : '查看身高/体重趋势' }}
+        </button>
+      </div>
+
+      <!-- 近 6 次趋势 -->
+      <div v-if="showTrend && bodyMeasures.length >= 2" class="rk-card">
+        <div class="rk-card-head">
+          <span class="rk-card-title">近 6 次变化趋势</span>
+          <span class="rk-card-sub">按测量日期倒序</span>
+        </div>
+        <div class="rk-card-body flush">
+          <div class="rk-table-scroll">
+            <table class="rk-table">
+              <thead>
+                <tr><th>日期</th><th class="text-right">身高(cm)</th><th class="text-right">坐高(cm)</th><th class="text-right">体重(kg)</th><th class="text-right">腿长(cm)</th><th class="text-right">体脂率(%)</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(m, i) in bodyMeasures.slice(0, 6)" :key="m.id" class="rk-row" :class="{ 'is-zebra': i % 2 === 1 }">
+                  <td class="rk-mono">{{ m.measureDate }}</td>
+                  <td class="text-right rk-mono">{{ num(m.height) }}</td>
+                  <td class="text-right rk-mono">{{ num(m.sitHeight) }}</td>
+                  <td class="text-right rk-mono">{{ num(m.weight) }}</td>
+                  <td class="text-right rk-mono">{{ fmtLeg(m, 1) }}</td>
+                  <td class="text-right rk-mono">{{ num(m.bodyFatRate) }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-          <div class="stat-label">成年身高预测 (Khamis-Roche)</div>
         </div>
-      </el-col>
-    </el-row>
+      </div>
 
-    <!-- Tab 区域 -->
-    <el-tabs v-model="activeTab" class="detail-tabs">
-      <!-- Tab 1: 小组归属 -->
-      <el-tab-pane label="小组归属" name="group">
-        <div class="tab-toolbar">
-          <el-button type="primary" size="small" icon="Plus" @click="showJoinDialog = true" v-hasPermi="['apms:athlete:edit']">加入新小组</el-button>
-          <el-button v-if="currentGroup" type="danger" size="small" icon="Minus" @click="handleLeave" v-hasPermi="['apms:athlete:edit']">离开当前小组</el-button>
+      <!-- 完整列表 -->
+      <div class="rk-card" :class="{ 'ad-card-gap': showTrend && bodyMeasures.length >= 2 }">
+        <div class="rk-table-scroll">
+          <table class="rk-table">
+            <thead>
+              <tr>
+                <th>日期</th><th class="text-right">身高(cm)</th><th class="text-right">坐高(cm)</th><th class="text-right">体重(kg)</th>
+                <th class="text-right">腿长(cm)</th><th class="text-right">体脂率(%)</th><th class="text-right">腰围(cm)</th>
+                <th>来源</th><th class="text-center">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, i) in bodyMeasures" :key="row.id" class="rk-row" :class="{ 'is-zebra': i % 2 === 1 }">
+                <td class="rk-mono">{{ row.measureDate }}</td>
+                <td class="text-right rk-mono">{{ num(row.height) }}</td>
+                <td class="text-right rk-mono">{{ num(row.sitHeight) }}</td>
+                <td class="text-right rk-mono">{{ num(row.weight) }}</td>
+                <td class="text-right rk-mono">{{ fmtLeg(row) }}</td>
+                <td class="text-right rk-mono">{{ num(row.bodyFatRate) }}</td>
+                <td class="text-right rk-mono">{{ num(row.waist) }}</td>
+                <td><span class="rk-soft-chip">{{ sourceLabel(row.dataSource) }}</span></td>
+                <td class="text-center">
+                  <button class="ad-icon-btn ad-icon-danger" title="删除" @click="handleDeleteMeasure(row)" v-hasPermi="['apms:athlete:remove']">
+                    <el-icon><Delete/></el-icon>
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-if="bodyMeasures.length === 0" class="rk-empty">
+            <p class="rk-empty-title">暂无体态测量记录</p>
+            <p class="rk-empty-desc">点击「新增测量」录入首次身高体重数据</p>
+          </div>
         </div>
-        <el-table :data="groupHistory" stripe size="default">
-          <el-table-column label="小组" prop="deptName" width="200"/>
-          <el-table-column label="类型" prop="deptTypeName" width="110">
-            <template #default="scope">
-              <el-tag size="small" :type="scope.row.deptTypeName === '训练小组' ? 'primary' : scope.row.deptTypeName === '科研小组' ? 'success' : 'warning'">{{ scope.row.deptTypeName }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="加入日期" prop="joinDate" width="120"/>
-          <el-table-column label="离开日期" prop="leaveDate" width="120">
-            <template #default="scope">
-              <span v-if="scope.row.leaveDate">{{ scope.row.leaveDate }}</span>
-              <el-tag v-else type="success" size="small">当前在组</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="状态" width="90">
-            <template #default="scope">
-              <el-tag :type="scope.row.status === '0' ? 'success' : 'info'" size="small">{{ scope.row.status === '0' ? '在组' : '已离组' }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作人" prop="createBy" width="120"/>
-        </el-table>
-        <el-empty v-if="groupHistory.length === 0" description="暂无小组归属记录"/>
-      </el-tab-pane>
+      </div>
+    </div>
 
-      <!-- Tab 2: 体态测量 -->
-      <el-tab-pane label="体态测量" name="body">
-        <div class="tab-toolbar">
-          <el-button type="primary" size="small" icon="Plus" @click="openBodyMeasureDialog" v-hasPermi="['apms:athlete:edit']">新增测量</el-button>
-          <el-button type="primary" size="small" plain icon="DataAnalysis" @click="showTrend = !showTrend">
-            {{ showTrend ? '隐藏趋势' : '查看身高/体重趋势' }}
-          </el-button>
+    <!-- ===== Tab 3: RTP 参训状态 ===== -->
+    <div v-show="activeTab === 'rtp'" class="rk-tab-panel">
+      <div class="rk-toolbar">
+        <button class="rk-btn rk-btn-primary rk-btn-sm" @click="showRtpDialog = true" v-hasPermi="['apms:athlete:edit']">
+          <el-icon><Edit/></el-icon>更新状态
+        </button>
+        <button v-if="rtpStatus" class="rk-btn rk-btn-sm" @click="handleClearRtp" v-hasPermi="['apms:athlete:edit']">
+          <el-icon><RefreshLeft/></el-icon>清除为未评估
+        </button>
+      </div>
+
+      <!-- 当前状态 -->
+      <div v-if="rtpStatus" class="rk-rtp-panel" :class="'tone-' + rtpTone">
+        <div class="rk-rtp-icon" :class="'tone-' + rtpTone"><el-icon><component :is="rtpIcon(rtpStatus.status)"/></el-icon></div>
+        <div class="rk-rtp-info">
+          <div class="rk-rtp-label">当前状态</div>
+          <div class="rk-rtp-value">{{ rtpLabel(rtpStatus.status) }}</div>
+          <div v-if="rtpStatus.reason" class="rk-rtp-meta">原因：{{ rtpStatus.reason }}</div>
+          <div v-if="rtpStatus.trainingLimit" class="rk-rtp-meta">训练限制：{{ rtpStatus.trainingLimit }}</div>
+          <div v-if="rtpStatus.nextReviewDate" class="rk-rtp-meta">下次复核：<span class="rk-mono">{{ rtpStatus.nextReviewDate }}</span></div>
+          <div class="rk-rtp-foot">更新于 {{ rtpStatus.updatedTime }} · {{ rtpStatus.updatedBy }}</div>
         </div>
-
-        <!-- 趋势区 -->
-        <div v-if="showTrend && bodyMeasures.length >= 2" class="trend-box">
-          <div class="trend-title">近 6 次变化趋势</div>
-          <el-table :data="bodyMeasures.slice(0, 6)" stripe size="small">
-            <el-table-column label="日期" prop="measureDate" width="120"/>
-            <el-table-column label="身高(cm)" prop="height" align="right"/>
-            <el-table-column label="坐高(cm)" prop="sitHeight" align="right"/>
-            <el-table-column label="体重(kg)" prop="weight" align="right"/>
-            <el-table-column label="腿长(cm)" width="100" align="right">
-              <template #default="scope">{{ scope.row.legLength != null ? Number(scope.row.legLength).toFixed(1) : '-' }}</template>
-            </el-table-column>
-            <el-table-column label="体脂率(%)" prop="bodyFatRate" align="right"/>
-          </el-table>
+      </div>
+      <div v-else class="rk-card">
+        <div class="rk-empty">
+          <p class="rk-empty-title">尚未进行 RTP 评估</p>
+          <p class="rk-empty-desc">点击「更新状态」登记参训许可结论</p>
         </div>
+      </div>
 
-        <!-- 完整列表 -->
-        <el-table :data="bodyMeasures" stripe size="default">
-          <el-table-column label="日期" prop="measureDate" width="120"/>
-          <el-table-column label="身高(cm)" prop="height" align="right"/>
-          <el-table-column label="坐高(cm)" prop="sitHeight" align="right"/>
-          <el-table-column label="体重(kg)" prop="weight" align="right"/>
-          <el-table-column label="腿长(cm)" width="100" align="right">
-            <template #default="scope">{{ scope.row.legLength != null ? Number(scope.row.legLength).toFixed(1) : (scope.row.height && scope.row.sitHeight ? (Number(scope.row.height) - Number(scope.row.sitHeight)).toFixed(1) : '-') }}</template>
-          </el-table-column>
-          <el-table-column label="体脂率(%)" prop="bodyFatRate" align="right"/>
-          <el-table-column label="腰围(cm)" prop="waist" align="right"/>
-          <el-table-column label="来源" prop="dataSource" width="100"/>
-          <el-table-column label="操作" width="80" fixed="right">
-            <template #default="scope">
-              <el-button link type="danger" size="small" icon="Delete" @click="handleDeleteMeasure(scope.row)" v-hasPermi="['apms:athlete:remove']"/>
-            </template>
-          </el-table-column>
-        </el-table>
-        <el-empty v-if="bodyMeasures.length === 0" description="暂无体态测量记录"/>
-      </el-tab-pane>
-
-      <!-- Tab 3: RTP 状态 -->
-      <el-tab-pane label="RTP 参训状态" name="rtp">
-        <div class="tab-toolbar">
-          <el-button type="primary" size="small" icon="Edit" @click="showRtpDialog = true" v-hasPermi="['apms:athlete:edit']">更新状态</el-button>
-          <el-button v-if="rtpStatus" type="warning" size="small" icon="RefreshLeft" @click="handleClearRtp" v-hasPermi="['apms:athlete:edit']">清除为未评估</el-button>
+      <!-- 变更历史 -->
+      <div v-if="rtpLogs.length > 0" class="rk-card ad-card-gap">
+        <div class="rk-card-head">
+          <span class="rk-card-title">变更历史</span>
+          <span class="rk-card-sub">共 {{ rtpLogs.length }} 条</span>
         </div>
+        <div class="rk-card-body flush">
+          <div class="rk-table-scroll">
+            <table class="rk-table">
+              <thead>
+                <tr><th>时间</th><th>变更</th><th>原因</th><th>训练限制</th><th>下次复核</th><th>操作人</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(log, i) in rtpLogs" :key="i" class="rk-row" :class="{ 'is-zebra': i % 2 === 1 }">
+                  <td class="rk-mono">{{ log.operateTime }}</td>
+                  <td>
+                    <span class="rk-status-badge" :class="'tone-' + rtpToneOf(log.fromStatus)">{{ rtpLabel(log.fromStatus) }}</span>
+                    <span class="ad-arrow">→</span>
+                    <span class="rk-status-badge" :class="'tone-' + rtpToneOf(log.toStatus)">{{ rtpLabel(log.toStatus) }}</span>
+                  </td>
+                  <td class="rk-text-2">{{ log.reason || '—' }}</td>
+                  <td class="rk-text-2">{{ log.trainingLimit || '—' }}</td>
+                  <td class="rk-mono">{{ log.nextReviewDate || '—' }}</td>
+                  <td class="rk-text-3">{{ log.operatorName || '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
 
-        <!-- 当前状态卡片 -->
-        <div class="rtp-current" v-if="rtpStatus">
-          <div class="rtp-status-box" :class="'rtp-' + rtpStatus.status">
-            <div class="rtp-icon">
-              <component :is="rtpIcon(rtpStatus.status)" />
+    <!-- ===== Tab 4: PHV 生长发育 ===== -->
+    <div v-show="activeTab === 'phv'" class="rk-tab-panel">
+      <div class="rk-toolbar">
+        <el-dropdown v-if="bodyMeasures.length > 0" @command="handlePhvDropdown" trigger="click" v-hasPermi="['apms:athlete:edit']">
+          <button class="rk-btn rk-btn-primary rk-btn-sm">
+            <el-icon><DataLine/></el-icon>计算 PHV<el-icon class="ad-caret"><ArrowDown/></el-icon>
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item v-for="m in bodyMeasures.slice(0, 10)" :key="m.id" :command="m">
+                {{ m.measureDate }} · 身高{{ m.height }}/坐高{{ m.sitHeight }}/体重{{ m.weight }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <button class="rk-btn rk-btn-sm" @click="showPhvDialog = true" v-hasPermi="['apms:athlete:edit']">
+          <el-icon><Edit/></el-icon>手动输入计算
+        </button>
+      </div>
+
+      <!-- 最新 PHV 摘要 -->
+      <div v-if="latestPhv" class="rk-card">
+        <div class="rk-card-head">
+          <span class="rk-card-title">最新 PHV 评估摘要</span>
+          <span class="rk-card-sub">{{ latestPhv.measureDate }} · Mirwald v{{ latestPhv.mirwaldVersion || '2014.1' }}</span>
+        </div>
+        <div class="rk-card-body">
+          <div class="rk-desc-grid">
+            <div class="rk-desc-item"><div class="rk-desc-label">评估日期</div><div class="rk-desc-value">{{ latestPhv.measureDate }}</div></div>
+            <div class="rk-desc-item"><div class="rk-desc-label">精确年龄</div><div class="rk-desc-value">{{ latestPhv.decimalAge != null ? Number(latestPhv.decimalAge).toFixed(2) + ' 岁' : '—' }}</div></div>
+            <div class="rk-desc-item">
+              <div class="rk-desc-label">成熟度偏移</div>
+              <div class="rk-desc-value" :class="offsetClass(latestPhv.maturityOffset)">{{ fmtOffset(latestPhv.maturityOffset) }}</div>
             </div>
-            <div class="rtp-info">
-              <div class="rtp-current-label">当前状态</div>
-              <div class="rtp-current-value">{{ rtpLabel(rtpStatus.status) }}</div>
-              <div class="rtp-reason" v-if="rtpStatus.reason">原因：{{ rtpStatus.reason }}</div>
-              <div class="rtp-limit" v-if="rtpStatus.trainingLimit">训练限制：{{ rtpStatus.trainingLimit }}</div>
-              <div class="rtp-next" v-if="rtpStatus.nextReviewDate">下次复核：{{ rtpStatus.nextReviewDate }}</div>
-              <div class="rtp-updated">更新于 {{ rtpStatus.updatedTime }} · {{ rtpStatus.updatedBy }}</div>
-            </div>
+            <div class="rk-desc-item"><div class="rk-desc-label">预计 PHV 年龄</div><div class="rk-desc-value ad-violet">{{ latestPhv.predictedPhvAge != null ? Number(latestPhv.predictedPhvAge).toFixed(2) + ' 岁' : '—' }}</div></div>
+            <div class="rk-desc-item"><div class="rk-desc-label">身高</div><div class="rk-desc-value">{{ latestPhv.height }} cm</div></div>
+            <div class="rk-desc-item"><div class="rk-desc-label">坐高</div><div class="rk-desc-value">{{ latestPhv.sitHeight }} cm</div></div>
+            <div class="rk-desc-item"><div class="rk-desc-label">腿长</div><div class="rk-desc-value">{{ latestPhv.legLength != null ? latestPhv.legLength : '—' }} cm</div></div>
+            <div class="rk-desc-item"><div class="rk-desc-label">体重</div><div class="rk-desc-value">{{ latestPhv.weight }} kg</div></div>
           </div>
-        </div>
-        <div v-else class="rtp-current rtp-empty">
-          <el-empty description="尚未进行 RTP 评估" :image-size="80"/>
-        </div>
-
-        <!-- 变更历史 -->
-        <div v-if="rtpLogs.length > 0" class="rtp-history">
-          <div class="section-title">变更历史</div>
-          <el-table :data="rtpLogs" stripe size="default">
-            <el-table-column label="时间" prop="operateTime" width="180"/>
-            <el-table-column label="变更" width="160">
-              <template #default="scope">
-                <span :class="'rtp-badge rtp-' + (scope.row.fromStatus || 'na')">{{ rtpLabel(scope.row.fromStatus) }}</span>
-                <span class="arrow">→</span>
-                <span :class="'rtp-badge rtp-' + (scope.row.toStatus || 'na')">{{ rtpLabel(scope.row.toStatus) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="原因" prop="reason"/>
-            <el-table-column label="训练限制" prop="trainingLimit"/>
-            <el-table-column label="下次复核" prop="nextReviewDate" width="120"/>
-            <el-table-column label="操作人" prop="operatorName" width="100"/>
-          </el-table>
-        </div>
-      </el-tab-pane>
-
-      <!-- Tab 4: PHV 发育 -->
-      <el-tab-pane label="PHV 生长发育" name="phv">
-        <div class="tab-toolbar">
-          <el-dropdown v-if="bodyMeasures.length > 0" @command="handlePhvDropdown" v-hasPermi="['apms:athlete:edit']">
-            <el-button type="primary" size="small" icon="DataLine">计算 PHV <el-icon class="el-icon--right"><ArrowDown/></el-icon></el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item v-for="m in bodyMeasures.slice(0, 10)" :key="m.id" :command="m">
-                  {{ m.measureDate }} · 身高{{ m.height }}/坐高{{ m.sitHeight }}/体重{{ m.weight }}
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <el-button size="small" plain icon="DataLine" @click="showPhvDialog = true" v-hasPermi="['apms:athlete:edit']">手动输入计算</el-button>
-        </div>
-
-        <!-- 最新 PHV 摘要 -->
-        <div v-if="latestPhv" class="phv-summary">
-          <div class="phv-summary-title">最新 PHV 评估摘要</div>
-          <el-descriptions :column="4" border size="default">
-            <el-descriptions-item label="评估日期">{{ latestPhv.measureDate }}</el-descriptions-item>
-            <el-descriptions-item label="精确年龄">{{ latestPhv.decimalAge != null ? Number(latestPhv.decimalAge).toFixed(2) + ' 岁' : '-' }}</el-descriptions-item>
-            <el-descriptions-item label="成熟度偏移">
-              <span :class="Number(latestPhv.maturityOffset) < 0 ? 'text-warning' : 'text-success'">
-                {{ latestPhv.maturityOffset != null ? Number(latestPhv.maturityOffset).toFixed(4) : '-' }}
-              </span>
-            </el-descriptions-item>
-            <el-descriptions-item label="预计 PHV 年龄">
-              <span class="phv-age">{{ latestPhv.predictedPhvAge != null ? Number(latestPhv.predictedPhvAge).toFixed(2) + ' 岁' : '-' }}</span>
-            </el-descriptions-item>
-            <el-descriptions-item label="身高">{{ latestPhv.height }} cm</el-descriptions-item>
-            <el-descriptions-item label="坐高">{{ latestPhv.sitHeight }} cm</el-descriptions-item>
-            <el-descriptions-item label="腿长">{{ latestPhv.legLength != null ? latestPhv.legLength : '-' }} cm</el-descriptions-item>
-            <el-descriptions-item label="体重">{{ latestPhv.weight }} kg</el-descriptions-item>
-          </el-descriptions>
-          <div class="phv-tip">
+          <div class="rk-note">
             <el-icon><InfoFilled/></el-icon>
-            <span>成熟度偏移 < 0 表示尚未到达 PHV；> 0 表示已越过 PHV。算法：Mirwald v{{ latestPhv.mirwaldVersion || '2014.1' }}</span>
+            <span>成熟度偏移 &lt; 0 表示尚未到达 PHV；&gt; 0 表示已越过 PHV。算法：Mirwald v{{ latestPhv.mirwaldVersion || '2014.1' }}</span>
           </div>
         </div>
+      </div>
 
-        <!-- PHV 历史 -->
-        <el-table v-if="phvRecords.length > 0" :data="phvRecords" stripe size="default" style="margin-top: 16px">
-          <el-table-column label="日期" prop="measureDate" width="120"/>
-          <el-table-column label="年龄" width="90" align="right">
-            <template #default="scope">{{ Number(scope.row.decimalAge).toFixed(2) }}</template>
-          </el-table-column>
-          <el-table-column label="身高(cm)" prop="height" align="right"/>
-          <el-table-column label="坐高(cm)" prop="sitHeight" align="right"/>
-          <el-table-column label="体重(kg)" prop="weight" align="right"/>
-          <el-table-column label="腿长(cm)" width="90" align="right">
-            <template #default="scope">{{ scope.row.legLength != null ? Number(scope.row.legLength).toFixed(1) : '-' }}</template>
-          </el-table-column>
-          <el-table-column label="成熟度偏移" width="120" align="right">
-            <template #default="scope">
-              <span :class="Number(scope.row.maturityOffset) < 0 ? 'text-warning' : 'text-success'">
-                {{ Number(scope.row.maturityOffset).toFixed(4) }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column label="预计 PHV 年龄" width="120" align="right">
-            <template #default="scope">{{ Number(scope.row.predictedPhvAge).toFixed(2) }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="80" fixed="right">
-            <template #default="scope">
-              <el-button link type="danger" size="small" icon="Delete" @click="handleDeletePhv(scope.row)" v-hasPermi="['apms:athlete:remove']"/>
-            </template>
-          </el-table-column>
-        </el-table>
-        <el-empty v-if="phvRecords.length === 0" description="暂无 PHV 评估记录"/>
-      </el-tab-pane>
-    </el-tabs>
+      <!-- PHV 历史 -->
+      <div class="rk-card" :class="{ 'ad-card-gap': latestPhv }">
+        <div class="rk-table-scroll">
+          <table class="rk-table">
+            <thead>
+              <tr>
+                <th>日期</th><th class="text-right">年龄</th><th class="text-right">身高(cm)</th><th class="text-right">坐高(cm)</th>
+                <th class="text-right">体重(kg)</th><th class="text-right">腿长(cm)</th><th class="text-right">成熟度偏移</th>
+                <th class="text-right">预计 PHV 年龄</th><th class="text-center">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, i) in phvRecords" :key="row.id" class="rk-row" :class="{ 'is-zebra': i % 2 === 1 }">
+                <td class="rk-mono">{{ row.measureDate }}</td>
+                <td class="text-right rk-mono">{{ Number(row.decimalAge).toFixed(2) }}</td>
+                <td class="text-right rk-mono">{{ row.height }}</td>
+                <td class="text-right rk-mono">{{ row.sitHeight }}</td>
+                <td class="text-right rk-mono">{{ row.weight }}</td>
+                <td class="text-right rk-mono">{{ row.legLength != null ? Number(row.legLength).toFixed(1) : '—' }}</td>
+                <td class="text-right rk-mono" :class="offsetClass(row.maturityOffset)">{{ fmtOffset(row.maturityOffset) }}</td>
+                <td class="text-right rk-mono ad-violet">{{ Number(row.predictedPhvAge).toFixed(2) }}</td>
+                <td class="text-center">
+                  <button class="ad-icon-btn ad-icon-danger" title="删除" @click="handleDeletePhv(row)" v-hasPermi="['apms:athlete:remove']">
+                    <el-icon><Delete/></el-icon>
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-if="phvRecords.length === 0" class="rk-empty">
+            <p class="rk-empty-title">暂无 PHV 评估记录</p>
+            <p class="rk-empty-desc">可基于历史测量直接计算，或手动输入参数计算</p>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- ========== 加入小组对话框 ========== -->
     <el-dialog title="加入小组" v-model="showJoinDialog" width="420px">
@@ -367,7 +447,7 @@ import * as rtpApi from '@/api/apms/rtp'
 import * as phvApi from '@/api/apms/phv'
 import { listDept } from '@/api/system/dept'
 import { useDict } from '@/utils/dict'
-import { ArrowDown, InfoFilled, CircleCheck, Warning, CircleClose } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowLeft, Minus, Plus, Delete, Edit, RefreshLeft, DataLine, InfoFilled, CircleCheck, Warning, CircleClose } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
 const route = useRoute()
@@ -377,6 +457,13 @@ const athleteId = computed(() => Number(route.params.athleteId))
 const loading = ref(true)
 const activeTab = ref('group')
 const showTrend = ref(false)
+
+const tabs = [
+  { key: 'group', label: '小组归属' },
+  { key: 'body', label: '体态测量' },
+  { key: 'rtp', label: 'RTP 参训状态' },
+  { key: 'phv', label: 'PHV 生长发育' }
+]
 
 // 主数据
 const athlete = ref({})
@@ -388,13 +475,25 @@ const rtpLogs = ref([])
 const phvRecords = ref([])
 
 const latestPhv = computed(() => phvRecords.value.length > 0 ? phvRecords.value[0] : null)
+const latestBody = computed(() => bodyMeasures.value[0] || {})
 
-// 字典辅助
+// 字典辅助（useDict 返回项字段为 label/value/elTagType）
 const positionOptions = computed(() => apms_position.value || [])
 const statusOptions = computed(() => apms_athlete_status.value || [])
-function positionLabel(val) { return (positionOptions.value.find(d => d.dictValue === val) || {}).dictLabel || val }
-function statusLabel(val) { return (statusOptions.value.find(d => d.dictValue === val) || {}).dictLabel || val }
-function statusTagType(val) { return (statusOptions.value.find(d => d.dictValue === val) || {}).listClass || 'info' }
+function positionLabel(val) { return (positionOptions.value.find(d => d.value === val) || {}).label || val }
+function statusLabel(val) { return (statusOptions.value.find(d => d.value === val) || {}).label || (val || '—') }
+
+/* 字典 elTagType → rk 徽章色调 */
+function toneByListClass(val) {
+  const listClass = (statusOptions.value.find(d => d.value === val) || {}).elTagType || ''
+  if (listClass.indexOf('danger') >= 0) return 'red'
+  if (listClass.indexOf('warning') >= 0) return 'amber'
+  if (listClass.indexOf('success') >= 0) return 'green'
+  return 'gray'
+}
+const athleteStatusTone = computed(() => toneByListClass(athlete.value.status))
+
+const genderLabel = computed(() => athlete.value.gender === 'M' ? '男' : athlete.value.gender === 'F' ? '女' : '—')
 
 // 小组 dept 选项（dept_type 30/40/50）
 const groupDeptOptions = ref([])
@@ -403,25 +502,58 @@ async function loadGroupDeptOptions() {
   groupDeptOptions.value = (res.data || []).filter(d => ['30', '40', '50', 30, 40, 50].includes(d.deptType))
 }
 
-// 头像背景色（根据 name char code 生成固定颜色）
-const headerBg = computed(() => {
-  const colors = ['#2d6a4f', '#1b4332', '#40916c', '#52b788', '#081c15', '#2a9d8f', '#264653']
-  const c = (athlete.value.name || '?').charCodeAt(0) || 0
-  return colors[c % colors.length]
+// 头像：与花名册列表一致，按年龄组取色
+const GROUP_COLORS = { U13: '#8B5CF6', U14: '#06B6D4', U15: '#3B82F6', U16: '#22C55E', U17: '#F59E0B', U18: '#EF4444' }
+const nameChar = computed(() => (athlete.value.name || '?').charAt(0))
+const avatarBg = computed(() => {
+  const age = athlete.value.age
+  if (age == null) return '#94A3B8'
+  const g = 'U' + Math.min(18, Math.max(13, age + 1))
+  return GROUP_COLORS[g] || '#94A3B8'
 })
 
 // ===== RTP 辅助 =====
+const RTP_TONE = { g: 'green', y: 'amber', r: 'red' }
+function rtpToneOf(status) { return RTP_TONE[status] || 'gray' }
+const rtpTone = computed(() => rtpToneOf(rtpStatus.value && rtpStatus.value.status))
+const rtpBanner = computed(() => {
+  if (!rtpStatus.value) return null
+  if (rtpStatus.value.status === 'y') return { tone: 'amber', label: '限制参训' }
+  if (rtpStatus.value.status === 'r') return { tone: 'red', label: '不建议参训' }
+  return null
+})
 function rtpLabel(status) {
   const map = { g: '正常参训', y: '限制参训', r: '不建议参训' }
   return map[status] ?? (status ? status : '未评估')
 }
-function rtpTagType(status) {
-  const map = { g: 'success', y: 'warning', r: 'danger' }
-  return map[status] || 'info'
-}
 function rtpIcon(status) {
   const map = { g: CircleCheck, y: Warning, r: CircleClose }
   return map[status] || Warning
+}
+
+// ===== 展示格式化 =====
+function num(v) { return v != null && v !== '' ? v : '—' }
+function fmtLeg(row, digits) {
+  if (row.legLength != null) return Number(row.legLength).toFixed(digits || 1)
+  if (row.height != null && row.sitHeight != null) return (Number(row.height) - Number(row.sitHeight)).toFixed(1)
+  return '—'
+}
+function sourceLabel(s) {
+  return { manual: '手动录入', csv: 'CSV导入', task: '任务流程' }[s] || (s || '—')
+}
+function groupTypeCls(name) {
+  if (name === '训练小组') return 'dt-train'
+  if (name === '科研小组') return 'dt-research'
+  return 'dt-other'
+}
+function fmtOffset(v) {
+  if (v == null || v === '') return '—'
+  const n = Number(v)
+  return (n > 0 ? '+' : '') + n.toFixed(4)
+}
+function offsetClass(v) {
+  if (v == null || v === '') return ''
+  return Number(v) < 0 ? 'ad-num-warn' : 'ad-num-ok'
 }
 
 // ===== 主加载 =====
@@ -539,90 +671,55 @@ loadGroupDeptOptions()
 loadAll()
 </script>
 
-<style scoped>
-.athlete-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: 20px 24px;
-  background: linear-gradient(135deg, #1b4332 0%, #2d6a4f 100%);
-  border-radius: 10px;
-  margin-bottom: 16px;
-  color: #fff;
+<style lang="scss" scoped>
+@use "@/assets/styles/roster-kit.scss" as *;
+
+.ad-card-gap { margin-top: 14px; }
+
+.ad-cell-strong { font-weight: 600; color: $rk-text-1; }
+.rk-text-2 { color: $rk-text-2; }
+.rk-text-3 { color: $rk-text-3; }
+
+/* 小组类型 chip */
+.dt-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  font-size: 12px;
+  line-height: 18px;
+  border: 1px solid;
+  border-radius: 999px;
+  white-space: nowrap;
 }
-.header-left { display: flex; align-items: center; gap: 20px; }
-.avatar { font-size: 32px; font-weight: 600; flex-shrink: 0; }
-.header-info .name-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-.header-info .name { font-size: 22px; font-weight: 600; }
-.header-info .meta-row { display: flex; flex-wrap: wrap; gap: 18px; font-size: 13px; opacity: 0.92; }
-.header-info .meta-row strong { margin-right: 4px; opacity: 0.7; font-weight: 500; }
-.header-right { align-self: center; }
-.header-right .el-button { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.3); color: #fff; }
-.header-right .el-button:hover { background: rgba(255,255,255,0.25); border-color: rgba(255,255,255,0.5); }
+.dt-train { color: $rk-brand-600; background: $rk-brand-50; border-color: #bfdbfe; }
+.dt-research { color: $rk-ok; background: #e8f7ee; border-color: #b7e4c7; }
+.dt-other { color: $rk-warn; background: #fef3e0; border-color: #f5d9a8; }
 
-.stat-cards { margin-bottom: 16px; }
-.stat-card {
-  background: #fff; border: 1px solid #ebeef5; border-radius: 8px;
-  padding: 14px 16px; text-align: center;
+/* RTP 变更箭头 */
+.ad-arrow { margin: 0 6px; color: $rk-text-3; font-size: 12px; }
+
+/* 行内图标钮 */
+.ad-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: $rk-text-3;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+  &:hover { background: $rk-canvas; color: $rk-text-1; }
 }
-.stat-num { font-size: 22px; font-weight: 600; color: #1b4332; }
-.stat-label { font-size: 12px; color: #909399; margin-top: 4px; }
-.rtp-na { font-size: 16px; color: #c0c4cc; }
-.stat-na { font-size: 14px; color: #c0c4cc; }
-.rtp-tag { font-size: 13px !important; }
+.ad-icon-danger:hover { background: #fef2f2; color: $rk-risk; }
 
-.stat-card-highlight { border-color: #2d6a4f; background: linear-gradient(135deg, #f0faf3 0%, #ffffff 60%); }
-.khair-stat { font-size: 26px; font-weight: 700; color: #2d6a4f; }
-.khair-unit { font-size: 14px; color: #2d6a4f; margin-left: 2px; font-weight: 500; }
+/* PHV 数值色 */
+.ad-num-ok { color: $rk-ok; }
+.ad-num-warn { color: $rk-warn; }
+.ad-violet { color: #8b5cf6; }
 
-.khair-row { margin-left: auto; }
-.khair-row strong { opacity: 0.85; }
-.khair-val { font-size: 14px; font-weight: 700; color: #f8c66a; letter-spacing: 0.5px; }
-.khair-sub { font-size: 11px; background: rgba(255,255,255,0.18); padding: 1px 6px; border-radius: 3px; margin-left: 6px; }
-.khair-date { opacity: 0.7; font-size: 12px; }
-
-.detail-tabs .tab-toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
-
-/* RTP 状态卡片 */
-.rtp-current { margin-bottom: 16px; }
-.rtp-status-box {
-  display: flex; gap: 20px; padding: 18px 22px;
-  border-radius: 8px; border: 1px solid #ebeef5;
-}
-.rtp-icon { font-size: 48px; display: flex; align-items: center; }
-.rtp-status-box.rtp-g .rtp-icon { color: #67c23a; }
-.rtp-status-box.rtp-y .rtp-icon { color: #e6a23c; }
-.rtp-status-box.rtp-r .rtp-icon { color: #f56c6c; }
-.rtp-info { flex: 1; }
-.rtp-current-label { font-size: 13px; color: #909399; }
-.rtp-current-value { font-size: 22px; font-weight: 600; margin: 4px 0 8px; }
-.rtp-status-box.rtp-g .rtp-current-value { color: #67c23a; }
-.rtp-status-box.rtp-y .rtp-current-value { color: #e6a23c; }
-.rtp-status-box.rtp-r .rtp-current-value { color: #f56c6c; }
-.rtp-reason, .rtp-limit, .rtp-next { font-size: 13px; color: #606266; margin-top: 4px; }
-.rtp-updated { font-size: 12px; color: #909399; margin-top: 10px; }
-.rtp-empty { border: 1px dashed #dcdfe6; border-radius: 8px; padding: 8px; }
-
-.rtp-history .section-title { font-size: 14px; font-weight: 600; color: #303133; margin-bottom: 10px; }
-.rtp-badge {
-  display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;
-}
-.rtp-badge.rtp-g { background: #f0f9eb; color: #67c23a; }
-.rtp-badge.rtp-y { background: #fdf6ec; color: #e6a23c; }
-.rtp-badge.rtp-r { background: #fef0f0; color: #f56c6c; }
-.rtp-badge.rtp-na { background: #f4f4f5; color: #909399; }
-.rtp-history .arrow { margin: 0 6px; color: #c0c4cc; }
-
-/* PHV */
-.phv-summary { background: #fafbfc; border: 1px solid #ebeef5; border-radius: 8px; padding: 16px 20px; }
-.phv-summary-title { font-size: 14px; font-weight: 600; color: #303133; margin-bottom: 12px; }
-.phv-age { font-weight: 600; color: #2d6a4f; font-size: 15px; }
-.phv-tip { margin-top: 12px; font-size: 12px; color: #909399; display: flex; align-items: center; gap: 4px; }
-
-.text-warning { color: #e6a23c; font-weight: 600; }
-.text-success { color: #67c23a; font-weight: 600; }
-
-/* 趋势区 */
-.trend-box { margin-bottom: 12px; }
-.trend-title { font-size: 13px; font-weight: 600; color: #606266; margin-bottom: 8px; }
+/* 下拉钮内箭头 */
+.ad-caret { margin-left: 2px; font-size: 12px; }
 </style>

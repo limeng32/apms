@@ -1,19 +1,20 @@
 ---
 name: roster-style-pages
-description: Reconstruct APMS ruoyi-ui (Vue3 + Element Plus) management list pages into the roster 花名册 style via roster-kit.scss. Use when the user asks to 按花名册风格重构/改造/美化 a 管理/列表 page such as 菜单/岗位/字典/参数管理. Do not use for backend changes or new feature pages.
+description: Reconstruct APMS ruoyi-ui (Vue3 + Element Plus) management list pages and record detail pages into the roster 花名册 style via roster-kit.scss. Use when the user asks to 按花名册风格重构/改造/美化 a 管理/列表/详情 page such as 菜单/岗位/字典/参数管理 or 运动员详情. Do not use for backend changes or new feature pages.
 ---
 
-# 花名册风格列表页改造
+# 花名册风格列表页 / 详情页改造
 
-把 RuoYi 原生 `app-container + el-form 查询 + el-row 按钮 + el-table + pagination` 的管理页，改造为 APMS demo「花名册」视觉。**纯前端改造，零后端改动。**
+把 RuoYi 原生 `app-container + el-form 查询 + el-row 按钮 + el-table + pagination` 的管理页，或 `el-tabs + el-descriptions + el-table` 的记录详情页，改造为 APMS demo「花名册」视觉。**纯前端改造，零后端改动。**
 
 ## 改造前必读（每次都要核对）
 
 1. **样式包**：[roster-kit.scss](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/assets/styles/roster-kit.scss)，scoped style 内 `@use "../../../assets/styles/roster-kit.scss" as *;`（页面在 `src/views/<三级目录>/index.vue` 时是三级；路径层级按实际文件调整）。不要在页面里重造同名 token/class。
-2. **三个标杆范例**（改前先读对应模式的页面，不要凭记忆写）：
+2. **四个标杆范例**（改前先读对应模式的页面，不要凭记忆写）：
    - 普通分页列表（全宽）：`src/views/system/role/index.vue`
    - 普通分页列表（左树双栏）：`src/views/system/user/index.vue`
    - 树形列表（保留 el-table）：`src/views/system/dept/index.vue`
+   - 记录详情页（ProfileHeader + 多 Tab + 预警横幅）：`src/views/apms/athlete/detail.vue`
 3. 完整读一遍目标页现有 `<script>`，列出必须原样保留的逻辑清单（API、权限指令、字典、弹窗、路由跳转、保护口径），改造后逐条对照。
 
 ## 页面骨架
@@ -43,6 +44,19 @@ description: Reconstruct APMS ruoyi-ui (Vue3 + Element Plus) management list pag
 - 内联编辑控件（如 el-input-number 排序）保留，deep 收敛高度圆角；展开/折叠的 `refreshTable + isExpandAll` 重建法保留。
 - 无分页；副标题计数递归 walk。
 
+## 记录详情页（athlete 模式）
+
+以 `src/views/apms/athlete/detail.vue` 为标杆。壳层 class 全在 roster-kit.scss「详情壳层」段（`.rk-detail-page/.rk-crumb/.rk-profile(-avatar/-name/-meta)/.rk-mini-stat(s)/.rk-banner/.rk-tabs/.rk-tab(-panel)/.rk-toolbar/.rk-card/-head/-body/.rk-desc-grid/.rk-rtp-panel`）。
+
+- 顺序：`.rk-crumb`（← 列表名 / 记录名，点击回列表）→ `.rk-profile`（72px 头像 + 姓名行：状态徽章/soft-chip + meta 两行 + 右侧 `.rk-mini-stats` 关键指标 + 返回/主操作钮）→ `.rk-banner`（仅 y/r 等预警态渲染）→ `.rk-tabs`（原生按钮 + `v-show` 面板，不要用 el-tabs）→ 各面板内 `.rk-toolbar` + `rk-table`/`rk-card`。
+- 头像取色与所属列表页同口径（运动员按年龄组 `GROUP_COLORS`，不要用列表的哈希色）。空值统一显示「—」。
+- 多面板数据 `Promise.all` 一次 loadAll；主键以实际 API 为准（运动员是 `athleteId` 不是 id，`Number(route.params.athleteId)`）。
+- 详情正确路由以 router/index.js 为准（运动员是 `/apms/athlete/detail/:athleteId`，`/apms/athlete/:id` 会 404）。
+- 所有 el-dialog / $modal.confirm / el-dropdown / v-hasPermi 原样保留，只换外壳；新增弹窗打开时若有「带入最新一条值」逻辑必须保留。
+- 页面滚动容器是 `.app-main`，验证滚顶/滚底时操作它，`window.scrollTo` 无效；侧栏折叠钮是 SVG，`el.click()` 不存在，用 `dispatchEvent(new MouseEvent('click',{bubbles:true}))`。
+- **useDict 字典项字段是 `{label,value,elTagType,elTagClass}`**，没有 `type/listClass` 字段；取色用 `elTagType`。
+- 浏览器内 fetch API 时 token 取 **cookie** `document.cookie.match(/Admin-Token=([^;]+)/)`（localStorage 没有），header `Authorization: Bearer <token>`。
+
 ## 红线（违反即返工）
 
 - 不动任何 API 文件、后端、SQL、路由、菜单。
@@ -65,6 +79,13 @@ description: Reconstruct APMS ruoyi-ui (Vue3 + Element Plus) management list pag
 6. 新增/修改弹窗打开与数据回填、导入弹窗、抽屉；树表测展开折叠、行内新增下级、根节点无删除。
 7. 分页：翻页、禁用态、删空页回退（数据不足 1 页时验证按钮 disabled）。
 8. console 无 error。
+
+详情页额外逐项过（参照 athlete/detail 批次 0）：
+1. ProfileHeader：头像取色与列表同口径、徽章/soft-chip、meta 空值「—」、mini stat 取最新一条；展开/折叠侧栏均无遮挡（折叠时卡 left=74）。
+2. 每个 Tab 面板切换；面板内所有 `rk-table-scroll` 逐面板量 `scrollWidth<=clientWidth`（v-show 隐藏面板量出 0，先切再量）。
+3. 预警横幅：找 g/y/r 三种状态的真实记录各验证一条（可 fetch list 筛 rtpStatus），g 不渲染、y amber、r red，原因/限制/复核日期齐全。
+4. 每个 el-dialog 打开核对标题/字段/数据预填后取消；每个 $modal.confirm（离开/删除等）核对文案后取消（取消钮选择器用 `.el-message-box__btns button`，不要按文案找）。
+5. 需 ≥2 条数据才出现的趋势/图表卡，找数据够的记录验证；下拉计算类入口验证菜单项内容。
 
 ## 可复用代码骨架
 

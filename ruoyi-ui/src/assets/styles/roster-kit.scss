@@ -516,3 +516,282 @@ button.rk-status-badge {
 @media (max-width: 1100px) {
   .rk-filter-right { margin-left: 0; }
 }
+
+/* ================================================================== */
+/* ===== 详情页壳层（运动员 360° 档案等，rk-detail-*） ===== */
+/* ================================================================== */
+
+/* 全宽 canvas 底（左/上 40px 补偿 fixed 侧栏与头部，同列表页口径） */
+.rk-detail-page {
+  min-height: calc(100vh - 84px);
+  margin: -20px;
+  padding: 40px 40px 36px;
+  background: $rk-canvas;
+}
+
+/* 返回面包屑 */
+.rk-crumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: $rk-text-3;
+  .rk-crumb-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: $rk-text-3;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    &:hover { color: $rk-brand-600; }
+  }
+  .rk-crumb-current { color: $rk-text-1; font-weight: 600; }
+}
+
+/* ProfileHeader 通栏卡 */
+.rk-profile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px;
+  padding: 20px 22px;
+  background: #fff;
+  border: 1px solid $rk-line;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 1px 3px rgba(15, 23, 42, .06);
+}
+.rk-profile-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 30px;
+  font-weight: 600;
+}
+.rk-profile-main { flex: 1 1 0; min-width: 280px; }
+.rk-profile-name-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.rk-profile-name {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 32px;
+  color: $rk-text-1;
+}
+.rk-profile-meta {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 20px;
+  color: $rk-text-2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+.rk-profile-meta-sub {
+  width: 100%;
+  font-size: 12px;
+  color: $rk-text-3;
+}
+
+/* 右侧 mini stat 条 + 操作 */
+.rk-profile-side {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 22px;
+}
+.rk-mini-stats {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding-right: 22px;
+  border-right: 1px solid $rk-line;
+}
+.rk-mini-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.rk-mini-stat-label { font-size: 11px; color: $rk-text-3; }
+.rk-mini-stat-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 24px;
+  color: $rk-text-1;
+}
+.rk-mini-stat-unit { font-size: 11px; font-weight: 500; color: $rk-text-3; margin-left: 2px; }
+.rk-profile-actions { display: flex; align-items: center; gap: 8px; }
+
+/* 红/黄预警横幅 */
+.rk-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin-top: 12px;
+  padding: 11px 16px;
+  font-size: 13px;
+  border: 1px solid;
+  border-radius: 14px;
+  &.tone-amber { background: #fef3e0; border-color: #f5d9a8; color: $rk-warn; }
+  &.tone-red   { background: #fcebeb; border-color: #f3c1c1; color: $rk-risk; }
+}
+.rk-banner-title { font-weight: 700; }
+.rk-banner-item { color: $rk-text-2; }
+.rk-banner-item .rk-mono { color: $rk-text-1; font-weight: 600; }
+
+/* 下划线 Tab 栏 */
+.rk-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 20px;
+  border-bottom: 1px solid $rk-line;
+}
+.rk-tab {
+  position: relative;
+  padding: 10px 16px;
+  font-size: 14px;
+  color: $rk-text-2;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color .15s;
+  &:hover { color: $rk-text-1; }
+  &.is-active { color: $rk-brand-600; font-weight: 600; }
+  &.is-active::after {
+    content: '';
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: -1px;
+    height: 2px;
+    border-radius: 2px;
+    background: $rk-brand-600;
+  }
+}
+.rk-tab-panel { margin-top: 16px; }
+
+/* Tab 内小工具条 */
+.rk-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.rk-btn-sm { height: 32px; padding: 0 12px; font-size: 13px; border-radius: 9px; }
+
+/* 通用内容白卡 */
+.rk-card {
+  background: #fff;
+  border: 1px solid $rk-line;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 1px 3px rgba(15, 23, 42, .06);
+}
+.rk-card + .rk-card { margin-top: 14px; }
+.rk-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px 0;
+}
+.rk-card-title { font-size: 14px; font-weight: 600; color: $rk-text-1; }
+.rk-card-sub { font-size: 12px; color: $rk-text-3; }
+.rk-card-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.rk-card-body { padding: 14px 18px 18px; }
+.rk-card-body.flush { padding: 0; }
+
+/* 描述列表栅格 */
+.rk-desc-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid $rk-line;
+  border-radius: 12px;
+  background: $rk-line;
+}
+.rk-desc-item { background: #fff; padding: 10px 14px; }
+.rk-desc-label { font-size: 11px; color: $rk-text-3; margin-bottom: 3px; }
+.rk-desc-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: $rk-text-1;
+  font-variant-numeric: tabular-nums;
+}
+.rk-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: $rk-text-3;
+}
+
+/* RTP 当前状态面板 */
+.rk-rtp-panel {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 20px 22px;
+  border: 1px solid $rk-line;
+  border-left-width: 4px;
+  border-radius: 14px;
+  background: #fff;
+  &.tone-green { border-left-color: $rk-ok; }
+  &.tone-amber { border-left-color: $rk-warn; }
+  &.tone-red   { border-left-color: $rk-risk; }
+  &.tone-gray  { border-left-color: $rk-text-3; }
+}
+.rk-rtp-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  flex: none;
+  border-radius: 50%;
+  font-size: 24px;
+  &.tone-green { background: #e8f7ee; color: $rk-ok; }
+  &.tone-amber { background: #fef3e0; color: $rk-warn; }
+  &.tone-red   { background: #fcebeb; color: $rk-risk; }
+  &.tone-gray  { background: #f1f5f9; color: $rk-text-3; }
+}
+.rk-rtp-label { font-size: 12px; color: $rk-text-3; }
+.rk-rtp-value { font-size: 22px; font-weight: 700; margin: 2px 0 6px; }
+.rk-rtp-panel.tone-green .rk-rtp-value { color: $rk-ok; }
+.rk-rtp-panel.tone-amber .rk-rtp-value { color: $rk-warn; }
+.rk-rtp-panel.tone-red .rk-rtp-value { color: $rk-risk; }
+.rk-rtp-panel.tone-gray .rk-rtp-value { color: $rk-text-2; }
+.rk-rtp-meta { font-size: 13px; line-height: 22px; color: $rk-text-2; }
+.rk-rtp-foot { margin-top: 8px; font-size: 12px; color: $rk-text-3; }
+
+/* 表格在卡片中的间距 */
+.rk-card .rk-table-scroll { border-radius: 14px; }
+
+@media (max-width: 1200px) {
+  .rk-desc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* 主区 + KPI 条一行放不下时规整堆叠（避免垂直居中错位） */
+  .rk-profile { align-items: flex-start; }
+  .rk-profile-side { margin-left: 0; }
+}
+@media (max-width: 900px) {
+  .rk-mini-stats { border-right: none; padding-right: 0; }
+  .rk-desc-grid { grid-template-columns: 1fr; }
+}
