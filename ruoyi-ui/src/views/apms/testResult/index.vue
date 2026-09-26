@@ -67,7 +67,7 @@
       </div>
 
       <!-- ===== 主从双栏 ===== -->
-      <div class="rk-split-grid" style="--rk-split-l: 11fr; --rk-split-r: 13fr;">
+      <div class="rk-split-grid" style="--rk-split-l: 13.5fr; --rk-split-r: 10.5fr;">
 
         <!-- 左：结果列表（服务端分页） -->
         <div class="rk-table-card">
@@ -77,7 +77,7 @@
           </div>
           <div class="rk-card-body flush">
             <div v-loading="loading" class="rk-table-scroll">
-              <table class="rk-table tr-table">
+              <table class="rk-table tr-table is-compact">
                 <thead>
                   <tr>
                     <th class="text-center col-id">#</th>
@@ -439,7 +439,7 @@ loadStats()
 .col-athlete { width: 104px; }
 .col-type { width: 68px; }
 .col-attempt { width: 64px; }
-.col-date { width: 104px; }
+.col-date { width: 112px; }
 .rk-empty-cell { padding: 36px 0; }
 
 .tr-athlete { display: flex; align-items: center; gap: 6px; }

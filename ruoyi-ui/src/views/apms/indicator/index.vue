@@ -69,7 +69,7 @@
       </div>
 
       <!-- ===== 主从双栏 ===== -->
-      <div class="rk-split-grid" style="--rk-split-l: 10fr; --rk-split-r: 14fr;">
+      <div class="rk-split-grid" style="--rk-split-l: 13fr; --rk-split-r: 11fr;">
 
         <!-- 左：指标列表（服务端分页） -->
         <div class="rk-table-card">
@@ -79,7 +79,7 @@
           </div>
           <div class="rk-card-body flush">
             <div v-loading="loading" class="rk-table-scroll">
-              <table class="rk-table ind-table">
+              <table class="rk-table ind-table is-compact">
                 <thead>
                   <tr>
                     <th class="col-check">

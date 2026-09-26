@@ -53,7 +53,7 @@
       </div>
 
       <!-- ===== 主从双栏 ===== -->
-      <div class="rk-split-grid" style="--rk-split-l: 10fr; --rk-split-r: 14fr;">
+      <div class="rk-split-grid" style="--rk-split-l: 13.2fr; --rk-split-r: 10.8fr;">
 
         <!-- 左：任务列表（服务端分页） -->
         <div class="rk-table-card">
@@ -63,7 +63,7 @@
           </div>
           <div class="rk-card-body flush">
             <div v-loading="loading" class="rk-table-scroll">
-              <table class="rk-table tt-table">
+              <table class="rk-table tt-table is-compact">
                 <thead>
                   <tr>
                     <th class="col-check"></th>
@@ -805,7 +805,7 @@ loadStats()
 .tt-task-name { font-size: 13px; font-weight: 600; color: $rk-text-1; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tt-task-id { font-size: 11px; color: $rk-text-3; margin-top: 2px; }
 .tt-dept { font-size: 12px; color: $rk-text-2; }
-.tt-date { font-size: 12px; color: $rk-text-2; white-space: nowrap; }
+.tt-date { font-size: 11px; color: $rk-text-2; white-space: nowrap; }
 .tt-progress-cell { display: flex; align-items: center; gap: 8px; }
 .tt-progress-num { font-size: 11px; font-weight: 600; color: $rk-text-2; min-width: 34px; }
 .tt-edit-link { margin-top: 4px; font-size: 12px; }
