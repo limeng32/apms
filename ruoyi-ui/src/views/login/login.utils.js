@@ -29,7 +29,7 @@ export const BUILTIN_LOGOS = [
 export const BUILTIN_LOGO_VALUES = BUILTIN_LOGOS.map((l) => l.value)
 
 /**
- * 内置背景库：随包发布的静态资源（ruoyi-ui/public/login/），
+ * 内置背景库：随包发布的静态资源（ruoyi-ui/public/login-assets/），
  * 不经过 /profile/ 上传通道；value 为配置中保存的枚举 key。
  * 与后端 BACKGROUND_BUILTINS 白名单保持一致。
  */
@@ -37,9 +37,11 @@ export const BUILTIN_BACKGROUNDS = [
   {
     value: 'tech',
     label: '深色科技球场（默认）',
-    // 构建后位于站点根路径 /login/ 下（vite public 目录原样拷贝）
-    image: '/login/login-visual.png',
-    texture: '/login/pitch-lines.svg'
+    // 构建后位于站点根路径 /login-assets/ 下（vite public 目录原样拷贝）；
+    // 目录名不能用 /login/，否则会与前端路由 /login 同名，nginx try_files $uri/
+    // 命中真实目录且无 index.html 时直接 403，SPA 回退失效
+    image: '/login-assets/login-visual.png',
+    texture: '/login-assets/pitch-lines.svg'
   }
 ]
 export const BUILTIN_BACKGROUND_VALUES = BUILTIN_BACKGROUNDS.map((b) => b.value)

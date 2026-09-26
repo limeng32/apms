@@ -48,7 +48,7 @@
 import { createParticles } from './login.utils'
 
 const props = defineProps({
-  /** 主图完整 URL（站内 /profile/ 或内置 /login/...）；空串=不渲染主图 */
+  /** 主图完整 URL（站内 /profile/ 或内置 /login-assets/...）；空串=不渲染主图 */
   src: { type: String, default: '' },
   /** 线稿纹理 URL；空串=不渲染 */
   texture: { type: String, default: '' },

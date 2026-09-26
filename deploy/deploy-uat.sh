@@ -91,8 +91,9 @@ PUBLIC_HOST="${PUBLIC_HOST:-localhost:${NGINX_LISTEN}}"
 [ -n "${REDIS_PASS+x}" ] || err "env.conf 缺失 REDIS_PASS（可空但必须声明），拒绝部署"
 
 # ⚠️ 密码里可能有 !#$ 等特殊字符，必须用函数形式避免 bash 解释
-mysql_cli() { mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" --password="${DB_PASS}" "${DB_NAME}" "${@}"; }
-mysql_dump() { mysqldump -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" --password="${DB_PASS}" --single-transaction --routines --triggers --databases "${DB_NAME}" "${@}"; }
+# ${1+"${@}"} 兼容 macOS 自带 bash 3.2：set -u 下无参调用时裸 "${@}" 会报 unbound variable
+mysql_cli() { mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" --password="${DB_PASS}" "${DB_NAME}" ${1+"${@}"}; }
+mysql_dump() { mysqldump -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" --password="${DB_PASS}" --single-transaction --routines --triggers --databases "${DB_NAME}" ${1+"${@}"}; }
 
 # ===== flush_redis_keep: 选择性清 Redis（发版不再踢用户）=====
 # 删除目标 DB 内全部 key，但保留指定前缀的 key（RuoYi 登录态前缀 login_tokens:）。
@@ -387,10 +388,32 @@ BKDIR="${BACKUP}/${BACKUP_TS}"
 mkdir -p "${BKDIR}"
 
 log "Step 2: 数据库备份 → ${BKDIR}/db.sql.gz"
-if mysql_dump 2>/dev/null | gzip > "${BKDIR}/db.sql.gz"; then
+# 瞬态失败（连接抖动/构建后系统高负载）重试 3 次；mysqldump 的 stderr 落文件不再丢弃；
+# 临时文件经 gzip 完整性 + 解压体积校验后才原子改名，空备份绝不进入回滚链
+DB_BACKUP_TMP="${BKDIR}/db.sql.gz.tmp"
+DB_DUMP_ERR="${BKDIR}/dump.err.log"
+DB_BACKUP_OK=0
+for DB_BACKUP_TRY in 1 2 3; do
+    : > "${DB_BACKUP_TMP}"
+    : > "${DB_DUMP_ERR}"
+    if mysql_dump 2>"${DB_DUMP_ERR}" | gzip > "${DB_BACKUP_TMP}" \
+       && gzip -t "${DB_BACKUP_TMP}" 2>/dev/null \
+       && [ "$(gzip -dc "${DB_BACKUP_TMP}" 2>/dev/null | wc -c | tr -d ' ')" -ge 10240 ]; then
+        DB_BACKUP_OK=1
+        break
+    fi
+    if [ "${DB_BACKUP_TRY}" -lt 3 ]; then
+        warn "  第 ${DB_BACKUP_TRY} 次备份失败，3s 后重试..."
+        sleep 3
+    fi
+done
+if [ "${DB_BACKUP_OK}" -eq 1 ]; then
+    mv "${DB_BACKUP_TMP}" "${BKDIR}/db.sql.gz"
+    rm -f "${DB_DUMP_ERR}"
     log "  ✅ DB 备份完成 ($(du -h "${BKDIR}/db.sql.gz" | cut -f1))"
 else
-    err "❌ DB 备份失败，终止部署（P0 数据安全：无备份不允许执行 SQL patch）"
+    grep -v -F 'Using a password on the command line interface can be insecure' "${DB_DUMP_ERR}" 2>/dev/null | tail -5 | sed 's/^/    mysqldump: /' || true
+    err "❌ DB 备份失败（3 次均失败），终止部署（P0 数据安全：无完整备份不允许执行 SQL patch）。现场保留: ${BKDIR}"
 fi
 
 # ===== Step 3: SQL Patches =====
