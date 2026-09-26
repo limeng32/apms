@@ -1,159 +1,216 @@
 <template>
-  <div class="app-container rtp-page">
+  <div class="app-container">
+    <div class="rk-dash-page rk-page rtp-page">
 
-    <!-- 顶部指标条 -->
-    <div class="rtp-summary">
-      <div class="rtp-sum-cell rtp-green-bg">
-        <div class="sum-num">{{ summary.green }}</div>
-        <div class="sum-label">🟢 正常参训</div>
-      </div>
-      <div class="rtp-sum-cell rtp-amber-bg">
-        <div class="sum-num">{{ summary.yellow }}</div>
-        <div class="sum-label">🟡 限制参训</div>
-      </div>
-      <div class="rtp-sum-cell rtp-red-bg">
-        <div class="sum-num">{{ summary.red }}</div>
-        <div class="sum-label">🔴 不建议训练</div>
-      </div>
-      <div class="rtp-sum-cell rtp-gray-bg">
-        <div class="sum-num">{{ summary.notAssessed }}</div>
-        <div class="sum-label">⚪ 未评估</div>
-      </div>
-      <div class="rtp-sum-cell rtp-soft">
-        <div class="sum-num">{{ summary.total }}</div>
-        <div class="sum-label">全队总人数</div>
-      </div>
-    </div>
-
-    <el-row :gutter="16">
-      <!-- 左：RTP 列表 -->
-      <el-col :xs="24" :md="14" :lg="14">
-        <div class="panel-title">
-          <span>RTP 状态管理</span>
-          <span class="panel-sub">当前生效 · 点击行查看历史变更</span>
+      <!-- ===== 页头 ===== -->
+      <div class="rk-header">
+        <div>
+          <h1 class="rk-title">RTP 状态管理</h1>
+          <p class="rk-subtitle">
+            全队 {{ summary.total }} 人 · 已评估 {{ summary.green + summary.yellow + summary.red }} 人 ·
+            点击卡片查看详情与变更时间线<template v-if="canEdit"> · 拖拽卡片更新状态</template>
+          </p>
         </div>
+      </div>
 
-        <!-- 筛选 -->
-        <el-form :inline="true" :model="filters" class="filter-bar">
-          <el-form-item label="状态">
-            <el-select v-model="filters.status" placeholder="全部" clearable style="width:130px">
-              <el-option v-for="s in statusOpts" :key="s.v" :label="s.label" :value="s.v"/>
-            </el-select>
+      <!-- ===== KPI 卡带（4 张） ===== -->
+      <div class="rk-kpi-grid is-4">
+        <div class="rk-kpi-card" v-for="k in kpiCards" :key="k.label">
+          <span class="rk-kpi-accent" :style="{ background: k.accent }"></span>
+          <div class="rk-kpi-label">{{ k.label }}</div>
+          <div class="rk-kpi-value">{{ k.value }}<span class="rk-kpi-unit">人</span></div>
+          <span class="rk-kpi-chip" :class="k.chipTone">{{ k.chip }}</span>
+        </div>
+      </div>
+
+      <!-- ===== 筛选（看板列本身即状态维度，只留队伍 + 姓名） ===== -->
+      <div class="rk-filter">
+        <label class="rk-group">
+          <span class="rk-label">队伍</span>
+          <select v-model="filters.deptId" class="rk-select rt-select-team">
+            <option :value="null">全部队伍</option>
+            <option v-for="d in flatDepts" :key="d.deptId" :value="d.deptId">
+              {{ '　'.repeat(d.depth) }}{{ d.deptName }}
+            </option>
+          </select>
+        </label>
+        <label class="rk-group">
+          <span class="rk-label">姓名</span>
+          <input v-model="filters.keyword" class="rk-input" type="text" placeholder="队员姓名" />
+        </label>
+        <div class="rk-filter-right">
+          <button type="button" class="rk-btn-reset" @click="resetFilter">
+            <el-icon><RefreshLeft /></el-icon>重置
+          </button>
+        </div>
+      </div>
+
+      <!-- ===== RTP 看板（红/黄/绿/灰 四列） ===== -->
+      <div v-loading="loading" class="rk-kanban-grid">
+        <section
+          v-for="col in COLUMNS"
+          :key="col.key"
+          class="rk-kanban-col"
+          :class="[col.tone, { 'is-dragover': dragOverKey === col.key }]"
+          @dragover="onDragOver(col.key, $event)"
+          @dragenter="onDragOver(col.key, $event)"
+          @dragleave="onDragLeave(col.key, $event)"
+          @drop="onDrop(col.key, $event)"
+        >
+          <div class="rk-kanban-head">
+            <span class="rk-kanban-dot"></span>
+            <span class="rk-kanban-title">{{ col.title }}</span>
+            <span class="rk-kanban-count rk-mono">{{ columnList(col.key).length }}</span>
+            <span class="rk-kanban-hint" v-if="canEdit">{{ col.hint }}</span>
+          </div>
+          <div class="rk-kanban-body">
+            <div
+              v-for="row in columnList(col.key)"
+              :key="row.athleteId"
+              class="rk-kanban-card"
+              :class="{ 'is-dragging': dragId === row.athleteId, 'is-readonly': !canEdit }"
+              :draggable="canEdit"
+              @dragstart="onDragStart(row, $event)"
+              @dragend="onDragEnd"
+              @click="openDrawer(row)"
+            >
+              <div class="rk-kanban-card-top">
+                <span class="rk-avatar rt-avatar" :style="{ background: avatarColor(row) }">
+                  {{ (row.athleteName || '?').charAt(0) }}
+                </span>
+                <span class="rk-kanban-card-name">{{ row.athleteName || '未评估' }}</span>
+              </div>
+              <div class="rk-kanban-card-sub">{{ row.athleteTeam || '—' }} · #{{ row.athleteId }}</div>
+              <template v-if="row.status">
+                <div v-if="row.reason" class="rk-kanban-card-reason">{{ row.reason }}</div>
+                <div v-if="row.trainingLimit" class="rk-kanban-card-limit">限制：{{ row.trainingLimit }}</div>
+                <div class="rk-kanban-card-foot">
+                  <span v-if="row.nextReviewDate"
+                        :class="{ 'is-overdue': isOverdue(row.nextReviewDate), 'is-soon': isSoon(row.nextReviewDate) }">
+                    复检 {{ row.nextReviewDate }}
+                  </span>
+                  <span v-else>未设复检</span>
+                  <span class="rt-card-time rk-mono">{{ (row.updatedTime || '').replace('T', ' ').substring(5, 10) }}</span>
+                </div>
+              </template>
+              <div v-else class="rk-kanban-card-foot">
+                <span>尚未评估</span>
+              </div>
+            </div>
+            <div v-if="!loading && columnList(col.key).length === 0" class="rk-kanban-empty">暂无队员</div>
+          </div>
+        </section>
+      </div>
+
+      <!-- ========== 编辑弹窗（原逻辑保留） ========== -->
+      <el-dialog :title="editMode === 'new' ? '新增 RTP 评估' : '更新 RTP 状态'" v-model="showEdit" width="520px">
+        <el-form :model="editForm" label-width="100px">
+          <el-form-item label="队员">
+            <span class="edit-athlete">{{ currentAthlete?.athleteName || '—' }} (ID: {{ editForm.athleteId }})</span>
           </el-form-item>
-          <el-form-item label="队伍">
-            <el-tree-select v-model="filters.deptId" :data="deptOpts" filterable clearable
-                            :props="{ label: 'deptName', value: 'deptId' }" style="width:160px"/>
+          <el-form-item label="当前状态" required>
+            <el-radio-group v-model="editForm.status">
+              <el-radio value="g">🟢 正常参训</el-radio>
+              <el-radio value="y">🟡 限制参训</el-radio>
+              <el-radio value="r">🔴 不建议训练</el-radio>
+            </el-radio-group>
           </el-form-item>
-          <el-form-item>
-            <el-input v-model="filters.keyword" placeholder="姓名搜索" clearable style="width:140px"/>
+          <el-form-item label="标记原因">
+            <el-input v-model="editForm.reason" type="textarea" :rows="2"
+                      :placeholder="editForm.status === 'g' ? '康复完成 / 综合评估正常…' : '如：腘绳肌轻度拉伤恢复期'"/>
           </el-form-item>
-          <el-form-item>
-            <el-button type="primary" icon="Search" @click="applyFilter">筛选</el-button>
-            <el-button icon="Refresh" @click="resetFilter">重置</el-button>
+          <el-form-item v-if="editForm.status !== 'g'" label="训练限制">
+            <el-input v-model="editForm.trainingLimit" placeholder="如：限制长距离 / 避免高强度间歇"/>
+          </el-form-item>
+          <el-form-item label="下次复检">
+            <el-date-picker v-model="editForm.nextReviewDate" type="date" value-format="YYYY-MM-DD"
+                            placeholder="选择日期" style="width:100%"/>
           </el-form-item>
         </el-form>
+        <template #footer>
+          <el-button @click="showEdit = false">取消</el-button>
+          <el-button type="primary" :loading="saving" @click="submitEdit">保存</el-button>
+        </template>
+      </el-dialog>
 
-        <el-table :data="filteredList" border stripe highlight-current-row
-                  v-loading="loading" max-height="560"
-                  row-key="athleteId"
-                  @row-click="(row) => handleRowClick(row)"
-                  :row-class-name="rowClassFn">
-          <el-table-column label="#" type="index" width="50" align="center"/>
-          <el-table-column label="状态" width="100" align="center">
-            <template #default="scope">
-              <el-tag :type="statusTag(scope.row.status)" effect="dark" size="small" class="rtp-tag">
-                {{ statusLabel(scope.row.status) }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="队员" min-width="140">
-            <template #default="scope">
-              <div class="athlete-cell">
-                <div class="ath-avatar" :style="{ background: avatarColor(scope.row) }">
-                  {{ (scope.row.athleteName || '?').charAt(0) }}
+      <!-- ========== RTP 详情抽屉 ========== -->
+      <el-drawer v-model="drawer" size="460px" :with-header="false" class="rt-drawer-wrap">
+        <div class="rt-drawer" v-if="currentAthlete">
+          <!-- 抽屉头：人 -->
+          <div class="rt-drawer-head">
+            <div class="rt-drawer-title">
+              <span class="rk-avatar rt-avatar rt-avatar-lg" :style="{ background: avatarColor(currentAthlete) }">
+                {{ (currentAthlete.athleteName || '?').charAt(0) }}
+              </span>
+              <div class="rt-drawer-id">
+                <div class="rt-drawer-name">
+                  {{ currentAthlete.athleteName || '未评估' }}
+                  <span class="rk-status-badge" :class="statusTone(currentAthlete.status)">
+                    <i class="rk-status-dot"></i>{{ statusLabel(currentAthlete.status) }}
+                  </span>
                 </div>
-                <div>
-                  <div class="ath-name">{{ scope.row.athleteName || '未评估' }}</div>
-                  <div class="ath-sub">{{ scope.row.athleteTeam || '—' }} · #{{ scope.row.athleteId }}</div>
+                <div class="rt-drawer-sub">
+                  {{ currentAthlete.athleteTeam || '无队伍' }} · #{{ currentAthlete.athleteId }}
                 </div>
               </div>
-            </template>
-          </el-table-column>
-          <el-table-column label="原因/限制" min-width="180">
-            <template #default="scope">
-              <div class="reason-text">{{ scope.row.reason || '—' }}</div>
-              <div v-if="scope.row.trainingLimit" class="limit-text">限制：{{ scope.row.trainingLimit }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column label="下次复检" width="120" align="center">
-            <template #default="scope">
-              <span v-if="scope.row.nextReviewDate"
-                    :class="{ 'overdue': isOverdue(scope.row.nextReviewDate), 'soon': isSoon(scope.row.nextReviewDate) }">
-                {{ scope.row.nextReviewDate }}
-              </span>
-              <span v-else class="muted">—</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="更新时间" width="160">
-            <template #default="scope">{{ formatDT(scope.row.updatedTime) }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="140" fixed="right">
-            <template #default="scope">
-              <el-button link type="primary" icon="Edit" @click.stop="showEditDialog(scope.row)" v-hasPermi="['apms:athlete:edit']">编辑</el-button>
-              <el-button link type="danger" icon="Delete" @click.stop="handleClear(scope.row)" v-if="scope.row.status" v-hasPermi="['apms:athlete:edit']">清除</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </el-col>
-
-      <!-- 右：详情 + 变更时间线 -->
-      <el-col :xs="24" :md="10" :lg="10">
-        <div class="panel-title">
-          <span>RTP 详情</span>
-          <span v-if="currentAthlete" class="panel-sub">{{ currentAthlete.athleteName }}</span>
-          <span v-else class="panel-sub muted">← 点击左侧队员查看</span>
-        </div>
-
-        <div v-if="currentAthlete" class="detail-panel">
-          <!-- 当前状态卡 -->
-          <div class="current-card" :class="'cur-' + (currentAthlete.status || 'na')">
-            <div class="cur-label">当前 RTP 状态</div>
-            <div class="cur-status">{{ statusLabel(currentAthlete.status) }}</div>
-            <div class="cur-meta">
-              <span v-if="currentAthlete.reason">{{ currentAthlete.reason }}</span>
-              <span v-if="currentAthlete.trainingLimit" class="cur-limit">限制：{{ currentAthlete.trainingLimit }}</span>
-              <span v-if="currentAthlete.nextReviewDate" class="cur-review">下次复检：{{ currentAthlete.nextReviewDate }}</span>
             </div>
-            <div class="cur-by">更新人：{{ currentAthlete.updatedBy || '—' }} @ {{ formatDT(currentAthlete.updatedTime) }}</div>
+            <button type="button" class="rt-drawer-close" @click="drawer = false">
+              <el-icon><Close /></el-icon>
+            </button>
           </div>
 
-          <!-- 快捷操作 -->
-          <div class="quick-actions">
-            <el-button v-if="currentAthlete.status !== 'g'" type="success" @click="quickSet('g')" v-hasPermi="['apms:athlete:edit']">标记 🟢 正常</el-button>
-            <el-button v-if="currentAthlete.status !== 'y'" type="warning" @click="quickSet('y')" v-hasPermi="['apms:athlete:edit']">标记 🟡 限制</el-button>
-            <el-button v-if="currentAthlete.status !== 'r'" type="danger" @click="quickSet('r')" v-hasPermi="['apms:athlete:edit']">标记 🔴 停训</el-button>
-            <el-button @click="showEditDialog(currentAthlete)" v-hasPermi="['apms:athlete:edit']">详细编辑…</el-button>
+          <!-- 当前状态卡 -->
+          <div class="rk-rtp-panel" :class="statusTone(currentAthlete.status)">
+            <div class="rk-rtp-icon" :class="statusTone(currentAthlete.status)">
+              <el-icon><component :is="statusIcon(currentAthlete.status)" /></el-icon>
+            </div>
+            <div class="rt-panel-main">
+              <div class="rk-rtp-label">当前 RTP 状态</div>
+              <div class="rk-rtp-value">{{ statusLabel(currentAthlete.status) }}</div>
+              <div class="rk-rtp-meta">
+                <div v-if="currentAthlete.reason">原因：{{ currentAthlete.reason }}</div>
+                <div v-if="currentAthlete.trainingLimit">训练限制：{{ currentAthlete.trainingLimit }}</div>
+                <div v-if="currentAthlete.nextReviewDate">
+                  下次复检：<span :class="{ 'is-overdue': isOverdue(currentAthlete.nextReviewDate) }">{{ currentAthlete.nextReviewDate }}</span>
+                </div>
+                <div v-if="!currentAthlete.status">暂无评估记录，可通过下方操作完成首次评估</div>
+              </div>
+              <div class="rk-rtp-foot">
+                更新人：{{ currentAthlete.updatedBy || '—' }} · {{ formatDT(currentAthlete.updatedTime) }}
+              </div>
+            </div>
+          </div>
+
+          <!-- 快捷操作（原逻辑保留） -->
+          <div class="rt-quick" v-hasPermi="['apms:athlete:edit']">
+            <button v-if="currentAthlete.status !== 'g'" type="button"
+                    class="rk-btn rk-btn-sm rt-qg" @click="quickSet('g')">标记 正常参训</button>
+            <button v-if="currentAthlete.status !== 'y'" type="button"
+                    class="rk-btn rk-btn-sm rt-qy" @click="quickSet('y')">标记 限制参训</button>
+            <button v-if="currentAthlete.status !== 'r'" type="button"
+                    class="rk-btn rk-btn-sm rt-qr" @click="quickSet('r')">标记 不建议训练</button>
+            <button type="button" class="rk-btn rk-btn-sm" @click="showEditDialog(currentAthlete)">详细编辑…</button>
           </div>
 
           <!-- 变更时间线 -->
-          <div class="section-title">
+          <div class="rt-section-title">
             RTP 变更时间线
-            <span class="privacy-note">共 {{ logList.length }} 条记录</span>
+            <span class="rt-section-sub">共 {{ logList.length }} 条记录</span>
           </div>
-          <el-timeline v-if="logList.length" class="rtp-timeline">
-            <el-timeline-item v-for="(log, idx) in logList" :key="log.id"
+          <el-timeline v-if="logList.length" class="rt-timeline">
+            <el-timeline-item v-for="log in logList" :key="log.id"
                               :timestamp="formatDT(log.operateTime)"
                               placement="top"
-                              :class="'tl-' + (log.toStatus || 'na')">
+                              :color="logDotColor(log.toStatus)">
               <div class="tl-main">
                 <div class="tl-flow">
-                  <el-tag v-if="log.fromStatus" :type="statusTag(log.fromStatus)" size="small" effect="plain">
-                    {{ statusLabel(log.fromStatus) }}
-                  </el-tag>
+                  <span v-if="log.fromStatus" class="rk-status-badge" :class="statusTone(log.fromStatus)">
+                    <i class="rk-status-dot"></i>{{ statusLabel(log.fromStatus) }}
+                  </span>
                   <span class="tl-arrow">→</span>
-                  <el-tag :type="statusTag(log.toStatus)" size="small" effect="dark">
-                    {{ statusLabel(log.toStatus) }}
-                  </el-tag>
+                  <span class="rk-status-badge" :class="statusTone(log.toStatus)">
+                    <i class="rk-status-dot"></i>{{ statusLabel(log.toStatus) }}
+                  </span>
                 </div>
                 <div v-if="log.reason" class="tl-reason">{{ log.reason }}</div>
                 <div v-if="log.trainingLimit" class="tl-limit">限制：{{ log.trainingLimit }}</div>
@@ -161,45 +218,17 @@
               </div>
             </el-timeline-item>
           </el-timeline>
-          <el-empty v-else description="暂无变更记录"/>
-        </div>
+          <div v-else class="rt-tl-empty">暂无变更记录</div>
 
-        <div v-else class="detail-empty">
-          <el-empty description="选择左侧队员查看详情"/>
+          <!-- 清除状态（原操作列入口搬入抽屉） -->
+          <div class="rt-drawer-foot" v-if="currentAthlete.status" v-hasPermi="['apms:athlete:edit']">
+            <button type="button" class="rk-btn rk-btn-sm rk-btn-danger" @click="handleClear(currentAthlete)">
+              清除状态（回到未评估）
+            </button>
+          </div>
         </div>
-      </el-col>
-    </el-row>
-
-    <!-- ========== 编辑弹窗 ========== -->
-    <el-dialog :title="editMode === 'new' ? '新增 RTP 评估' : '更新 RTP 状态'" v-model="showEdit" width="520px">
-      <el-form :model="editForm" label-width="100px">
-        <el-form-item label="队员">
-          <span class="edit-athlete">{{ currentAthlete?.athleteName || '—' }} (ID: {{ editForm.athleteId }})</span>
-        </el-form-item>
-        <el-form-item label="当前状态" required>
-          <el-radio-group v-model="editForm.status">
-            <el-radio value="g">🟢 正常参训</el-radio>
-            <el-radio value="y">🟡 限制参训</el-radio>
-            <el-radio value="r">🔴 不建议训练</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="标记原因">
-          <el-input v-model="editForm.reason" type="textarea" :rows="2"
-                    :placeholder="editForm.status === 'g' ? '康复完成 / 综合评估正常…' : '如：腘绳肌轻度拉伤恢复期'"/>
-        </el-form-item>
-        <el-form-item v-if="editForm.status !== 'g'" label="训练限制">
-          <el-input v-model="editForm.trainingLimit" placeholder="如：限制长距离 / 避免高强度间歇"/>
-        </el-form-item>
-        <el-form-item label="下次复检">
-          <el-date-picker v-model="editForm.nextReviewDate" type="date" value-format="YYYY-MM-DD"
-                          placeholder="选择日期" style="width:100%"/>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showEdit = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submitEdit">保存</el-button>
-      </template>
-    </el-dialog>
+      </el-drawer>
+    </div>
   </div>
 </template>
 
@@ -207,17 +236,24 @@
 import { listStatus, getLog, updateStatus, clearStatus } from '@/api/apms/rtp'
 import { listAthlete } from '@/api/apms/athlete'
 import { listDept } from '@/api/system/dept'
+import { checkPermi } from '@/utils/permission'
+import { Close, RefreshLeft, CircleCheck, Warning, CircleClose, QuestionFilled } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
 
-// 字典
-const statusOpts = [
-  { v: 'g', label: '🟢 正常' },
-  { v: 'y', label: '🟡 限制参训' },
-  { v: 'r', label: '🔴 停训' }
+const canEdit = checkPermi(['apms:athlete:edit'])
+
+// ========= 字典 =========
+const COLUMNS = [
+  { key: 'r', title: '不建议训练', tone: 'tone-red', hint: '拖入即停训' },
+  { key: 'y', title: '限制参训', tone: 'tone-amber', hint: '拖入即限制' },
+  { key: 'g', title: '正常参训', tone: 'tone-green', hint: '拖入即正常' },
+  { key: 'na', title: '未评估', tone: 'tone-gray', hint: '拖入即清除' }
 ]
 const statusLabel = (s) => s === 'g' ? '正常参训' : s === 'y' ? '限制参训' : s === 'r' ? '不建议训练' : '未评估'
-const statusTag   = (s) => s === 'g' ? 'success'  : s === 'y' ? 'warning'      : s === 'r' ? 'danger'     : 'info'
+const statusTone  = (s) => s === 'g' ? 'tone-green' : s === 'y' ? 'tone-amber' : s === 'r' ? 'tone-red' : 'tone-gray'
+const statusIcon  = (s) => s === 'g' ? CircleCheck : s === 'y' ? Warning : s === 'r' ? CircleClose : QuestionFilled
+const logDotColor = (s) => s === 'g' ? '#16A34A' : s === 'y' ? '#D97706' : s === 'r' ? '#DC2626' : '#94A3B8'
 
 const avatarColors = ['#f0a23a', '#7b9dc9', '#c14747', '#5fa080', '#a878d8', '#d88a3a', '#5f9abf', '#8fbf5f']
 function avatarColor(row) {
@@ -231,18 +267,33 @@ function isSoon(d)    { return d && !isOverdue(d) && (new Date(d) - new Date()) 
 
 // ========= 数据 =========
 const loading = ref(false)
-const fullList = ref([])      // 含未评估
-const rtpList = ref([])       // 有 RTP 记录的
+const fullList = ref([])      // 含未评估（全员）
 const allAthletes = ref([])
 
 const summary = reactive({ green: 0, yellow: 0, red: 0, notAssessed: 0, total: 0 })
 
-const filters = reactive({ status: '', deptId: null, keyword: '' })
+const filters = reactive({ deptId: null, keyword: '' })
 const deptOpts = ref([])
 
-// 当前选中
-const currentAthlete = ref(null)
-const logList = ref([])
+/* 部门树拍平（原生 select 用，缩进体现层级） */
+const flatDepts = computed(() => {
+  const out = []
+  const walk = (nodes, depth) => {
+    (nodes || []).forEach(n => {
+      out.push({ deptId: n.deptId, deptName: n.deptName, depth })
+      if (n.children && n.children.length) walk(n.children, depth + 1)
+    })
+  }
+  walk(deptOpts.value, 0)
+  return out
+})
+
+const kpiCards = computed(() => [
+  { label: '正常参训', value: summary.green, accent: '#16A34A', chip: '可正常参加训练', chipTone: 'tone-ok' },
+  { label: '限制参训', value: summary.yellow, accent: '#D97706', chip: '需关注训练安排', chipTone: 'tone-warn' },
+  { label: '不建议训练', value: summary.red, accent: '#DC2626', chip: '停训管理中', chipTone: 'tone-risk' },
+  { label: '未评估', value: summary.notAssessed, accent: '#94A3B8', chip: '待完成首次评估', chipTone: '' }
+])
 
 // ========= 加载 =========
 function loadAll() {
@@ -271,9 +322,7 @@ function loadAll() {
       }
     })
     allAthletes.value = athArr
-    rtpList.value = rtpArr
 
-    // 汇总
     summary.green = rtpArr.filter(r => r.status === 'g').length
     summary.yellow = rtpArr.filter(r => r.status === 'y').length
     summary.red = rtpArr.filter(r => r.status === 'r').length
@@ -281,47 +330,114 @@ function loadAll() {
     summary.total = athArr.length
 
     deptOpts.value = Array.isArray(deptRes.data) ? deptRes.data : []
-    loading.value = false
-  })
+  }).finally(() => { loading.value = false })
 }
 
-// ========= 筛选 =========
+// ========= 筛选（修复原页 row._deptId 从未赋值导致队伍筛选失效的问题：按队名匹配） =========
 const filteredList = computed(() => {
   const kw = (filters.keyword || '').trim().toLowerCase()
+  let deptName = null
+  if (filters.deptId != null) {
+    deptName = flatDepts.value.find(d => d.deptId === filters.deptId)?.deptName ?? null
+  }
   return fullList.value.filter(row => {
-    if (filters.status && row.status !== filters.status) return false
-    if (filters.deptId && row._deptId !== filters.deptId) return false
+    if (deptName && row.athleteTeam !== deptName) return false
     if (kw && !(row.athleteName || '').toLowerCase().includes(kw)) return false
     return true
   })
 })
 
-function applyFilter() {}
-function resetFilter() { filters.status = ''; filters.deptId = null; filters.keyword = '' }
+function columnList(key) {
+  return filteredList.value.filter(r => (r.status || 'na') === key)
+}
+function resetFilter() { filters.deptId = null; filters.keyword = '' }
 
-function rowClassFn({ row }) {
-  if (!row.status) return 'row-na'
-  return 'row-' + row.status
+// ========= 拖拽（弹确认后落库；清除走 clearStatus，其余走 updateStatus） =========
+const dragId = ref(null)
+const dragOverKey = ref(null)
+
+function onDragStart(row, ev) {
+  if (!canEdit) { ev.preventDefault(); return }
+  dragId.value = row.athleteId
+  if (ev.dataTransfer) {
+    ev.dataTransfer.effectAllowed = 'move'
+    ev.dataTransfer.setData('text/plain', String(row.athleteId))
+  }
+}
+function onDragEnd() {
+  dragId.value = null
+  dragOverKey.value = null
+}
+function onDragOver(key, ev) {
+  if (!canEdit || dragId.value == null) return
+  ev.preventDefault()
+  if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move'
+  dragOverKey.value = key
+}
+function onDragLeave(key, ev) {
+  // 进入子元素时不清高亮，只有真正离开列才清
+  const next = ev.relatedTarget
+  if (next && ev.currentTarget && ev.currentTarget.contains(next)) return
+  if (dragOverKey.value === key) dragOverKey.value = null
+}
+function onDrop(key) {
+  const athleteId = dragId.value
+  onDragEnd()
+  if (!canEdit || athleteId == null) return
+  const row = fullList.value.find(r => r.athleteId === athleteId)
+  if (!row) return
+  const fromKey = row.status || 'na'
+  if (fromKey === key) return
+
+  const targetLabel = key === 'na' ? '未评估（清除当前状态）' : statusLabel(key)
+  proxy.$modal.confirm(`确认将「${row.athleteName}」的 RTP 状态标记为「${targetLabel}」？`)
+    .then(() => {
+      if (key === 'na') return clearStatus(athleteId, {})
+      return updateStatus({
+        athleteId,
+        status: key,
+        reason: null,
+        trainingLimit: key === 'g' ? null : '待补充',
+        nextReviewDate: null
+      })
+    })
+    .then(() => {
+      proxy.$modal.msgSuccess('RTP 状态已更新')
+      loadAll()
+      if (drawer.value && currentAthlete.value && currentAthlete.value.athleteId === athleteId) {
+        getLog(athleteId).then(res => { logList.value = res.data || [] })
+      }
+    })
+    .catch(() => {})
 }
 
-// ========= 行点击 → 加载历史 =========
-function handleRowClick(row) {
-  currentAthlete.value = row
+// ========= 详情抽屉 =========
+const drawer = ref(false)
+const currentId = ref(null)
+const logList = ref([])
+
+// 用 computed 保持详情在 loadAll 后不陈旧
+const currentAthlete = computed(() =>
+  currentId.value == null ? null : fullList.value.find(r => r.athleteId === currentId.value) || null
+)
+
+function openDrawer(row) {
+  currentId.value = row.athleteId
+  logList.value = []
+  drawer.value = true
   if (row.athleteId) {
     getLog(row.athleteId).then(res => { logList.value = res.data || [] })
-  } else {
-    logList.value = []
   }
 }
 
-// ========= 编辑 =========
+// ========= 编辑（原逻辑保留） =========
 const showEdit = ref(false)
 const saving = ref(false)
 const editMode = ref('update')
 const editForm = reactive({ athleteId: null, status: 'g', reason: '', trainingLimit: '', nextReviewDate: null })
 
 function showEditDialog(row) {
-  currentAthlete.value = row
+  currentId.value = row.athleteId
   editForm.athleteId = row.athleteId
   editForm.status = row.status || 'g'
   editForm.reason = row.reason || ''
@@ -345,9 +461,7 @@ function quickSet(status) {
     }).then(() => {
       proxy.$modal.msgSuccess('RTP 状态已更新')
       loadAll()
-      if (currentAthlete.value) {
-        getLog(currentAthlete.value.athleteId).then(res => { logList.value = res.data || [] })
-      }
+      getLog(currentAthlete.value.athleteId).then(res => { logList.value = res.data || [] })
     }).finally(() => saving.value = false)
   }).catch(() => {})
 }
@@ -364,8 +478,8 @@ function submitEdit() {
     proxy.$modal.msgSuccess('RTP 状态已更新')
     showEdit.value = false
     loadAll()
-    if (currentAthlete.value) {
-      getLog(currentAthlete.value.athleteId).then(res => { logList.value = res.data || [] })
+    if (currentId.value != null) {
+      getLog(currentId.value).then(res => { logList.value = res.data || [] })
     }
   }).finally(() => saving.value = false)
 }
@@ -375,7 +489,8 @@ function handleClear(row) {
     clearStatus(row.athleteId, {}).then(() => {
       proxy.$modal.msgSuccess('已清除')
       loadAll()
-      currentAthlete.value = null
+      drawer.value = false
+      currentId.value = null
       logList.value = []
     })
   }).catch(() => {})
@@ -384,109 +499,123 @@ function handleClear(row) {
 loadAll()
 </script>
 
-<style scoped>
-.rtp-page { padding: 12px 16px; }
+<style lang="scss" scoped>
+@use "@/assets/styles/roster-kit.scss" as *;
 
-/* ========= 顶部汇总条 ========= */
-.rtp-summary {
-  display: flex; gap: 10px; margin-bottom: 16px;
+.rt-select-team { width: 170px; }
+.rt-avatar {
+  width: 30px;
+  height: 30px;
+  font-size: 13px;
 }
-.rtp-sum-cell {
-  flex: 1; border-radius: 10px; padding: 14px 16px;
-  text-align: center; border: 1px solid #eef2f0;
+.rt-card-time { margin-left: auto; color: $rk-text-3; }
+
+/* ===== 抽屉 ===== */
+.rt-drawer-wrap :deep(.el-drawer__body) {
+  padding: 0;
+}
+.rt-drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 18px 20px 20px;
+  overflow-y: auto;
+}
+.rt-drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid $rk-line;
+}
+.rt-drawer-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.rt-avatar-lg {
+  width: 44px;
+  height: 44px;
+  font-size: 18px;
+}
+.rt-drawer-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: $rk-text-1;
+}
+.rt-drawer-sub { margin-top: 4px; font-size: 12px; color: $rk-text-3; }
+.rt-drawer-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  color: $rk-text-3;
   background: #fff;
+  border: 1px solid $rk-line;
+  border-radius: 9px;
+  cursor: pointer;
+  &:hover { background: $rk-canvas; color: $rk-text-1; }
 }
-.sum-num { font-size: 26px; font-weight: 700; }
-.sum-label { font-size: 12px; color: #606266; margin-top: 4px; }
-.rtp-green-bg .sum-num { color: #2c8a57; }
-.rtp-amber-bg .sum-num { color: #b97a16; }
-.rtp-red-bg   .sum-num { color: #c14747; }
-.rtp-gray-bg  .sum-num { color: #909399; }
-.rtp-soft     .sum-num { color: #1b4332; }
-.rtp-green-bg { background: #f0f8f3; border-color: #c8e0d0; }
-.rtp-amber-bg { background: #fdf6e6; border-color: #f0d8a0; }
-.rtp-red-bg   { background: #fceaea; border-color: #e5b5b5; }
-.rtp-gray-bg  { background: #f7f8fa; border-color: #e4e7ed; }
-.rtp-soft     { background: #f0f5f2; border-color: #c0d4c7; }
+.rt-panel-main { min-width: 0; flex: 1; }
+.rk-rtp-icon .el-icon { font-size: 24px; }
+.is-overdue { color: $rk-risk; font-weight: 600; }
 
-/* ========= 通用 ========= */
-.panel-title {
-  display: flex; align-items: center; gap: 10px;
-  font-size: 15px; font-weight: 600; color: #1b4332;
-  padding: 0 0 10px; border-bottom: 1px solid #ebeef5; margin-bottom: 12px;
+/* ===== 快捷操作 ===== */
+.rt-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 4px;
 }
-.panel-sub { font-size: 12px; color: #909399; font-weight: 400; }
-.panel-sub.muted { color: #c0c4cc; }
+.rt-qg { color: $rk-ok; border-color: #b7e4c7; &:hover { background: #e8f7ee; } }
+.rt-qy { color: $rk-warn; border-color: #f5d9a8; &:hover { background: #fef3e0; } }
+.rt-qr { color: $rk-risk; border-color: #f3c1c1; &:hover { background: #fcebeb; } }
 
-.filter-bar { margin-bottom: 10px; }
-
-/* 行样式 */
-.athlete-cell { display: flex; align-items: center; gap: 10px; }
-.ath-avatar {
-  width: 32px; height: 32px; border-radius: 50%;
-  display: grid; place-items: center; color: #fff;
-  font-size: 14px; font-weight: 600; flex: none;
+/* ===== 区块标题 / 时间线 ===== */
+.rt-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 0 12px;
+  padding-left: 9px;
+  border-left: 3px solid $rk-brand-600;
+  font-size: 13px;
+  font-weight: 600;
+  color: $rk-text-1;
 }
-.ath-name { font-weight: 500; color: #303133; }
-.ath-sub  { font-size: 11.5px; color: #909399; margin-top: 2px; }
+.rt-section-sub { margin-left: auto; font-size: 11px; font-weight: 400; color: $rk-text-3; }
 
-.reason-text { font-size: 12.5px; color: #303133; }
-.limit-text { font-size: 11.5px; color: #b97a16; margin-top: 3px; }
-
-.muted { color: #c0c4cc; }
-.overdue { color: #c14747; font-weight: 600; }
-.soon    { color: #b97a16; font-weight: 600; }
-
-:deep(.row-g)   { background: #fafefa; }
-:deep(.row-y)   { background: #fffbf2; }
-:deep(.row-r)   { background: #fef5f5; }
-:deep(.row-na)  { background: #fafafa; }
-
-.rtp-tag { font-weight: 600; letter-spacing: 0.5px; }
-
-/* ========= 详情卡 ========= */
-.detail-panel { min-height: 560px; }
-.detail-empty { min-height: 560px; display: flex; align-items: center; justify-content: center; }
-
-.current-card {
-  border-radius: 10px; padding: 16px 18px; margin-bottom: 14px;
-  border: 1px solid #eef2f0;
+.rt-timeline { padding-left: 2px; }
+.rt-timeline :deep(.el-timeline-item__tail) { border-left-color: $rk-line; }
+.rt-timeline :deep(.el-timeline-item__node--normal) { width: 10px; height: 10px; left: 2px; }
+.rt-timeline :deep(.el-timeline-item__wrapper) { padding-left: 22px; top: 2px; }
+.rt-timeline :deep(.el-timeline-item__timestamp) {
+  position: static;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: $rk-text-3;
 }
-.cur-label { font-size: 12px; color: #7a8a83; }
-.cur-status { font-size: 22px; font-weight: 700; margin: 6px 0 10px; }
-.cur-meta { font-size: 12.5px; color: #303133; line-height: 1.7; }
-.cur-limit { display: block; color: #b97a16; font-weight: 500; }
-.cur-review { display: block; color: #53655e; font-size: 11.5px; margin-top: 2px; }
-.cur-by { margin-top: 8px; font-size: 11.5px; color: #909399; }
-
-.cur-g  { background: #f0f8f3; border-color: #8bc7a5; }
-.cur-g  .cur-status { color: #2c8a57; }
-.cur-y  { background: #fdf6e6; border-color: #e6c070; }
-.cur-y  .cur-status { color: #b97a16; }
-.cur-r  { background: #fceaea; border-color: #d88a8a; }
-.cur-r  .cur-status { color: #c14747; }
-.cur-na { background: #f5f6f7; border-color: #dcdfe6; }
-.cur-na .cur-status { color: #909399; }
-
-.quick-actions {
-  display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;
+.tl-flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tl-arrow { color: $rk-text-3; font-size: 12px; }
+.tl-reason { margin-top: 5px; font-size: 12.5px; line-height: 18px; color: $rk-text-1; }
+.tl-limit { margin-top: 2px; font-size: 12px; color: $rk-warn; }
+.tl-operator { margin-top: 3px; font-size: 11px; color: $rk-text-3; }
+.rt-tl-empty {
+  padding: 24px 0;
+  font-size: 12px;
+  color: $rk-text-3;
+  text-align: center;
 }
 
-.section-title {
-  font-size: 13px; font-weight: 600; color: #1b4332;
-  margin: 14px 0 10px; padding-left: 8px; border-left: 3px solid #1b4332;
-  display: flex; align-items: center; gap: 8px;
+.rt-drawer-foot {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid $rk-line;
 }
-.privacy-note { font-size: 11px; color: #909399; font-weight: 400; margin-left: auto; }
 
-/* ========= 时间线 ========= */
-.rtp-timeline { padding-left: 4px; }
-.tl-flow { display: flex; align-items: center; gap: 6px; }
-.tl-arrow { color: #909399; }
-.tl-reason { font-size: 12.5px; color: #303133; margin-top: 4px; }
-.tl-limit { font-size: 11.5px; color: #b97a16; margin-top: 2px; }
-.tl-operator { font-size: 11px; color: #909399; margin-top: 2px; }
-
-/* ========= 弹窗 ========= */
-.edit-athlete { font-weight: 500; color: #1b4332; }
+/* ===== 弹窗内文字 ===== */
+.edit-athlete { font-weight: 500; color: $rk-text-1; }
 </style>

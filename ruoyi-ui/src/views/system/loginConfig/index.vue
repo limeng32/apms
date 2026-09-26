@@ -299,16 +299,25 @@
           <!-- ======================== 字体 ======================== -->
           <el-tab-pane label="字体" name="font">
             <el-form label-position="top" class="ld-form">
-              <div class="ld-section">字体族（5 个系统字体栈）</div>
-              <el-form-item label="全局字体">
-                <el-select v-model="localConfig.typography.fontFamily" style="width:100%">
-                  <el-option label="系统默认（与全局一致）" value="system" />
-                  <el-option label="苹方优先" value="pingfang" />
-                  <el-option label="雅黑优先" value="yahei" />
-                  <el-option label="黑体" value="heiti" />
-                  <el-option label="宋体衬线" value="songti" />
-                </el-select>
-                <div class="ld-hint">仅使用访客本机系统字体，不加载网络字体，避免登录页加载外部资源</div>
+              <div class="ld-section">整体字体（登录页 + 后台管理系统）</div>
+              <el-form-item label="字体风格">
+                <el-radio-group v-model="localConfig.typography.fontFamily" class="ld-font-group">
+                  <el-radio value="heiti" class="ld-font-radio">
+                    <div class="ld-font-card" :style="{ fontFamily: FONT_STACKS.heiti }">
+                      <div class="ld-font-name">黑体</div>
+                      <div class="ld-font-sample">运动员训练数据管理系统 123ABC</div>
+                      <div class="ld-font-desc">Heiti SC · SimHei · 苹方 / 雅黑回退</div>
+                    </div>
+                  </el-radio>
+                  <el-radio value="songti" class="ld-font-radio">
+                    <div class="ld-font-card" :style="{ fontFamily: FONT_STACKS.songti }">
+                      <div class="ld-font-name">宋体</div>
+                      <div class="ld-font-sample">运动员训练数据管理系统 123ABC</div>
+                      <div class="ld-font-desc">Songti SC · STSong · SimSun 衬线回退</div>
+                    </div>
+                  </el-radio>
+                </el-radio-group>
+                <div class="ld-hint">切换后保存即对整体系统（含登录页）生效；仅使用访客本机系统字体，不加载网络字体。Windows / macOS 缺字库时按字体栈自动回退</div>
               </el-form-item>
 
               <div class="ld-section">字号 / 字重</div>
@@ -406,6 +415,7 @@ import useLoginThemeStore from '@/store/modules/loginTheme'
 import {
   cloneDefaults, mergeWithDefaults,
   BUILTIN_LOGO_VALUES,
+  FONT_STACKS,
   normalizeProfileUrl,
   applyLoginHead, restoreLoginHead
 } from '@/views/login/login.utils'
@@ -473,13 +483,13 @@ const GRADIENT_FIELDS = [
 const PALETTES = [
   {
     name: '科技蓝（默认）',
-    swatches: ['#0a1120', '#3b82f6', '#22d3ee'],
+    swatches: ['#0a1120', '#3b82f6', '#2563eb'],
     colors: {
       brandGradient: { angle: 150, stops: ['#0a1120', '#0f172a', '#111b31'] },
-      accent: '#22d3ee', glow2: '#3b82f6', textOnBrand: '#ffffff',
+      accent: '#2563eb', glow2: '#3b82f6', textOnBrand: '#ffffff',
       textOnBrandMuted: 'rgba(255,255,255,.7)', pageBg: '#ffffff',
       formTitle: '#0f172a', formSubText: '#94a3b8', inputBorder: '#e5e9f0',
-      inputFocus: '#06b6d4', buttonBg: '#2563eb', buttonHover: '#3b82f6',
+      inputFocus: '#2563eb', buttonBg: '#2563eb', buttonHover: '#3b82f6',
       buttonLoading: '#06b6d4', link: '#2563eb',
       heroGradient: { enabled: true, angle: 90, stops: ['#3b82f6', '#22d3ee'] },
       buttonGradient: { enabled: true, angle: 90, stops: ['#2563eb', '#06b6d4'] }
@@ -1035,6 +1045,65 @@ function measure() {
   font-size: 12px;
   color: #909399;
   line-height: 1.5;
+}
+
+/* 整体字体卡片式单选 */
+.ld-font-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  width: 100%;
+}
+:deep(.ld-font-radio) {
+  position: relative;
+  height: auto;
+  margin-right: 0;
+  padding: 0;
+  border: 1px solid #dcdfe6;
+  border-radius: 10px;
+  background: #fff;
+  transition: border-color .15s, box-shadow .15s, background .15s;
+  overflow: hidden;
+  &:hover {
+    border-color: var(--el-color-primary, #2563eb);
+  }
+  &.is-checked {
+    border-color: var(--el-color-primary, #2563eb);
+    background: var(--el-color-primary-light-9, #ecf0fe);
+    box-shadow: 0 0 0 1px var(--el-color-primary, #2563eb) inset;
+  }
+  .el-radio__input {
+    // 圆点移入卡片左上角内边距区，不占布局主轴
+    position: absolute;
+    top: 10px;
+    left: 12px;
+  }
+  .el-radio__label {
+    width: 100%;
+    padding: 0;
+  }
+}
+.ld-font-card {
+  padding: 12px 14px 12px 30px;
+  cursor: pointer;
+}
+.ld-font-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 6px;
+}
+.ld-font-sample {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #303133;
+  word-break: break-all;
+}
+.ld-font-desc {
+  font-family: var(--el-font-family) !important;
+  font-size: 11px;
+  color: #909399;
+  margin-top: 4px;
 }
 
 /* 颜色编辑行 */

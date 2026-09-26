@@ -1,3 +1,27 @@
+/**
+ * 整体字体栈（只存枚举值，原始 font-family 由这里映射）
+ * 登录页（login.utils.js）与后台管理（applyGlobalBrand）共用同一份，避免两处漂移。
+ * 同时给出 macOS / Windows 系统字体名，缺字库时按栈逐级回退（最后才落 sans/serif）。
+ */
+export const FONT_STACKS = {
+  // 以下三个为历史枚举，仅用于兼容旧配置数据；设计器目前只开放 heiti / songti
+  system: `"Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif`,
+  pingfang: `"PingFang SC", "Hiragino Sans GB", -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif`,
+  yahei: `"Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", -apple-system, BlinkMacSystemFont, sans-serif`,
+  // 黑体（无衬线）：mac Heiti SC / Win SimHei 优先，逐级回退到苹方/雅黑
+  heiti: `"Heiti SC", "SimHei", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif`,
+  // 宋体（衬线）：mac Songti SC/STSong / Win SimSun/NSimSun，最后回退通用衬线
+  songti: `"Songti SC", "STSong", "SimSun", "NSimSun", "Noto Serif CJK SC", serif`
+}
+
+/** 整体字体允许选择的枚举（设计器目前只开放黑体 / 宋体；其他历史值归一为黑体） */
+export const APP_FONT_FAMILIES = ['heiti', 'songti']
+
+/** 取整体字体最终 CSS font-family（非法/历史枚举统一回退黑体，视觉与系统默认无衬线最接近） */
+export function resolveAppFontStack(value) {
+  return FONT_STACKS[APP_FONT_FAMILIES.includes(value) ? value : 'heiti']
+}
+
 // 处理主题样式
 export function handleThemeStyle(theme) {
   const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
@@ -31,6 +55,13 @@ export function applyGlobalBrand(config) {
   root.style.setProperty('--current-color', brandColor)
   root.style.setProperty('--current-color-dark-bg', hexWithAlpha(brandColor, 0.18))
   root.style.setProperty('--current-color-light', getLightColor(brandColor, 0.82))
+
+  // 整体字体（登录页设计器 typography.fontFamily：heiti | songti）
+  // 写 --el-font-family 让 Element Plus 组件（按钮/输入/表格/弹窗等）整体跟随，
+  // --app-font-family 供 body 与业务页自定义样式消费；两者同源，保证后台字体统一。
+  const fontStack = resolveAppFontStack(config && config.typography ? config.typography.fontFamily : undefined)
+  root.style.setProperty('--app-font-family', fontStack)
+  root.style.setProperty('--el-font-family', fontStack)
 
   // 品牌渐变 + 角度
   const g = colors.brandGradient || {}

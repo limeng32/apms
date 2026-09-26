@@ -649,6 +649,7 @@ $risk: #dc2626;
 }
 .rp-header-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -656,12 +657,16 @@ $risk: #dc2626;
   height: 36px;
   padding: 0 14px;
   border-radius: 10px;
-  border-color: $brand-600;
-  background: $brand-600;
+  // 无 1px 边框：否则渐变按 padding-box 定位+repeat 平铺却裁剪到 border-box，
+  // 边框环会铺出相邻平铺色块（左青右蓝反色细线），与 demo border-width:0 对齐
+  border: 0;
+  background: linear-gradient(90deg, #2563eb, #06b6d4);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, .22);
   font-weight: 600;
+  transition: background .15s, box-shadow .15s;
   &:hover, &:focus {
-    background: $brand-700;
-    border-color: $brand-700;
+    background: linear-gradient(90deg, #3B82F6, #22D3EE);
+    box-shadow: 0 6px 16px rgba(37, 99, 235, .28);
   }
 }
 :deep(.rp-btn-danger.el-button) {

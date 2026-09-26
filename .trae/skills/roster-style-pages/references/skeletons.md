@@ -1,6 +1,6 @@
 # 可复用代码骨架（速查）
 
-以下为字段无关骨架，实际改造时**优先从标杆范例直接复制改名**（role/index.vue、user/index.vue、dept/index.vue、athlete/detail.vue）。
+以下为字段无关骨架，实际改造时**优先从标杆范例直接复制改名**（role/index.vue、user/index.vue、dept/index.vue、athlete/detail.vue、phv/index.vue、bodyMeasure/index.vue、rtp/index.vue、medical/index.vue）。
 
 ## 1. 头像哈希 + 展示辅助
 
@@ -224,3 +224,297 @@ class 全部已在 roster-kit.scss「详情壳层」段定义，直接使用；�
   &:hover { background: $rk-canvas; color: $rk-brand-600; border-color: $rk-brand-500; }
 }
 ```
+
+## 11. 看板壳层结构（dashboard 模式）
+
+```html
+<div class="app-container">
+  <div class="rk-dash-page rk-page">
+    <div class="rk-header">
+      <div>
+        <h1 class="rk-title">数据总览驾驶舱</h1>
+        <p class="rk-subtitle">副标题</p>
+      </div>
+      <div class="rk-header-actions"><span class="db-scope-hint">提示 pill</span></div>
+    </div>
+
+    <div class="rk-kpi-grid">
+      <div class="rk-kpi-card" v-for="k in kpiCards" :key="k.label">
+        <span class="rk-kpi-accent" :style="{ background: k.accent }"></span>
+        <div class="rk-kpi-label">{{ k.label }}</div>
+        <div class="rk-kpi-value">{{ k.value }}<span class="rk-kpi-unit" v-if="k.unit">{{ k.unit }}</span></div>
+        <span class="rk-kpi-chip" :class="k.chipTone">{{ k.chip }}</span>
+      </div>
+    </div>
+
+    <div class="rk-chips-bar" v-if="keys.length">
+      <span class="rk-chips-bar-label">队伍分布</span>
+      <span class="rk-soft-chip" v-for="k in keys" :key="k">{{ k }} · {{ dist[k] }} 人</span>
+    </div>
+
+    <div class="rk-chart-grid">
+      <div class="rk-chart-card" v-for="g in charts" :key="g.title">
+        <div class="rk-chart-head">
+          <span class="rk-chart-title">{{ g.title }}</span>
+          <span class="rk-chart-sub">{{ g.sub }}</span>
+          <div class="rk-chart-actions" v-if="g.select">…el-select.db-select…</div>
+        </div>
+        <div class="rk-chart-body">
+          <div :ref="g.ref" class="rk-chart-box"></div>
+          <div class="rk-chart-empty" v-if="!g.hasData">暂无数据</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 汇总表：rk-table + rk-progress + rk-status-badge -->
+  </div>
+</div>
+```
+
+ECharts 主题常量 + ResizeObserver 生命周期：
+
+```js
+const C = {
+  brand: '#2563EB', brandLight: '#3B82F6', cyan: '#06B6D4', violet: '#8B5CF6', indigo: '#6366F1',
+  ok: '#16A34A', okLight: '#4ADE80', warn: '#D97706', risk: '#DC2626', riskLight: '#F87171', slate: '#CBD5E1'
+}
+const AXIS_LABEL = { fontSize: 11, color: '#94A3B8' }
+const SPLIT_LINE = { lineStyle: { color: '#EEF2F7' } }
+const DARK_TOOLTIP = {
+  backgroundColor: '#0F172A', borderWidth: 0, padding: [8, 12],
+  textStyle: { color: '#fff', fontSize: 12 },
+  extraCssText: 'border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.18);'
+}
+const LEGEND_TEXT = { fontSize: 11, color: '#64748B' }
+
+let resizeObserver = null
+function handleResize() { charts.forEach(c => c && c.resize()) }
+// initCharts() 末尾（数据到达 nextTick 后）：
+if (!resizeObserver && typeof ResizeObserver !== 'undefined') {
+  resizeObserver = new ResizeObserver(handleResize)   // 一个 observer 观察全部 box
+  boxRefs.forEach(r => { if (r.value) resizeObserver.observe(r.value) })
+}
+onBeforeUnmount(() => {
+  if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null }
+  charts.forEach((c, i) => { if (c) { c.dispose(); charts[i] = null } })
+})
+```
+
+要点：正/负值横向柱渐变用 `new echarts.graphic.LinearGradient(0,0,1,0,[...])` 在 itemStyle.color 回调里按 `p.value` 分流；计数 y 轴加 `minInterval:1`；密集散点加 `labelLayout:{hideOverlap:true}` 且 grid right≥60；**不要**用 `window.addEventListener('resize')` 替代 RO（侧栏折叠无 window resize 事件）。
+
+## 12. KPI 业务列表页（phv/bodyMeasure 模式）
+
+部门树拍平为原生 select（全角空格缩进）：
+
+```js
+const deptOpts = ref([])                       // listDept({pageNum:1,pageSize:500}) 返回树
+const flatDepts = computed(() => {
+  const out = []
+  const walk = (nodes, depth) => {
+    (nodes || []).forEach(n => {
+      out.push({ deptId: n.deptId, deptName: n.deptName, depth })
+      if (n.children && n.children.length) walk(n.children, depth + 1)
+    })
+  }
+  walk(deptOpts.value, 0)
+  return out
+})
+```
+
+```html
+<select v-model="filters.deptId" class="rk-select">
+  <option :value="null">全部队伍</option>
+  <option v-for="d in flatDepts" :key="d.deptId" :value="d.deptId">
+    {{ '\u3000'.repeat(d.depth) }}{{ d.deptName }}
+  </option>
+</select>
+```
+
+全量加载 + 即时 computed 过滤（无分页、无防抖；行数据只有队伍名字符串，按 deptName 匹配）：
+
+```js
+const rawData = ref([])
+const filters = reactive({ keyword: '', deptId: null })
+const filteredData = computed(() => {
+  let arr = rawData.value
+  const kw = filters.keyword.trim()
+  if (kw) arr = arr.filter(r => (r.athleteName || '').includes(kw))
+  if (filters.deptId != null) {
+    const dept = flatDepts.value.find(d => d.deptId === filters.deptId)
+    if (dept) arr = arr.filter(r => r.athleteTeam === dept.deptName)
+  }
+  return arr
+})
+function resetFilter() { filters.keyword = ''; filters.deptId = null }
+```
+
+前端 KPI summary（均值只算非空；去重按业务主键 Set）：
+
+```js
+const summary = reactive({ total: 0, athletes: 0, avgX: '—' })
+function buildSummary(arr) {
+  summary.total = arr.length
+  summary.athletes = new Set(arr.map(r => r.athleteId)).size
+  const vals = arr.filter(r => r.x != null && r.x !== '').map(r => Number(r.x))
+  summary.avgX = vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : '—'
+}
+// loadList 成功后 buildSummary(res.data || [])
+```
+
+要点：KPI 卡带用 `<div class="rk-kpi-grid is-4">`（4 卡，≥1100px 四列）；业务弹窗（计算/upsert）的 reactive 状态名、提交方式（params vs data）、按钮文案以源码为准原样搬；表格无 rk-pager，外壳仍包 `rk-table-scroll`。
+
+## 13. 状态看板（rtp 模式）+ 主从双栏（medical 模式）
+
+### 13a. 看板列 + HTML5 拖拽 + confirm 落库
+
+```html
+<div class="rk-kanban-grid">
+  <div v-for="col in COLUMNS" :key="col.key" class="rk-kanban-col" :class="col.tone"
+       @dragover="onDragOver($event, col.key)" @dragleave="onDragLeave($event, col.key)"
+       @drop="onDrop($event, col.key)">
+    <div class="rk-kanban-head">
+      <span class="rk-kanban-dot"></span>
+      <span class="rk-kanban-title">{{ col.title }}</span>
+      <span class="rk-kanban-count">{{ columnList(col.key).length }}</span>
+      <span class="rk-kanban-hint">{{ col.hint }}</span>
+    </div>
+    <div class="rk-kanban-body">
+      <div v-for="r in columnList(col.key)" :key="r.athleteId" class="rk-kanban-card"
+           :draggable="canEdit" @dragstart="onDragStart($event, r)" @click="openDrawer(r)">
+        <div class="rk-kanban-card-top">
+          <span class="rk-avatar" :style="{background: avatarColorById(r.athleteId)}">{{ char(r) }}</span>
+          <div><div class="rk-kanban-card-name">{{ r.athleteName }}</div>
+               <div class="rk-kanban-card-sub">{{ r.athleteTeam || '—' }} · #{{ r.athleteId }}</div></div>
+        </div>
+        <div v-if="r.reason" class="rk-kanban-card-reason">{{ r.reason }}</div>
+        <div v-if="col.key!=='g' && r.trainingLimit" class="rk-kanban-card-limit">限制：{{ r.trainingLimit }}</div>
+        <div class="rk-kanban-card-foot">…复检日期（逾期 is-overdue / 临近 is-soon）…更新时间</div>
+      </div>
+      <div v-if="!columnList(col.key).length" class="rk-kanban-empty">暂无队员</div>
+    </div>
+  </div>
+</div>
+```
+
+```js
+import { checkPermi } from '@/utils/permission'
+const canEdit = checkPermi(['apms:athlete:edit'])
+const dragId = ref(null), dragOverKey = ref(null)
+function onDragStart(e, r) { dragId.value = r.athleteId; e.dataTransfer.setData('text/plain', String(r.athleteId)); e.dataTransfer.effectAllowed = 'move' }
+function onDragOver(e, key) { e.preventDefault(); dragOverKey.value = key; e.dataTransfer.dropEffect = 'move' }
+function onDragLeave(e, key) {
+  // 只在离开整列时清高亮，避免卡片内部子元素间移动导致闪烁
+  const col = e.currentTarget
+  if (!e.relatedTarget || !col.contains(e.relatedTarget)) { if (dragOverKey.value === key) dragOverKey.value = null }
+}
+function onDrop(e, targetKey) {
+  e.preventDefault(); dragOverKey.value = null
+  const id = dragId.value || Number(e.dataTransfer.getData('text/plain')); dragId.value = null
+  const row = fullList.value.find(x => x.athleteId === id)
+  if (!row || (row.status || 'na') === targetKey) return           // 同列跳过
+  proxy.$modalConfirmRow(row, targetKey)                            // 先 confirm 再落库
+}
+// confirm：取消不做任何事；确定后按目标 key 分流 update/clear，成功 loadAll + 同步抽屉
+```
+
+列高亮态绑 `:class="{'is-dragover': dragOverKey===col.key}"`，卡片拖拽中 `:class="{'is-dragging': dragId===r.athleteId}"`；只读（无权限）卡片不可拖（`:draggable` 即可，不需要 is-readonly 修饰）。
+
+### 13b. el-drawer 详情（currentId + computed 防陈旧）
+
+```html
+<el-drawer v-model="drawerOpen" size="460px" :with-header="false" direction="rtl">
+  <div class="rk-drawer-head">
+    <span class="rt-avatar-lg" :style="{background: avatarColorById(cur.athleteId)}">{{ char(cur) }}</span>
+    <div><div class="rk-drawer-name">{{ cur.athleteName }} <span class="rk-status-badge" :class="statusTone(cur)">{{ statusLabel(cur) }}</span></div>
+         <div class="rk-drawer-sub">{{ cur.athleteTeam || '—' }} · #{{ cur.athleteId }}</div></div>
+    <button class="rk-drawer-close" @click="drawerOpen=false"><el-icon><Close /></el-icon></button>
+  </div>
+  <!-- rk-rtp-panel（tone 跟状态）+ 快捷按钮组（v-hasPermi，当前状态按钮隐藏）+ el-timeline + 底部危险钮 -->
+</el-drawer>
+```
+
+```js
+const currentId = ref(null)
+const currentAthlete = computed(() => fullList.value.find(x => x.athleteId === currentId.value)) // loadAll 后自动不陈旧
+const logList = ref([])
+function openDrawer(r) { currentId.value = r.athleteId; drawerOpen.value = true; loadLog(r.athleteId) }
+async function loadLog(id) { const res = await getLog(id); if (currentId.value === id) logList.value = res.data || [] }
+```
+
+scoped 收敛：`:deep(.el-drawer__body){padding:0}`；el-timeline node 10px、`--el-timeline-node-size`、wrapper padding-left、timestamp 静态灰字。
+
+### 13c. split-grid 主从双栏 + 服务端分页/防抖重置
+
+```html
+<div class="rk-split-grid" style="--rk-split-l:11fr;--rk-split-r:13fr">
+  <div class="rk-table-card">
+    <table class="rk-table">
+      <tbody>
+        <tr v-for="row in recordList" :key="row.id" :class="{'is-selected': current && current.id===row.id}" @click="handleRowClick(row)">…</tr>
+      </tbody>
+    </table>
+    <div class="rk-pager" v-if="total>0">…PAGE_SIZE=10、pageNumbers 省略号、goPage…</div>
+  </div>
+  <div class="rk-card">
+    <template v-if="current">
+      <div class="md-detail-banner" :style="bannerStyle(current.recordType)">…chip + 标题 + 日期/机构/队员…</div>
+      <div class="rk-card-body">…说明…附件（current.files）…</div>
+    </template>
+    <div v-else class="rk-empty">选择左侧记录查看详情</div>
+  </div>
+</div>
+```
+
+```js
+// 重置防 watcher 双请求
+let filterGuard = false
+function resetQuery() {
+  filterGuard = true
+  queryParams.f1 = null; queryParams.f2 = null; queryParams.pageNum = 1
+  getList(); loadStats()
+  nextTick(() => { filterGuard = false })
+}
+watch(() => [queryParams.f1, queryParams.f2], () => {
+  if (filterGuard) return
+  clearTimeout(filterTimer); filterTimer = setTimeout(handleQuery, 300)
+})
+
+// list 不回传子集合：KPI + 行计数胶囊靠并发 getById（seq 防竞态）
+const fileCountMap = ref({}); let statsSeq = 0
+function loadStats() {
+  const seq = ++statsSeq
+  listX({ pageNum: 1, pageSize: 500 }).then(async r => {
+    const rows = r.rows || []
+    if (seq !== statsSeq) return
+    const details = await Promise.all(rows.map(x => getX(x.id).then(d => d.data).catch(() => null)))
+    if (seq !== statsSeq) return
+    const map = {}; let n = 0
+    details.forEach((d, i) => { const c = (d?.files?.length) || 0; map[rows[i].id] = c; n += c })
+    fileCountMap.value = map; stats.files = n
+  })
+}
+
+// 编辑回填同样必须 getById，否则后端「删旧增新」会清空附件
+function handleEdit(row) {
+  getX(row.id).then(res => { const detail = res.data || row; Object.assign(form, detail); form.fileList = (detail.files||[]).map(/* uid/name/url */); form.files = (detail.files||[]).map(/* 提交体字段 */); showDialog.value = true })
+}
+```
+
+### 13d. 带 Bearer 的私有文件下载（兼容 200+JSON 业务错误）
+
+```js
+async function handleDownload(f) {
+  const res = await fetch(import.meta.env.VITE_APP_BASE_API + downloadUrl(f.id), {
+    headers: { Authorization: 'Bearer ' + getToken() }
+  })
+  if (!res.ok) return proxy.$modal.msgError('下载失败或无下载权限')
+  if ((res.headers.get('content-type') || '').includes('application/json')) {
+    const err = await res.json().catch(() => null)
+    return proxy.$modal.msgError(err?.msg || '下载失败')   // 若依：业务错误 HTTP 200 + {code:500,msg}
+  }
+  const url = URL.createObjectURL(await res.blob())
+  const a = Object.assign(document.createElement('a'), { href: url, download: f.fileName })
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+}
+```
+

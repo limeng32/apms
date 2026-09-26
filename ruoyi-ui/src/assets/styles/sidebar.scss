@@ -103,6 +103,42 @@
       }
     }
 
+    // ===== 二级及更深菜单图标（demo 风格：15px 线性小图标，currentColor 跟随文字/激活态）=====
+    .sub-menu-icon {
+      flex: none;
+      width: 15px;
+      height: 15px;
+      font-size: 15px;
+      margin-right: 8px !important;
+      vertical-align: -2px;
+    }
+    // 未配 icon 的菜单项：6px 小圆点兜底，占位与图标等宽（4+6+13=23px），文字起始对齐
+    .sub-menu-dot {
+      display: inline-block;
+      flex: none;
+      width: 6px;
+      height: 6px;
+      margin-left: 4px;
+      margin-right: 13px;
+      border-radius: 50%;
+      background-color: currentColor;
+      opacity: .45;
+      vertical-align: middle;
+    }
+    .el-menu-item.is-active .sub-menu-dot,
+    .el-sub-menu.is-active > .el-sub-menu__title .sub-menu-dot {
+      opacity: 1;
+    }
+    // EP 默认缩进 20 + level*20（二级 40/三级 60）；加图标后收紧，文字不被挤出
+    .el-menu--inline > .el-menu-item,
+    .el-menu--inline > .el-sub-menu > .el-sub-menu__title {
+      padding-left: 30px !important;
+    }
+    .el-menu--inline .el-menu--inline > .el-menu-item,
+    .el-menu--inline .el-menu--inline > .el-sub-menu > .el-sub-menu__title {
+      padding-left: 46px !important;
+    }
+
     & .theme-dark .nest-menu .el-sub-menu>.el-sub-menu__title,
     & .theme-dark .el-sub-menu .el-menu-item {
       // 半透明黑底，让品牌渐变隐约透出，层级感与渐变底兼顾

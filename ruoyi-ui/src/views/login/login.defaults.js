@@ -75,7 +75,8 @@ export default {
   colors: {
     // 深色运动科技底（demo 同款 ink 色板：#0A1120/#0F172A/#111B31）
     brandGradient: { angle: 150, stops: ['#0a1120', '#0f172a', '#111b31'] },
-    accent: '#22d3ee',
+    // 品牌色 = demo/rk 体系主题蓝 #2563EB（App.vue 会推广为全系统 Element 主色，含标签页/侧栏/按钮）
+    accent: '#2563eb',
     glow2: '#3b82f6',
     textOnBrand: '#ffffff',
     textOnBrandMuted: 'rgba(255,255,255,.7)',
@@ -83,7 +84,7 @@ export default {
     formTitle: '#0f172a',
     formSubText: '#94a3b8',
     inputBorder: '#e5e9f0',
-    inputFocus: '#06b6d4',
+    inputFocus: '#2563eb',
     // 渐变关闭时按钮使用的纯色兜底
     buttonBg: '#2563eb',
     buttonHover: '#3b82f6',
@@ -101,7 +102,7 @@ export default {
     entrance: true
   },
   typography: {
-    fontFamily: 'system',       // system | pingfang | yahei | heiti | songti
+    fontFamily: 'heiti',        // 整体字体（登录页 + 后台管理）：heiti 黑体 | songti 宋体
     heroSize: 38,
     heroWeight: 700,
     brandNameSize: 22,

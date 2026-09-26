@@ -4,6 +4,11 @@
       <app-link v-if="onlyOneChild.meta" :to="resolvePath(onlyOneChild.path, onlyOneChild.query)">
         <el-menu-item :index="resolvePath(onlyOneChild.path)" :class="{ 'submenu-title-noDropdown': !isNest }">
           <svg-icon v-if="!isNest" :icon-class="onlyOneChild.meta.icon || (item.meta && item.meta.icon)"/>
+          <!-- 嵌套层（二级及更深）：demo 风格小图标；菜单未配 icon 时用小圆点保持视觉锚点 -->
+          <template v-else>
+            <svg-icon v-if="onlyOneChild.meta.icon || (item.meta && item.meta.icon)" class="sub-menu-icon" :icon-class="onlyOneChild.meta.icon || (item.meta && item.meta.icon)"/>
+            <span v-else class="sub-menu-dot" aria-hidden="true"></span>
+          </template>
           <template #title><span class="menu-title" :title="hasTitle(onlyOneChild.meta.title)">{{ onlyOneChild.meta.title }}</span></template>
         </el-menu-item>
       </app-link>
@@ -12,6 +17,10 @@
     <el-sub-menu v-else ref="subMenu" :index="resolvePath(item.path)" teleported>
       <template v-if="item.meta" #title>
         <svg-icon v-if="!isNest" :icon-class="item.meta && item.meta.icon" />
+        <template v-else>
+          <svg-icon v-if="item.meta.icon" class="sub-menu-icon" :icon-class="item.meta.icon" />
+          <span v-else class="sub-menu-dot" aria-hidden="true"></span>
+        </template>
         <span class="menu-title" :title="hasTitle(item.meta.title)">{{ item.meta.title }}</span>
       </template>
 

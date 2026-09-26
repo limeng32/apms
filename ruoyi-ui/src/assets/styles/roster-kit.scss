@@ -51,6 +51,7 @@ $rk-risk: #dc2626;
 }
 .rk-header-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -79,6 +80,26 @@ $rk-risk: #dc2626;
   border-color: $rk-brand-600;
   &:hover { background: $rk-brand-700; border-color: $rk-brand-700; }
   &:disabled { background: $rk-brand-600; border-color: $rk-brand-600; }
+}
+/* hero 区主操作按钮：demo 同款蓝→青渐变（仅页头/详情头；卡片内 rk-btn-sm 小按钮保持纯色） */
+.rk-header-actions .rk-btn-primary,
+.rk-profile-actions .rk-btn-primary {
+  // 必须无 1px 边框（对齐 demo 的 border-width:0）：渐变默认按 padding-box 定位 + repeat 平铺、
+  // 却裁剪到 border-box，1px 边框环会铺出相邻平铺色块——左缘=上一块末端（青）、右缘=下一块起点（蓝），形成反色线
+  border: 0;
+  transition: background .15s, color .15s, box-shadow .15s;
+  background: linear-gradient(90deg, #2563EB, #06B6D4);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, .22);
+  &:hover {
+    background: linear-gradient(90deg, #3B82F6, #22D3EE);
+    box-shadow: 0 6px 16px rgba(37, 99, 235, .28);
+  }
+  &:disabled,
+  &.is-disabled,
+  &.is-disabled:hover {
+    background: linear-gradient(90deg, #2563EB, #06B6D4);
+    box-shadow: none;
+  }
 }
 .rk-btn-danger {
   color: $rk-risk;
@@ -634,7 +655,7 @@ button.rk-status-badge {
   color: $rk-text-1;
 }
 .rk-mini-stat-unit { font-size: 11px; font-weight: 500; color: $rk-text-3; margin-left: 2px; }
-.rk-profile-actions { display: flex; align-items: center; gap: 8px; }
+.rk-profile-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 
 /* 红/黄预警横幅 */
 .rk-banner {
@@ -794,4 +815,339 @@ button.rk-status-badge {
 @media (max-width: 900px) {
   .rk-mini-stats { border-right: none; padding-right: 0; }
   .rk-desc-grid { grid-template-columns: 1fr; }
+}
+/* 手机端：满铺壳层 40px 边距收紧，避免内容区被压到 295px 以下 */
+@media (max-width: 768px) {
+  .rk-detail-page { padding: 18px 14px 20px; }
+  /* profile 主信息 min-width:280 在 320px 屏（内容宽约 244px）会撑破卡片 */
+  .rk-profile { padding: 16px; gap: 14px; }
+  .rk-profile-main { min-width: 0; }
+  .rk-card-head { padding: 12px 14px 0; }
+  .rk-card-body { padding: 12px 14px 14px; }
+  .rk-title { font-size: 20px; }
+}
+
+/* ============================================================
+ * 看板壳层（dashboard，对齐 demo 数据总览驾驶舱）
+ * ============================================================ */
+
+/* 满铺 canvas 底（左/上 40 补偿 fixed 侧栏/头部的 20px） */
+.rk-dash-page {
+  min-height: calc(100vh - 84px);
+  margin: -20px;
+  padding: 32px 40px 36px;
+  background: $rk-canvas;
+}
+
+/* KPI 卡带 */
+.rk-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.rk-kpi-card {
+  position: relative;
+  overflow: hidden;
+  padding: 16px 18px 14px;
+  background: #fff;
+  border: 1px solid $rk-line;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 1px 3px rgba(15, 23, 42, .06);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.rk-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, .08), 0 2px 6px rgba(15, 23, 42, .06);
+}
+.rk-kpi-accent {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+}
+.rk-kpi-label { font-size: 12px; color: $rk-text-3; }
+.rk-kpi-value {
+  margin-top: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 34px;
+  color: $rk-text-1;
+  font-variant-numeric: tabular-nums;
+}
+.rk-kpi-unit {
+  margin-left: 3px;
+  font-size: 13px;
+  font-weight: 500;
+  color: $rk-text-3;
+}
+.rk-kpi-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 8px;
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: $rk-text-2;
+  &.tone-info  { background: $rk-brand-50; color: $rk-brand-600; }
+  &.tone-ok    { background: #e8f7ee; color: $rk-ok; }
+  &.tone-warn  { background: #fef3e0; color: $rk-warn; }
+  &.tone-risk  { background: #fcebeb; color: $rk-risk; }
+}
+
+/* 队伍分布条 */
+.rk-chips-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 10px 16px;
+  background: #fff;
+  border: 1px solid $rk-line;
+  border-radius: 12px;
+}
+.rk-chips-bar-label { font-size: 12px; font-weight: 600; color: $rk-text-3; }
+
+/* 图表栅格 */
+.rk-chart-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.rk-chart-card {
+  position: relative;
+  background: #fff;
+  border: 1px solid $rk-line;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 1px 3px rgba(15, 23, 42, .06);
+}
+.rk-chart-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 13px 18px;
+  border-bottom: 1px solid $rk-line;
+}
+.rk-chart-title { font-size: 14px; font-weight: 600; color: $rk-text-1; }
+.rk-chart-sub { font-size: 12px; color: $rk-text-3; }
+.rk-chart-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.rk-chart-body { padding: 16px 18px 14px; }
+.rk-chart-box { width: 100%; height: 320px; }
+.rk-chart-empty {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 13px;
+  color: $rk-text-3;
+}
+.rk-chart-foot {
+  padding: 10px 18px 12px;
+  border-top: 1px solid $rk-line;
+  font-size: 12px;
+  line-height: 18px;
+  color: $rk-text-3;
+}
+
+/* 细进度条 */
+.rk-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: #eef2f7;
+  overflow: hidden;
+}
+.rk-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: $rk-brand-600;
+  transition: width .5s ease;
+  &.tone-ok   { background: $rk-ok; }
+  &.tone-warn { background: $rk-warn; }
+  &.tone-risk { background: $rk-risk; }
+  &.tone-gray { background: #cbd5e1; }
+}
+
+@media (min-width: 1000px) {
+  .rk-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 1500px) {
+  .rk-kpi-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+@media (max-width: 1279px) {
+  .rk-chart-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+  .rk-dash-page { padding: 28px 20px 32px; }
+}
+@media (max-width: 768px) {
+  .rk-dash-page { padding: 20px 14px 24px; }
+}
+
+/* KPI 栅格密度修饰：4 卡业务页（PHV / 体态测量等） */
+@media (min-width: 1100px) {
+  .rk-kpi-grid.is-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* ============================================================
+ * 主从双栏栅格（master-detail：左台账 + 右详情）
+ * 列比用 CSS 变量按页覆盖：style="--rk-split-l:11fr; --rk-split-r:13fr"
+ * ============================================================ */
+.rk-split-grid {
+  display: grid;
+  grid-template-columns: minmax(0, var(--rk-split-l, 1fr)) minmax(0, var(--rk-split-r, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1279px) {
+  .rk-split-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ============================================================
+ * 看板壳层（kanban，对齐 demo RtpKanban：红/黄/绿/灰四列 + 拖拽卡片）
+ * ============================================================ */
+.rk-kanban-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+@media (max-width: 1279px) {
+  .rk-kanban-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .rk-kanban-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.rk-kanban-col {
+  background: #fff;
+  border: 1px solid $rk-line;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 1px 3px rgba(15, 23, 42, .06);
+  overflow: hidden;
+  transition: box-shadow .15s ease, border-color .15s ease;
+  &.is-dragover {
+    border-color: $rk-brand-500;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, .18);
+  }
+}
+.rk-kanban-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid $rk-line;
+}
+.rk-kanban-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+.rk-kanban-title { font-size: 13px; font-weight: 600; color: $rk-text-1; }
+.rk-kanban-count {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 17px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+.rk-kanban-hint { margin-left: auto; font-size: 11px; color: $rk-text-3; }
+.rk-kanban-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  min-height: 120px;
+}
+
+/* 列色调（圆点 / 计数胶囊 / 列头淡底） */
+.rk-kanban-col.tone-red   { --rk-tone: #{$rk-risk}; }
+.rk-kanban-col.tone-amber { --rk-tone: #{$rk-warn}; }
+.rk-kanban-col.tone-green { --rk-tone: #{$rk-ok}; }
+.rk-kanban-col.tone-gray  { --rk-tone: #94a3b8; }
+.rk-kanban-col .rk-kanban-dot { background: var(--rk-tone, $rk-text-3); }
+.rk-kanban-col .rk-kanban-count { color: var(--rk-tone, $rk-text-2); background: color-mix(in srgb, var(--rk-tone, #94a3b8) 12%, #fff); }
+.rk-kanban-col .rk-kanban-head { background: linear-gradient(180deg, color-mix(in srgb, var(--rk-tone, #94a3b8) 5%, #fff), #fff 70%); }
+
+/* 看板卡片 */
+.rk-kanban-card {
+  position: relative;
+  padding: 11px 12px 10px 14px;
+  background: #fff;
+  border: 1px solid $rk-line;
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: inset 3px 0 0 var(--rk-tone, $rk-text-3);
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+  &:hover {
+    transform: translateY(-1px);
+    border-color: #cdd5e3;
+    box-shadow: inset 3px 0 0 var(--rk-tone, $rk-text-3), 0 6px 14px rgba(15, 23, 42, .08);
+  }
+  &.is-dragging { opacity: .45; }
+  &.is-readonly { cursor: default; }
+}
+.rk-kanban-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rk-kanban-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: $rk-text-1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rk-kanban-card-sub {
+  margin-top: 3px;
+  font-size: 11px;
+  color: $rk-text-3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rk-kanban-card-reason {
+  margin-top: 7px;
+  font-size: 12px;
+  line-height: 17px;
+  color: $rk-text-2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.rk-kanban-card-limit {
+  margin-top: 3px;
+  font-size: 11px;
+  color: $rk-warn;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rk-kanban-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: $rk-text-3;
+  .is-overdue { color: $rk-risk; font-weight: 600; }
+  .is-soon { color: $rk-warn; font-weight: 600; }
+}
+.rk-kanban-empty {
+  margin: auto;
+  padding: 18px 8px;
+  font-size: 12px;
+  color: $rk-text-3;
+  text-align: center;
 }

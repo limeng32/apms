@@ -5,13 +5,27 @@
 @use './btn.scss';
 @use './ruoyi.scss';
 
+// 整体字体默认栈（与 FONT_STACKS.heiti 视觉一致；设计器切换时由 applyGlobalBrand 覆盖 --app-font-family/--el-font-family）
+:root {
+  --app-font-family: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+}
+
 body {
   height: 100%;
   margin: 0;
   -moz-osx-font-smoothing: grayscale;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  font-family: Helvetica Neue, Helvetica, PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif;
+  font-family: var(--app-font-family, "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif);
+}
+
+// Element Plus 的 .el-button 基类未声明 font-family，按钮会回退到 UA 默认字体（macOS 为 Arial）
+// 而不继承 body；统一让表单控件继承整体字体，设计器切换黑体/宋体后按钮/输入/下拉才能整体跟随
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
 
 label {

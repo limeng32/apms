@@ -1,101 +1,144 @@
 <template>
-  <div class="app-container dashboard">
+  <div class="app-container">
+    <div class="rk-dash-page rk-page">
 
-    <!-- 顶部汇总卡 -->
-    <div class="summary-row">
-      <div class="sum-card" v-for="(item, idx) in summaryCards" :key="idx" :class="item.cls">
-        <div class="sum-icon" :style="{ background: item.iconBg }">
-          <el-icon :size="24"><component :is="item.icon"/></el-icon>
+      <!-- 页头 -->
+      <div class="rk-header">
+        <div>
+          <h1 class="rk-title">数据总览驾驶舱</h1>
+          <p class="rk-subtitle">组合评分 · PHV 发育 · 测试任务全队汇总</p>
         </div>
-        <div class="sum-body">
-          <div class="sum-num">{{ item.value }}</div>
-          <div class="sum-label">{{ item.label }}</div>
+        <div class="rk-header-actions">
+          <span class="db-scope-hint">DataScope 数据权限已隔离</span>
         </div>
-        <div class="sum-sub" v-if="item.sub">{{ item.sub }}</div>
       </div>
-    </div>
 
-    <!-- 队伍分布 -->
-    <div class="team-bar" v-if="teamDistKeys.length">
-      <span class="team-label">队伍分布：</span>
-      <el-tag v-for="k in teamDistKeys" :key="k" class="team-tag" effect="plain">
-        {{ k }} · {{ teamDistribution[k] }} 人
-      </el-tag>
-    </div>
-
-    <!-- 图表区 2×2 -->
-    <el-row :gutter="16">
-
-      <!-- 左上：组合分排名 -->
-      <el-col :span="14">
-        <div class="chart-card">
-          <div class="chart-title">组合分 TOP 10 排名</div>
-          <div ref="rankingRef" class="chart-box"></div>
-          <div v-if="!hasRanking" class="empty-hint">暂无组合评分数据</div>
+      <!-- KPI 卡带 -->
+      <div class="rk-kpi-grid">
+        <div class="rk-kpi-card" v-for="k in kpiCards" :key="k.label">
+          <span class="rk-kpi-accent" :style="{ background: k.accent }"></span>
+          <div class="rk-kpi-label">{{ k.label }}</div>
+          <div class="rk-kpi-value">{{ k.value }}<span class="rk-kpi-unit" v-if="k.unit">{{ k.unit }}</span></div>
+          <span class="rk-kpi-chip" :class="k.chipTone">{{ k.chip }}</span>
         </div>
-      </el-col>
+      </div>
 
-      <!-- 右上：PHV 成熟度散点 -->
-      <el-col :span="10">
-        <div class="chart-card">
-          <div class="chart-title">PHV 成熟度散点图</div>
-          <div ref="phvRef" class="chart-box"></div>
-          <div v-if="!hasPhv" class="empty-hint">暂无 PHV 记录</div>
-        </div>
-      </el-col>
+      <!-- 队伍分布 -->
+      <div class="rk-chips-bar" v-if="teamDistKeys.length">
+        <span class="rk-chips-bar-label">队伍分布</span>
+        <span class="rk-soft-chip" v-for="k in teamDistKeys" :key="k">
+          {{ k }} · {{ teamDistribution[k] }} 人
+        </span>
+      </div>
 
-      <!-- 左下：指标雷达（可切换运动员） -->
-      <el-col :span="14">
-        <div class="chart-card">
-          <div class="chart-title-row">
-            <span class="chart-title">指标雷达（z_score 归一化）</span>
-            <el-select v-model="radarAthleteId" size="small" style="width: 160px" placeholder="选运动员">
-              <el-option v-for="a in radarOptions" :key="a.athleteId"
-                         :label="a.athleteName + ' · ' + (a.athleteTeam || '')"
-                         :value="a.athleteId"/>
-            </el-select>
+      <!-- 图表区 2×2 -->
+      <div class="rk-chart-grid">
+
+        <!-- 组合分排名 -->
+        <div class="rk-chart-card">
+          <div class="rk-chart-head">
+            <span class="rk-chart-title">组合分 TOP 10 排名</span>
+            <span class="rk-chart-sub">sigma 归一化 · 正值领先 / 负值短板</span>
           </div>
-          <div ref="radarRef" class="chart-box"></div>
-          <div v-if="!hasRadar" class="empty-hint">暂无雷达数据</div>
+          <div class="rk-chart-body">
+            <div ref="rankingRef" class="rk-chart-box"></div>
+            <div class="rk-chart-empty" v-if="!hasRanking">暂无组合评分数据</div>
+          </div>
         </div>
-      </el-col>
 
-      <!-- 右下：测试任务完成率 -->
-      <el-col :span="10">
-        <div class="chart-card">
-          <div class="chart-title">测试任务完成率</div>
-          <div ref="taskRef" class="chart-box"></div>
-          <div v-if="!hasTask" class="empty-hint">暂无测试任务</div>
+        <!-- PHV 散点 -->
+        <div class="rk-chart-card">
+          <div class="rk-chart-head">
+            <span class="rk-chart-title">PHV 成熟度散点图</span>
+            <span class="rk-chart-sub">当前年龄 vs 预测 PHV 年龄</span>
+          </div>
+          <div class="rk-chart-body">
+            <div ref="phvRef" class="rk-chart-box"></div>
+            <div class="rk-chart-empty" v-if="!hasPhv">暂无 PHV 记录</div>
+          </div>
         </div>
-      </el-col>
 
-    </el-row>
+        <!-- 指标雷达 -->
+        <div class="rk-chart-card">
+          <div class="rk-chart-head">
+            <span class="rk-chart-title">指标雷达</span>
+            <span class="rk-chart-sub">z_score 归一化</span>
+            <div class="rk-chart-actions">
+              <el-select v-model="radarAthleteId" class="db-select" size="small" placeholder="选运动员">
+                <el-option v-for="a in radarOptions" :key="a.athleteId"
+                           :label="a.athleteName + ' · ' + (a.athleteTeam || '')"
+                           :value="a.athleteId"/>
+              </el-select>
+            </div>
+          </div>
+          <div class="rk-chart-body">
+            <div ref="radarRef" class="rk-chart-box"></div>
+            <div class="rk-chart-empty" v-if="!hasRadar">暂无雷达数据</div>
+          </div>
+        </div>
 
-    <!-- 状态区 -->
-    <div class="status-row" v-if="hasTask">
-      <div class="status-title">最近测试任务</div>
-      <el-table :data="taskCompletion" border size="small" max-height="220">
-        <el-table-column label="#" type="index" width="40"/>
-        <el-table-column label="任务名称" prop="taskName" min-width="160"/>
-        <el-table-column label="日期" width="110" align="center">
-          <template #default="scope">{{ scope.row.startDate || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="90" align="center">
-          <template #default="scope">
-            <el-tag size="small" :type="taskStatusType(scope.row.status)">{{ taskStatusLabel(scope.row.status) }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="选入队员" width="100" align="center">
-          <template #default="scope">
-            <b>{{ scope.row.selectedCount || 0 }}</b> / {{ scope.row.athleteCount || 0 }}
-          </template>
-        </el-table-column>
-        <el-table-column label="完成率" width="140" align="center">
-          <template #default="scope">
-            <el-progress :percentage="taskProgress(scope.row)" :stroke-width="10" :color="progressColor(taskProgress(scope.row))"/>
-          </template>
-        </el-table-column>
-      </el-table>
+        <!-- 测试任务完成率 -->
+        <div class="rk-chart-card">
+          <div class="rk-chart-head">
+            <span class="rk-chart-title">测试任务完成率</span>
+            <span class="rk-chart-sub">选入 / 参与队员</span>
+          </div>
+          <div class="rk-chart-body">
+            <div ref="taskRef" class="rk-chart-box"></div>
+            <div class="rk-chart-empty" v-if="!hasTask">暂无测试任务</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 最近测试任务 -->
+      <div class="rk-chart-card" v-if="hasTask">
+        <div class="rk-chart-head">
+          <span class="rk-chart-title">最近测试任务</span>
+          <span class="rk-chart-sub">共 {{ taskCompletion.length }} 项</span>
+        </div>
+        <div class="rk-table-scroll">
+          <table class="rk-table">
+            <thead>
+              <tr>
+                <th class="text-center" style="width:48px">#</th>
+                <th>任务名称</th>
+                <th class="text-center" style="width:120px">日期</th>
+                <th class="text-center" style="width:100px">状态</th>
+                <th class="text-center" style="width:110px">选入队员</th>
+                <th style="width:220px">完成率</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="rk-row" v-for="(row, idx) in taskCompletion" :key="row.taskId">
+                <td class="text-center rk-mono rk-dash">{{ idx + 1 }}</td>
+                <td class="db-task-name">{{ row.taskName }}</td>
+                <td class="text-center rk-mono">{{ fmtDate(row.startDate) }}</td>
+                <td class="text-center">
+                  <span class="rk-status-badge" :class="taskStatusTone(row.status)">
+                    <i class="rk-status-dot"></i>{{ taskStatusLabel(row.status) }}
+                  </span>
+                </td>
+                <td class="text-center rk-mono">
+                  <b>{{ row.selectedCount || 0 }}</b> / {{ row.athleteCount || 0 }}
+                </td>
+                <td>
+                  <div class="db-progress-cell">
+                    <div class="rk-progress">
+                      <div class="rk-progress-bar"
+                           :class="'tone-' + progressTone(taskProgress(row))"
+                           :style="{ width: taskProgress(row) + '%' }"></div>
+                    </div>
+                    <span class="db-progress-num rk-mono" :class="'is-' + progressTone(taskProgress(row))">
+                      {{ taskProgress(row) }}%
+                    </span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -103,7 +146,7 @@
 <script setup name="ApmsDashboard">
 import { getOverview } from '@/api/apms/dashboard'
 import * as echarts from 'echarts'
-import { Trophy, DataAnalysis, Warning, User, DataLine, PieChart } from '@element-plus/icons-vue'
+import { onBeforeUnmount } from 'vue'
 
 const rankingRef = ref(null)
 const phvRef = ref(null)
@@ -114,6 +157,7 @@ let rankingChart = null
 let phvChart = null
 let radarChart = null
 let taskChart = null
+let resizeObserver = null
 
 const summary = reactive({})
 const comboScoreRanking = ref([])
@@ -122,6 +166,25 @@ const phvScatter = ref([])
 const taskCompletion = ref([])
 const teamDistribution = reactive({})
 const radarAthleteId = ref(null)
+
+/* ===== demo 驾驶舱图表主题（对齐 chartConsts.ts / theme.ts） ===== */
+const C = {
+  brand: '#2563EB', brandLight: '#3B82F6',
+  cyan: '#06B6D4', violet: '#8B5CF6', indigo: '#6366F1',
+  ok: '#16A34A', okLight: '#4ADE80',
+  warn: '#D97706', risk: '#DC2626', riskLight: '#F87171',
+  slate: '#CBD5E1'
+}
+const AXIS_LABEL = { fontSize: 11, color: '#94A3B8' }
+const SPLIT_LINE = { lineStyle: { color: '#EEF2F7' } }
+const DARK_TOOLTIP = {
+  backgroundColor: '#0F172A',
+  borderWidth: 0,
+  padding: [8, 12],
+  textStyle: { color: '#fff', fontSize: 12 },
+  extraCssText: 'border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.18);'
+}
+const LEGEND_TEXT = { fontSize: 11, color: '#64748B' }
 
 const hasRanking = computed(function () { return comboScoreRanking.value.length > 0 })
 const hasPhv = computed(function () { return phvScatter.value.length > 0 })
@@ -136,15 +199,21 @@ const radarOptions = computed(function () {
   })
 })
 
-// 汇总卡配置
-const summaryCards = computed(function () {
+// KPI 卡配置
+const kpiCards = computed(function () {
   return [
-    { label: '覆盖队员数', value: summary.totalAthletes || 0, sub: '有组合评分', cls: '', icon: User, iconBg: 'linear-gradient(135deg,#667eea,#764ba2)' },
-    { label: '队伍数', value: teamDistKeys.value.length, sub: '已 DataScope 隔离', cls: '', icon: PieChart, iconBg: 'linear-gradient(135deg,#f093fb,#f5576c)' },
-    { label: '平均组合分', value: summary.avgComboScore || 0, sub: 'sigma 归一化', cls: 'highlight', icon: DataLine, iconBg: 'linear-gradient(135deg,#4facfe,#00f2fe)' },
-    { label: '高表现(>=0.5)', value: summary.highPerformer || 0, sub: '领先组', cls: 'success', icon: Trophy, iconBg: 'linear-gradient(135deg,#43e97b,#38f9d7)' },
-    { label: '需关注(<=-0.5)', value: summary.needAttention || 0, sub: '短板组', cls: 'warn', icon: Warning, iconBg: 'linear-gradient(135deg,#fa709a,#fee140)' },
-    { label: 'PHV 记录', value: summary.phvRecords || 0, sub: '次 PHV 记录', cls: '', icon: DataAnalysis, iconBg: 'linear-gradient(135deg,#a18cd1,#fbc2eb)' },
+    { label: '覆盖队员数', value: summary.totalAthletes || 0, unit: '人', accent: C.brand,
+      chip: (summary.totalComboScores || 0) + ' 人有组合评分', chipTone: 'tone-info' },
+    { label: '队伍数', value: teamDistKeys.value.length, unit: '支', accent: C.cyan,
+      chip: '按 DataScope 隔离', chipTone: '' },
+    { label: '平均组合分', value: Number(summary.avgComboScore || 0).toFixed(3), accent: C.indigo,
+      chip: 'sigma 归一化', chipTone: '' },
+    { label: '高表现（≥0.5）', value: summary.highPerformer || 0, unit: '人', accent: C.ok,
+      chip: '领先组', chipTone: 'tone-ok' },
+    { label: '需关注（≤-0.5）', value: summary.needAttention || 0, unit: '人', accent: C.risk,
+      chip: '短板组', chipTone: 'tone-risk' },
+    { label: 'PHV 记录', value: summary.phvRecords || 0, unit: '次', accent: C.violet,
+      chip: 'Mirwald v2014.1', chipTone: '' }
   ]
 })
 
@@ -161,7 +230,7 @@ function loadData() {
     Object.assign(teamDistribution, d.teamDistribution || {})
 
     // 默认雷达选第一个
-    if (indicatorRadar.value.length && !radarAthleteId.value) {
+    if (indicatorRadar.value.length && radarAthleteId.value == null) {
       radarAthleteId.value = indicatorRadar.value[0].athleteId
     }
 
@@ -177,27 +246,31 @@ function initCharts() {
     const names = comboScoreRanking.value.map(function (r) { return r.athleteName + ' (#' + r.athleteId + ')' }).reverse()
     const scores = comboScoreRanking.value.map(function (r) { return Number(r.comboScore) }).reverse()
     rankingChart.setOption({
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-      grid: { left: 140, right: 40, top: 20, bottom: 30 },
-      xAxis: { type: 'value', name: '组合分 (sigma)', splitLine: { lineStyle: { color: '#f0f0f0' } } },
-      yAxis: { type: 'category', data: names, axisLabel: { fontSize: 12 } },
+      tooltip: Object.assign({ trigger: 'axis', axisPointer: { type: 'shadow' } }, DARK_TOOLTIP),
+      grid: { left: 120, right: 52, top: 16, bottom: 28 },
+      xAxis: { type: 'value', name: 'sigma', nameTextStyle: AXIS_LABEL, axisLabel: AXIS_LABEL, axisLine: { show: false }, axisTick: { show: false }, splitLine: SPLIT_LINE },
+      yAxis: { type: 'category', data: names, axisLabel: Object.assign({}, AXIS_LABEL, { fontSize: 12, color: '#475569' }), axisLine: { show: false }, axisTick: { show: false } },
       series: [{
         type: 'bar',
         data: scores,
-        barWidth: '60%',
+        barWidth: '55%',
         itemStyle: {
-          borderRadius: [0, 4, 4, 0],
+          borderRadius: [0, 6, 6, 0],
           color: function (p) {
             return p.value >= 0
               ? new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-                  { offset: 0, color: '#43e97b' }, { offset: 1, color: '#38f9d7' }
+                  { offset: 0, color: C.okLight }, { offset: 1, color: C.ok }
                 ])
               : new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-                  { offset: 0, color: '#fa709a' }, { offset: 1, color: '#fee140' }
+                  { offset: 0, color: C.risk }, { offset: 1, color: C.riskLight }
                 ])
           }
         },
-        label: { show: true, position: 'right', formatter: function (p) { return Number(p.value).toFixed(3) } }
+        label: {
+          show: true, position: 'right', distance: 6,
+          formatter: function (p) { return Number(p.value).toFixed(3) },
+          fontSize: 11, color: '#475569', fontFamily: 'ui-monospace, Menlo, monospace'
+        }
       }]
     })
   }
@@ -214,24 +287,26 @@ function initCharts() {
       }
     })
     phvChart.setOption({
-      tooltip: {
+      tooltip: Object.assign({
         trigger: 'item',
         formatter: function (p) {
           const o = p.data
-          let tip = o.name + '<br/>当前年龄: ' + p.value[0] + '<br/>预测 PHV: ' + p.value[1] + ' 岁'
-          if (o.offset != null) tip += '<br/>成熟度偏移: ' + o.offset.toFixed(2)
+          let tip = '<b>' + o.name + '</b><br/>当前年龄：' + Number(p.value[0]).toFixed(2)
+            + ' 岁<br/>预测 PHV：' + Number(p.value[1]).toFixed(2) + ' 岁'
+          if (o.offset != null) tip += '<br/>成熟度偏移：' + o.offset.toFixed(2)
           return tip
         }
-      },
-      grid: { left: 60, right: 30, top: 40, bottom: 40 },
-      xAxis: { type: 'value', name: '当前年龄 (岁)', splitLine: { lineStyle: { color: '#f0f0f0' } } },
-      yAxis: { type: 'value', name: '预测 PHV (岁)', splitLine: { lineStyle: { color: '#f0f0f0' } } },
+      }, DARK_TOOLTIP),
+      grid: { left: 56, right: 60, top: 36, bottom: 40 },
+      xAxis: { type: 'value', name: '当前年龄（岁）', nameTextStyle: AXIS_LABEL, axisLabel: AXIS_LABEL, axisLine: { show: false }, axisTick: { show: false }, splitLine: SPLIT_LINE },
+      yAxis: { type: 'value', name: '预测 PHV（岁）', nameTextStyle: AXIS_LABEL, axisLabel: AXIS_LABEL, axisLine: { show: false }, axisTick: { show: false }, splitLine: SPLIT_LINE },
+      labelLayout: { hideOverlap: true },
       series: [{
         type: 'scatter',
         data: points,
-        symbolSize: 14,
-        itemStyle: { color: '#f5576c', shadowBlur: 6, shadowColor: 'rgba(245,87,108,0.4)' },
-        label: { show: true, formatter: function (p) { return p.data.name }, position: 'top', fontSize: 10, color: '#606266' }
+        symbolSize: 12,
+        itemStyle: { color: C.violet, opacity: .85, shadowBlur: 8, shadowColor: 'rgba(139,92,246,0.35)' },
+        label: { show: true, formatter: function (p) { return p.data.name }, position: 'top', distance: 6, fontSize: 10, color: '#64748B' }
       }]
     })
   }
@@ -248,20 +323,28 @@ function initCharts() {
     if (taskChart) taskChart.dispose()
     taskChart = echarts.init(taskRef.value)
     const taskNames = taskCompletion.value.map(function (t) {
-      return t.taskName && t.taskName.length > 12 ? t.taskName.slice(0, 11) + '...' : t.taskName
+      return t.taskName && t.taskName.length > 8 ? t.taskName.slice(0, 7) + '…' : t.taskName
     })
     const athleteCounts = taskCompletion.value.map(function (t) { return t.athleteCount || 0 })
     const selectedCounts = taskCompletion.value.map(function (t) { return t.selectedCount || 0 })
     taskChart.setOption({
-      tooltip: { trigger: 'axis' },
-      legend: { data: ['选入', '参与队员'], top: 4, textStyle: { fontSize: 11 } },
-      grid: { left: 30, right: 20, top: 40, bottom: 60 },
-      xAxis: { type: 'category', data: taskNames, axisLabel: { rotate: 20, fontSize: 10 } },
-      yAxis: { type: 'value', splitLine: { lineStyle: { color: '#f0f0f0' } } },
+      tooltip: Object.assign({ trigger: 'axis', axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(37,99,235,0.05)' } } }, DARK_TOOLTIP),
+      legend: { data: ['选入', '参与队员'], top: 0, right: 0, itemWidth: 10, itemHeight: 10, icon: 'roundRect', textStyle: LEGEND_TEXT },
+      grid: { left: 36, right: 20, top: 36, bottom: 64 },
+      xAxis: { type: 'category', data: taskNames, axisLabel: { rotate: 24, fontSize: 10, color: '#94A3B8', interval: 0 }, axisLine: { show: false }, axisTick: { show: false } },
+      yAxis: { type: 'value', minInterval: 1, axisLabel: AXIS_LABEL, axisLine: { show: false }, axisTick: { show: false }, splitLine: SPLIT_LINE },
       series: [
-        { name: '选入', type: 'bar', data: selectedCounts, barWidth: '35%', itemStyle: { color: '#43e97b', borderRadius: [3, 3, 0, 0] } },
-        { name: '参与队员', type: 'bar', data: athleteCounts, barWidth: '35%', itemStyle: { color: '#4facfe', borderRadius: [3, 3, 0, 0] } }
+        { name: '选入', type: 'bar', data: selectedCounts, barWidth: '28%', itemStyle: { color: C.brand, borderRadius: [4, 4, 0, 0] } },
+        { name: '参与队员', type: 'bar', data: athleteCounts, barWidth: '28%', itemStyle: { color: C.slate, borderRadius: [4, 4, 0, 0] } }
       ]
+    })
+  }
+
+  // 容器尺寸变化（窗口 resize / 侧栏折叠）统一由 ResizeObserver 驱动
+  if (!resizeObserver && typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(handleResize)
+    ;[rankingRef, phvRef, radarRef, taskRef].forEach(function (ref) {
+      if (ref.value) resizeObserver.observe(ref.value)
     })
   }
 }
@@ -275,31 +358,36 @@ function renderRadar() {
   }
   const dims = athlete.dimensions.filter(function (d) { return d.valid })
   const indicatorLabels = dims.map(function (d) {
-    const dirTag = d.direction === 'LOWER_BETTER' ? 'down' : d.direction === 'HIGHER_BETTER' ? 'up' : '-'
-    return 'Ind#' + d.indicatorId + dirTag
+    const dirTag = d.direction === 'LOWER_BETTER' ? '↓' : d.direction === 'HIGHER_BETTER' ? '↑' : '−'
+    return 'Ind#' + d.indicatorId + ' ' + dirTag
   })
   const normalizedValues = dims.map(function (d) { return d.normalized != null ? Number(d.normalized) : 0 })
+  const seriesName = athlete.athleteName + ' · z_score'
 
   radarChart.setOption({
-    tooltip: { trigger: 'item' },
-    legend: { data: [athlete.athleteName + ' · z_score'], top: 4, textStyle: { fontSize: 11 } },
+    tooltip: Object.assign({ trigger: 'item' }, DARK_TOOLTIP),
+    legend: { data: [seriesName], top: 0, right: 0, itemWidth: 10, itemHeight: 10, icon: 'roundRect', textStyle: LEGEND_TEXT },
     radar: {
       indicator: indicatorLabels.map(function (name) { return { name: name, max: 3, min: -2 } }),
       shape: 'polygon',
-      splitNumber: 4,
-      axisName: { fontSize: 11, color: '#606266' },
-      splitLine: { lineStyle: { color: '#e8ecf0' } },
-      splitArea: { areaStyle: { color: ['rgba(255,255,255,0.3)', 'rgba(240,243,247,0.4)'] } }
+      splitNumber: 5,
+      center: ['50%', '54%'],
+      radius: '66%',
+      axisName: { fontSize: 11, color: '#64748B' },
+      splitLine: { lineStyle: { color: '#EEF2F7' } },
+      splitArea: { areaStyle: { color: ['#fff', 'rgba(248,250,255,0.7)'] } },
+      axisLine: { lineStyle: { color: '#EEF2F7' } }
     },
     series: [{
       type: 'radar',
       data: [{
-        name: athlete.athleteName + ' · z_score',
+        name: seriesName,
         value: normalizedValues,
-        areaStyle: { color: 'rgba(79,172,254,0.4)' },
-        lineStyle: { color: '#4facfe', width: 2 },
-        itemStyle: { color: '#4facfe' },
-        label: { show: true, formatter: function (p) { return Number(p.value).toFixed(2) }, fontSize: 10, color: '#303133' }
+        areaStyle: { color: 'rgba(37,99,235,0.14)' },
+        lineStyle: { color: C.brand, width: 2 },
+        itemStyle: { color: C.brand },
+        symbolSize: 4,
+        label: { show: true, formatter: function (p) { return Number(p.value).toFixed(2) }, fontSize: 10, color: '#475569' }
       }]
     }]
   }, true)
@@ -307,96 +395,104 @@ function renderRadar() {
 
 watch(radarAthleteId, function () { renderRadar() })
 
+/* ===== resize：ResizeObserver 驱动，卸载时断开并销毁实例 ===== */
 function handleResize() {
   if (rankingChart) rankingChart.resize()
   if (phvChart) phvChart.resize()
   if (radarChart) radarChart.resize()
   if (taskChart) taskChart.resize()
 }
-window.addEventListener('resize', handleResize)
+onBeforeUnmount(function () {
+  if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null }
+  if (rankingChart) { rankingChart.dispose(); rankingChart = null }
+  if (phvChart) { phvChart.dispose(); phvChart = null }
+  if (radarChart) { radarChart.dispose(); radarChart = null }
+  if (taskChart) { taskChart.dispose(); taskChart = null }
+})
 
-const taskStatusType = function (s) { return s === 'completed' ? 'success' : s === 'in_progress' ? 'warning' : 'info' }
-const taskStatusLabel = function (s) {
-  if (s === 'completed') return '已完成'
-  if (s === 'in_progress') return '进行中'
-  if (s === 'pending') return '待执行'
-  return s || '-'
+/* ===== 任务表辅助 ===== */
+const fmtDate = function (t) { return t ? String(t).slice(0, 10) : '−' }
+const taskStatusMeta = {
+  completed: { tone: 'tone-green', label: '已完成' },
+  in_progress: { tone: 'tone-amber', label: '进行中' },
+  pending: { tone: 'tone-gray', label: '待执行' }
 }
-const taskProgress = function (row) { return row.athleteCount ? Math.round((row.selectedCount || 0) / row.athleteCount * 100) : 0 }
-const progressColor = function (p) {
-  if (p >= 80) return '#43e97b'
-  if (p >= 50) return '#4facfe'
-  if (p >= 20) return '#f093fb'
-  return '#fa709a'
+const taskStatusTone = function (s) { return (taskStatusMeta[s] || { tone: 'tone-gray' }).tone }
+const taskStatusLabel = function (s) { return (taskStatusMeta[s] || { label: s || '−' }).label }
+const taskProgress = function (row) {
+  if (!row || !row.athleteCount) return 0
+  const p = Math.round((row.selectedCount || 0) / row.athleteCount * 100)
+  return Math.max(0, Math.min(100, p))
+}
+// 进度色：≥80 绿 / ≥50 蓝 / ≥20 黄 / 其余红
+const progressTone = function (p) {
+  if (p >= 80) return 'ok'
+  if (p >= 50) return 'brand'
+  if (p >= 20) return 'warn'
+  return 'risk'
 }
 
 loadData()
 </script>
 
-<style scoped>
-.dashboard { padding-bottom: 20px; }
+<style lang="scss" scoped>
+@use "@/assets/styles/roster-kit.scss" as *;
 
-.summary-row {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 14px;
-  margin-bottom: 16px;
-}
-.sum-card {
-  position: relative;
+.db-scope-hint {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: $rk-text-3;
   background: #fff;
-  border: 1px solid #eef2f5;
-  border-radius: 10px;
-  padding: 14px 16px 12px;
+  border: 1px solid $rk-line;
+  border-radius: 999px;
+}
+
+.db-select {
+  width: 200px;
+}
+.db-select :deep(.el-select__wrapper),
+.db-select :deep(.el-input__wrapper) {
+  min-height: 30px;
+  height: 30px;
+  border-radius: 9px;
+  box-shadow: 0 0 0 1px $rk-line inset;
+  font-size: 12px;
+}
+.db-select :deep(.el-select__wrapper:hover),
+.db-select :deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px #c7cedb inset;
+}
+.db-select :deep(.el-select__placeholder),
+.db-select :deep(.el-select__selected-item) {
+  font-size: 12px;
+}
+
+.db-task-name {
+  font-weight: 600;
+  color: $rk-text-1;
+}
+
+.db-progress-cell {
   display: flex;
   align-items: center;
-  gap: 12px;
-  transition: transform 0.15s, box-shadow 0.15s;
-  overflow: hidden;
+  gap: 10px;
 }
-.sum-card:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(0,0,0,0.06); }
-.sum-card.highlight { border-color: #4facfe; background: linear-gradient(135deg, #f0f9ff, #fff); }
-.sum-card.success { border-color: #43e97b; }
-.sum-card.warn { border-color: #fee140; }
-.sum-icon {
-  width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center;
-  color: #fff; flex-shrink: 0;
-}
-.sum-body { flex: 1; min-width: 0; }
-.sum-num { font-size: 22px; font-weight: 700; color: #1f2d3d; font-family: 'SF Mono', Menlo, monospace; }
-.sum-label { font-size: 12px; color: #7a8a99; margin-top: 2px; }
-.sum-sub {
-  position: absolute; top: 8px; right: 12px;
-  font-size: 11px; color: #909399;
+.db-progress-cell .rk-progress { flex: 1; min-width: 120px; }
+.db-progress-num {
+  flex: none;
+  width: 42px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 600;
+  color: $rk-brand-600;
+  &.is-ok { color: $rk-ok; }
+  &.is-warn { color: $rk-warn; }
+  &.is-risk { color: $rk-risk; }
 }
 
-.team-bar {
-  margin-bottom: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 8px 14px; background: #fafbfc; border-radius: 8px; border: 1px solid #eef2f5;
+@media (max-width: 720px) {
+  .db-select { width: 150px; }
 }
-.team-label { font-size: 12px; color: #606266; font-weight: 500; }
-.team-tag { font-size: 12px; }
-
-.chart-card {
-  position: relative;
-  background: #fff;
-  border: 1px solid #eef2f5;
-  border-radius: 10px;
-  padding: 14px 16px 10px;
-  margin-bottom: 14px;
-}
-.chart-title { font-size: 14px; font-weight: 600; color: #1f2d3d; margin-bottom: 4px; }
-.chart-title-row {
-  display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;
-}
-.chart-box { width: 100%; height: 320px; }
-.empty-hint {
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  color: #c0c4cc; font-size: 13px;
-}
-
-.status-row {
-  background: #fff; border: 1px solid #eef2f5; border-radius: 10px; padding: 12px 14px 8px;
-}
-.status-title { font-size: 14px; font-weight: 600; color: #1f2d3d; margin-bottom: 10px; }
 </style>

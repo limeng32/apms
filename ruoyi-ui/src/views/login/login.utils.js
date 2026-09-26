@@ -2,18 +2,10 @@
  * 登录页配置工具：默认值深合并、占位符插值、CSS 变量映射、URL 白名单
  */
 import defaultConfig from './login.defaults'
+// 字体栈唯一事实源在 @/utils/theme（登录页与后台整体共用），这里转出供渲染层/设计器复用
+import { FONT_STACKS, APP_FONT_FAMILIES } from '@/utils/theme'
 
-/**
- * 5 个固定系统字体栈（只存枚举值，原始 font-family 由这里映射）
- */
-export const FONT_STACKS = {
-  // system 必须与全局 body 字体栈（assets/styles/index.scss）一致，保证登录页字体零变化
-  system: `"Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif`,
-  pingfang: `"PingFang SC", "Hiragino Sans GB", -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif`,
-  yahei: `"Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", -apple-system, BlinkMacSystemFont, sans-serif`,
-  heiti: `"Heiti SC", "SimHei", "PingFang SC", "Microsoft YaHei", sans-serif`,
-  songti: `"Songti SC", "STSong", "SimSun", "Noto Serif CJK SC", serif`
-}
+export { FONT_STACKS }
 
 function isPlainObject(v) {
   return Object.prototype.toString.call(v) === '[object Object]'
@@ -145,7 +137,13 @@ export function cloneDefaults() {
  * 库中配置（可能为 {} 或缺字段）与默认值深度合并 → 完整配置
  */
 export function mergeWithDefaults(raw) {
-  return deepMerge(cloneDefaults(), isPlainObject(raw) ? raw : {})
+  const merged = deepMerge(cloneDefaults(), isPlainObject(raw) ? raw : {})
+  // 整体字体目前只开放黑体/宋体；历史枚举（system/pingfang/yahei）统一归一为黑体，
+  // 保证设计器 radio 始终有选中项、后台 --el-font-family 始终为合法字体栈
+  if (!APP_FONT_FAMILIES.includes(merged.typography.fontFamily)) {
+    merged.typography.fontFamily = 'heiti'
+  }
+  return merged
 }
 
 /**
@@ -260,7 +258,7 @@ export function toCssVars(config) {
     '--login-hero-weight': String(Number(ty.heroWeight) || 700),
     '--login-brand-size': px(ty.brandNameSize, '22px'),
     '--login-form-title-size': px(ty.formTitleSize, '24px'),
-    '--login-font-family': FONT_STACKS[ty.fontFamily] || FONT_STACKS.system,
+    '--login-font-family': FONT_STACKS[ty.fontFamily] || FONT_STACKS.heiti,
     // 直接输出完整的两栏轨道值（1.1fr 合法且全浏览器兼容；不要用 calc(1.1 * 1fr)）
     '--login-split': `${Number(c.layout.splitRatio) || 1.1}fr 1fr`,
     // Logo 上下留白：split（左右分栏）与 overlay（居中卡片/全屏背景）各自独立

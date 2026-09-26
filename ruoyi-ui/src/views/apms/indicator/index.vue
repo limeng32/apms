@@ -1,290 +1,401 @@
 <template>
-  <div class="app-container indicator-page">
-    <!-- 顶部搜索栏 -->
-    <el-form :model="queryParams" ref="queryForm" :inline="true" v-show="showSearch" label-width="68px">
-      <el-form-item label="指标编码" prop="code">
-        <el-input v-model="queryParams.code" placeholder="请输入编码" clearable style="width: 180px" @keyup.enter="handleQuery"/>
-      </el-form-item>
-      <el-form-item label="指标名称" prop="name">
-        <el-input v-model="queryParams.name" placeholder="请输入名称" clearable style="width: 180px" @keyup.enter="handleQuery"/>
-      </el-form-item>
-      <el-form-item label="分类" prop="category">
-        <el-select v-model="queryParams.category" placeholder="全部" clearable style="width: 120px">
-          <el-option label="形态" value="形态"/>
-          <el-option label="机能" value="机能"/>
-          <el-option label="素质" value="素质"/>
-          <el-option label="筛查" value="筛查"/>
-        </el-select>
-      </el-form-item>
-      <el-form-item label="方向" prop="evaluationDirection">
-        <el-select v-model="queryParams.evaluationDirection" placeholder="全部" clearable style="width: 140px">
-          <el-option label="越大越好" value="HIGHER_BETTER"/>
-          <el-option label="越小越好" value="LOWER_BETTER"/>
-          <el-option label="范围最佳" value="RANGE_BEST"/>
-          <el-option label="仅参考" value="REFERENCE_ONLY"/>
-        </el-select>
-      </el-form-item>
-      <el-form-item>
-        <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
-        <el-button icon="Refresh" @click="resetQuery">重置</el-button>
-      </el-form-item>
-    </el-form>
+  <div class="app-container">
+    <div class="rk-dash-page rk-page ind-page">
 
-    <!-- 操作按钮 -->
-    <el-row :gutter="10" class="mb8">
-      <el-col :span="1.5">
-        <el-button type="primary" plain icon="Plus" @click="handleAdd" v-hasPermi="['apms:indicator:add']">新增</el-button>
-      </el-col>
-      <el-col :span="1.5">
-        <el-button type="danger" plain icon="Delete" :disabled="multiple" @click="handleDelete" v-hasPermi="['apms:indicator:remove']">删除</el-button>
-      </el-col>
-    </el-row>
-
-    <!-- 主列表：指标库（左半） -->
-    <el-row :gutter="16">
-      <el-col :span="10">
-        <div class="panel-title">
-          <span>指标库</span>
-          <span class="panel-total">共 {{ total }} 项</span>
+      <!-- ===== 页头 ===== -->
+      <div class="rk-header">
+        <div>
+          <h1 class="rk-title">指标库</h1>
+          <p class="rk-subtitle">
+            {{ stats.total }} 项指标 · {{ stats.enabled }} 项启用 · {{ stats.withRefs }} 项已配参考范围 · 评价方向与三级判定维护
+          </p>
         </div>
-        <el-table
-          :data="indicatorList"
-          @selection-change="handleSelectionChange"
-          @row-click="handleRowClick"
-          highlight-current-row
-          v-loading="loading"
-          size="default"
-          max-height="560"
-          stripe
-        >
-          <el-table-column type="selection" width="40" align="center"/>
-          <el-table-column label="编码" prop="code" width="140"/>
-          <el-table-column label="名称" prop="name" width="110"/>
-          <el-table-column label="分类" prop="category" width="70">
-            <template #default="scope">
-              <el-tag size="small" :type="categoryTagType(scope.row.category)">{{ scope.row.category }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="单位" prop="unit" width="60" align="center"/>
-          <el-table-column label="方向" width="88">
-            <template #default="scope">
-              <span class="dir-badge" :class="'dir-' + scope.row.evaluationDirection">{{ dirLabel(scope.row.evaluationDirection) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="状态" width="70" align="center">
-            <template #default="scope">
-              <el-switch v-model="scope.row.status" active-value="0" inactive-value="1" @change="handleStatusChange(scope.row)" size="small"/>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="140" fixed="right">
-            <template #default="scope">
-              <el-button link type="primary" icon="Edit" @click="handleEdit(scope.row)" v-hasPermi="['apms:indicator:edit']">改</el-button>
-              <el-button link type="danger" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['apms:indicator:remove']">删</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-        <!-- 分页 -->
-        <pagination
-          v-show="total > 0"
-          :total="total"
-          v-model:page="queryParams.pageNum"
-          v-model:limit="queryParams.pageSize"
-          @pagination="getList"
-        />
-      </el-col>
+        <div class="rk-header-actions">
+          <button type="button" class="rk-btn rk-btn-primary" @click="handleAdd" v-hasPermi="['apms:indicator:add']">
+            <el-icon><Plus /></el-icon>新增指标
+          </button>
+          <button type="button" class="rk-btn rk-btn-danger" :disabled="multiple"
+                  @click="handleDelete()" v-hasPermi="['apms:indicator:remove']">
+            <el-icon><Delete /></el-icon>批量删除
+          </button>
+        </div>
+      </div>
 
-      <!-- 右侧：详情面板（ref + levels） -->
-      <el-col :span="14">
-        <div class="panel-title">
-          <span>参考范围 & 三级判定</span>
-          <span v-if="currentIndicator" class="panel-sub">当前：{{ currentIndicator.name }}（{{ currentIndicator.code }}）</span>
-          <span v-else class="panel-sub muted">← 点击左侧指标查看</span>
-          <el-button v-if="currentIndicator" type="primary" size="small" plain icon="Plus" @click="openRefDialog" style="margin-left:auto">新增参考范围</el-button>
+      <!-- ===== KPI 卡带（额外只读全量请求统计，零后端改动） ===== -->
+      <div class="rk-kpi-grid is-4">
+        <div class="rk-kpi-card" v-for="k in kpiCards" :key="k.label">
+          <span class="rk-kpi-accent" :style="{ background: k.accent }"></span>
+          <div class="rk-kpi-label">{{ k.label }}</div>
+          <div class="rk-kpi-value">{{ k.value }}<span class="rk-kpi-unit" v-if="k.unit">{{ k.unit }}</span></div>
+          <span class="rk-kpi-chip" :class="k.chipTone">{{ k.chip }}</span>
+        </div>
+      </div>
+
+      <!-- ===== 筛选（原生控件，服务端防抖） ===== -->
+      <div class="rk-filter">
+        <label class="rk-group">
+          <span class="rk-label">指标编码</span>
+          <input v-model="queryParams.code" class="rk-input ind-input-code" type="text" placeholder="如 SPRINT_30M" @keyup.enter="handleQuery"/>
+        </label>
+        <label class="rk-group">
+          <span class="rk-label">指标名称</span>
+          <input v-model="queryParams.name" class="rk-input ind-input-name" type="text" placeholder="如 30米冲刺" @keyup.enter="handleQuery"/>
+        </label>
+        <label class="rk-group">
+          <span class="rk-label">分类</span>
+          <select v-model="queryParams.category" class="rk-select ind-select-sm">
+            <option :value="null">全部分类</option>
+            <option value="形态">形态</option>
+            <option value="机能">机能</option>
+            <option value="素质">素质</option>
+            <option value="筛查">筛查</option>
+          </select>
+        </label>
+        <label class="rk-group">
+          <span class="rk-label">方向</span>
+          <select v-model="queryParams.evaluationDirection" class="rk-select ind-select-dir">
+            <option :value="null">全部方向</option>
+            <option value="HIGHER_BETTER">越大越好</option>
+            <option value="LOWER_BETTER">越小越好</option>
+            <option value="RANGE_BEST">范围最佳</option>
+            <option value="REFERENCE_ONLY">仅参考</option>
+          </select>
+        </label>
+        <div class="rk-filter-right">
+          <button type="button" class="rk-btn-reset" @click="resetQuery">
+            <el-icon><RefreshLeft /></el-icon>重置
+          </button>
+        </div>
+      </div>
+
+      <!-- ===== 主从双栏 ===== -->
+      <div class="rk-split-grid" style="--rk-split-l: 10fr; --rk-split-r: 14fr;">
+
+        <!-- 左：指标列表（服务端分页） -->
+        <div class="rk-table-card">
+          <div class="rk-card-head">
+            <h3 class="rk-card-title">指标库</h3>
+            <span class="rk-card-sub">共 {{ total }} 项 · 点击行查看参考范围</span>
+          </div>
+          <div class="rk-card-body flush">
+            <div v-loading="loading" class="rk-table-scroll">
+              <table class="rk-table ind-table">
+                <thead>
+                  <tr>
+                    <th class="col-check">
+                      <input type="checkbox" class="rk-check" :checked="allChecked" @change="toggleAll"/>
+                    </th>
+                    <th class="col-code">编码</th>
+                    <th class="col-name">名称</th>
+                    <th class="text-center col-cat">分类</th>
+                    <th class="text-center col-unit">单位</th>
+                    <th class="text-center col-dir">方向</th>
+                    <th class="text-center col-status">状态</th>
+                    <th class="text-center col-ops">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in indicatorList" :key="row.id"
+                      class="rk-row"
+                      :class="{ 'is-selected': currentIndicator && currentIndicator.id === row.id }"
+                      @click="handleRowClick(row)">
+                    <td class="col-check" @click.stop>
+                      <input type="checkbox" class="rk-check" :checked="ids.includes(row.id)"
+                             @change="toggleRow(row)"/>
+                    </td>
+                    <td class="rk-mono ind-code">{{ row.code }}</td>
+                    <td>{{ row.name }}</td>
+                    <td class="text-center">
+                      <span class="rk-soft-chip" :class="categoryChipClass(row.category)">{{ row.category || '—' }}</span>
+                    </td>
+                    <td class="text-center">{{ row.unit || '—' }}</td>
+                    <td class="text-center">
+                      <span class="rk-soft-chip" :class="dirChipClass(row.evaluationDirection)">
+                        {{ dirLabel(row.evaluationDirection) }}
+                      </span>
+                    </td>
+                    <td class="text-center col-switch" @click.stop>
+                      <el-switch v-model="row.status" active-value="0" inactive-value="1" size="small"
+                                 @change="handleStatusChange(row)"/>
+                    </td>
+                    <td class="text-center col-ops">
+                      <button type="button" class="rk-link" @click.stop="handleEdit(row)"
+                              v-hasPermi="['apms:indicator:edit']">编辑</button>
+                      <button type="button" class="rk-link is-danger" @click.stop="handleDelete(row)"
+                              v-hasPermi="['apms:indicator:remove']">删除</button>
+                    </td>
+                  </tr>
+                  <tr v-if="!loading && indicatorList.length === 0">
+                    <td colspan="8" class="rk-empty-cell">
+                      <div class="rk-empty">
+                        <p class="rk-empty-title">暂无指标</p>
+                        <p class="rk-empty-desc">调整筛选条件，或点击右上角新增指标</p>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="rk-pager" v-if="total > 0">
+              <span class="rk-pager-info">
+                共 <b class="rk-mono">{{ total }}</b> 项 · 第 <span class="rk-mono">{{ queryParams.pageNum }}</span> / {{ totalPages }} 页
+              </span>
+              <div class="rk-pager-btns">
+                <button type="button" class="rk-page-btn" :disabled="queryParams.pageNum <= 1" @click="goPage(queryParams.pageNum - 1)">
+                  <el-icon><ArrowLeft /></el-icon>
+                </button>
+                <template v-for="p in pageNumbers" :key="p">
+                  <span v-if="p === '…'" class="rk-page-btn is-ellipsis rk-mono">…</span>
+                  <button v-else type="button" class="rk-page-btn rk-mono"
+                          :class="{ 'is-active': p === queryParams.pageNum }"
+                          @click="goPage(p)">{{ p }}</button>
+                </template>
+                <button type="button" class="rk-page-btn" :disabled="queryParams.pageNum >= totalPages" @click="goPage(queryParams.pageNum + 1)">
+                  <el-icon><ArrowRight /></el-icon>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div v-if="currentIndicator" class="detail-panel" v-loading="detailLoading">
-          <!-- 没有 ref 时的空状态 -->
-          <el-empty v-if="!detailLoading && detail.refs?.length === 0" description="该指标暂无参考范围数据，点击上方按钮新增"/>
+        <!-- 右：参考范围 & 三级判定 -->
+        <div class="rk-card ind-detail-card">
+          <div class="rk-card-head">
+            <h3 class="rk-card-title">参考范围 &amp; 三级判定</h3>
+            <span v-if="currentIndicator" class="rk-card-sub">
+              当前：{{ currentIndicator.name }}（<span class="rk-mono">{{ currentIndicator.code }}</span>）
+            </span>
+            <span v-else class="rk-card-sub">← 点击左侧指标查看</span>
+            <div class="rk-card-actions" v-if="currentIndicator">
+              <button type="button" class="rk-btn rk-btn-sm rk-btn-primary" @click="openRefDialog()">
+                <el-icon><Plus /></el-icon>新增参考范围
+              </button>
+            </div>
+          </div>
 
-          <!-- 有 ref 时，一个 ref 一个卡片 -->
-          <template v-for="ref in detail.refs" :key="ref.id">
-            <el-card shadow="hover" class="ref-card" :class="'ref-' + ref.gender">
-              <template #header>
-                <div class="ref-header">
-                  <div class="ref-title">
-                    <el-tag size="small" :type="ref.gender === 'M' ? 'primary' : 'danger'" effect="dark">{{ ref.gender === 'M' ? '男' : ref.gender === 'F' ? '女' : '通用' }}</el-tag>
-                    <el-tag v-if="ref.ageGroup" size="small" type="info">{{ ref.ageGroup }}</el-tag>
-                    <span class="ref-range">参考范围：{{ ref.refMin ?? '—' }} ~ {{ ref.refMax ?? '—' }}</span>
-                    <span v-if="ref.modelVersion" class="ref-version">v{{ ref.modelVersion }}</span>
+          <template v-if="currentIndicator">
+            <div class="ind-banner">
+              <div class="ind-banner-title">
+                <span class="rk-soft-chip" :class="categoryChipClass(currentIndicator.category)">{{ currentIndicator.category }}</span>
+                <span class="rk-mono">{{ currentIndicator.code }}</span>
+                <span>{{ currentIndicator.name }}</span>
+                <span class="rk-status-badge" :class="currentIndicator.status === '0' ? 'tone-green' : 'tone-gray'">
+                  {{ currentIndicator.status === '0' ? '启用中' : '已停用' }}
+                </span>
+              </div>
+              <div class="ind-banner-meta">
+                <span>单位 <b class="rk-mono">{{ currentIndicator.unit || '—' }}</b></span>
+                <span>数据类型 <b class="rk-mono">{{ currentIndicator.dataType || '—' }}</b></span>
+                <span>采集 <b>{{ collectLabel(currentIndicator.collectionMethod) }}</b></span>
+                <span class="rk-soft-chip" :class="dirChipClass(currentIndicator.evaluationDirection)">
+                  {{ dirLabel(currentIndicator.evaluationDirection) }}
+                </span>
+              </div>
+            </div>
+
+            <div class="rk-card-body ind-detail-body" v-loading="detailLoading">
+              <div v-if="!detailLoading && detail.refs.length === 0" class="ind-ref-empty">
+                <div class="rk-empty">
+                  <p class="rk-empty-title">该指标暂无参考范围</p>
+                  <p class="rk-empty-desc">点击右上角「新增参考范围」配置性别 / 年龄组口径与三级判定</p>
+                </div>
+              </div>
+
+              <div v-for="ref in detail.refs" :key="ref.id" class="ind-ref-card" :class="'is-' + (ref.gender || 'U')">
+                <div class="ind-ref-head">
+                  <div class="ind-ref-id">
+                    <span class="ind-gender" :class="ref.gender === 'M' ? 'is-m' : ref.gender === 'F' ? 'is-f' : 'is-u'">
+                      {{ ref.gender === 'M' ? '男' : ref.gender === 'F' ? '女' : '通用' }}
+                    </span>
+                    <span v-if="ref.ageGroup" class="rk-soft-chip">{{ ref.ageGroup }}</span>
+                    <span class="ind-ref-range">
+                      参考范围 <b class="rk-mono">{{ ref.refMin ?? '—' }} ~ {{ ref.refMax ?? '—' }}</b>
+                    </span>
+                    <span v-if="ref.modelVersion" class="ind-ref-version rk-mono">v{{ ref.modelVersion }}</span>
                   </div>
-                  <div class="ref-actions">
-                    <el-button link type="primary" size="small" @click="openRefDialog(ref)">编辑</el-button>
-                    <el-button link type="danger" size="small" @click="handleDeleteRef(ref)">删除</el-button>
+                  <div class="ind-ref-actions">
+                    <button type="button" class="rk-link" @click="openRefDialog(ref)">编辑</button>
+                    <button type="button" class="rk-link is-danger" @click="handleDeleteRef(ref)">删除</button>
                   </div>
                 </div>
-              </template>
 
-              <!-- 区间冲突/空洞 实时提示 -->
-              <div v-if="getLevelValidationIssues(ref.levels).length" class="level-alerts">
-                <el-alert v-for="(issue, idx) in getLevelValidationIssues(ref.levels)" :key="idx"
-                  :title="issue" type="warning" :closable="false" show-icon :description="'后端保存时也会拦截，建议先修正'" />
-              </div>
+                <!-- 区间冲突/空洞 实时提示 -->
+                <div v-if="getLevelValidationIssues(ref.levels).length" class="ind-alerts">
+                  <el-alert v-for="(issue, idx) in getLevelValidationIssues(ref.levels)" :key="idx"
+                            :title="issue" type="warning" :closable="false" show-icon
+                            description="后端保存时也会拦截，建议先修正"/>
+                </div>
 
-              <!-- 三级判定表格 -->
-              <el-table :data="ref.levels" size="small" border :row-class-name="({ row }) => getLevelRowClass(row, ref.levels)">
-                <el-table-column label="评级" width="140" align="center">
-                  <template #default="scope">
-                    <template v-if="scope.editing">
-                      <el-input v-model="scope.row.level" size="small" placeholder="如 GOOD / POOR" style="width:100px" maxlength="32"/>
-                    </template>
-                    <template v-else>
-                      <el-tag :type="levelTag(scope.row.level)" size="default" effect="dark">{{ levelLabel(scope.row.level) }}</el-tag>
-                    </template>
-                  </template>
-                </el-table-column>
-                <el-table-column label="下限" width="140" align="center">
-                  <template #default="scope">
-                    <el-input-number v-if="scope.editing" v-model="scope.row.minValue" :precision="4" :step="0.1" size="small" controls-position="right" style="width:120px" @change="() => getLevelValidationIssues(ref.levels)"/>
-                    <span v-else>{{ scope.row.minValue ?? '−∞' }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="上限" width="140" align="center">
-                  <template #default="scope">
-                    <el-input-number v-if="scope.editing" v-model="scope.row.maxValue" :precision="4" :step="0.1" size="small" controls-position="right" style="width:120px" @change="() => getLevelValidationIssues(ref.levels)"/>
-                    <span v-else>{{ scope.row.maxValue ?? '+∞' }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="180" align="center">
-                  <template #default="scope">
-                    <el-button v-if="!scope.editing" link type="primary" size="small" @click="startLevelEdit(scope.row)">编辑</el-button>
-                    <template v-else>
-                      <el-button link type="primary" size="small" @click="saveLevel(scope.row)">保存</el-button>
-                      <el-button link type="info" size="small" @click="cancelLevelEdit(scope.row)">取消</el-button>
-                    </template>
-                    <el-button link type="danger" size="small" @click="handleDeleteLevel(scope.row, ref)">删除</el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
-              <!-- 新增 level 自由入口 -->
-              <div class="add-level-bar">
-                <el-input v-model="newLevelName" placeholder="输入评级名（如 EXCELLENT / POOR）" size="small" style="width:180px" @keyup.enter="addNewLevel(ref)"/>
-                <el-button type="primary" plain size="small" icon="Plus" @click="addNewLevel(ref)" style="margin-left:6px">新增评级</el-button>
-                <el-button size="small" @click="bulkAddLevels(ref)" style="margin-left:6px">一键三档模板</el-button>
+                <div class="rk-table-scroll ind-level-scroll">
+                  <table class="rk-table ind-level-table">
+                    <thead>
+                      <tr>
+                        <th class="text-center col-lv">评级</th>
+                        <th class="text-center col-bound">下限</th>
+                        <th class="text-center col-bound">上限</th>
+                        <th class="text-center col-lv-ops">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="lv in ref.levels" :key="lv.id"
+                          :class="{ 'is-level-error': isLevelRowError(lv, ref.levels) }">
+                        <td class="text-center">
+                          <el-input v-if="lv.editing" v-model="lv.level" size="small"
+                                    placeholder="如 GOOD / POOR" class="ind-lv-input" maxlength="32"/>
+                          <span v-else class="rk-soft-chip" :class="levelChipClass(lv.level)">{{ levelLabel(lv.level) }}</span>
+                        </td>
+                        <td class="text-center">
+                          <el-input-number v-if="lv.editing" v-model="lv.minValue" :precision="4" :step="0.1"
+                                           size="small" controls-position="right" class="ind-bound-input"/>
+                          <span v-else class="rk-mono">{{ lv.minValue ?? '−∞' }}</span>
+                        </td>
+                        <td class="text-center">
+                          <el-input-number v-if="lv.editing" v-model="lv.maxValue" :precision="4" :step="0.1"
+                                           size="small" controls-position="right" class="ind-bound-input"/>
+                          <span v-else class="rk-mono">{{ lv.maxValue ?? '+∞' }}</span>
+                        </td>
+                        <td class="text-center">
+                          <template v-if="!lv.editing">
+                            <button type="button" class="rk-link" @click="startLevelEdit(lv)">编辑</button>
+                          </template>
+                          <template v-else>
+                            <button type="button" class="rk-link" @click="saveLevel(lv)">保存</button>
+                            <button type="button" class="rk-link" @click="cancelLevelEdit(lv)">取消</button>
+                          </template>
+                          <button type="button" class="rk-link is-danger" @click="handleDeleteLevel(lv, ref)">删除</button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="ind-add-level">
+                  <input v-model="newLevelName" class="rk-input ind-new-level" type="text"
+                         placeholder="输入评级名（如 EXCELLENT / POOR）" @keyup.enter="addNewLevel(ref)"/>
+                  <button type="button" class="rk-btn rk-btn-sm rk-btn-primary" @click="addNewLevel(ref)">
+                    <el-icon><Plus /></el-icon>新增评级
+                  </button>
+                  <button type="button" class="rk-btn rk-btn-sm" @click="bulkAddLevels(ref)">一键三档模板</button>
+                </div>
               </div>
-            </el-card>
+            </div>
           </template>
-        </div>
-        <div v-else class="detail-empty">
-          <el-empty description="选择左侧指标查看参考范围"/>
-        </div>
-      </el-col>
-    </el-row>
 
-    <!-- ========== 指标 新增/编辑 Dialog ========== -->
-    <el-dialog :title="dialogTitle" v-model="showIndicatorDialog" width="520px">
-      <el-form ref="indicatorFormRef" :model="indicatorForm" :rules="indicatorRules" label-width="100px">
-        <el-row :gutter="12">
-          <el-col :span="12">
-            <el-form-item label="指标编码" prop="code">
-              <el-input v-model="indicatorForm.code" placeholder="如 SPRINT_30M" :disabled="indicatorForm.id != null"/>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="指标名称" prop="name">
-              <el-input v-model="indicatorForm.name" placeholder="如 30米冲刺"/>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="分类" prop="category">
-              <el-select v-model="indicatorForm.category" style="width:100%">
-                <el-option label="形态" value="形态"/>
-                <el-option label="机能" value="机能"/>
-                <el-option label="素质" value="素质"/>
-                <el-option label="筛查" value="筛查"/>
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="单位" prop="unit">
-              <el-input v-model="indicatorForm.unit" placeholder="cm / kg / s / %"/>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="数据类型" prop="dataType">
-              <el-select v-model="indicatorForm.dataType" style="width:100%">
-                <el-option label="decimal (小数)" value="decimal"/>
-                <el-option label="number (整数)" value="number"/>
-                <el-option label="text (文本)" value="text"/>
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="采集方式" prop="collectionMethod">
-              <el-select v-model="indicatorForm.collectionMethod" style="width:100%">
-                <el-option label="手动录入" value="manual"/>
-                <el-option label="CSV 导入" value="csv"/>
-                <el-option label="设备采集" value="device"/>
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="24">
-            <el-form-item label="评价方向" prop="evaluationDirection">
-              <el-radio-group v-model="indicatorForm.evaluationDirection">
-                <el-radio value="HIGHER_BETTER">越大越好（力量/纵跳）</el-radio>
-                <el-radio value="LOWER_BETTER">越小越好（冲刺/RSA）</el-radio>
-                <el-radio value="RANGE_BEST">范围最佳（BMI）</el-radio>
-                <el-radio value="REFERENCE_ONLY">仅参考（身高/体重）</el-radio>
-              </el-radio-group>
-            </el-form-item>
-          </el-col>
-        </el-row>
-      </el-form>
-      <template #footer>
-        <el-button @click="showIndicatorDialog = false">取 消</el-button>
-        <el-button type="primary" @click="submitIndicator">确 定</el-button>
-      </template>
-    </el-dialog>
+          <div v-else class="ind-detail-empty">
+            <div class="rk-empty">
+              <p class="rk-empty-title">选择左侧指标查看参考范围</p>
+              <p class="rk-empty-desc">参考范围、三级判定档与区间校验将在此展示</p>
+            </div>
+          </div>
+        </div>
+      </div>
 
-    <!-- ========== 参考范围 Dialog ========== -->
-    <el-dialog :title="showRefDialog?.id ? '编辑参考范围' : '新增参考范围'" v-model="showRefDialogVisible" width="480px">
-      <el-form :model="refForm" label-width="100px">
-        <el-row :gutter="12">
-          <el-col :span="12">
-            <el-form-item label="适用性别">
-              <el-select v-model="refForm.gender" placeholder="通用" style="width:100%">
-                <el-option label="男" value="M"/>
-                <el-option label="女" value="F"/>
-                <el-option label="通用" value=""/>
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="年龄组">
-              <el-input v-model="refForm.ageGroup" placeholder="如 U16 / U18"/>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="参考下限">
-              <el-input-number v-model="refForm.refMin" :precision="4" :step="0.1" style="width:100%" controls-position="right"/>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="参考上限">
-              <el-input-number v-model="refForm.refMax" :precision="4" :step="0.1" style="width:100%" controls-position="right"/>
-            </el-form-item>
-          </el-col>
-          <el-col :span="24">
-            <el-form-item label="口径版本">
-              <el-input v-model="refForm.modelVersion" placeholder="如 norm-u18-m-v1"/>
-            </el-form-item>
-          </el-col>
-        </el-row>
-      </el-form>
-      <template #footer>
-        <el-button @click="showRefDialogVisible = false">取 消</el-button>
-        <el-button type="primary" @click="submitRef">保 存</el-button>
-      </template>
-    </el-dialog>
+      <!-- ========== 指标 新增/编辑 Dialog（原逻辑保留） ========== -->
+      <el-dialog :title="dialogTitle" v-model="showIndicatorDialog" width="520px">
+        <el-form ref="indicatorFormRef" :model="indicatorForm" :rules="indicatorRules" label-width="100px">
+          <el-row :gutter="12">
+            <el-col :span="12">
+              <el-form-item label="指标编码" prop="code">
+                <el-input v-model="indicatorForm.code" placeholder="如 SPRINT_30M" :disabled="indicatorForm.id != null"/>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="指标名称" prop="name">
+                <el-input v-model="indicatorForm.name" placeholder="如 30米冲刺"/>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="分类" prop="category">
+                <el-select v-model="indicatorForm.category" style="width:100%">
+                  <el-option label="形态" value="形态"/>
+                  <el-option label="机能" value="机能"/>
+                  <el-option label="素质" value="素质"/>
+                  <el-option label="筛查" value="筛查"/>
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="单位" prop="unit">
+                <el-input v-model="indicatorForm.unit" placeholder="cm / kg / s / %"/>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="数据类型" prop="dataType">
+                <el-select v-model="indicatorForm.dataType" style="width:100%">
+                  <el-option label="decimal (小数)" value="decimal"/>
+                  <el-option label="number (整数)" value="number"/>
+                  <el-option label="text (文本)" value="text"/>
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="采集方式" prop="collectionMethod">
+                <el-select v-model="indicatorForm.collectionMethod" style="width:100%">
+                  <el-option label="手动录入" value="manual"/>
+                  <el-option label="CSV 导入" value="csv"/>
+                  <el-option label="设备采集" value="device"/>
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="24">
+              <el-form-item label="评价方向" prop="evaluationDirection">
+                <el-radio-group v-model="indicatorForm.evaluationDirection">
+                  <el-radio value="HIGHER_BETTER">越大越好（力量/纵跳）</el-radio>
+                  <el-radio value="LOWER_BETTER">越小越好（冲刺/RSA）</el-radio>
+                  <el-radio value="RANGE_BEST">范围最佳（BMI）</el-radio>
+                  <el-radio value="REFERENCE_ONLY">仅参考（身高/体重）</el-radio>
+                </el-radio-group>
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </el-form>
+        <template #footer>
+          <el-button @click="showIndicatorDialog = false">取 消</el-button>
+          <el-button type="primary" @click="submitIndicator">确 定</el-button>
+        </template>
+      </el-dialog>
+
+      <!-- ========== 参考范围 Dialog（原逻辑保留） ========== -->
+      <el-dialog :title="showRefDialog?.id ? '编辑参考范围' : '新增参考范围'" v-model="showRefDialogVisible" width="480px">
+        <el-form :model="refForm" label-width="100px">
+          <el-row :gutter="12">
+            <el-col :span="12">
+              <el-form-item label="适用性别">
+                <el-select v-model="refForm.gender" placeholder="通用" style="width:100%">
+                  <el-option label="男" value="M"/>
+                  <el-option label="女" value="F"/>
+                  <el-option label="通用" value=""/>
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="年龄组">
+                <el-input v-model="refForm.ageGroup" placeholder="如 U16 / U18"/>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="参考下限">
+                <el-input-number v-model="refForm.refMin" :precision="4" :step="0.1" style="width:100%" controls-position="right"/>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="参考上限">
+                <el-input-number v-model="refForm.refMax" :precision="4" :step="0.1" style="width:100%" controls-position="right"/>
+              </el-form-item>
+            </el-col>
+            <el-col :span="24">
+              <el-form-item label="口径版本">
+                <el-input v-model="refForm.modelVersion" placeholder="如 norm-u18-m-v1"/>
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </el-form>
+        <template #footer>
+          <el-button @click="showRefDialogVisible = false">取 消</el-button>
+          <el-button type="primary" @click="submitRef">保 存</el-button>
+        </template>
+      </el-dialog>
+    </div>
   </div>
 </template>
 
@@ -294,37 +405,117 @@ import {
   addRef, updateRef, delRef,
   addLevel, updateLevel, delLevel
 } from '@/api/apms/indicator'
+import { Plus, Delete, RefreshLeft, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
+
+const PAGE_SIZE = 10
 
 // ============ 查询参数 ============
 const loading = ref(false)
 const indicatorList = ref([])
 const total = ref(0)
-const ids = ref([])
-const multiple = ref(true)
-const showSearch = ref(true)
 
-const queryParams = reactive({ pageNum: 1, pageSize: 10, code: null, name: null, category: null, evaluationDirection: null })
+const queryParams = reactive({ pageNum: 1, pageSize: PAGE_SIZE, code: null, name: null, category: null, evaluationDirection: null })
 
 function getList() {
   loading.value = true
   listIndicator(queryParams).then(res => {
-    indicatorList.value = res.rows
-    total.value = res.total
-    loading.value = false
-  })
+    indicatorList.value = res.rows || []
+    total.value = res.total || 0
+  }).finally(() => { loading.value = false })
 }
 function handleQuery() { queryParams.pageNum = 1; getList() }
-function resetQuery() { proxy.resetForm('queryForm'); handleQuery() }
-function handleSelectionChange(selection) {
-  ids.value = selection.map(item => item.id)
-  multiple.value = !selection.length
+
+let filterGuard = false
+function resetQuery() {
+  filterGuard = true
+  queryParams.code = null
+  queryParams.name = null
+  queryParams.category = null
+  queryParams.evaluationDirection = null
+  queryParams.pageNum = 1
+  getList()
+  nextTick(() => { filterGuard = false })
 }
 
+let filterTimer = null
+watch(() => [queryParams.code, queryParams.name, queryParams.category, queryParams.evaluationDirection], () => {
+  if (filterGuard) return
+  clearTimeout(filterTimer)
+  filterTimer = setTimeout(handleQuery, 300)
+})
+
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)))
+const pageNumbers = computed(() => {
+  const pages = totalPages.value, cur = queryParams.pageNum
+  if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1)
+  const start = Math.max(2, Math.min(pages - 4, cur - 2))
+  const nums = [1]
+  for (let i = start; i < Math.min(pages, start + 3); i++) nums.push(i)
+  nums.push(pages)
+  return nums
+})
+function goPage(p) {
+  if (p === '…' || p < 1 || p > totalPages.value || p === queryParams.pageNum) return
+  queryParams.pageNum = p
+  getList()
+}
+
+// ============ 多选（原生复选列） ============
+const ids = ref([])
+const multiple = computed(() => !ids.value.length)
+const allChecked = computed(() => indicatorList.value.length > 0 && indicatorList.value.every(r => ids.value.includes(r.id)))
+function toggleRow(row) {
+  const i = ids.value.indexOf(row.id)
+  if (i >= 0) ids.value.splice(i, 1); else ids.value.push(row.id)
+}
+function toggleAll() {
+  const every = allChecked.value
+  const set = new Set(ids.value)
+  indicatorList.value.forEach(r => {
+    if (every) set.delete(r.id); else set.add(r.id)
+  })
+  ids.value = Array.from(set)
+}
+
+// ============ KPI 统计（只读全量 + getById 汇总，零后端改动） ============
+const stats = reactive({ total: 0, enabled: 0, withRefs: 0, levels: 0 })
+let statsSeq = 0
+function loadStats() {
+  const seq = ++statsSeq
+  listIndicator({ pageNum: 1, pageSize: 500 }).then(r => {
+    if (seq !== statsSeq) return null
+    const rows = r.rows || []
+    stats.total = r.total || rows.length
+    stats.enabled = rows.filter(x => x.status === '0').length
+    return Promise.all(rows.map(x => getIndicator(x.id).then(res => res.data).catch(() => null)))
+  }).then(details => {
+    if (seq !== statsSeq || !details) return
+    const refs = details.filter(Boolean).flatMap(d => d.refs || [])
+    stats.withRefs = refs.length
+    stats.levels = refs.reduce((s, rf) => s + ((rf.levels || []).length), 0)
+  })
+}
+const kpiCards = computed(() => [
+  { label: '指标总数', value: stats.total, unit: '项', accent: '#2563EB', chip: '测评基础字典', chipTone: 'tone-info' },
+  { label: '启用中', value: stats.enabled, unit: '项', accent: '#16A34A', chip: stats.total - stats.enabled ? `停用 ${stats.total - stats.enabled} 项` : '全部启用', chipTone: stats.total - stats.enabled ? 'tone-warn' : 'tone-ok' },
+  { label: '已配参考范围', value: stats.withRefs, unit: '个', accent: '#06B6D4', chip: stats.total ? '覆盖 ' + Math.round(stats.withRefs / stats.total * 100) + '% 指标' : '—', chipTone: '' },
+  { label: '评级档总数', value: stats.levels, unit: '档', accent: '#8B5CF6', chip: stats.withRefs ? '平均每范围 ' + (stats.levels / stats.withRefs).toFixed(1) + ' 档' : '暂无范围', chipTone: '' }
+])
+
 // ============ 状态切换 ============
+// 后端 UPDATE 为全字段内联更新（无动态 <if>），只发 {id,status} 会因 name 等 NOT NULL 列置空而 500，
+// 必须带齐列表行中的全部持久化字段（原页遗留缺陷修复）
 function handleStatusChange(row) {
-  updateIndicator({ id: row.id, status: row.status }).then(() => proxy.$modal.msgSuccess('状态已更新'))
+  updateIndicator({
+    id: row.id, code: row.code, category: row.category, name: row.name, unit: row.unit,
+    dataType: row.dataType, evaluationDirection: row.evaluationDirection,
+    collectionMethod: row.collectionMethod, status: row.status, version: row.version
+  }).then(() => {
+    proxy.$modal.msgSuccess('状态已更新')
+    loadStats()
+  })
 }
 
 // ============ 主面板交互 ============
@@ -341,9 +532,8 @@ function loadDetail(id) {
   detailLoading.value = true
   getIndicator(id).then(res => {
     const d = res.data
-    detail.refs = d.refs || []
-    detailLoading.value = false
-  })
+    detail.refs = (d.refs || []).map(rf => ({ ...rf, levels: (rf.levels || []).map(lv => ({ ...lv, editing: false })) }))
+  }).finally(() => { detailLoading.value = false })
 }
 
 // ============ CRUD Dialog ============
@@ -376,6 +566,7 @@ function submitIndicator() {
       proxy.$modal.msgSuccess('保存成功')
       showIndicatorDialog.value = false
       getList()
+      loadStats()
       if (currentIndicator.value?.id === indicatorForm.id) loadDetail(currentIndicator.value.id)
     })
   })
@@ -386,7 +577,9 @@ function handleDelete(row) {
     return delIndicator(selIds)
   }).then(() => {
     proxy.$modal.msgSuccess('删除成功')
+    ids.value = []
     getList()
+    loadStats()
     if (currentIndicator.value && (Array.isArray(selIds) ? selIds.includes(currentIndicator.value.id) : selIds === currentIndicator.value.id)) {
       currentIndicator.value = null
       detail.refs = []
@@ -419,6 +612,7 @@ function submitRef() {
     proxy.$modal.msgSuccess('保存成功')
     showRefDialogVisible.value = false
     loadDetail(currentIndicator.value.id)
+    loadStats()
   })
 }
 function handleDeleteRef(ref) {
@@ -427,6 +621,7 @@ function handleDeleteRef(ref) {
   }).then(() => {
     proxy.$modal.msgSuccess('删除成功')
     loadDetail(currentIndicator.value.id)
+    loadStats()
   }).catch(() => {})
 }
 
@@ -435,16 +630,16 @@ const newLevelName = ref('')
 // 编辑时的备份（用于取消）
 const levelSnapshots = new Map() // key: level.id -> { level, minValue, maxValue }
 
-// Level 名称 → tag 颜色的动态映射（支持前后端都未知的新档位）
-const LEVEL_COLOR_MAP = {
-  EXCELLENT: 'success', GOOD: 'success', SUPERIOR: 'success',
-  NORMAL: 'warning', MEDIUM: 'warning', MODERATE: 'warning',
-  ATTENTION: 'danger', POOR: 'danger', CRITICAL: 'danger', LOW: 'danger', WEAK: 'danger',
-  HIGH: 'danger', ELEVATED: 'warning',
-  DEFAULT: 'info'
+// Level 名称 → chip 配色的动态映射（支持前后端都未知的新档位）
+const LEVEL_TONE_MAP = {
+  EXCELLENT: 'is-lv-ok', GOOD: 'is-lv-ok', SUPERIOR: 'is-lv-ok',
+  NORMAL: 'is-lv-warn', MEDIUM: 'is-lv-warn', MODERATE: 'is-lv-warn',
+  ATTENTION: 'is-lv-risk', POOR: 'is-lv-risk', CRITICAL: 'is-lv-risk', LOW: 'is-lv-risk', WEAK: 'is-lv-risk',
+  HIGH: 'is-lv-warn', ELEVATED: 'is-lv-warn',
+  DEFAULT: 'is-lv-info'
 }
 
-function levelTag(l) { return LEVEL_COLOR_MAP[(l || '').toUpperCase()] || LEVEL_COLOR_MAP.DEFAULT }
+function levelChipClass(l) { return LEVEL_TONE_MAP[(l || '').toUpperCase()] || LEVEL_TONE_MAP.DEFAULT }
 function levelLabel(l) {
   const map = { EXCELLENT: '优秀 ★★★★', GOOD: '良好 ★★★', NORMAL: '正常 ★★', ATTENTION: '需关注 ★', POOR: '较差', CRITICAL: '危险' }
   return map[(l || '').toUpperCase()] || l || '—'
@@ -479,6 +674,7 @@ function handleDeleteLevel(row, ref) {
   }).then(() => {
     proxy.$modal.msgSuccess('已删除')
     loadDetail(currentIndicator.value.id)
+    loadStats()
   }).catch(() => {})
 }
 
@@ -490,6 +686,7 @@ function addNewLevel(ref) {
   addLevel({ refId: ref.id, level: name.toUpperCase(), minValue: null, maxValue: null }).then(() => {
     newLevelName.value = ''
     loadDetail(currentIndicator.value.id)
+    loadStats()
   }).catch(err => {
     proxy.$modal.msgError(err?.response?.data?.msg || '新增失败')
   })
@@ -503,6 +700,7 @@ function bulkAddLevels(ref) {
       const promises = missing.map(l => addLevel({ refId: ref.id, level: l, minValue: null, maxValue: null }))
       Promise.all(promises).then(() => {
         loadDetail(currentIndicator.value.id)
+        loadStats()
       }).catch(err => {
         proxy.$modal.msgError(err?.response?.data?.msg || '部分新增失败')
       })
@@ -515,6 +713,7 @@ function bulkAddLevels(ref) {
         addLevel({ refId: ref.id, level: 'ATTENTION', minValue: null, maxValue: null })
       ]).then(() => {
         loadDetail(currentIndicator.value.id)
+        loadStats()
       }).catch(err => {
         proxy.$modal.msgError(err?.response?.data?.msg || '部分新增失败')
       })
@@ -565,56 +764,138 @@ function getLevelValidationIssues(levels) {
   return issues
 }
 
-function getLevelRowClass(row, allLevels) {
+function isLevelRowError(row, allLevels) {
   const issues = getLevelValidationIssues(allLevels)
+  // 评级名可能是 Normal / NORMAL 等混合大小写，统一大写比对（原代码大写比对原始大小写文本导致高亮永不生效）
   const level = (row.level || '').toUpperCase()
-  const hasOverlap = issues.some(i => i.includes('[' + level + ']'))
-  return hasOverlap ? 'level-row-error' : ''
+  return issues.some(i => i.toUpperCase().includes('[' + level + ']'))
 }
 
 // ============ 辅助 ============
-function dirLabel(d) { return ({ HIGHER_BETTER: '↑ 越大越好', LOWER_BETTER: '↓ 越小越好', RANGE_BEST: '≈ 范围最佳', REFERENCE_ONLY: '— 仅参考' })[d] || d }
-function categoryTagType(c) { return ({ '形态': '', '机能': 'success', '素质': 'warning', '筛查': 'danger' })[c] || 'info' }
+function dirLabel(d) { return ({ HIGHER_BETTER: '↑ 越大越好', LOWER_BETTER: '↓ 越小越好', RANGE_BEST: '≈ 范围最佳', REFERENCE_ONLY: '— 仅参考' })[d] || d || '—' }
+function dirChipClass(d) { return ({ HIGHER_BETTER: 'ind-higher', LOWER_BETTER: 'ind-lower', RANGE_BEST: 'ind-range', REFERENCE_ONLY: 'ind-ref' })[d] || 'ind-ref' }
+function categoryChipClass(c) { return ({ '形态': 'ind-cat-form', '机能': 'ind-cat-func', '素质': 'ind-cat-qual', '筛查': 'ind-cat-screen' })[c] || 'ind-cat-form' }
+function collectLabel(m) { return ({ manual: '手动录入', csv: 'CSV 导入', device: '设备采集' })[m] || m || '—' }
 
 // ============ 初始化 ============
 getList()
+loadStats()
 </script>
 
-<style scoped>
-.indicator-page { padding: 12px 16px; }
-.panel-title {
-  display: flex; align-items: center; gap: 10px;
-  font-size: 15px; font-weight: 600; color: #1b4332;
-  padding: 0 0 10px; border-bottom: 1px solid #ebeef5; margin-bottom: 12px;
+<style lang="scss" scoped>
+@use "@/assets/styles/roster-kit.scss" as *;
+
+.ind-input-code { width: 160px; }
+.ind-input-name { width: 160px; }
+.ind-select-sm { width: 110px; }
+.ind-select-dir { width: 130px; }
+
+/* 左表 */
+.col-check { width: 40px; text-align: center; }
+.col-code { width: 120px; }
+.col-cat { width: 74px; }
+.col-unit { width: 58px; }
+.col-dir { width: 96px; }
+.col-status { width: 62px; }
+.col-ops { width: 96px; }
+.rk-empty-cell { padding: 36px 0; }
+.ind-table tbody tr { cursor: pointer; }
+.ind-code { font-size: 12px; font-weight: 600; color: $rk-brand-600; }
+
+:deep(.rk-link.is-danger) { color: $rk-risk; }
+:deep(.rk-link.is-danger:hover) { color: #a13a3a; }
+
+:deep(.rk-soft-chip.ind-higher) { background: #e8f7ee; color: $rk-ok; }
+:deep(.rk-soft-chip.ind-lower) { background: #fcebeb; color: $rk-risk; }
+:deep(.rk-soft-chip.ind-range) { background: #fef3e0; color: #b45309; }
+:deep(.rk-soft-chip.ind-ref) { background: #f1f5f9; color: $rk-text-3; }
+:deep(.rk-soft-chip.ind-cat-form) { background: $rk-brand-50; color: $rk-brand-600; }
+:deep(.rk-soft-chip.ind-cat-func) { background: #e8f7ee; color: $rk-ok; }
+:deep(.rk-soft-chip.ind-cat-qual) { background: #fef3e0; color: #b45309; }
+:deep(.rk-soft-chip.ind-cat-screen) { background: #fcebeb; color: $rk-risk; }
+
+:deep(.rk-soft-chip.is-lv-ok) { background: #e8f7ee; color: $rk-ok; }
+:deep(.rk-soft-chip.is-lv-warn) { background: #fef3e0; color: #b45309; }
+:deep(.rk-soft-chip.is-lv-risk) { background: #fcebeb; color: $rk-risk; }
+:deep(.rk-soft-chip.is-lv-info) { background: #f1f5f9; color: $rk-text-3; }
+
+/* 右详情 */
+.ind-detail-card { overflow: hidden; }
+.ind-detail-empty { padding: 80px 20px; }
+.ind-banner {
+  padding: 14px 18px;
+  background: linear-gradient(180deg, #f4f7ff, #fff 85%);
+  border-bottom: 1px solid $rk-line;
 }
-.panel-total { font-size: 12px; color: #909399; font-weight: 400; }
-.panel-sub { font-size: 12px; color: #606266; font-weight: 400; }
-.panel-sub.muted { color: #c0c4cc; }
-
-.dir-badge {
-  display: inline-block; padding: 1px 6px; border-radius: 4px;
-  font-size: 11px; font-weight: 500;
+.ind-banner-title {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  font-size: 15px; font-weight: 700; color: $rk-text-1;
+  .rk-mono { color: $rk-brand-600; font-size: 12px; font-weight: 600; }
 }
-.dir-HIGHER_BETTER { background: #f0f9eb; color: #67c23a; }
-.dir-LOWER_BETTER { background: #fef0f0; color: #f56c6c; }
-.dir-RANGE_BEST   { background: #fdf6ec; color: #e6a23c; }
-.dir-REFERENCE_ONLY { background: #f4f4f5; color: #909399; }
+.ind-banner-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+  margin-top: 7px; font-size: 12px; color: $rk-text-3;
+  b { color: $rk-text-2; font-weight: 600; }
+}
+.ind-detail-body { padding-top: 14px; }
 
-.detail-panel { min-height: 400px; }
-.detail-empty { min-height: 400px; display: flex; align-items: center; justify-content: center; }
+.ind-ref-empty {
+  padding: 30px 10px;
+  border: 1px dashed $rk-line; border-radius: 12px;
+}
 
-.ref-card { margin-bottom: 12px; border-left: 3px solid #dcdfe6; }
-.ref-card.ref-M { border-left-color: #409eff; }
-.ref-card.ref-F { border-left-color: #f56c6c; }
-.ref-header { display: flex; justify-content: space-between; align-items: center; }
-.ref-title { display: flex; align-items: center; gap: 8px; }
-.ref-range { font-size: 13px; color: #606266; }
-.ref-version { font-size: 11px; color: #909399; background: #f4f4f5; padding: 1px 6px; border-radius: 3px; }
-.ref-actions { display: flex; gap: 6px; }
-.add-level-bar { margin-top: 8px; display: flex; align-items: center; flex-wrap: wrap; }
+/* 参考范围卡 */
+.ind-ref-card {
+  border: 1px solid $rk-line; border-radius: 12px;
+  margin-bottom: 14px; overflow: hidden;
+  border-left-width: 3px;
+  background: #fff;
+  &.is-M { border-left-color: #2563eb; }
+  &.is-F { border-left-color: #dc2626; }
+  &.is-U { border-left-color: #94a3b8; }
+}
+.ind-ref-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px; background: #f8fafc;
+  border-bottom: 1px solid $rk-line;
+}
+.ind-ref-id { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ind-gender {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 30px; height: 20px; padding: 0 9px;
+  border-radius: 999px; font-size: 11px; font-weight: 700; color: #fff;
+  &.is-m { background: #2563eb; }
+  &.is-f { background: #dc2626; }
+  &.is-u { background: #94a3b8; }
+}
+.ind-ref-range { font-size: 12px; color: $rk-text-2; b { color: $rk-text-1; font-weight: 700; margin-left: 3px; } }
+.ind-ref-version {
+  font-size: 10px; color: $rk-text-3;
+  background: #eef2f7; border-radius: 4px; padding: 1px 6px;
+}
+.ind-ref-actions { display: flex; align-items: center; gap: 4px; }
 
-/* Level 校验样式 */
-.level-alerts { margin-bottom: 8px; }
-:deep(.level-row-error) { background-color: #fef0f0 !important; }
-:deep(.level-row-error td) { border-bottom: 1px solid #fbc4c4; }
+.ind-alerts {
+  padding: 10px 14px 0;
+  display: flex; flex-direction: column; gap: 6px;
+  :deep(.el-alert) { border-radius: 10px; }
+}
+
+/* 三级判定表 */
+.ind-level-scroll { margin: 10px 14px 0; border: 1px solid $rk-line; border-radius: 10px; }
+.ind-level-table { font-size: 12px; }
+.col-lv { width: 150px; }
+.col-bound { width: 150px; }
+.col-lv-ops { width: 170px; }
+.ind-level-table :deep(tr.is-level-error) { background: #fef2f2; }
+.ind-level-table :deep(tr.is-level-error td) { border-bottom-color: #f5c6c6; }
+.ind-lv-input { width: 110px; }
+.ind-bound-input { width: 120px; }
+
+.ind-add-level {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  padding: 10px 14px 12px;
+}
+.ind-new-level { width: 200px; height: 32px; }
 </style>
