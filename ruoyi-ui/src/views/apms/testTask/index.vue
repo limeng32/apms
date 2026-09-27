@@ -807,6 +807,8 @@ loadStats()
 .tt-dept { font-size: 12px; color: $rk-text-2; }
 .tt-date { font-size: 11px; color: $rk-text-2; white-space: nowrap; }
 .tt-progress-cell { display: flex; align-items: center; gap: 8px; }
+/* flex 容器内轨道需显式占满剩余空间，否则宽度坍缩为 min-content，进度条只剩一小截 */
+.tt-progress-cell .rk-progress { flex: 1; min-width: 120px; }
 .tt-progress-num { font-size: 11px; font-weight: 600; color: $rk-text-2; min-width: 34px; }
 .tt-edit-link { margin-top: 4px; font-size: 12px; }
 

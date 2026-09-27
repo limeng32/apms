@@ -25,7 +25,8 @@
       } catch (e) { /* 隐私模式等场景静默回退 /favicon.ico */ }
     })()
   </script>
-  <link rel="icon" href="/favicon.ico">
+  <!-- v=构建号：重新部署后强制浏览器拉新 favicon，绕过对 .ico 的 7 天强缓存 -->
+  <link rel="icon" href="/favicon.ico?v=%BUILD_ID%">
   <title>%VITE_APP_TITLE%</title>
   <!--[if lt IE 11]><script>window.location.href='/html/ie.html';</script><![endif]-->
   <style>

@@ -229,18 +229,24 @@ defineExpose({ validate })
   }
 }
 /* 渐变形态：根节点 .btn-gradient-on 由 LoginRenderer 按配置添加（关闭时回退上方纯色三态） */
+/* 必须用 background-image 长属性而非 background 简写：简写会把 background-origin 重置为
+   padding-box，而 background-clip 默认 border-box——渐变按 padding box 定位却要涂满 1px
+   透明边框环，Chromium 会在左右直边采到渐变另一端颜色（左缘发青、右缘发蓝的色线）。
+   显式 origin/clip: border-box 让渐变贯通到圆角边界。hover/loading 同样只能用长属性。 */
 .btn-gradient-on .lf-submit {
-  background: var(--login-btn-gradient);
+  background-image: var(--login-btn-gradient);
+  background-origin: border-box;
+  background-clip: border-box;
   border-color: transparent;
   box-shadow: 0 10px 24px -10px var(--login-btn-glow);
   &:hover, &:focus {
-    background: var(--login-btn-gradient);
+    background-image: var(--login-btn-gradient);
     border-color: transparent;
     filter: brightness(1.12);
   }
   &:active { transform: scale(.985); }
   &.is-loading {
-    background: var(--login-btn-gradient);
+    background-image: var(--login-btn-gradient);
     border-color: transparent;
     opacity: .85;
   }

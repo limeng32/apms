@@ -17,6 +17,8 @@ $rk-canvas: #f8faff;
 $rk-ok: #16a34a;
 $rk-warn: #d97706;
 $rk-risk: #dc2626;
+/* 品牌渐变（与登录主按钮同源）：用于主按钮、进度条填充 */
+$rk-brand-gradient: linear-gradient(90deg, #2563eb, #06b6d4);
 
 /* ===== 页面基底 ===== */
 .rk-page {
@@ -88,7 +90,7 @@ $rk-risk: #dc2626;
   // 却裁剪到 border-box，1px 边框环会铺出相邻平铺色块——左缘=上一块末端（青）、右缘=下一块起点（蓝），形成反色线
   border: 0;
   transition: background .15s, color .15s, box-shadow .15s;
-  background: linear-gradient(90deg, #2563EB, #06B6D4);
+  background: $rk-brand-gradient;
   box-shadow: 0 4px 12px rgba(37, 99, 235, .22);
   &:hover {
     background: linear-gradient(90deg, #3B82F6, #22D3EE);
@@ -97,7 +99,7 @@ $rk-risk: #dc2626;
   &:disabled,
   &.is-disabled,
   &.is-disabled:hover {
-    background: linear-gradient(90deg, #2563EB, #06B6D4);
+    background: $rk-brand-gradient;
     box-shadow: none;
   }
 }
@@ -969,11 +971,10 @@ button.rk-status-badge {
 .rk-progress-bar {
   height: 100%;
   border-radius: 999px;
-  background: $rk-brand-600;
+  /* 填充统一品牌渐变（与登录主按钮同源）；完成/预警语义由状态徽章与百分比数字承担，
+     故 tone-ok/warn/risk 不再覆盖填充色，仅 tone-gray（无数据/禁用态）保留灰条 */
+  background: $rk-brand-gradient;
   transition: width .5s ease;
-  &.tone-ok   { background: $rk-ok; }
-  &.tone-warn { background: $rk-warn; }
-  &.tone-risk { background: $rk-risk; }
   &.tone-gray { background: #cbd5e1; }
 }
 

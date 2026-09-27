@@ -84,9 +84,9 @@
               <div class="task-bar-wrap">
                 <el-progress
                   :percentage="Math.round(t.done / t.total * 100)"
-                  :color="taskBarColor(t.bar)"
                   :stroke-width="8"
                   :show-text="false"
+                  class="task-progress"
                   style="flex:1"
                 />
                 <span class="task-bar-text">{{ t.done }}/{{ t.total }} 人 · {{ Math.round(t.done / t.total * 100) }}%</span>
@@ -239,7 +239,6 @@ function loadDashboard() {
       status: '进行中',
       done: t.completedCount || 0,
       total: t.totalCount || 0,
-      bar: (t.progress || 0) >= 75 ? 'green' : (t.progress || 0) >= 50 ? 'amber' : 'red',
       group: t.teamName || '—',
       window: formatWindow(t.startDate, t.endDate)
     }))
@@ -272,10 +271,6 @@ function taskStatusType(s) {
     'COMPLETED': 'success', 'IN_PROGRESS': 'warning', 'PENDING': 'info'
   }
   return map[(s || '').toLowerCase()] || 'info'
-}
-function taskBarColor(bar) {
-  // 正常进度条跟随品牌主色；黄/红为状态预警语义色，保持固定
-  return bar === 'amber' ? '#f0a23a' : bar === 'red' ? '#c14747' : 'var(--el-color-primary)'
 }
 
 // 首次加载
@@ -434,6 +429,11 @@ onActivated(() => {
   align-items: center;
   gap: 12px;
   margin-top: 9px;
+}
+/* 进度填充：品牌渐变（与登录主按钮、roster-kit .rk-progress 同源）；
+   用 background-image 覆盖 EP 的 background-color，无需 !important */
+.task-progress :deep(.el-progress-bar__inner) {
+  background-image: linear-gradient(90deg, #2563eb, #06b6d4);
 }
 .task-bar-text {
   font-size: 12px;
