@@ -21,3 +21,8 @@ selenium-debug.log
 
 package-lock.json
 yarn.lock
+
+# 自托管字体分片（与原型 demo 同款 Inter / Noto Sans SC / IBM Plex Mono），
+# 由 scripts/sync-fonts.py 生成，需随仓库部署，取反根 .gitignore 的 *.woff2 规则
+!public/fonts/
+!public/fonts/**

@@ -553,7 +553,7 @@ loadList()
 .cs-model-chip {
   max-width: 260px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--app-font-mono);
   font-size: 12px;
 }
 :deep(.cs-model-chip) { background: $rk-brand-50; color: $rk-brand-600; }
@@ -578,7 +578,7 @@ loadList()
 .preview-title { font-size: 13px; font-weight: 600; color: #303133; margin-bottom: 8px; }
 
 /* ========== 报告样式（原内容保留） ========== */
-.combo-report { font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+.combo-report { font-family: var(--app-font-family); }
 .report-header {
   display: flex; gap: 24px; margin-bottom: 20px;
   padding: 20px; background: linear-gradient(135deg, #f0f8f3 0%, #e8f5ee 100%);
@@ -595,7 +595,7 @@ loadList()
   padding: 0 30px; min-width: 180px;
   background: #fff; border-radius: 10px; border: 2px solid #8bc7a5;
 }
-.score-big { font-size: 42px; font-weight: 800; font-family: Menlo, monospace; line-height: 1; }
+.score-big { font-size: 42px; font-weight: 700; font-family: var(--app-font-mono); line-height: 1; }
 .score-big.score-high { color: #2c8a57; }
 .score-big.score-low { color: #c14747; }
 .score-big.score-mid { color: #53655e; }
@@ -622,7 +622,7 @@ loadList()
 .tscore-bar-row { display: grid; grid-template-columns: 160px 1fr 100px; align-items: center; gap: 10px; }
 .tscore-bar-row.skipped { opacity: 0.5; }
 .bar-label { display: flex; flex-direction: column; }
-.bar-label .ind-code { font-family: monospace; font-size: 12px; color: #1b4332; font-weight: 600; }
+.bar-label .ind-code { font-family: var(--app-font-mono); font-size: 12px; color: #1b4332; font-weight: 600; }
 .bar-label .ind-name { font-size: 11px; color: #7a8a83; }
 .bar-track {
   position: relative; height: 22px; background: #e8eaed; border-radius: 4px; overflow: hidden;
@@ -638,7 +638,7 @@ loadList()
 }
 .bar-fill.bar-higher { background: linear-gradient(90deg, #67c23a, #2c8a57); box-shadow: 0 0 6px rgba(44,138,87,0.4); }
 .bar-fill.bar-lower { background: linear-gradient(90deg, #e6a23c, #c14747); box-shadow: 0 0 6px rgba(193,71,71,0.4); }
-.bar-val { text-align: right; font-size: 12px; font-family: Menlo, monospace; }
+.bar-val { text-align: right; font-size: 12px; font-family: var(--app-font-mono); }
 .bar-val.val-ok .t-num { font-weight: 700; color: #1b4332; font-size: 14px; }
 .bar-val.val-ok .t-z { color: #909399; font-size: 11px; margin-left: 4px; }
 .bar-val.val-skip { font-size: 11px; color: #c0c4cc; }
@@ -653,7 +653,7 @@ loadList()
 
 /* 指标名称 cell */
 .ind-name-cell { display: flex; flex-direction: column; }
-.ind-code-sm { font-family: monospace; font-size: 12px; color: #1b4332; font-weight: 600; }
+.ind-code-sm { font-family: var(--app-font-mono); font-size: 12px; color: #1b4332; font-weight: 600; }
 .ind-name-sm { font-size: 11px; color: #909399; }
 
 /* Z-Score 颜色 */
@@ -661,8 +661,8 @@ loadList()
 .z-neg { color: #c14747; font-weight: 600; }
 .z-mid { color: #53655e; }
 
-.t-cell { font-weight: 600; color: #1b4332; font-family: Menlo, monospace; }
-.weighted-cell { font-weight: 600; color: #2c8a57; font-family: Menlo, monospace; }
+.t-cell { font-weight: 600; color: #1b4332; font-family: var(--app-font-mono); }
+.weighted-cell { font-weight: 600; color: #2c8a57; font-family: var(--app-font-mono); }
 .ref-range { font-size: 12px; color: #606266; }
 .real-badge { margin-left: 4px; }
 .ref-badge { margin-left: 4px; }

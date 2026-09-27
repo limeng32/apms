@@ -159,6 +159,8 @@ defineExpose({ validate })
   border-radius: var(--login-radius);
   height: 44px;
   box-shadow: 0 0 0 1px var(--login-border) inset;
+  /* demo 输入框底色 bg-canvas #f8faff（非纯白） */
+  background-color: #f8faff;
   &:hover, &.is-focus {
     box-shadow: 0 0 0 1px var(--login-input-focus) inset;
   }
@@ -166,6 +168,19 @@ defineExpose({ validate })
 :deep(.el-input__inner) {
   height: 44px;
   font-size: 14px;
+  /* demo 登录页凭据框专属 font-mono-data（IBM Plex Mono，中文回退 Noto Sans SC）；
+     系统内页面输入框为 Inter，勿提升到全局（见 index.scss 输入域字体说明） */
+  font-family: var(--app-font-mono);
+  /* demo 输入值色 text-text-1 近黑 #0f172a（=登录标题色）；EP 默认 #606266 中灰，
+     字重/字号相同情况下会显得"字细"，实测对比度 6.1:1 vs demo 17.1:1 */
+  color: var(--login-text-1);
+  /* 自动填充后保持同底色，避免 Chrome autofill 浅黄破坏观感 */
+  &:-webkit-autofill,
+  &:-webkit-autofill:hover,
+  &:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--login-text-1);
+    -webkit-box-shadow: 0 0 0 1000px #f8faff inset;
+  }
 }
 :deep(.el-input__prefix-inner) {
   color: var(--login-text-2);

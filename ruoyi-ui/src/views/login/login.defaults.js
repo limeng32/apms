@@ -83,7 +83,7 @@ export default {
     pageBg: '#ffffff',
     formTitle: '#0f172a',
     formSubText: '#94a3b8',
-    inputBorder: '#e5e9f0',
+    inputBorder: '#e4e4e7',
     inputFocus: '#2563eb',
     // 渐变关闭时按钮使用的纯色兜底
     buttonBg: '#2563eb',

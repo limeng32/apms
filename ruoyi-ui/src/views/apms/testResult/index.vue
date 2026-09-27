@@ -460,7 +460,7 @@ loadStats()
 .tr-attempt {
   display: inline-block; min-width: 30px; padding: 1px 7px;
   border-radius: 999px; font-size: 12px; font-weight: 600;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--app-font-mono);
   &.is-star { background: #e8f7ee; color: $rk-ok; }
   &.is-alt { color: $rk-text-3; background: #f1f5f9; }
 }

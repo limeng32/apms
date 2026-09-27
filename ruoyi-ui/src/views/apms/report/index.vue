@@ -470,7 +470,7 @@ loadStats()
 :deep(.rk-soft-chip.rp-type-ind) { background: $rk-brand-50; color: $rk-brand-600; }
 :deep(.rk-soft-chip.rp-type-task) { background: #e8f7ee; color: $rk-ok; }
 :deep(.rk-soft-chip.rp-type-team) { background: #fdf1d6; color: #9a6b13; }
-:deep(.rk-soft-chip.rp-ver-chip) { background: #f1f5f9; color: $rk-text-3; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+:deep(.rk-soft-chip.rp-ver-chip) { background: #f1f5f9; color: $rk-text-3; font-family: var(--app-font-mono); }
 :deep(.rk-soft-chip.rp-file-ready) { background: #e8f7ee; color: $rk-ok; margin-left: auto; }
 :deep(.rk-soft-chip.rp-file-missing) { background: #f1f5f9; color: $rk-text-3; margin-left: auto; }
 
@@ -525,7 +525,7 @@ loadStats()
 .rp-snapshot {
   background: #14181f; color: #c9d4e3;
   border-radius: 12px; padding: 12px 16px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--app-font-mono);
   font-size: 12px; line-height: 1.6;
   max-height: 300px; overflow: auto;
   pre { margin: 0; white-space: pre-wrap; word-break: break-all; }

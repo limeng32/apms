@@ -386,7 +386,7 @@ loadList()
 /* 数值单元格 */
 .pm-avatar { width: 32px; height: 32px; font-size: 13px; }
 .pm-phv-age {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--app-font-mono);
   font-size: 14px;
   font-weight: 700;
   color: $rk-ok;

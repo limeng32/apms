@@ -122,7 +122,7 @@ function loadData() {
 .drawer-head-type {
   font-size: 14px;
   color: var(--dict-drawer-subtext-color, #95a5a6);
-  font-family: monospace;
+  font-family: var(--app-font-mono);
 }
 .drawer-wrap {
   padding: 0 20px 20px;

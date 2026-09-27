@@ -7,7 +7,7 @@ import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 import locale from 'element-plus/es/locale/lang/zh-cn'
 
-import '@/assets/styles/index.scss' // global css
+import '@/assets/styles/index.scss' // global css（其中 @use fonts.scss：自托管 Inter/Noto Sans SC/Plex Mono，woff2 分片按需加载）
 
 import App from './App'
 import store from './store'

@@ -615,7 +615,7 @@ loadStats()
 .cm-formula-label { font-size: 11px; font-weight: 600; color: $rk-text-3; margin-bottom: 4px; }
 .cm-formula-content {
   font-size: 13px; color: $rk-text-1; line-height: 1.7;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--app-font-mono);
   white-space: pre-wrap; word-break: break-all;
 }
 

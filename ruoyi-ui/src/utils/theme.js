@@ -8,8 +8,9 @@ export const FONT_STACKS = {
   system: `"Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif`,
   pingfang: `"PingFang SC", "Hiragino Sans GB", -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif`,
   yahei: `"Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", -apple-system, BlinkMacSystemFont, sans-serif`,
-  // 黑体（无衬线）：mac Heiti SC / Win SimHei 优先，逐级回退到苹方/雅黑
-  heiti: `"Heiti SC", "SimHei", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif`,
+  // 黑体（无衬线，默认）：与原型 demo 完全一致 —— 自托管 Inter（西文/数字）+ Noto Sans SC（中文），
+  // 字体未加载或缺失时按 system-ui → 苹方/雅黑逐级回退
+  heiti: `'Inter', 'Noto Sans SC', system-ui, -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif`,
   // 宋体（衬线）：mac Songti SC/STSong / Win SimSun/NSimSun，最后回退通用衬线
   songti: `"Songti SC", "STSong", "SimSun", "NSimSun", "Noto Serif CJK SC", serif`
 }

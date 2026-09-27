@@ -306,7 +306,7 @@
                     <div class="ld-font-card" :style="{ fontFamily: FONT_STACKS.heiti }">
                       <div class="ld-font-name">黑体</div>
                       <div class="ld-font-sample">运动员训练数据管理系统 123ABC</div>
-                      <div class="ld-font-desc">Heiti SC · SimHei · 苹方 / 雅黑回退</div>
+                      <div class="ld-font-desc">Inter · Noto Sans SC · 系统字体回退（与原型 demo 一致）</div>
                     </div>
                   </el-radio>
                   <el-radio value="songti" class="ld-font-radio">
@@ -317,7 +317,7 @@
                     </div>
                   </el-radio>
                 </el-radio-group>
-                <div class="ld-hint">切换后保存即对整体系统（含登录页）生效；仅使用访客本机系统字体，不加载网络字体。Windows / macOS 缺字库时按字体栈自动回退</div>
+                <div class="ld-hint">切换后保存即对整体系统（含登录页）生效；黑体使用随站点自托管的 Inter / Noto Sans SC（无需访问外网），缺字库时按字体栈自动回退</div>
               </el-form-item>
 
               <div class="ld-section">字号 / 字重</div>

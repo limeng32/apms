@@ -269,7 +269,7 @@ function initCharts() {
         label: {
           show: true, position: 'right', distance: 6,
           formatter: function (p) { return Number(p.value).toFixed(3) },
-          fontSize: 11, color: '#475569', fontFamily: 'ui-monospace, Menlo, monospace'
+          fontSize: 11, color: '#475569', fontFamily: 'IBM Plex Mono, Noto Sans SC, ui-monospace, Menlo, monospace'
         }
       }]
     })

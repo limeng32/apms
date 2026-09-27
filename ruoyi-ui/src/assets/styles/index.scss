@@ -1,3 +1,4 @@
+@use './fonts.scss';
 @use './mixin.scss';
 @use './transition.scss';
 @use './element-ui.scss';
@@ -5,9 +6,23 @@
 @use './btn.scss';
 @use './ruoyi.scss';
 
-// 整体字体默认栈（与 FONT_STACKS.heiti 视觉一致；设计器切换时由 applyGlobalBrand 覆盖 --app-font-family/--el-font-family）
+// 整体字体默认栈 — 与原型 demo（.trae/demoapp，Inter + Noto Sans SC + IBM Plex Mono）完全一致。
+// 字体为自托管 woff2（@font-face 见 fonts.scss，字体文件在 public/fonts，由
+// scripts/sync-fonts.py 从 @fontsource 包生成），国内网络可靠；缺字库时按栈逐级回退。
+// 设计器切换字体时由 applyGlobalBrand 覆盖 --app-font-family/--el-font-family。
 :root {
-  --app-font-family: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+  --app-font-family: 'Inter', 'Noto Sans SC', system-ui, -apple-system, BlinkMacSystemFont,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
+  --app-font-mono: 'IBM Plex Mono', 'Noto Sans SC', ui-monospace, SFMono-Regular, Menlo,
+    Consolas, monospace;
+  // Element Plus 组件（输入框/下拉 popper/表格/弹窗等）默认字体，与 body 同源
+  --el-font-family: var(--app-font-family);
+
+  // 输入域占位色对齐 demo text-3 #94a3b8（EP 默认 #a8abb2 偏灰）。
+  // 注意：文字/边框色不能只在 :root 改——EP 在 .el-input 等组件根上重新声明了
+  // --el-input-text-color/--el-input-border-color（指向全局原色），:root 会被组件根覆盖，
+  // 因此文字/边框的覆盖放在下方组件根选择器上。
+  --el-text-color-placeholder: #94a3b8; // el-input 占位 + 新版 el-select 空占位（.is-transparent）
 }
 
 body {
@@ -16,16 +31,48 @@ body {
   -moz-osx-font-smoothing: grayscale;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  font-family: var(--app-font-family, "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif);
+  font-family: var(--app-font-family);
+  // 与 demo 基准一致：14px / 行高 22px
+  font-size: 14px;
+  line-height: 22px;
 }
 
 // Element Plus 的 .el-button 基类未声明 font-family，按钮会回退到 UA 默认字体（macOS 为 Arial）
-// 而不继承 body；统一让表单控件继承整体字体，设计器切换黑体/宋体后按钮/输入/下拉才能整体跟随
+// 而不继承 body；原生表单控件默认也不继承字体。统一继承正文（Inter 栈）：
+// 系统内输入域与 demo 内页一致使用比例字体 Inter；仅登录页凭据框单独声明等宽（见 LoginFormFields）。
+// 数字/编号等需要等宽的展示元素走 .rk-mono / var(--app-font-mono) 工具类。
 button,
 input,
 select,
 textarea {
   font-family: inherit;
+}
+
+// el-select 边框不走 --el-input-border-color（用的是全局 --el-border-color，不能全局改），
+// 在组件局部对齐 demo line #e5e9f0 / 聚焦 brand-500 #3b82f6；选中值文字同步近黑
+.el-select__wrapper {
+  color: #0f172a;
+  box-shadow: 0 0 0 1px #e5e9f0 inset;
+  &.is-hovering:not(.is-focused) {
+    box-shadow: 0 0 0 1px #e5e9f0 inset;
+  }
+  &.is-focused {
+    box-shadow: 0 0 0 1px #3b82f6 inset;
+  }
+}
+
+// 输入域文字/边框配色对齐原型 demo（text-1 #0f172a、line #e5e9f0、聚焦 brand-500 #3b82f6）。
+// EP 在这些组件根上本地声明了 --el-input-* 变量（指向 EP 原色），必须同层覆盖：
+// el-input-number/cascader/time-picker 内部都含 .el-input，自动同源。
+// 仅影响输入域；表格正文（--el-text-color-regular）、分隔线/卡片（--el-border-color）不动。
+.el-input,
+.el-textarea,
+.el-autocomplete,
+.el-date-editor {
+  --el-input-text-color: #0f172a;
+  --el-input-border-color: #e5e9f0;
+  --el-input-hover-border-color: #e5e9f0; // demo 内页输入框 hover 边框不变，仅聚焦变蓝
+  --el-input-focus-border-color: #3b82f6;
 }
 
 label {
@@ -119,7 +166,7 @@ aside {
   display: block;
   line-height: 32px;
   font-size: 16px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+  font-family: var(--app-font-family);
   color: #2c3e50;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

@@ -341,7 +341,7 @@
   margin-right: 6px;
   vertical-align: middle;
 }
-.mono { font-family: Consolas, 'SFMono-Regular', monospace; font-size: 12px; }
+.mono { font-family: var(--app-font-mono); font-size: 12px; }
 .code-body { padding: 14px; }
 .code-wrap {
   background: #f7f9fb;
@@ -375,7 +375,7 @@
   padding: 12px 14px;
   font-size: 12px;
   line-height: 1.6;
-  font-family: Consolas, 'SFMono-Regular', monospace;
+  font-family: var(--app-font-mono);
   color: #444;
   white-space: pre-wrap;
   word-break: break-all;

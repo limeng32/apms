@@ -622,7 +622,7 @@ $risk: #dc2626;
   color: $text-1;
 }
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--app-font-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -743,7 +743,7 @@ $risk: #dc2626;
   &:active { transform: scale(.95); }
 }
 .rp-chip-group {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--app-font-mono);
   font-weight: 500;
   &:hover { border-color: $brand-500; color: $brand-600; }
   &.is-active {
@@ -768,7 +768,7 @@ $risk: #dc2626;
   border-radius: 50%;
 }
 .rp-chip-count {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--app-font-mono);
   font-size: 11px;
   color: $text-3;
 }
