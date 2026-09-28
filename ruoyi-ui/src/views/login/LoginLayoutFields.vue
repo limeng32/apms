@@ -136,6 +136,7 @@
             <path d="M20 12l4 3-1.5 5h-5L16 15l4-3z" fill="#d8efe4"/>
             <path d="M14.5 29c1.6-2.2 3.4-3.3 5.5-3.3s3.9 1.1 5.5 3.3" stroke="#d8efe4" stroke-width="1.3" fill="none"/>
           </svg>
+          <img v-else-if="l.customImage" :src="l.customImage" class="ld-logo-builtin-img" alt="">
           <el-icon v-else :size="26"><component :is="l.value" /></el-icon>
           <span class="ld-logo-name">{{ l.label }}</span>
         </div>
@@ -241,6 +242,7 @@
               <path d="M20 12l4 3-1.5 5h-5L16 15l4-3z" fill="#d8efe4"/>
               <path d="M14.5 29c1.6-2.2 3.4-3.3 5.5-3.3s3.9 1.1 5.5 3.3" stroke="#d8efe4" stroke-width="1.3" fill="none"/>
             </svg>
+            <img v-else-if="l.customImage" :src="l.customImage" class="ld-logo-builtin-img" alt="">
             <el-icon v-else :size="26"><component :is="l.value" /></el-icon>
             <span class="ld-logo-name">{{ l.label }}</span>
           </div>
@@ -307,10 +309,10 @@
           <div class="ld-px-label">宽度：{{ clientLogoWidth }}px</div>
           <el-input-number
             v-model="clientLogoWidth"
-            :min="LOGO_LIMITS.sizeMin" :max="LOGO_LIMITS.sizeMax" :step="1"
+            :min="CLIENT_SIZE_LIMITS.min" :max="CLIENT_SIZE_LIMITS.max" :step="1"
             size="small" controls-position="right" style="width:130px"
           />
-          <el-slider v-model="clientLogoWidth" :min="LOGO_LIMITS.sizeMin" :max="LOGO_LIMITS.sizeMax" :step="1" />
+          <el-slider v-model="clientLogoWidth" :min="CLIENT_SIZE_LIMITS.min" :max="CLIENT_SIZE_LIMITS.max" :step="1" />
         </div>
       </div>
     </template>
@@ -387,7 +389,13 @@
           fit="contain"
           class="ld-favicon-preview"
         />
-        <div v-else class="ld-logo-empty">默认 ico</div>
+        <!-- 未上传时显示随包默认 favicon（带构建号，换图重新部署后自动刷新） -->
+        <el-image
+          v-else
+          :src="DEFAULT_FAVICON_HREF"
+          fit="contain"
+          class="ld-favicon-preview"
+        />
         <el-upload
           name="file"
           :action="uploadAction"
@@ -423,7 +431,10 @@
 import { getToken } from '@/utils/auth'
 import {
   BUILTIN_LOGOS, BUILTIN_BACKGROUNDS, BACKGROUND_EFFECTS,
-  LOGO_LIMITS, LOGO_SPACE_LIMITS, CLIENT_LOGO_OFFSET_X_LIMITS as CLIENT_X_LIMITS, mediaUrl, builtinBgImage
+  LOGO_LIMITS, LOGO_SPACE_LIMITS,
+  CLIENT_LOGO_OFFSET_X_LIMITS as CLIENT_X_LIMITS,
+  CLIENT_LOGO_SIZE_LIMITS as CLIENT_SIZE_LIMITS,
+  mediaUrl, builtinBgImage, DEFAULT_FAVICON_HREF
 } from './login.utils'
 
 const props = defineProps({
@@ -559,6 +570,7 @@ function beforeFaviconUpload(file) {
 }
 .ld-logo-name { display: block; font-size: 11px; color: #606266; margin-top: 5px; }
 .ld-logo-shield { width: 26px; height: 30px; }
+.ld-logo-builtin-img { width: 40px; height: 30px; object-fit: contain; }
 .ld-logo-preview { width: 64px; height: 64px; border-radius: 6px; border: 1px solid #ebeef5; }
 .ld-bg-preview { width: 96px; height: 60px; border-radius: 6px; border: 1px solid #ebeef5; }
 .ld-builtin-row {

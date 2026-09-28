@@ -41,8 +41,7 @@
         <div class="lc-box">
           <div class="lc-brand" data-anim :style="entranceOn ? { animationDelay: '0.1s' } : null">
             <div
-              class="brand-logo-slot lc-logo"
-              :class="{ 'logo-draggable': logoDraggable }"
+              :class="['brand-logo-slot', 'lc-logo', { 'logo-draggable': logoDraggable, 'logo-bitmap': logoBitmap }]"
               :style="logoStyle"
               @pointerdown="onLogoPointerDown"
             >
@@ -53,9 +52,10 @@
                 <path d="M20 12l4 3-1.5 5h-5L16 15l4-3z" fill="#d8efe4"/>
                 <path d="M14.5 29c1.6-2.2 3.4-3.3 5.5-3.3s3.9 1.1 5.5 3.3" stroke="#d8efe4" stroke-width="1.3" fill="none"/>
               </svg>
-              <el-icon v-else-if="logo.type === 'builtin'" class="brand-logo-ep">
+              <el-icon v-else-if="logo.type === 'builtin' && !logoBuiltinImage" class="brand-logo-ep">
                 <component :is="builtinName" />
               </el-icon>
+              <img v-else-if="logo.type === 'builtin' && logoBuiltinImage" class="brand-logo-img" :src="logoBuiltinImage" alt="brand logo" />
               <img v-else-if="logo.type === 'image' && logoImageSrc" class="brand-logo-img" :src="logoImageSrc" alt="brand logo" />
             </div>
             <div class="lc-name">{{ brandName }}</div>
@@ -107,8 +107,7 @@
         <div class="lc-box">
           <div class="lc-brand" data-anim :style="entranceOn ? { animationDelay: '0.1s' } : null">
             <div
-              class="brand-logo-slot lc-logo"
-              :class="{ 'logo-draggable': logoDraggable }"
+              :class="['brand-logo-slot', 'lc-logo', { 'logo-draggable': logoDraggable, 'logo-bitmap': logoBitmap }]"
               :style="logoStyle"
               @pointerdown="onLogoPointerDown"
             >
@@ -119,9 +118,10 @@
                 <path d="M20 12l4 3-1.5 5h-5L16 15l4-3z" fill="#d8efe4"/>
                 <path d="M14.5 29c1.6-2.2 3.4-3.3 5.5-3.3s3.9 1.1 5.5 3.3" stroke="#d8efe4" stroke-width="1.3" fill="none"/>
               </svg>
-              <el-icon v-else-if="logo.type === 'builtin'" class="brand-logo-ep">
+              <el-icon v-else-if="logo.type === 'builtin' && !logoBuiltinImage" class="brand-logo-ep">
                 <component :is="builtinName" />
               </el-icon>
+              <img v-else-if="logo.type === 'builtin' && logoBuiltinImage" class="brand-logo-img" :src="logoBuiltinImage" alt="brand logo" />
               <img v-else-if="logo.type === 'image' && logoImageSrc" class="brand-logo-img" :src="logoImageSrc" alt="brand logo" />
             </div>
             <div class="lc-name">{{ brandName }}</div>
@@ -159,7 +159,7 @@
       <div class="lb-head" data-anim data-anim-delay="0.1s">
         <div
           class="brand-logo-slot"
-          :class="{ 'logo-draggable': logoDraggable }"
+          :class="{ 'logo-draggable': logoDraggable, 'logo-bitmap': logoBitmap }"
           :style="logoStyle"
           @pointerdown="onLogoPointerDown"
         >
@@ -172,9 +172,11 @@
             <path d="M14.5 29c1.6-2.2 3.4-3.3 5.5-3.3s3.9 1.1 5.5 3.3" stroke="#d8efe4" stroke-width="1.3" fill="none"/>
           </svg>
           <!-- 其余内置 logo：全局注册的 Element Plus 图标；非白名单值兜底盾牌 -->
-          <el-icon v-else-if="logo.type === 'builtin'" class="brand-logo-ep">
+          <el-icon v-else-if="logo.type === 'builtin' && !logoBuiltinImage" class="brand-logo-ep">
             <component :is="builtinName" />
           </el-icon>
+          <!-- 内置位图 logo（如奥体中心 nosc，随包静态资源） -->
+          <img v-else-if="logo.type === 'builtin' && logoBuiltinImage" class="brand-logo-img" :src="logoBuiltinImage" alt="brand logo" />
           <!-- 自定义上传图片（仅 /profile/ 路径，显示时前缀 baseApi） -->
           <img v-else-if="logo.type === 'image' && logoImageSrc" class="brand-logo-img" :src="logoImageSrc" alt="brand logo" />
         </div>
@@ -257,7 +259,7 @@
 import defaultSettings from '@/settings'
 import {
   toCssVars, interpolate, resolveDeviceConfig,
-  clampLogoSize, clampLogoOffset, mediaUrl,
+  clampLogoSize, clampLogoOffset, mediaUrl, builtinLogoImage, isBitmapLogo,
   builtinBgImage, builtinBgTexture,
   CLIENT_LOGO_OFFSET_X_LIMITS,
   BUILTIN_LOGO_VALUES
@@ -367,17 +369,22 @@ const tplCtx = computed(() => ({
 const logo = computed(() => cfg.value.brand.logo || {})
 const logoW = computed(() => clampLogoSize(logo.value.width, 42))
 const logoH = computed(() => clampLogoSize(logo.value.height, 48))
+// 位图类 logo：宽度主导、高度按图片比例自适应；矢量（盾牌/EP 图标）走宽高双维
+const logoBitmap = computed(() => isBitmapLogo(logo.value))
 const logoStyle = computed(() => ({
   width: `${logoW.value}px`,
-  height: `${logoH.value}px`,
-  // el-icon 内 svg 为 1em，用 font-size 撑满 slot
-  fontSize: `${logoH.value}px`,
+  height: logoBitmap.value ? 'auto' : `${logoH.value}px`,
+  // el-icon 内 svg 为 1em，用 font-size 撑满 slot（位图无 el-icon）
+  fontSize: logoBitmap.value ? undefined : `${logoH.value}px`,
   transform: `translate(${clampLogoOffset(logo.value.offsetX)}px, ${clampLogoOffset(logo.value.offsetY)}px)`
 }))
 const logoImageSrc = computed(() => mediaUrl(logo.value.value))
 // 防御：builtin 类型下 value 必须是白名单组件名（切换 type 瞬间/脏数据兜底为盾牌）
 const builtinName = computed(() =>
   BUILTIN_LOGO_VALUES.includes(logo.value.value) ? logo.value.value : 'shield')
+// 内置位图 logo（如 nosc）；shield/EP 图标时为空串
+const logoBuiltinImage = computed(() =>
+  logo.value.type === 'builtin' ? builtinLogoImage(logo.value.value) : '')
 
 /* ============ 客户方 Logo（双 logo 方案：登录区左上，与登录框左缘对齐，可独立开关/配置） ============ */
 const clientLogo = computed(() => cfg.value.brand.logoClient || {})
@@ -490,6 +497,11 @@ function onLogoPointerUp() {
   object-fit: contain;
   user-drag: none;
   -webkit-user-drag: none;
+}
+/* 位图 logo：槽高 auto，图片宽度 100%、高度随原始比例（宽度滑块即视觉宽度） */
+.brand-logo-slot.logo-bitmap .brand-logo-img {
+  height: auto;
+  object-fit: unset;
 }
 .lb-name { font-size: var(--login-brand-size); font-weight: 700; letter-spacing: 1.5px; line-height: 1.2; }
 .lb-sub { font-size: 11.5px; color: var(--login-brand-sub); letter-spacing: 1px; margin-top: 2px; }

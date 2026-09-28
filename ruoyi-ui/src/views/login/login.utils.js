@@ -13,11 +13,13 @@ function isPlainObject(v) {
 
 /**
  * 内置 logo 库：shield 为定制内联 SVG（Render 中特殊处理），
+ * nosc 为随包发布的位图（public/login-assets/，customImage=true），
  * 其余均为已全局注册的 Element Plus 图标组件名。
  * 与后端 LOGO_BUILTINS 白名单保持一致。
  */
 export const BUILTIN_LOGOS = [
   { value: 'shield', label: '盾牌（默认）', customSvg: true },
+  { value: 'nosc', label: '奥体中心', customImage: '/login-assets/nosc-logo.png' },
   { value: 'Trophy', label: '奖杯' },
   { value: 'Medal', label: '奖牌' },
   { value: 'Star', label: '星星' },
@@ -27,6 +29,23 @@ export const BUILTIN_LOGOS = [
   { value: 'Football', label: '足球' }
 ]
 export const BUILTIN_LOGO_VALUES = BUILTIN_LOGOS.map((l) => l.value)
+
+/** 取内置位图 logo 地址（shield/EP 图标等非位图 key 返回空串） */
+export function builtinLogoImage(key) {
+  const hit = BUILTIN_LOGOS.find((l) => l.value === key)
+  return hit?.customImage || ''
+}
+
+/**
+ * 是否为位图类 logo（内置位图如 nosc，或已可渲染的上传 image）。
+ * 位图走「宽度主导、高度按图片比例自适应」；矢量（盾牌/EP 图标）走宽高双维。
+ */
+export function isBitmapLogo(logo = {}) {
+  if (!logo || typeof logo !== 'object') return false
+  if (logo.type === 'image') return !!mediaUrl(logo.value)
+  if (logo.type === 'builtin') return !!builtinLogoImage(logo.value)
+  return false
+}
 
 /**
  * 内置背景库：随包发布的静态资源（ruoyi-ui/public/login-assets/），
@@ -94,15 +113,26 @@ export const LOGO_LIMITS = { sizeMin: 16, sizeMax: 200, offsetMin: -100, offsetM
 export const CLIENT_LOGO_OFFSET_X_LIMITS = { min: -200, max: 400 }
 
 /**
+ * 客户方 logo 尺寸单独放宽：宽度上限 300（奥体等横版官方 logo 需要更大展示宽度），
+ * 高度仍与版权方一致（16~200）。与后端校验一致。
+ */
+export const CLIENT_LOGO_SIZE_LIMITS = { min: 16, max: 300 }
+
+/**
  * Logo 上下留白范围（与后端校验一致）。
  * 上方高度最小 0；下方高度允许 -100（负 margin，可把下一区块上提/叠加）；上限均 200。
  */
 export const LOGO_SPACE_LIMITS = { topMin: 0, bottomMin: -100, max: 200 }
 
-export function clampLogoSize(v, fallback = 42) {
+/**
+ * 尺寸夹取；bounds 可覆盖默认 [sizeMin, sizeMax]（客户方 logo 宽度用 CLIENT_LOGO_SIZE_LIMITS）
+ */
+export function clampLogoSize(v, fallback = 42, bounds = null) {
   const n = Number(v)
   if (!Number.isFinite(n)) return fallback
-  return Math.min(LOGO_LIMITS.sizeMax, Math.max(LOGO_LIMITS.sizeMin, Math.round(n)))
+  const min = bounds && Number.isFinite(bounds.min) ? bounds.min : LOGO_LIMITS.sizeMin
+  const max = bounds && Number.isFinite(bounds.max) ? bounds.max : LOGO_LIMITS.sizeMax
+  return Math.min(max, Math.max(min, Math.round(n)))
 }
 export function clampLogoOffset(v, bounds = null) {
   const n = Number(v)
@@ -372,6 +402,14 @@ const FAV_STORAGE_KEY = 'apms_login_favicon'
 const ICON_LINKS = "link[rel~='icon']"
 // 非标准 rel token：浏览器不会把它当 favicon 候选
 const DISABLED_REL = 'login-icon-disabled'
+
+/**
+ * 随包默认 favicon 地址（带构建号查询串）。
+ * /favicon.ico 位于 public、不参与 Vite 内容哈希，而 nginx 对 .ico 有 7 天强缓存，
+ * 故用构建号版本化：重新部署后 URL 变化，浏览器自动拉新（与 index.html 的 link 同源）。
+ */
+/* global __BUILD_ID__ */
+export const DEFAULT_FAVICON_HREF = `/favicon.ico?v=${__BUILD_ID__}`
 
 function findDynamicIconLink() {
   return (

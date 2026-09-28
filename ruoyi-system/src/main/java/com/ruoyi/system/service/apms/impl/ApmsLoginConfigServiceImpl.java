@@ -60,10 +60,10 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
     private static final Set<String> LOGO_TYPES = Set.of("builtin", "image");
     /**
      * 内置 logo 标识（与前端 BUILTIN_LOGOS 一致）：
-     * shield 为定制内联 SVG，其余为全局注册的 Element Plus 图标名
+     * shield 为定制内联 SVG，nosc 为奥体中心随包位图，其余为全局注册的 Element Plus 图标名
      */
     private static final Set<String> LOGO_BUILTINS = Set.of(
-            "shield", "Trophy", "Medal", "Star", "Flag", "Aim", "Basketball", "Football");
+            "shield", "nosc", "Trophy", "Medal", "Star", "Flag", "Aim", "Basketball", "Football");
 
     /**
      * 特性图标白名单（均为已全局注册的 Element Plus 图标名）。
@@ -371,7 +371,8 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
         bool(logo.get("enabled"), prefix + ".enabled");
         boolean logoDisabled = Boolean.FALSE.equals(logo.get("enabled"));
         // 像素级调整范围（与前端限制一致；无论开关与否均合法）
-        number(logo.get("width"), prefix + ".width", 16, 200);
+        // 客户方 logo 宽度上限放宽到 300（奥体等横版官方 logo），高度及版权方宽高均为 16~200
+        number(logo.get("width"), prefix + ".width", 16, clientLogo ? 300 : 200);
         number(logo.get("height"), prefix + ".height", 16, 200);
         // 客户方 logo 锚定登录框左缘，水平行程放宽到 -200~400；版权方与所有 Y 均为 ±100
         number(logo.get("offsetX"), prefix + ".offsetX", clientLogo ? -200 : -100, clientLogo ? 400 : 100);

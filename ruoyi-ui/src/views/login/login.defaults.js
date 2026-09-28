@@ -22,8 +22,9 @@ export default {
     // width/height：渲染像素；offsetX/offsetY：相对默认位置的像素偏移（transform，不影响布局流）
     logo: { type: 'builtin', value: 'shield', width: 42, height: 48, offsetX: 0, offsetY: 0 },
     // 客户方 Logo（双 logo 方案：品牌区右上；enabled=false 时不显示，仅剩左上版权方 logo）
-    // 结构与 logo 完全一致：内置矢量 / 上传图 + 宽高 + 像素偏移，桌面/移动各自独立
-    logoClient: { enabled: true, type: 'builtin', value: 'shield', width: 42, height: 48, offsetX: 0, offsetY: 0 },
+    // 结构与 logo 完全一致：内置矢量/位图 / 上传图 + 宽高 + 像素偏移，桌面/移动各自独立
+    // 默认 nosc（奥体中心，内置位图 1.69:1，随包发布于 /login-assets/）
+    logoClient: { enabled: true, type: 'builtin', value: 'nosc', width: 96, height: 57, offsetX: 0, offsetY: 0 },
     // Logo 上下留白（px），按布局族各自独立：
     //   split  → 左右分栏：top=品牌区顶部间距；bottom=Logo 与 Hero 之间的最小间距
     //   overlay→ 居中卡片/全屏背景共用：top=Logo 上方间距；bottom=Logo 与登录卡片间距
@@ -136,8 +137,8 @@ export default {
     brand: {
       // 移动端可使用独立 Logo（不同图标/尺寸/偏移）
       logo: { type: 'builtin', value: 'shield', width: 42, height: 48, offsetX: 0, offsetY: 0 },
-      // 移动端独立客户方 Logo（右上）
-      logoClient: { enabled: true, type: 'builtin', value: 'shield', width: 42, height: 48, offsetX: 0, offsetY: 0 },
+      // 移动端独立客户方 Logo（右上）：nosc 奥体中心，小屏略缩
+      logoClient: { enabled: true, type: 'builtin', value: 'nosc', width: 84, height: 50, offsetX: 0, offsetY: 0 },
       // 移动端独立上下留白
       logoSpace: {
         split: { top: 24, bottom: 0 },
