@@ -1,6 +1,5 @@
 # 双域名入口（aoti 登录站 / www 与裸域品牌展示页）实施计划
 
-
 ## 背景与决策（已与用户确认）
 
 生产环境规划两个入口，均指向同一台服务器、同一份前端 dist：
@@ -55,7 +54,7 @@
      - `.showcase-on.brand-hidden-mobile .login-brand { display:flex }`（展示页移动端也必须显示品牌区，覆盖登录页"移动端隐藏品牌区"策略）；
      - 双版权堆叠间距 class（如 `.lb-copyright-extra`）。
 4. [router/index.js](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/router/index.js)
-  - 两条隐藏公开路由：`{ path: '/', meta: { showcaseRoot: true } }` 与 `{ path: '/showcase', meta: { showcaseRoot: true } }`，组件均为 `views/showcase/index.vue`。
+   - 两条隐藏公开路由：`{ path: '/', meta: { showcaseRoot: true } }` 与 `{ path: '/showcase', meta: { showcaseRoot: true } }`，组件均为 `views/showcase/index.vue`。
    - 原 `{ path: '', redirect: '/index', children: [{ path: '/index', ... }] }` 改造为 `{ path: '/index', component: Layout, children: [{ path: '', name: 'Index', ... }] }`（业务首页顶级化，URL/面包屑/affix 不变）。
    - 注意：不能用 `alias:'/'`——vue-router 4 中真实 path 记录恒优先于 alias（已用 4.6.4 实测），`/` 仍会落在 redirect 记录。
 5. [permission.js](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/permission.js)
@@ -64,7 +63,7 @@
    - aoti 域/IP 直连/localhost：现有行为完全不变。
 6. [apms-nginx.conf](file:///Users/limeng/Documents/trae_projects/apms/deploy/apms-nginx.conf)
    - `server_name _;` 改为 `server_name aoti.apms.top www.apms.top apms.top _;`（同一 server 块、同一 root、同一 `/prod-api/` 反代；模式差异全部前端判定）。
-   - UAT 的 [apms-uat.conf](file:///Users/trae_projects/apms/deploy/apms-uat.conf) 不动。
+   - UAT 的 [apms-uat.conf](file:///Users/limeng/Documents/trae_projects/apms/deploy/apms-uat.conf) 不动。
 7. （可选）`.env.production` 增加注释说明 `VITE_SHOWCASE_HOSTS` 可覆盖项；默认值硬编码 `www.apms.top,apms.top` 即可，**不新增 env 文件**。
 
 ## Implementation Steps（依赖顺序）
@@ -98,11 +97,11 @@
 - 生产（部署 + DNS 后，用户执行）：
   - `curl -H "Host: www.apms.top" http://39.97.246.69/`、`curl -H "Host: apms.top" http://39.97.246.69/` 与带 Host: aoti 的请求均 200 且同 index.html；
   - 浏览器实测三个域名分别呈现展示页（www、裸域）/登录页（aoti），同浏览器互不影响；
-  - www / 裸域手改地址栏访问 /index 均回到落地页.
+  - www / 裸域手改地址栏访问 /index 均回到落地页。
 
 ## Risks
 
 - **风险：双版权视觉重复/拥挤** → 两份文案由设计器分别维护；落地页堆叠展示并加间距，若内容雷同用户可在设计器将其一留空（showCopyright 不新增开关，沿用 `footer.showCopyright` 控制整体显隐；brandText 始终渲染，与登录页一致）。
 - **风险：centered/fullscreen 摘除卡片后垂直留白失衡** → 验收时按两模板各截一图微调 flex 间距；split 为桌面默认、centered 为移动默认，必测；fullscreen 与 centered 同结构族，同步处理。
 - **风险：未来上 HTTPS 时两域证书不同需拆 server 块** → 当前单块多 server_name 不阻碍后续拆分为两个 443 server，root/proxy 配置原样复制即可，前端无需再改。
-- **风险：展示域被当默认站意外影响其他主机名** → `_` 保留为默认 server_name，任何非这三个域名的 Host（含 IP）仍是完整登录站，行为与今天一致.
+- **风险：展示域被当默认站意外影响其他主机名** → `_` 保留为默认 server_name，任何非这三个域名的 Host（含 IP）仍是完整登录站，行为与今天一致。
