@@ -48,6 +48,22 @@ export const constantRoutes = [
     hidden: true
   },
   {
+    // 品牌展示落地页（www.apms.top / 裸域 apms.top）。
+    // 直接占据根路径 /：展示域下地址栏保持 http://apms.top/ 不带 /showcase；
+    // 业务域访问 / 由 permission 守卫改投 /index（等价原根记录 redirect）。
+    path: '/',
+    component: () => import('@/views/showcase/index.vue'),
+    hidden: true,
+    meta: { showcaseRoot: true }
+  },
+  {
+    // 兼容直访（白名单；业务域无入口链接，展示域守卫同样放行）
+    path: '/showcase',
+    component: () => import('@/views/showcase/index.vue'),
+    hidden: true,
+    meta: { showcaseRoot: true }
+  },
+  {
     path: "/:pathMatch(.*)*",
     component: () => import('@/views/error/404'),
     hidden: true
@@ -58,12 +74,14 @@ export const constantRoutes = [
     hidden: true
   },
   {
-    path: '',
+    // 业务首页：原根记录 path:'' + redirect:'/index' 拆分而来——
+    // 根路径 / 已让给品牌展示页记录，业务域访问 / 由 permission 守卫改投到这里，
+    // 最终 URL 与面包屑/affix 行为与原先完全一致。
+    path: '/index',
     component: Layout,
-    redirect: '/index',
     children: [
       {
-        path: '/index',
+        path: '',
         component: () => import('@/views/index'),
         name: 'Index',
         meta: { title: '首页', icon: 'dashboard', affix: true }

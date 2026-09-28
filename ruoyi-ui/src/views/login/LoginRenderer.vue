@@ -8,7 +8,8 @@
         'force-mobile': device === 'mobile',
         'anim-on': entranceOn,
         'hero-gradient-on': heroGradientOn,
-        'btn-gradient-on': buttonGradientOn
+        'btn-gradient-on': buttonGradientOn,
+        'showcase-on': showcase
       }
     ]"
     :style="cssVars"
@@ -27,12 +28,12 @@
       <div class="lc-stage">
         <!-- 客户方 Logo：登录框左缘正上方（版权方 logo 在品牌区居中，构成双 logo） -->
         <div
+          v-if="!showcase && clientLogoEnabled"
           class="lc-logo-corner"
           data-anim
           :style="entranceOn ? { animationDelay: '0.1s' } : null"
         >
           <LoginLogoSlot
-            v-if="clientLogoEnabled"
             :logo="clientLogo"
             :draggable="logoDraggable"
             @logo-pointerdown="onClientLogoPointerDown"
@@ -62,7 +63,8 @@
             <div class="lc-sub" v-if="cfg.brand.subTitle">{{ cfg.brand.subTitle }}</div>
           </div>
 
-          <div class="lc-card" data-anim :style="entranceOn ? { animationDelay: '0.3s' } : null">
+          <!-- 展示形态（www）：无登录卡片 -->
+          <div v-if="!showcase" class="lc-card" data-anim :style="entranceOn ? { animationDelay: '0.3s' } : null">
             <div class="lf-title" v-if="!hideCardHeader">{{ cfg.form.title }}</div>
             <div class="lf-subtitle" v-if="!hideCardHeader">{{ interpolate(cfg.form.subtitle, tplCtx) }}</div>
 
@@ -93,12 +95,12 @@
       <div class="lc-stage">
         <!-- 客户方 Logo：登录框左缘正上方（版权方 logo 在品牌区居中，构成双 logo） -->
         <div
+          v-if="!showcase && clientLogoEnabled"
           class="lc-logo-corner"
           data-anim
           :style="entranceOn ? { animationDelay: '0.1s' } : null"
         >
           <LoginLogoSlot
-            v-if="clientLogoEnabled"
             :logo="clientLogo"
             :draggable="logoDraggable"
             @logo-pointerdown="onClientLogoPointerDown"
@@ -128,7 +130,8 @@
             <div class="lc-sub" v-if="cfg.brand.subTitle">{{ cfg.brand.subTitle }}</div>
           </div>
 
-          <div class="lc-card" data-anim :style="entranceOn ? { animationDelay: '0.3s' } : null">
+          <!-- 展示形态（www）：无登录卡片 -->
+          <div v-if="!showcase" class="lc-card" data-anim :style="entranceOn ? { animationDelay: '0.3s' } : null">
             <div class="lf-title" v-if="!hideCardHeader">{{ cfg.form.title }}</div>
             <div class="lf-subtitle" v-if="!hideCardHeader">{{ interpolate(cfg.form.subtitle, tplCtx) }}</div>
 
@@ -221,11 +224,19 @@
         class="lb-foot"
         data-anim
         :style="entranceOn ? { animationDelay: (descDelay + 0.65) + 's' } : null"
-      ><FooterRichText :content="cfg.footer.brandText" :ctx="tplCtx" /></div>
+      ><FooterRichText :content="cfg.footer.brandText" :ctx="tplCtx" />
+        <!-- 展示形态：原右下版权/ICP 上移到品牌区底部，与 brandText 堆叠 -->
+        <div
+          v-if="showcase && cfg.footer.showCopyright"
+          class="lb-copyright-extra"
+        ><FooterRichText :content="cfg.footer.copyright" :ctx="tplCtx" /></div>
+      </div>
     </aside>
 
-    <!-- 右侧登录表单区（表单与 dev 角色块由 login.vue 通过 slot 注入） -->
-    <main class="login-form-side">
+    <!-- 右侧登录表单区（表单与 dev 角色块由 login.vue 通过 slot 注入）；
+         品牌展示形态（www）整体不渲染：客户 logo/登录卡片/右下版权均去除，
+         右下版权在展示形态下移入左下品牌区（见 .lb-foot） -->
+    <main v-if="!showcase" class="login-form-side">
       <!-- 客户方 Logo：右栏头部左侧，与登录框左缘对齐；与左栏版权方 logo 同处文档流顶部、共用同一顶部留白变量 -->
       <div
         class="rs-logo-head"
@@ -280,7 +291,13 @@ const props = defineProps({
   /** 预览区当前缩放比例（拖拽位移换算为设计像素） */
   previewScale: { type: Number, default: 1 },
   /** 隐藏卡片标题/副标题（锁屏页使用：卡片顶部改由 slot 内的头像+锁屏提示替代） */
-  hideCardHeader: { type: Boolean, default: false }
+  hideCardHeader: { type: Boolean, default: false },
+  /**
+   * 品牌展示形态（www.apms.top 落地页）：
+   * 去除客户方 logo 与登录卡片；split 右栏整体不渲染（品牌区满宽），
+   * 表单区版权上移到品牌区底部。设计器预览与登录页均不传，默认 false。
+   */
+  showcase: { type: Boolean, default: false }
 })
 const emit = defineEmits(['logo-offset'])
 
@@ -792,6 +809,24 @@ function onLogoPointerUp() {
 .login-wrap.force-mobile .lc-logo-corner { left: 20px; }
 .login-wrap.force-mobile .login-form-box { max-width: 100%; }
 .login-wrap.force-mobile .lc-card { padding: 26px 22px 22px; }
+
+/* ============ 品牌展示形态（www.apms.top 落地页） ============ */
+/* split：右栏已 v-if 移除，品牌区独占整行 */
+.showcase-on.login-split { grid-template-columns: 1fr; }
+/* 超宽屏下内容列收窄，避免 Hero/特性/版权行被拉得过长 */
+.showcase-on .lb-hero,
+.showcase-on .lb-foot { max-width: 760px; }
+/* 表单区版权上移后的堆叠间距（.lb-foot 自身已有分隔线，不再加第二道） */
+.lb-copyright-extra { margin-top: 10px; }
+/* overlay 族（centered/fullscreen）：卡片摘除后品牌块不再需要给卡片留的底部间距 */
+.showcase-on .lc-brand { margin-bottom: 0; }
+/* 移动端必须保留品牌区：覆盖登录页「≤900px 隐藏品牌区」与设计器手机预览的同名规则 */
+.login-wrap.showcase-on.brand-hidden-mobile .login-brand { display: flex; }
+.login-wrap.force-mobile.showcase-on.brand-hidden-mobile .login-brand { display: flex; }
+/* 展示形态窄屏：品牌区满高、沿用品牌底色（无右栏白底后避免露白） */
+@media (max-width: 900px) {
+  .showcase-on .login-brand { min-height: 100vh; padding: var(--login-logo-top-split) 20px 32px; }
+}
 
 /* ============ 暗黑模式 ============ */
 html.dark .login-brand {

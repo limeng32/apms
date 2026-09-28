@@ -10,10 +10,11 @@ import useAppStore from '@/store/modules/app'
 import useLockStore from '@/store/modules/lock'
 import useSettingsStore from '@/store/modules/settings'
 import usePermissionStore from '@/store/modules/permission'
+import { isShowcaseHost } from '@/utils/entry'
 
 NProgress.configure({ showSpinner: false })
 
-const whiteList = ['/login', '/register']
+const whiteList = ['/login', '/register', '/showcase']
 
 const isWhiteList = (path) => {
   return whiteList.some(pattern => isPathMatch(pattern, path))
@@ -21,6 +22,23 @@ const isWhiteList = (path) => {
 
 router.beforeEach(async (to, from) => {
   NProgress.start()
+  // 品牌展示域（www.apms.top / 裸域 apms.top）：
+  // 落地页占据根路径 /（地址栏保持裸域，不出现 /showcase）；
+  // 其余任意路径（/login、/index、/apms/*、404 兜底）一律 replace 回 /，
+  // 不做 token 判断、不加载用户路由，彻底不暴露登录入口与业务系统。
+  if (isShowcaseHost()) {
+    if (to.path === '/' || to.path === '/showcase') {
+      return true
+    }
+    NProgress.done()
+    return { path: '/', replace: true }
+  }
+  // 业务域（aoti/IP/localhost）：根路径 / 的 matcher 被展示页 alias 占用，
+  // 这里改投 /index，行为与原根记录 redirect:'/index' 完全等价。
+  if (to.path === '/' && to.meta && to.meta.showcaseRoot) {
+    NProgress.done()
+    return { path: '/index', replace: true }
+  }
   if (getToken()) {
     to.meta.title && useSettingsStore().setTitle(to.meta.title)
     const isLock = useLockStore().isLock
