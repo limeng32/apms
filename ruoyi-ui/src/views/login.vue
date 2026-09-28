@@ -43,6 +43,7 @@
 
 <script setup name="Login">
 import Cookies from "js-cookie"
+import { cookieName } from '@/utils/ruoyi'
 import {
   User, CircleCheck, Check, Key, Document,
   FirstAidKit, DataAnalysis
@@ -112,11 +113,11 @@ function handleLogin() {
     if (valid) {
       loading.value = true
       if (loginForm.value.rememberMe) {
-        Cookies.set("username", loginForm.value.username, { expires: 30 })
-        Cookies.set("rememberMe", loginForm.value.rememberMe, { expires: 30 })
+        Cookies.set(cookieName("username"), loginForm.value.username, { expires: 30 })
+        Cookies.set(cookieName("rememberMe"), loginForm.value.rememberMe, { expires: 30 })
       } else {
-        Cookies.remove("username")
-        Cookies.remove("rememberMe")
+        Cookies.remove(cookieName("username"))
+        Cookies.remove(cookieName("rememberMe"))
       }
       // 密码不再写入 cookie，并清除历史版本遗留的密码 cookie
       Cookies.remove("password")
@@ -137,7 +138,8 @@ function handleLogin() {
 }
 
 function getCookie() {
-  const username = Cookies.get("username")
+  // 本机多环境隔离后的用户名；兼容改造前未加后缀的旧 cookie
+  const username = Cookies.get(cookieName("username")) || Cookies.get("username")
   // 清除历史版本遗留的密码 cookie；密码不再回填
   Cookies.remove("password")
   // “记住我”已禁用：清除遗留 cookie，强制不勾选

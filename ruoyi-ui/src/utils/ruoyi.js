@@ -3,6 +3,28 @@
  * Copyright (c) 2019 ruoyi
  */
 
+/**
+ * 按「运行环境」给 Cookie 名加后缀，隔离本机上的多个 APMS 实例。
+ *
+ * 背景：Cookie 只按域名（host）隔离、不区分端口。dev（localhost:5173）与
+ * UAT（本机 nginx localhost:8088）共用同一 host，Admin-Token 等 Cookie 会互相
+ * 覆盖，导致两个环境不能在同一浏览器同时登录。
+ *
+ * 规则：localhost/127.0.0.1 访问时按端口加后缀（dev=…_local_5173、UAT=…_local_8088）；
+ * 非本机访问（生产域名/IP）保持原名，不影响已部署环境。
+ */
+const COOKIE_ENV_SUFFIX = (() => {
+  if (typeof window === 'undefined') return ''
+  const host = window.location.hostname
+  if (host === 'localhost' || host === '127.0.0.1') {
+    return `_local_${window.location.port || '80'}`
+  }
+  return ''
+})()
+export function cookieName(name) {
+  return COOKIE_ENV_SUFFIX ? `${name}${COOKIE_ENV_SUFFIX}` : name
+}
+
 // 日期格式化
 export function parseTime(time, pattern) {
   if (arguments.length === 0 || !time) {
