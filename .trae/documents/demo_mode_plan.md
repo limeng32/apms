@@ -10,7 +10,7 @@
 | 交互深度 | **假提交本地生效**：新增/修改/删除/计算/生成等在标签页内存中真实反映，**刷新即还原**；下载/上传等文件类操作给「演示环境不支持」提示 |
 | 入口范围 | **仅登录页**（aoti / IP / localhost）。www.apms.top 与裸域展示页保持「纯展示死胡同」，不放入口 |
 | 口令 | 固定 `8888`，前端常量（可 env 覆盖）。**纯前端校验，F12 可见，仅防普通访客，不具安全性**——用户已知悉并接受 |
-| 凭证隔离（P0） | **Demo token 只存 sessionStorage，绝不写正式 Admin-Token Cookie**；`getToken()` 优先返回 demo token。演示标签与真实登录标签会话完全隔离，互不踢登录（详见§三） |
+| 凭证隔离（P0） | **Demo 会话只存单个 sessionStorage 键（JSON，模式+token 原子同存），绝不写正式 Admin-Token Cookie**；`getToken()` 对演示态 fail-closed——只要会话标记是 demo，凭证异常/缺失时返回 undefined，**绝不回落真实 Cookie**（详见§三） |
 | 后端/数据库/nginx | **零改动**，纯前端实现，随前端构建生效 |
 
 ## 二、现状依据（已核实）
@@ -27,12 +27,11 @@
 ```
 登录页「一键体验」→ 口令弹窗(8888)
    └─ enterDemo()
-        ├─ sessionStorage.apms_demo_token = 'demo-static-xxxx'  # 演示凭证，标签页隔离
-        ├─ sessionStorage.apms_demo_mode  = '1'                 # 演示态总开关（两键成对写入）
+        ├─ sessionStorage.apms_demo_session = {mode:'demo', token:'demo-static-xxxx'}  # 单键 JSON，原子同存，标签页隔离
         ├─ db.resetDb()
         ├─ userStore.roles/permissions/token = 清空/同步        # 关键：roles 必须空，守卫才走初始化
         └─ router.replace('/apms/dashboard')
-              └─ permission.js 守卫（getToken() 命中 sessionStorage demo token；roles===0 闸门）
+              └─ permission.js 守卫（getToken() 命中单键会话中的 demo token；roles===0 闸门）
                     ├─ userStore.getInfo()        → Demo Adapter → 静态 super 身份
                     │     └─ roles=['business_admin'], permissions=['*:*:*']
                     └─ permissionStore.generateRoutes()
@@ -45,16 +44,29 @@
 > 规范化管道（关键 P0，见§五「请求规范化」）：
 > `config（url 已被 tansParams 改写为带 ?query 的形式、params 已清空）→ demoAdapter → normalizeRequest() → { method, path, query, body } → handler 按 path 精确/参数段匹配，只从 ctx.query/ctx.body 取参。`
 
-> **关键机制 0（P0）：双存储凭证隔离——Demo 不碰正式 Cookie。**
+> **关键机制 0（P0）：单键会话 + fail-closed，Demo 不碰正式 Cookie。**
 > Cookie 按 host 共享、**不按标签页隔离**。若 demo 复用 Admin-Token Cookie：
 > ① Tab A 在已渲染的登录页点体验、Tab B 刚真实登录 → demo 写入会**覆盖整个 host 的真 token，Tab B 下一请求 401 被踢**；
-> ② 反之新标签发现 demo Cookie 后 `removeToken()` 会**连演示标签的凭证一起删掉**。
-> 因此凭证分存：
+> ② 反之新标签发现 demo Cookie 后清除会**连演示标签的凭证一起删掉**。
+> 因此：
 > - 正式身份 → Cookie `Admin-Token`（30 天，现状不动）；
-> - 演示身份 → sessionStorage 两个键 `apms_demo_token` / `apms_demo_mode`（标签页隔离，关闭标签即失）；
-> - [auth.js](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/utils/auth.js) `getToken()` **优先读 sessionStorage demo token，未命中才读 Cookie**。
+> - 演示身份 → sessionStorage **单键** `apms_demo_session`，值为 JSON `{ mode:'demo', token:'demo-static-…' }`——模式与凭证在同一个值里原子同存，从根源上不存在"模式在、token 没了"的半态（标签页隔离，关闭标签即失）；
+> - 所有 sessionStorage 访问包 try/catch（与 [entry.js](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/utils/entry.js#L47-L61) 现有风格一致）：存储被禁/损坏时按"无会话"处理，绝不影响普通登录读 Cookie；
+> - [auth.js](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/utils/auth.js) `getToken()` 对演示态 **fail-closed**：
 >
-> 已核实全项目 12 个文件、33 处凭证消费点（request 拦截器、[plugins/download.js](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/plugins/download.js)、medical/report 的 fetch、FileUpload/ImageUpload/ExcelImport/CsvImport/Editor 等 5 个上传组件、permission 守卫）**全部统一经 `getToken()` 取 token**——改这一个函数即全链路隔离。额外收益：即使漏掉某个原生 fetch 拦截，演示标签里它取到的也只是假 demo token，**永远拿不到别的标签的真实 token**。
+>   ```js
+>   const s = readDemoSession()              // 安全读单键 JSON，损坏/不可用 → null
+>   if (s && s.mode === 'demo') {
+>     return typeof s.token === 'string' && s.token.startsWith(DEMO_TOKEN_PREFIX)
+>       ? s.token
+>       : undefined                          // 半态/损坏：宁未登录，绝不回落真 Cookie
+>   }
+>   return Cookies.get(TokenKey) || /* 旧名兜底 */ …
+>   ```
+>
+> 已核实全项目 12 个文件、33 处凭证消费点（request 拦截器、[plugins/download.js](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/plugins/download.js)、medical/report 的 fetch、FileUpload/ImageUpload/ExcelImport/CsvImport/Editor 等 5 个上传组件、permission 守卫）**全部统一经 `getToken()` 取 token**——改这一个函数即全链路隔离。由此安全承诺成立：**演示态下任何通道（含漏拦截的原生 fetch）拿到的只可能是假 token 或 undefined，永远拿不到真实凭证**；半态最坏结果是演示页提示未登录/请求失败，而不是借真实会话访问。
+>
+> `isDemoMode()` 与 `getToken()` 必须由**同一个 `readDemoSession()` 派生**（demo.js 从 auth.js 导入），禁止再各读各的键，确保两个判断永不分叉。
 >
 > **关键机制 1：初始化必须交给真实链路，enterDemo 不预填身份。**
 > permission.js 只有在 `userStore.roles.length === 0` 时才执行 `getInfo() → generateRoutes() → addRoute()`；
@@ -70,13 +82,14 @@
 - **为什么能复用真实页面**：页面只认 store 里的 roles/permissions、菜单树、API 响应。三者全部由 mock 喂给真实组件，Layout/路由/权限指令/字典/TagsView 等框架机制零改动。
 - **多标签并存矩阵**（host=aoti.apms.top，同一浏览器窗口）：
 
-  | 标签 | sessionStorage | `getToken()` 返回 | 行为 |
+  | 标签 | sessionStorage 单键 | `getToken()` 返回 | 行为 |
   |---|---|---|---|
-  | A 演示中 | demo 两键 | demo-static | 全本地 mock，零真实请求 |
-  | B 真实登录 | 无 demo 键 | Cookie 真 token | 正常业务系统，A 不影响它 |
-  | C 新开粘贴 A 的 URL | 无 demo 键 | Cookie 真 token（或无） | 进真实系统或被导到登录页——**天然不需要"新标签清除"逻辑** |
+  | A 演示中 | `apms_demo_session={mode:'demo',token:demo-static}` | demo-static | 全本地 mock，零真实请求 |
+  | B 真实登录 | 无该键 | Cookie 真 token | 正常业务系统，A 不影响它 |
+  | C 新开粘贴 A 的 URL | 无该键 | Cookie 真 token（或无） | 进真实系统或被导到登录页——**天然不需要"新标签清除"逻辑** |
+  | （故障态）单键 JSON 损坏/token 缺失或非法 | mode='demo' 但内容坏 | **undefined（fail-closed）** | 演示页被导向登录/请求失败，**绝不读到真 Cookie** |
 - **为什么刷新可还原身份但重置数据**：同标签刷新 sessionStorage 存活 → 守卫重跑 mock 的 getInfo/getRouters 恢复身份；内存 DB 每次页面加载从 fixtures 重新深拷贝。关闭标签/浏览器后 sessionStorage 清空，演示态无任何残留，正式 Cookie 不受影响。
-- **退出演示 ≠ 调 logout**：演示退出**不调 `/logout`、不 `removeToken()`**（否则可能误删同一 host 上真实登录的 Cookie），只清两个 sessionStorage 键并重置内存 store，随后整页跳回登录流程。
+- **退出演示 ≠ 调 logout**：演示退出**不调 `/logout`、不 `removeToken()`**（否则可能误删同一 host 上真实登录的 Cookie），只删除单个 `apms_demo_session` 键并重置内存 store，随后整页跳回登录流程。
 
 ## 四、文件清单
 
@@ -84,7 +97,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `src/utils/demo.js` | 常量与生命周期：`DEMO_TOKEN_PREFIX`、两个 sessionStorage 键名（`apms_demo_mode`/`apms_demo_token`）、`isDemoEnabled()`（env `VITE_DEMO_ENABLED`，默认 true）、`PASSCODE`（env `VITE_DEMO_PASSCODE`，默认 `8888`）、`isDemoMode()`（读 `apms_demo_mode`）、`enterDemo()`（**成对写两个 sessionStorage 键（token 走 auth.js 的 `setDemoToken()`）+ `db.resetDb()` + 清空 userStore.roles/permissions 并同步 token 字段**，不填任何身份字段）、`exitDemo()`（**成对删两个 sessionStorage 键，不碰 Cookie**）。**不设 setupDemoProfile()**——身份完全由 mock 的 getInfo 经真实 getInfo() action 填充；不直接引用 TokenKey，正式 Cookie 的读写只走 auth.js 既有 `setToken/removeToken`。 |
+| `src/utils/demo.js` | 常量与生命周期：会话键名 `DEMO_SESSION_KEY='apms_demo_session'` 与 token 前缀 `DEMO_TOKEN_PREFIX='demo-static-'`（从 auth.js re-export 或统一定义于 auth.js，避免循环依赖）、`isDemoEnabled()`（env `VITE_DEMO_ENABLED`，默认 true）、`PASSCODE`（env `VITE_DEMO_PASSCODE`，默认 `8888`）、`isDemoMode()`（**`readDemoSession()?.mode === 'demo'`，与 getToken 同源，不另读键**）、`enterDemo()`（**一次 `setDemoSession(token)` 原子写入单键 JSON**（写失败/存储不可用则抛错并提示"当前环境无法开启演示"，不进入）+ `db.resetDb()` + 清空 userStore.roles/permissions 并同步 token 字段，不填任何身份字段）、`exitDemo()`（**`clearDemoSession()` 删单键，不碰 Cookie**）。**不设 setupDemoProfile()**——身份完全由 mock 的 getInfo 经真实 getInfo() action 填充；不直接引用 TokenKey，正式 Cookie 的读写只走 auth.js 既有 `setToken/removeToken`。 |
 | `src/views/login/DemoPassDialog.vue` | 口令弹窗（el-dialog + 密码输入，回车提交；错误抖动+提示；文案说明「静态演示，刷新还原」） |
 | `src/mock/index.js` | 三部分：① `normalizeRequest(config)`（**P0**，见§五）——demoAdapter 的第一道工序：`method=(config.method||'get').toLowerCase()`；剥除 `config.baseURL` 前缀后 `new URL(config.url,'http://demo.local')` 取 **pathname（匹配键，绝不含 query）** 与 `searchParams`（→ query 对象）；body 对 string 做安全 JSON.parse、对象直用；输出 `{method, path, query, body, rawConfig}`。② `demoAdapter(config)`——`const ctx = normalizeRequest(config); const body = await mockDispatch(ctx)`，包成 AxiosResponse：`{ data: body, status: 200, statusText: 'OK', headers: {}, config, request: {} }`。③ `mockDispatch(ctx)`——按 method+path 模式匹配 handler；通用工具（分页切片、参数过滤、`ok()/list()/detail()` body 工厂）；**未匹配不静默成功**。 |
 | `src/mock/db.js` | 内存 DB。**实现不变量：模块加载即初始化**（见§五「内存 DB 生命周期」）：`resetDb()` 深拷贝全部 fixtures 生成可变数据集（athletes/teams/indicators/testModels/testTasks/testResults/bodyMeasures/phvs/rtps/comboModels/comboScores/medicals/reports…），文件末尾立即调用一次（或 `let db = createDbFromFixtures()` 声明即初始化）；`getDb()` 返回当前数据集，供 handler 读写。两条得新数据路径：① enterDemo 显式 `resetDb()`；② F5/整页刷新后 JS 模块重新加载 → 模块级初始化自动再生成一份。 |
@@ -97,23 +110,42 @@
 
 ### 修改（7 处，均为小改；permission.js 零改动）
 
-1. [utils/auth.js](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/utils/auth.js)（P0 凭证隔离，正式 `setToken/removeToken` 一行不动）
-   - 新增演示凭证的 sessionStorage 读写，并让 `getToken()` 优先返回演示凭证：
+1. [utils/auth.js](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/utils/auth.js)（P0 单键会话 + fail-closed，正式 `setToken/removeToken` 一行不动）
+   - 新增演示会话的**安全读写**（try/catch 风格对齐 [entry.js](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/utils/entry.js#L47-L61)）与 fail-closed 的 `getToken()`：
      ```js
-     const DemoTokenKey = 'apms_demo_token'           // 与 demo.js 的 mode 键成对使用
+     export const DEMO_SESSION_KEY = 'apms_demo_session'
+     export const DEMO_TOKEN_PREFIX = 'demo-static-'
+
+     // 所有 sessionStorage 访问统一过这一层：存储被禁/JSON 损坏一律按"无会话"处理
+     export function readDemoSession() {
+       try {
+         const raw = sessionStorage.getItem(DEMO_SESSION_KEY)
+         return raw ? JSON.parse(raw) : null
+       } catch (e) {
+         return null
+       }
+     }
+     export function setDemoSession(token) {
+       // 单次 setItem：mode 与 token 原子同存，不存在两键半态
+       sessionStorage.setItem(DEMO_SESSION_KEY, JSON.stringify({ mode: 'demo', token }))
+     }
+     export function clearDemoSession() {
+       try { sessionStorage.removeItem(DEMO_SESSION_KEY) } catch (e) {}
+     }
+
      export function getToken() {
-       // 演示标签：sessionStorage 命中即用假 token，永不落到正式 Cookie
-       const demoToken = sessionStorage.getItem(DemoTokenKey)
-       if (demoToken) return demoToken
-       return Cookies.get(TokenKey) || (TokenKey !== LegacyTokenKey ? Cookies.get(LegacyTokenKey) : undefined)
-     }
-     export function setDemoToken(token) {
-       return sessionStorage.setItem(DemoTokenKey, token)   // 标签页级，关闭标签即失
-     }
-     export function removeDemoToken() {
-       sessionStorage.removeItem(DemoTokenKey)
+       const s = readDemoSession()
+       if (s && s.mode === 'demo') {
+         // fail-closed：演示态只认真正的 demo token；异常/缺失 → undefined，绝不回落 Admin-Token
+         return typeof s.token === 'string' && s.token.startsWith(DEMO_TOKEN_PREFIX)
+           ? s.token : undefined
+       }
+       return Cookies.get(TokenKey)
+         || (TokenKey !== LegacyTokenKey ? Cookies.get(LegacyTokenKey) : undefined)
      }
      ```
+   - 注：`setDemoSession` 的写 try/catch 由调用方 `enterDemo()` 处理失败（存储不可用时弹错并中止进入）；`DEMO_SESSION_KEY/DEMO_TOKEN_PREFIX/readDemoSession/setDemoSession/clearDemoSession` 从 auth.js 导出，demo.js 只消费不另定义，auth.js 保持为无业务依赖的叶子模块，杜绝循环依赖。
+   - 半态边界说明：`{mode:'demo'}` 缺 token、token 为 null/非前缀串等**可解析的坏会话**一律 fail-closed 返回 undefined；完全无法解析的 JSON / 存储不可用按"无会话"处理（回落 Cookie）——后者与 [entry.js](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/utils/entry.js#L58-L61) 的既有容错原则一致，且只可能是用户破坏自身存储，不构成跨标签凭证泄露。
    - 正式 `setToken`（30 天 Cookie）/`removeToken`（清新旧 Cookie）保持原样，demo.js 永不调用它们。
 2. [LoginFormFields.vue](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/views/login/LoginFormFields.vue)
    - 新增 prop `demoEntry: Boolean`（默认 false）；提交按钮下方渲染居中小号文字按钮「一键体验演示环境 →」，`emit('demo')`；
@@ -155,7 +187,7 @@
        return new Promise((resolve, reject) => {
          if (isDemoMode()) {
            // 不调 /logout、不 removeToken()：保护同 host 其他标签可能存在的真实登录 Cookie
-           exitDemo()                         // 成对清 apms_demo_mode / apms_demo_token
+           exitDemo()                         // clearDemoSession()：删除单个 apms_demo_session 键
            this.token = ''
            this.roles = []
            this.permissions = []
@@ -169,7 +201,7 @@
      ```
    - 三个调用方（[Navbar L127](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/layout/components/Navbar.vue#L127) → `location.href='/index'`、[request.js 401 L90](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/utils/request.js#L90) → 同、[lock.vue L124](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/views/lock.vue#L124)）`.then` 后的跳转保持不变：整页加载后守卫见 sessionStorage 已空、若正式 Cookie 也不在则回 /login；**若同 host 恰有真实登录 Cookie（别的标签登的），则进入真实系统——这是正确行为，不构成串号**。
 8. [permission.js](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/permission.js) —— **零改动，仅确认两点**：
-   - 原计划的「demo token 但无标记 → removeToken 回登录页」边缘防护**整段删除**：凭证改为 sessionStorage 后，新标签天然读不到 demo token（`getToken()` 回落到 Cookie），不存在需要清除的共享态；
+   - 原计划的「demo token 但无标记 → removeToken 回登录页」边缘防护**整段删除**：凭证改为 sessionStorage 单键后，新标签天然读不到演示会话（`getToken()` 回落到 Cookie），不存在需要清除的共享态；
    - 既有顺序天然正确：`isShowcaseHost()` 收敛在最前，展示域不进 token/用户/动态菜单逻辑；演示态只可能出现在业务域。
 
 ### 可选（视觉提示，建议做）
@@ -180,16 +212,17 @@
 
 ### enterDemo（不写 Cookie、不预填身份，交给守卫真实初始化）
 1. 校验口令（`PASSCODE`，trim 后比对，错误次数不限制但有错误提示）；
-2. **成对写 sessionStorage 两键**：`setDemoToken(DEMO_TOKEN_PREFIX + Date.now())` + `sessionStorage.setItem('apms_demo_mode','1')`（两键必须在同一次同步执行内写完，杜绝半态；全程不触碰 Admin-Token Cookie）；
+2. **原子写入单键会话**：`setDemoSession(DEMO_TOKEN_PREFIX + Date.now())`——一次 setItem 写入 JSON `{mode:'demo', token}`，杜绝两键半态；全程不触碰 Admin-Token Cookie。若 setItem 抛错（Web Storage 被禁）→ `ElMessage.error('当前浏览器环境不支持演示模式')` 并中止，不进入演示；
 3. `db.resetDb()`（显式取一份全新数据；刷新路径的还原由 db.js 模块级初始化不变量保证，见§五「内存 DB 生命周期」）；
 4. **重置身份态**：`userStore.roles = []; userStore.permissions = []`（守卫 `roles.length===0` 闸门成立的必要条件，防御同标签上一个账号残留），并 `userStore.token = getToken()`（同步为 demo token，保持 state 一致）；
 5. `router.replace('/apms/dashboard')` → 守卫见 `roles.length===0` → 真实链路依次执行 `getInfo()`（demoAdapter 返回 super 身份）与 `generateRoutes()/addRoute()`（demoAdapter 返回 APMS 菜单树）→ `return {...to, replace:true}` 重导航落地看板。**全程不新增任何初始化分支。**
 
 ### 刷新 / 新标签 / 退出时的状态
-- **同标签刷新**：sessionStorage 存活 → `getToken()` 仍返回 demo token，Pinia 重置后 roles 为空 → 守卫重跑 getInfo/getRouters（mock）恢复身份；db 模块重新求值并**模块级自动重置**（§五不变量）→ 数据还原、身份自动恢复，不依赖重跑 enterDemo；
-- **新标签粘贴演示 URL**：新标签的 sessionStorage 为空 → `getToken()` 自动回落到正式 Cookie：有真实登录则正常进真实系统（不是演示态），无则导到 /login。**不需要任何守卫特判，也不影响 A 标签的演示会话**；
+- **同标签刷新**：单键 sessionStorage 存活 → `getToken()` 仍返回其中的 demo token，Pinia 重置后 roles 为空 → 守卫重跑 getInfo/getRouters（mock）恢复身份；db 模块重新求值并**模块级自动重置**（§五不变量）→ 数据还原、身份自动恢复，不依赖重跑 enterDemo；
+- **新标签粘贴演示 URL**：新标签的 sessionStorage 为空 → 单键不存在，`getToken()` 自动回落到正式 Cookie：有真实登录则正常进真实系统（不是演示态），无则导到 /login。**不需要任何守卫特判，也不影响 A 标签的演示会话**；
 - **关闭标签/浏览器**：sessionStorage 清空，演示态零残留；正式 Cookie 原封不动；
-- **退出**（头像菜单/锁屏/401 三个现有出口统一走 `userStore.logOut()` 的演示分支）：不调 `/logout`、不 `removeToken()`，只 `exitDemo()` 清两键 + 重置 store 字段 → 调用方既有整页跳转（`location.href='/index'`）→ 按 Cookie 现状进入真实系统或登录页。
+- **退出**（头像菜单/锁屏/401 三个现有出口统一走 `userStore.logOut()` 的演示分支）：不调 `/logout`、不 `removeToken()`，只 `exitDemo()` 删除单个 `apms_demo_session` 键 + 重置 store 字段 → 调用方既有整页跳转（`location.href='/index'`）→ 按 Cookie 现状进入真实系统或登录页。
+- **故障半态**（单键内容可解析但残缺，如 `{mode:'demo'}`、token 非法）：`isDemoMode()` 仍为 true（下载/请求守卫照常拦），但 `getToken()` fail-closed 返回 undefined → 守卫因无 token 导向 /login、mock 请求即使用于其他通道也只带 undefined；**绝不会回落真实 Cookie 借道真实会话**。
 
 ### 内存 DB 生命周期（实现不变量：模块加载即有数据）
 
@@ -291,23 +324,23 @@ handler 契约：
 
 ## 六、安全与边界
 
-- **凭证隔离（P0）**：demo token 只存 sessionStorage，正式 Admin-Token Cookie 全程不读不写不删——演示标签与真实登录标签（同 host）可并存，互不踢登录、互不删凭证。`getToken()` 单点优先读 demo token，33 处既有凭证消费点零改动即完成隔离；
-- 演示态**零真实业务请求**：service 实例由 demoAdapter 接管（拦截器本身只 return config）；三条非 service 通道（`download()`、裸 axios 插件、页面原生 fetch/el-upload）在调用点前置拦截；漏配 handler 不静默成功（§五策略）。即使有漏网的原生 fetch，它带上的也是假 demo token（经 `getToken()`），真实后端只会 401，**不泄露、不借用任何真实会话**。
+- **凭证隔离（P0，fail-closed）**：演示会话只存 sessionStorage 单键 JSON（mode+token 原子同存），正式 Admin-Token Cookie 全程不读不写不删——演示标签与真实登录标签（同 host）可并存，互不踢登录、互不删凭证。`getToken()` 单点裁决：演示态只返回合法 demo token，残缺/异常返回 undefined，绝不回落 Cookie；33 处既有凭证消费点零改动即完成隔离；
+- 演示态**零真实业务请求**：service 实例由 demoAdapter 接管（拦截器本身只 return config）；三条非 service 通道（`download()`、裸 axios 插件、页面原生 fetch/el-upload）在调用点前置拦截；漏配 handler 不静默成功（§五策略）。即使有漏网的原生 fetch，经 `getToken()` 拿到的也只是假 token（或半态下的 undefined），真实后端只会 401，**不泄露、不借用任何真实会话**。
 - 口令防君子不防小人：bundle 可见，不做频率限制（可接受）；env `VITE_DEMO_PASSCODE` 可换，`VITE_DEMO_ENABLED=false` 可一键关闭入口。
-- 演示凭证与标记都在 sessionStorage：关闭标签即失效，且按标签页隔离；新标签粘贴 URL 自然回落到真实/未登录态，无需特判。
+- 演示会话（模式+凭证）只在 sessionStorage 单键：关闭标签即失效，且按标签页隔离；新标签粘贴 URL 自然回落到真实/未登录态，无需特判。
 - 不影响正常登录：所有新增逻辑以 `isDemoMode()/demoEntry` 门控，正式登录的 Cookie 链路、守卫、设计器预览零回归。
 - 纯前端、无数据库操作、无 nginx/后端改动；不 commit。
 
 ## 七、实施步骤（建议三阶段，每阶段可独立验收）
 
-1. **阶段 1 · 骨架打通**：auth.js 凭证隔离（getToken 优先级/setDemoToken）+ demo.js + 口令弹窗 + 登录页入口 + request 拦截器挂载 demoAdapter + db/mock 框架（含 strict 未匹配策略）+ getInfo/getRouters/字典 + logOut 演示分支 + 演示横幅 + **三条下载/上传通道前置守卫排查落地**。验收：8888 进入，Layout/APMS 菜单/路由全通，Network 面板**零业务请求**（含下载/上传），控制台无 `[DEMO MOCK MISS]` 之外的报错；**多标签隔离实测**（A 演示中 / B 真实 super 登录并存 5 分钟，双方均不被踢；C 新标签粘贴 A 的 URL 不进演示态；A 退出后 B 仍在线）。
+1. **阶段 1 · 骨架打通**：auth.js 单键会话（安全读写/getToken fail-closed）+ demo.js + 口令弹窗 + 登录页入口 + request 拦截器挂载 demoAdapter + db/mock 框架（含 strict 未匹配策略）+ getInfo/getRouters/字典 + logOut 演示分支 + 演示横幅 + **三条下载/上传通道前置守卫排查落地**。验收：8888 进入，Layout/APMS 菜单/路由全通，Network 面板**零业务请求**（含下载/上传），控制台无 `[DEMO MOCK MISS]` 之外的报错；**多标签隔离实测**（A 演示中 / B 真实 super 登录并存 5 分钟，双方均不被踢；C 新标签粘贴 A 的 URL 不进演示态；A 退出后 B 仍在线）；**fail-closed 实测**（DevTools 把 `apms_demo_session` 改成 `{mode:'demo'}` / 非法 JSON / 删除后分别验证：不读真 Cookie、普通登录不受影响）。
 2. **阶段 2 · 13 模块数据与交互**：business fixtures（关联样本）+ handlers（列表过滤分页、详情、假增删改、专属动作）。验收：逐菜单浏览、筛选、打开详情、新增/修改/删除本地生效、刷新还原；控制台保持零 MISS。
 3. **阶段 3 · 覆盖率门禁与打磨**：覆盖率脚本扫全部 api 文件与 handler 比对、未覆盖清零；lenient/strict 双模式验证；下载/上传提示、空态与边界（空筛选结果、翻页末页）；`vite build` + 诊断 + UAT（localhost 直接点入口）验收。
 
 ## 八、验证方式（不用无头浏览器）
 
 - `npx vite build` + GetDiagnostics；
-- Node 桩测：口令校验、**`getToken()` 三态优先级**（有 demo sessionStorage / 仅 Cookie / 皆无；并断言 demo 流程不调用任何 Cookie 写删）、demoAdapter 经**真实 axios 1.13.2 实例**走通（200/601 两分支进入现有响应拦截器）、**normalizeRequest 用例**（① GET 经真实拦截器后 `url` 带 `?pageNum=1&pageSize=10&name=张`、params={} → path 命中列表 handler 且 ctx.query 分页/过滤值正确；② `params[beginTime]` 对象参数键名保留；③ POST `config.data` 为 JS 对象时 body 直用；④ method 缺省兜底 get；⑤ baseURL 前缀剥除）、mockDispatch 匹配（精确 + `:id` 参数段）、**db 生命周期**（① 模块首次 import 后 `getDb()` 即为完整数据集、无 undefined 表；② `resetDb()` 后改动不泄漏到新库、新库与 fixtures 深隔离——改新库不污染 fixtures）、db 增删改纯函数；
+- Node 桩测：口令校验、**`getToken()` 会话裁决五态**（① 合法单键会话→demo token；② `{mode:'demo'}` 缺 token→undefined 且不读 Cookie；③ token 非前缀串/null→undefined；④ 无会话→Cookie（含 LegacyTokenKey 兜底）；⑤ 键值为非法 JSON/存储抛错→等同无会话不崩、普通登录不受影响；全程断言 demo 流程零 Cookie 写删）、**`isDemoMode()` 与 `getToken()` 同源**（同一 `readDemoSession()` 派生，半态下行为与文档矩阵一致）、demoAdapter 经**真实 axios 1.13.2 实例**走通（200/601 两分支进入现有响应拦截器）、**normalizeRequest 用例**（① GET 经真实拦截器后 `url` 带 `?pageNum=1&pageSize=10&name=张`、params={} → path 命中列表 handler 且 ctx.query 分页/过滤值正确；② `params[beginTime]` 对象参数键名保留；③ POST `config.data` 为 JS 对象时 body 直用；④ method 缺省兜底 get；⑤ baseURL 前缀剥除）、mockDispatch 匹配（精确 + `:id` 参数段）、**db 生命周期**（① 模块首次 import 后 `getDb()` 即为完整数据集、无 undefined 表；② `resetDb()` 后改动不泄漏到新库、新库与 fixtures 深隔离——改新库不污染 fixtures）、db 增删改纯函数；
 - **覆盖率脚本（上线门禁）**：扫描 `src/api/**/*.js` 提取全部 url+method 与 handler 表比对，输出未覆盖清单，阶段 3 必须清零；
 - dev/UAT 浏览器人工验收：入口显隐、错误口令、进入后 **Network 零真实请求**（下载点按钮验证只弹 warning 不出请求）、控制台零 `[DEMO MOCK MISS]`、各模块浏览与本地假提交、同标签刷新还原、关闭标签后无残留、退出不删真实 Cookie；
 - 回归：正常账号登录、登录设计器预览（无入口）、www/裸域展示页（无入口、收敛不变）。
@@ -316,7 +349,7 @@ handler 契约：
 
 | 风险 | 应对 |
 |---|---|
-| **Demo 复用 Admin-Token Cookie 污染正式会话**（演示写入覆盖真 token 踢掉同 host 真实标签；或新标签 removeToken 连演示凭证一起删） | **P0 架构隔离**：demo 凭证只进 sessionStorage，`getToken()` 优先读它；不写/不删正式 Cookie；logOut 演示分支不调 `/logout`。阶段 1 Node 桩验证三态（演示标签/真实标签/无凭证）getToken 返回值 |
+| **Demo 半态读到真实 Cookie**（两键方案下 mode 在/token 缺失 → isDemoMode=true 但 getToken 回落 Admin-Token，借真实会话访问）/ Demo 复用 Cookie 污染同 host 真实标签 | **P0 fail-closed 单键会话**：mode+token 存同一个 JSON 值（一次 setItem 原子同存，无两键不同步）；`getToken()` 见 mode=demo 只返回合法前缀 token，残缺即 undefined，永不回落 Cookie；存储访问全部 try/catch，损坏/禁用不影响普通登录；不写/不删正式 Cookie、不调 `/logout`。阶段 1 Node 桩验证五态 + 多标签实测 |
 | Axios mock 机制用错（request 拦截器返回伪 response 致 XHR adapter 崩溃） | 严格用 `config.adapter = demoAdapter` + `return config`；adapter 返回完整 AxiosResponse、method 缺省兜底 get；阶段 1 Node 桩测在真实 axios 1.13.2 实例上验证 |
 | blob 下载的 601 假象：响应拦截器先判 blob 直接 return，601 分支走不到 | 不在 mock 层伪造 blob；`download()` 函数顶部前置拦截；另排查裸 axios（plugins/download.js）与原生 fetch（medical/report）两条绕过 service 的通道，调用点守卫 |
 | GET 的 query 已被 tansParams 拼进 config.url 且 params 清空，直接拿 url 匹配导致全部列表 MISS（有菜单没数据） | `normalizeRequest()` 作为 adapter 第一道工序：pathname 做匹配键、searchParams 做 ctx.query；handler 禁止读 config.params；阶段 1 Node 桩覆盖「带 params 的列表请求→命中而非 MISS」 |
