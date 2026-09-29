@@ -485,12 +485,35 @@ test('H3', '指标库：列表筛选/详情组装 refs+levels/主子 CRUD 不错
   expect200(refs, 'ref list'); assert(refs.data.length >= 1)
   const levels = call('get', '/apms/indicator/level/list/3')
   expect200(levels, 'level list'); assert(levels.data.length >= 1)
+  // —— 评级配置校验（与正式后端 IndicatorRefLevelValidator 同口径）——
+  const draft = call('post', '/apms/indicator/level', {}, { refId: 3, level: 'critical', minValue: null, maxValue: null })
+  expect200(draft, '空边界草稿档允许先建后填')
+  const draftRow = db().indicatorLevels.find(l => String(l.refId) === '3' && l.level === 'CRITICAL')
+  assert(draftRow, '评级码自动 trim+大写')
+  assertEq(call('post', '/apms/indicator/level', {}, { refId: 3, level: 'CRITICAL' }).code, 601, '大小写不敏感去重')
+  const renamed = call('put', '/apms/indicator/level', {}, { id: draftRow.id, refId: 3, level: 'weak' })
+  expect200(renamed, '评级改名可保存'); assertEq(db().indicatorLevels.find(l => l.id === draftRow.id).level, 'WEAK')
+  assertEq(call('put', '/apms/indicator/level', {}, { id: draftRow.id, refId: 3, level: 'WEAK', minValue: 25, maxValue: 20 }).code,
+    601, 'min>=max 拦截')
+  assertEq(call('put', '/apms/indicator/level', {}, { id: draftRow.id, refId: 3, level: 'WEAK', minValue: 5, maxValue: 8 }).code,
+    601, '与既有档 3~6 重叠拦截')
+  const openEnded = call('put', '/apms/indicator/level', {}, { id: draftRow.id, refId: 3, level: 'WEAK', minValue: 20, maxValue: null })
+  expect200(openEnded, '开放区间 [20,+∞) 允许（邻接 Poor 上限 10，留 gap 仅警告不拦截）')
+  expect200(call('delete', `/apms/indicator/level/${draftRow.id}`), '草稿档可删除')
   const before = db().indicatorRefs.length
-  const addRef = call('post', '/apms/indicator/ref', { indicatorId: 5, gender: 'M', ageGroup: 'U15', refMin: 0, refMax: 10 })
+  const addRef = call('post', '/apms/indicator/ref', {}, { indicatorId: 5, gender: 'M', ageGroup: 'U15', refMin: 0, refMax: 10 })
   expect200(addRef); assertEq(db().indicatorRefs.length, before + 1)
   const newId = db().indicatorRefs[db().indicatorRefs.length - 1].id
   const delRef = call('delete', `/apms/indicator/ref/${newId}`)
   expect200(delRef); assertEq(db().indicatorRefs.length, before, 'ref 删后等级连带清理')
+  // 指标编码唯一/必填校验
+  const seedCode = list.rows[0].code
+  assertEq(call('post', '/apms/indicator', {}, { code: seedCode, name: '重复码', evaluationDirection: 'HIGHER_BETTER' }).code,
+    601, '重复指标编码拦截')
+  assertEq(call('post', '/apms/indicator', {}, { code: 'my_ind', name: '' }).code, 601, '指标名称必填拦截')
+  const addInd = call('post', '/apms/indicator', {}, { code: 'my_ind', name: '自定义', evaluationDirection: 'RANGE_BEST' })
+  expect200(addInd, '自定义指标可新增')
+  assertEq(db().indicators[0].code, 'MY_IND', '编码规范化大写')
 })
 
 test('H4', '测试模型/组合模型：字段、成分子路由 + 主表 CRUD', async () => {

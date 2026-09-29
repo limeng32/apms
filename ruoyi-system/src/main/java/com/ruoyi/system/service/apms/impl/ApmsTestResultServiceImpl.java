@@ -402,15 +402,24 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
         String ageGroup = guessAgeGroup(ath);
 
         // 查参照等级
-        List<ApmsIndicatorRefLevel> levels = repMapper.selectRefLevels(
+        List<ApmsIndicatorRefLevel> allLevels = repMapper.selectRefLevels(
             result.getIndicatorId(), gender, ageGroup);
+        if (allLevels.isEmpty()) return;
+
+        // 边界允许为 null（min=null 负无穷 / max=null 正无穷，界面可配开放区间）。
+        // 上下限都为 null 的是「尚未配置完成」的草稿档：若参与匹配会吞掉全部成绩，必须剔除。
+        List<ApmsIndicatorRefLevel> levels = new ArrayList<>();
+        for (ApmsIndicatorRefLevel l : allLevels) {
+            if (l.getMinValue() != null || l.getMaxValue() != null) levels.add(l);
+        }
         if (levels.isEmpty()) return;
 
-        // 按 direction 排序 level（从最好到最差）
+        // 按 direction 排序 level（从最好到最差）；null 下限视为 -∞
         final String dir = result.getIndicatorDirection() != null
             ? result.getIndicatorDirection() : "HIGHER_BETTER";
+        Comparator<BigDecimal> nullAsMinusInf = Comparator.nullsFirst(Comparator.naturalOrder());
         levels.sort((a, b) -> {
-            int cmp = a.getMinValue().compareTo(b.getMinValue());
+            int cmp = nullAsMinusInf.compare(a.getMinValue(), b.getMinValue());
             return "HIGHER_BETTER".equals(dir) ? -cmp : cmp;
         });
 
@@ -430,21 +439,24 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
         }
     }
 
-    /** 根据区间匹配 rep_no (1=Excellent, 2=Good, 3=Normal, 4=Poor) */
+    /**
+     * 根据区间匹配 rep_no（1=最好档，依次递差；levels 已按 direction 从最好到最差排好序）。
+     * null 边界按 ±∞ 处理：min=null 不约束下限，max=null 不约束上限。
+     */
     private Integer matchRepNo(BigDecimal value, List<ApmsIndicatorRefLevel> levels) {
-        // levels 已按 direction 排好序（最好的在最前）
         for (int i = 0; i < levels.size(); i++) {
             ApmsIndicatorRefLevel lvl = levels.get(i);
-            if (value.compareTo(lvl.getMinValue()) >= 0 && value.compareTo(lvl.getMaxValue()) <= 0) {
+            boolean geMin = lvl.getMinValue() == null || value.compareTo(lvl.getMinValue()) >= 0;
+            boolean leMax = lvl.getMaxValue() == null || value.compareTo(lvl.getMaxValue()) <= 0;
+            if (geMin && leMax) {
                 return i + 1;
             }
         }
-        // 没在任何区间 → 超出范围：direction=LOWER_BETTER 且比最好还小 → Excellent(1)；比最差还大 → Poor(4)
+        // 没在任何区间 → 超出已配置范围：比最好端更好 → 1；比最差端更差 → 末档
         BigDecimal firstMin = levels.get(0).getMinValue();
         BigDecimal lastMax = levels.get(levels.size() - 1).getMaxValue();
-        String direction = levels.get(0) != null ? "" : ""; // 方向丢失，只能保守推断
-        if (value.compareTo(firstMin) < 0) return 1;   // 超出最好端
-        if (value.compareTo(lastMax) > 0) return 4;   // 超出最差端
+        if (firstMin != null && value.compareTo(firstMin) < 0) return 1;
+        if (lastMax != null && value.compareTo(lastMax) > 0) return levels.size();
         return null;
     }
 

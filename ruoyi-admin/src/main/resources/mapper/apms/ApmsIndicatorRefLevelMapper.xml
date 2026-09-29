@@ -29,7 +29,9 @@
 
     <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsIndicatorRefLevel">
         UPDATE apms_indicator_ref_level
-        SET min_value = #{minValue}, max_value = #{maxValue}
+        SET level = #{level},
+            min_value = #{minValue},
+            max_value = #{maxValue}
         WHERE id = #{id}
     </update>
 

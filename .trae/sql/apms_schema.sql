@@ -239,7 +239,7 @@ CREATE TABLE apms_indicator_ref (
 CREATE TABLE apms_indicator_ref_level (
     id          bigint        NOT NULL AUTO_INCREMENT COMMENT '自增主键',
     ref_id      bigint        NOT NULL                COMMENT '关联 apms_indicator_ref.id',
-    level       varchar(10)   NOT NULL                COMMENT '评级：GOOD / NORMAL / ATTENTION',
+    level       varchar(32)   NOT NULL                COMMENT '评级枚举码（GOOD/NORMAL/ATTENTION/EXCELLENT/POOR/自定义）',
     min_value   decimal(14,4) DEFAULT NULL            COMMENT '下限（NULL = 负无穷）',
     max_value   decimal(14,4) DEFAULT NULL            COMMENT '上限（NULL = 正无穷）',
     PRIMARY KEY (id),

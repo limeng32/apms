@@ -223,7 +223,7 @@
                 <div v-if="getLevelValidationIssues(ref.levels).length" class="ind-alerts">
                   <el-alert v-for="(issue, idx) in getLevelValidationIssues(ref.levels)" :key="idx"
                             :title="issue" type="warning" :closable="false" show-icon
-                            description="后端保存时也会拦截，建议先修正"/>
+                            description="区间重叠或上下限颠倒保存时会被后端拦截；区间空洞仅提示，建议补齐"/>
                 </div>
 
                 <div class="rk-table-scroll ind-level-scroll">
@@ -240,8 +240,15 @@
                       <tr v-for="lv in ref.levels" :key="lv.id"
                           :class="{ 'is-level-error': isLevelRowError(lv, ref.levels) }">
                         <td class="text-center">
-                          <el-input v-if="lv.editing" v-model="lv.level" size="small"
-                                    placeholder="如 GOOD / POOR" class="ind-lv-input" maxlength="32"/>
+                          <el-select v-if="lv.editing" v-model="lv.level" size="small"
+                                     filterable allow-create default-first-option
+                                     placeholder="选或输评级码" class="ind-lv-input">
+                            <el-option v-for="p in inlineLevelPresets(lv)" :key="p.code"
+                                       :label="`${p.code} ${p.name}`" :value="p.code">
+                              <span class="ind-opt-code">{{ p.code }}</span>
+                              <span class="ind-opt-name">{{ p.name }}</span>
+                            </el-option>
+                          </el-select>
                           <span v-else class="rk-soft-chip" :class="levelChipClass(lv.level)">{{ levelLabel(lv.level) }}</span>
                         </td>
                         <td class="text-center">
@@ -270,12 +277,21 @@
                 </div>
 
                 <div class="ind-add-level">
-                  <input v-model="newLevelName" class="rk-input ind-new-level" type="text"
-                         placeholder="输入评级名（如 EXCELLENT / POOR）" @keyup.enter="addNewLevel(ref)"/>
+                  <el-select v-model="newLevelName" filterable allow-create default-first-option
+                             class="ind-new-level" size="small"
+                             placeholder="选择或输入评级码（如 GOOD / POOR）"
+                             @change="addNewLevel(ref)">
+                    <el-option v-for="p in availableLevelPresets(ref)" :key="p.code"
+                               :label="`${p.code} ${p.name}`" :value="p.code">
+                      <span class="ind-opt-code">{{ p.code }}</span>
+                      <span class="ind-opt-name">{{ p.name }}</span>
+                    </el-option>
+                  </el-select>
                   <button type="button" class="rk-btn rk-btn-sm rk-btn-primary" @click="addNewLevel(ref)">
                     <el-icon><Plus /></el-icon>新增评级
                   </button>
                   <button type="button" class="rk-btn rk-btn-sm" @click="bulkAddLevels(ref)">一键三档模板</button>
+                  <span class="ind-add-hint">先建空档位（−∞~+∞），再在列表中点「编辑」填写上下限</span>
                 </div>
               </div>
             </div>
@@ -296,12 +312,13 @@
           <el-row :gutter="12">
             <el-col :span="12">
               <el-form-item label="指标编码" prop="code">
-                <el-input v-model="indicatorForm.code" placeholder="如 SPRINT_30M" :disabled="indicatorForm.id != null"/>
+                <el-input v-model="indicatorForm.code" placeholder="如 SPRINT_30M" maxlength="50"
+                          :disabled="indicatorForm.id != null"/>
               </el-form-item>
             </el-col>
             <el-col :span="12">
               <el-form-item label="指标名称" prop="name">
-                <el-input v-model="indicatorForm.name" placeholder="如 30米冲刺"/>
+                <el-input v-model="indicatorForm.name" placeholder="如 30米冲刺" maxlength="50"/>
               </el-form-item>
             </el-col>
             <el-col :span="12">
@@ -607,6 +624,9 @@ function openRefDialog(ref) {
   showRefDialogVisible.value = true
 }
 function submitRef() {
+  if (refForm.refMin != null && refForm.refMax != null && Number(refForm.refMin) > Number(refForm.refMax)) {
+    return proxy.$modal.msgError('参考下限不能大于参考上限')
+  }
   const req = refForm.id ? updateRef(refForm) : addRef(refForm)
   req.then(() => {
     proxy.$modal.msgSuccess('保存成功')
@@ -639,10 +659,44 @@ const LEVEL_TONE_MAP = {
   DEFAULT: 'is-lv-info'
 }
 
+// 评级码预设：下拉可选，也允许自由输入（el-select allow-create）
+const LEVEL_NAME_MAP = {
+  EXCELLENT: '优秀 ★★★★', GOOD: '良好 ★★★', NORMAL: '正常 ★★',
+  ATTENTION: '需关注 ★', POOR: '较差', CRITICAL: '危险'
+}
+const LEVEL_PRESETS = Object.freeze(
+  ['EXCELLENT', 'GOOD', 'NORMAL', 'ATTENTION', 'POOR', 'CRITICAL']
+    .map(code => ({ code, name: LEVEL_NAME_MAP[code] }))
+)
+
 function levelChipClass(l) { return LEVEL_TONE_MAP[(l || '').toUpperCase()] || LEVEL_TONE_MAP.DEFAULT }
 function levelLabel(l) {
-  const map = { EXCELLENT: '优秀 ★★★★', GOOD: '良好 ★★★', NORMAL: '正常 ★★', ATTENTION: '需关注 ★', POOR: '较差', CRITICAL: '危险' }
-  return map[(l || '').toUpperCase()] || l || '—'
+  const key = (l || '').toUpperCase()
+  return LEVEL_NAME_MAP[key] ? `${key} ${LEVEL_NAME_MAP[key]}` : (l || '—')
+}
+
+/** 新增评级下拉：预设码中过滤掉当前参考范围已存在的（大小写不敏感） */
+function availableLevelPresets(ref) {
+  const owned = new Set((ref.levels || []).map(x => (x.level || '').toUpperCase()))
+  return LEVEL_PRESETS.filter(p => !owned.has(p.code))
+}
+
+/** 行内编辑下拉：预设码 + 当前行自身值（自定义码也要能正常回显） */
+function inlineLevelPresets(lv) {
+  const cur = (lv.level || '').trim()
+  if (cur && !LEVEL_NAME_MAP[cur.toUpperCase()]) {
+    return [{ code: cur, name: '自定义' }, ...LEVEL_PRESETS]
+  }
+  return LEVEL_PRESETS
+}
+
+// 评级码：非空、≤32 字符、不含空白与方括号/逗号（区间告警消息以这些符号拼档位名）
+function validateLevelName(raw) {
+  const name = (raw || '').trim()
+  if (!name) return '评级名称不能为空'
+  if (name.length > 32) return '评级名称不能超过 32 个字符'
+  if (/\s|[,\[\]]/.test(name)) return '评级名称不能包含空格或 , [ ] 符号'
+  return null
 }
 
 function startLevelEdit(row) {
@@ -656,7 +710,11 @@ function cancelLevelEdit(row) {
 }
 
 function saveLevel(row) {
-  if (!row.level || !row.level.trim()) return proxy.$modal.msgError('评级名称不能为空')
+  const nameErr = validateLevelName(row.level)
+  if (nameErr) return proxy.$modal.msgError(nameErr)
+  if (row.minValue != null && row.maxValue != null && Number(row.minValue) >= Number(row.maxValue)) {
+    return proxy.$modal.msgError(`下限 ${row.minValue} 必须小于上限 ${row.maxValue}`)
+  }
   updateLevel(row).then(() => {
     row.editing = false
     levelSnapshots.delete(row.id)
@@ -680,7 +738,8 @@ function handleDeleteLevel(row, ref) {
 
 function addNewLevel(ref) {
   const name = (newLevelName.value || '').trim()
-  if (!name) return proxy.$modal.msgWarning('请先输入评级名称')
+  const nameErr = validateLevelName(name)
+  if (nameErr) return proxy.$modal.msgWarning(nameErr)
   const exists = ref.levels?.find(x => (x.level || '').toUpperCase() === name.toUpperCase())
   if (exists) return proxy.$modal.msgWarning(`评级 [${exists.level}] 已存在`)
   addLevel({ refId: ref.id, level: name.toUpperCase(), minValue: null, maxValue: null }).then(() => {
@@ -890,12 +949,16 @@ loadStats()
 .col-lv-ops { width: 170px; }
 .ind-level-table :deep(tr.is-level-error) { background: #fef2f2; }
 .ind-level-table :deep(tr.is-level-error td) { border-bottom-color: #f5c6c6; }
-.ind-lv-input { width: 110px; }
+.ind-lv-input { width: 145px; }
 .ind-bound-input { width: 120px; }
 
 .ind-add-level {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
   padding: 10px 14px 12px;
 }
-.ind-new-level { width: 200px; height: 32px; }
+.ind-new-level { width: 230px; }
+.ind-add-hint { margin-left: 4px; font-size: 12px; color: #94A3B8; }
+/* 评级码下拉选项：左编码右中文释义 */
+.ind-opt-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.ind-opt-name { float: right; font-size: 12px; color: #94A3B8; margin-left: 16px; }
 </style>
