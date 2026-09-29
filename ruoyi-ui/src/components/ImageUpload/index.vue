@@ -2,7 +2,7 @@
   <div class="component-upload-image">
     <el-upload
       multiple
-      :disabled="disabled"
+      :disabled="disabled || isDemoMode()"
       :action="uploadImgUrl"
       list-type="picture-card"
       :on-success="handleUploadSuccess"
@@ -48,7 +48,7 @@
 </template>
 
 <script setup>
-import { getToken } from "@/utils/auth"
+import { getToken, isDemoMode } from "@/utils/auth"
 import { isExternal } from "@/utils/validate"
 import Sortable from 'sortablejs'
 
@@ -132,6 +132,11 @@ watch(() => props.modelValue, val => {
 
 // 上传前loading加载
 function handleBeforeUpload(file) {
+  // 演示模式：组件已禁用，再兜一道，零真实上传
+  if (isDemoMode()) {
+    proxy.$modal.msgWarning('演示环境暂不支持文件上传')
+    return false
+  }
   let isImg = false
   if (props.fileType.length) {
     let fileExtension = ""

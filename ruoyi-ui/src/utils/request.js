@@ -1,11 +1,12 @@
 import axios from 'axios'
 import { ElNotification , ElMessageBox, ElMessage, ElLoading } from 'element-plus'
-import { getToken } from '@/utils/auth'
+import { getToken, isDemoMode } from '@/utils/auth'
 import errorCode from '@/utils/errorCode'
 import { tansParams, blobValidate } from '@/utils/ruoyi'
 import cache from '@/plugins/cache'
 import { saveAs } from 'file-saver'
 import useUserStore from '@/store/modules/user'
+import { demoAdapter } from '@/mock/index'
 
 let downloadLoadingInstance
 // 是否显示重新登录
@@ -66,6 +67,12 @@ service.interceptors.request.use(config => {
       }
     }
   }
+  // 演示模式：接管 adapter，请求全部本地闭环，零真实 HTTP。
+  // broken/storage-error 态 isDemoMode() 同样为 true（adapter 绝不卸载）。
+  // 必须在拦截器末尾、return config 前挂载（此时 GET 的 url 已完成 tansParams 改写）。
+  if (isDemoMode()) {
+    config.adapter = demoAdapter
+  }
   return config
 }, error => {
     console.log(error)
@@ -125,6 +132,12 @@ service.interceptors.response.use(res => {
 
 // 通用下载方法
 export function download(url, params, filename, config) {
+  // 演示模式前置拦截：不能靠 mock 返回 blob 601——响应拦截器先判 responseType==='blob'
+  // 直接 return res.data，601 分支根本走不到；且下载必须做到零真实请求。
+  if (isDemoMode()) {
+    ElMessage.warning('演示环境暂不支持文件下载')
+    return Promise.resolve()
+  }
   downloadLoadingInstance = ElLoading.service({ text: "正在下载数据，请稍候", background: "rgba(0, 0, 0, 0.7)", })
   return service.post(url, params, {
     transformRequest: [(params) => { return tansParams(params) }],

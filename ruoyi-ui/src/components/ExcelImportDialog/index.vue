@@ -1,6 +1,6 @@
 <template>
   <el-dialog :title="title" v-model="visible" :width="width" append-to-body @close="handleClose">
-    <el-upload ref="uploadRef" :limit="1" accept=".xlsx, .xls" :headers="headers" :action="uploadUrl" :disabled="isUploading" :on-progress="handleProgress" :on-change="handleFileChange" :on-remove="handleFileRemove" :on-success="handleSuccess" :auto-upload="false" drag>
+    <el-upload ref="uploadRef" :limit="1" accept=".xlsx, .xls" :headers="headers" :action="uploadUrl" :disabled="isUploading || isDemoMode()" :on-progress="handleProgress" :on-change="handleFileChange" :on-remove="handleFileRemove" :on-success="handleSuccess" :auto-upload="false" drag>
       <el-icon class="el-icon--upload"><upload-filled /></el-icon>
       <div class="el-upload__text">将文件拖到此处，或<em>点击上传</em></div>
       <template #tip>
@@ -13,6 +13,7 @@
         </div>
       </template>
     </el-upload>
+    <div v-if="isDemoMode()" class="el-upload__tip text-center" style="color: #e6a23c;">演示环境暂不支持数据导入</div>
     <template #footer>
       <div class="dialog-footer">
         <el-button type="primary" @click="handleSubmit">确 定</el-button>
@@ -23,7 +24,7 @@
 </template>
 
 <script setup>
-import { getToken } from '@/utils/auth'
+import { getToken, isDemoMode } from '@/utils/auth'
 
 const { proxy } = getCurrentInstance()
 
@@ -125,6 +126,11 @@ function handleSuccess(response) {
 
 // 提交上传
 function handleSubmit() {
+  // 演示模式：上传已禁用，确定键再兜一道（导入与模板下载都不支持）
+  if (isDemoMode()) {
+    proxy.$modal.msgWarning('演示环境暂不支持数据导入')
+    return
+  }
   const file = selectedFile.value
   if (!file || file.length === 0 || !file.name.toLowerCase().endsWith('.xls') && !file.name.toLowerCase().endsWith('.xlsx')) {
     proxy.$modal.msgError("请选择后缀为 “xls”或“xlsx”的文件。")

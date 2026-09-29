@@ -9,6 +9,7 @@
       </div>
       <app-main />
       <settings ref="settingRef" />
+      <demo-banner />
     </div>
   </div>
 </template>
@@ -17,6 +18,7 @@
 import { useWindowSize } from '@vueuse/core'
 import Sidebar from './components/Sidebar/index.vue'
 import { AppMain, Navbar, Settings, TagsView } from './components'
+import DemoBanner from './components/DemoBanner.vue'
 import useAppStore from '@/store/modules/app'
 import useSettingsStore from '@/store/modules/settings'
 import useUserStore from '@/store/modules/user'

@@ -2,7 +2,7 @@ import router from '@/router'
 import cache from '@/plugins/cache'
 import { ElMessageBox, } from 'element-plus'
 import { login, logout, getInfo } from '@/api/login'
-import { getToken, setToken, removeToken } from '@/utils/auth'
+import { getToken, setToken, removeToken, isDemoMode, clearDemoSession } from '@/utils/auth'
 import { isHttp, isEmpty } from "@/utils/validate"
 import useLockStore from '@/store/modules/lock'
 import defAva from '@/assets/images/profile.jpg'
@@ -82,6 +82,18 @@ const useUserStore = defineStore(
       // 退出系统
       logOut() {
         return new Promise((resolve, reject) => {
+          // 演示退出：不调 /logout、不 removeToken()，保护同 host 其他标签可能存在的真实登录 Cookie。
+          // broken/storage-error 同样走进来（401/菜单退出），clearDemoSession 对异常存储安全。
+          if (isDemoMode()) {
+            clearDemoSession()
+            this.token = ''
+            this.roles = []
+            this.permissions = []
+            this.portalMode = false
+            this.homePath = ''
+            resolve()
+            return
+          }
           logout(this.token).then(() => {
             this.token = ''
             this.roles = []

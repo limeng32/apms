@@ -43,6 +43,7 @@
         <div class="avatar-wrapper">
           <img :src="userStore.avatar" class="user-avatar" />
           <span class="user-nickname"> {{ userStore.nickName }} </span>
+          <span v-if="isDemoMode()" class="demo-tag">演示</span>
         </div>
         <template #dropdown>
           <el-dropdown-menu>
@@ -82,6 +83,7 @@ import useSettingsStore from '@/store/modules/settings'
 import useLoginThemeStore from '@/store/modules/loginTheme'
 import HeaderNotice from './HeaderNotice'
 import { mediaUrl, BUILTIN_LOGO_VALUES } from '@/views/login/login.utils'
+import { isDemoMode } from '@/utils/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -274,6 +276,20 @@ function lockScreen() {
           bottom: 10px;
           font-size: 14px;
           font-weight: bold;
+        }
+
+        .demo-tag {
+          position: relative;
+          bottom: 10px;
+          margin-left: 6px;
+          padding: 1px 7px;
+          border-radius: 999px;
+          font-size: 11px;
+          font-weight: 600;
+          line-height: 1.6;
+          color: #b45309;
+          background: #fde68a;
+          border: 1px solid #f59e0b;
         }
 
         i {

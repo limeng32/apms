@@ -84,6 +84,20 @@
         <span v-else>{{ form.loadingText }}</span>
       </el-button>
     </el-form-item>
+
+    <!-- 一键体验入口：仅业务域登录页且启用时渲染；设计器 preview 不渲染 -->
+    <div v-if="demoEntry && !preview" class="lf-demo-entry">
+      <el-button link type="primary" class="lf-demo-btn" @click="emit('demo')">
+        一键体验演示环境
+        <svg
+          class="lf-demo-arrow" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+        </svg>
+      </el-button>
+    </div>
   </el-form>
 </template>
 
@@ -107,10 +121,12 @@ const props = defineProps({
   /** 登录请求中（按钮 loading 态） */
   loading: { type: Boolean, default: false },
   /** 切换演示角色时的 150ms 闪烁（demo 同款过渡；仅 login.vue dev 角色块触发） */
-  flash: { type: Boolean, default: false }
+  flash: { type: Boolean, default: false },
+  /** 是否展示「一键体验演示环境」入口（仅业务域真实登录页传入） */
+  demoEntry: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['update:modelValue', 'submit', 'forgot'])
+const emit = defineEmits(['update:modelValue', 'submit', 'forgot', 'demo'])
 
 const loginRef = ref(null)
 const showPassword = ref(false)
@@ -206,6 +222,19 @@ defineExpose({ validate })
   font-weight: 500;
   &:hover { color: var(--login-btn-hover); text-decoration: underline; }
 }
+
+/* 一键体验入口 */
+.lf-demo-entry {
+  display: flex;
+  justify-content: center;
+  margin-top: 6px;
+}
+.lf-demo-btn {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 8px;
+}
+.lf-demo-arrow { width: 14px; height: 14px; flex: none; margin-left: 2px; }
 
 /* 登录按钮 */
 .lf-submit {

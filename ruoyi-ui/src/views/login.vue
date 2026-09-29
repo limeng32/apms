@@ -2,14 +2,24 @@
   <LoginRenderer :config="loginThemeStore.config">
     <!-- 登录表单：纯展示组件 LoginFormFields，业务逻辑在本文件 -->
     <template #form>
+      <!-- storage-error：浏览器存储不可用，演示与普通登录均暂停，阻断页 -->
+      <div v-if="sessionState === 'storage-error'" class="storage-blocked">
+        <el-icon class="storage-blocked-icon"><WarningFilled/></el-icon>
+        <p class="storage-blocked-title">浏览器本地存储不可用</p>
+        <p class="storage-blocked-text">演示与登录均已暂停，请恢复本地存储（sessionStorage）后刷新页面</p>
+        <el-button type="primary" @click="reloadPage">重新检测</el-button>
+      </div>
       <LoginFormFields
+        v-else
         ref="loginFieldsRef"
         v-model="loginForm"
         :config="loginThemeStore.config"
         :loading="loading"
         :flash="fieldFlash"
+        :demo-entry="demoEnabled"
         @submit="handleLogin"
         @forgot="handleForgot"
+        @demo="demoDialogVisible = true"
       />
     </template>
 
@@ -39,6 +49,9 @@
       </div>
     </template>
   </LoginRenderer>
+
+  <!-- 一键体验口令弹窗（仅业务域登录页；展示页不挂 login.vue） -->
+  <DemoPassDialog v-model="demoDialogVisible" @success="handleDemoSuccess" />
 </template>
 
 <script setup name="Login">
@@ -46,19 +59,27 @@ import Cookies from "js-cookie"
 import { cookieName } from '@/utils/ruoyi'
 import {
   User, CircleCheck, Check, Key, Document,
-  FirstAidKit, DataAnalysis
+  FirstAidKit, DataAnalysis, WarningFilled
 } from '@element-plus/icons-vue'
 import useUserStore from '@/store/modules/user'
 import LoginRenderer from './login/LoginRenderer.vue'
 import LoginFormFields from './login/LoginFormFields.vue'
+import DemoPassDialog from './login/DemoPassDialog.vue'
 import useLoginThemeStore from '@/store/modules/loginTheme'
 import { applyLoginHead, restoreLoginHead } from './login/login.utils'
+import { readDemoSessionState, clearDemoSession } from '@/utils/auth'
+import { isDemoEnabled } from '@/utils/demo'
 
 const userStore = useUserStore()
 const loginThemeStore = useLoginThemeStore()
 const route = useRoute()
 const router = useRouter()
 const { proxy } = getCurrentInstance()
+
+// 一键体验：入口开关（env 可关）+ 口令弹窗 + 会话四态（storage-error 阻断、broken 自愈）
+const demoEnabled = isDemoEnabled()
+const demoDialogVisible = ref(false)
+const sessionState = ref(readDemoSessionState().state)
 
 // 演示环境角色快捷登录（仅 dev 显示）；角色色板对齐 demo ROLE_LIST
 const isDev = import.meta.env.DEV
@@ -103,10 +124,26 @@ function applyHead() {
 onMounted(() => {
   applyHead()
   loginThemeStore.loadConfig().then(applyHead)
+  // broken 自愈：演示单键损坏时清掉异常键并提示，本次回到普通登录（isDemoMode 翻 false）。
+  // storage-error 不在此处理（模板渲染阻断页，任何登录入口都不出现）。
+  if (sessionState.value === 'broken') {
+    clearDemoSession()
+    sessionState.value = 'none'
+    proxy.$modal.msgInfo('演示状态数据异常，已退出演示模式')
+  }
 })
 onBeforeUnmount(() => {
   restoreLoginHead()
 })
+
+// 口令正确、enterDemo 完成：守卫检测 roles.length===0 走真实链路拉 mock getInfo/路由
+function handleDemoSuccess() {
+  router.replace('/apms/dashboard')
+}
+
+function reloadPage() {
+  window.location.reload()
+}
 
 function handleLogin() {
   loginFieldsRef.value.validate(valid => {
@@ -172,6 +209,32 @@ getCookie()
 </script>
 
 <style lang='scss' scoped>
+/* storage-error 阻断页（替换整个表单区） */
+.storage-blocked {
+  margin-top: 30px;
+  padding: 28px 18px 24px;
+  text-align: center;
+  border: 1px solid var(--login-border);
+  border-radius: var(--login-radius);
+  background: var(--login-page-bg);
+}
+.storage-blocked-icon {
+  font-size: 34px;
+  color: #f59e0b;
+}
+.storage-blocked-title {
+  margin: 12px 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--login-text-1);
+}
+.storage-blocked-text {
+  margin: 0 0 16px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--login-text-2);
+}
+
 /* 演示角色卡（仅 dev；UAT/生产不渲染）—— demo 同款：图标圆底/右上对勾/底部角色色条 */
 .lf-roles {
   margin-top: 22px;

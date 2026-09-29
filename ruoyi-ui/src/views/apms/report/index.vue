@@ -244,7 +244,7 @@ import { listReport, getReport, generateReport, delReport, downloadReportUrl } f
 import { listTestTask } from '@/api/apms/testTask'
 import { listAthlete } from '@/api/apms/athlete'
 import { listDept } from '@/api/system/dept'
-import { getToken } from '@/utils/auth'
+import { getToken, isDemoMode } from '@/utils/auth'
 import { Plus, RefreshLeft, ArrowLeft, ArrowRight, Download, Document } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
@@ -393,6 +393,11 @@ function submitGen() {
 
 // ========= 操作 =========
 async function handleDownload(row) {
+  // 演示模式：原生 fetch 不走 service 实例（adapter 换不到），前置拦截，零真实请求
+  if (isDemoMode()) {
+    proxy.$modal.msgWarning('演示环境暂不支持文件下载')
+    return
+  }
   // 修复原页缺陷：裸相对路径缺 /dev-api 前缀且读 localStorage（本项目 token 在 Cookie），dev 下必失败；
   // 改为带鉴权头的 blob 下载，并识别 200+JSON 业务错误（如 PDF 物理文件被清理）而非把错误体存成 .pdf
   try {

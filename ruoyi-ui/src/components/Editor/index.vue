@@ -9,7 +9,7 @@
       :show-file-list="false"
       :headers="headers"
       class="editor-img-uploader"
-      v-if="type == 'url'"
+      v-if="type == 'url' && !isDemoMode()"
     >
       <i ref="uploadRef" class="editor-img-uploader"></i>
     </el-upload>
@@ -30,7 +30,7 @@
 import axios from 'axios'
 import { QuillEditor } from "@vueup/vue-quill"
 import "@vueup/vue-quill/dist/vue-quill.snow.css"
-import { getToken } from "@/utils/auth"
+import { getToken, isDemoMode } from "@/utils/auth"
 
 const { proxy } = getCurrentInstance()
 
@@ -120,6 +120,11 @@ onMounted(() => {
     let toolbar = quill.getModule("toolbar")
     toolbar.addHandler("image", (value) => {
       if (value) {
+        // 演示模式：隐藏的 uploadRef 不渲染，统一提示，零真实上传
+        if (isDemoMode()) {
+          proxy.$modal.msgWarning('演示环境暂不支持图片上传')
+          return
+        }
         proxy.$refs.uploadRef.click()
       } else {
         quill.format("image", false)
@@ -131,6 +136,11 @@ onMounted(() => {
 
 // 上传前校检格式和大小
 function handleBeforeUpload(file) {
+  // 演示模式兜底
+  if (isDemoMode()) {
+    proxy.$modal.msgWarning('演示环境暂不支持图片上传')
+    return false
+  }
   const type = ["image/jpeg", "image/jpg", "image/png", "image/svg"]
   const isJPG = type.includes(file.type)
   //检验文件格式
@@ -187,6 +197,11 @@ function handlePasteCapture(e) {
 }
 
 function insertImage(file) {
+  // 演示模式：粘贴图片走裸 axios（非 service 实例），必须前置拦截
+  if (isDemoMode()) {
+    proxy.$modal.msgWarning('演示环境暂不支持图片上传')
+    return
+  }
   const formData = new FormData()
   formData.append("file", file)
   axios.post(uploadUrl.value, formData, { headers: { "Content-Type": "multipart/form-data", Authorization: headers.value.Authorization } }).then(res => {

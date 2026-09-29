@@ -6,7 +6,7 @@
       accept=".csv"
       :headers="headers"
       :action="uploadUrl"
-      :disabled="isUploading"
+      :disabled="isUploading || isDemoMode()"
       :on-progress="handleProgress"
       :on-change="handleFileChange"
       :on-remove="handleFileRemove"
@@ -32,6 +32,7 @@
         </div>
       </template>
     </el-upload>
+    <div v-if="isDemoMode()" class="el-upload__tip" style="color: #e6a23c;">演示环境暂不支持 CSV 导入</div>
     <template #footer>
       <div class="dialog-footer">
         <el-button type="primary" @click="handleSubmit" :loading="isUploading">确 定</el-button>
@@ -58,7 +59,9 @@
 </template>
 
 <script setup>
-import { getToken } from '@/utils/auth'
+import { getToken, isDemoMode } from '@/utils/auth'
+
+const { proxy } = getCurrentInstance()
 
 const props = defineProps({
   action: { type: String, required: true }
@@ -126,6 +129,11 @@ function handleError() {
 }
 
 function handleSubmit() {
+  // 演示模式：上传已禁用，确定键再兜一道
+  if (isDemoMode()) {
+    proxy.$modal.msgWarning('演示环境暂不支持 CSV 导入')
+    return
+  }
   const file = selectedFile.value
   if (!file || file.size === 0) {
     proxy.$modal.msgError('请选择 CSV 文件')

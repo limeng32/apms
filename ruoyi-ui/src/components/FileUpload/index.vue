@@ -14,7 +14,7 @@
       :headers="headers"
       class="upload-file-uploader"
       ref="fileUpload"
-      v-if="!disabled"
+      v-if="!disabled && !isDemoMode()"
     >
       <!-- 上传按钮 -->
       <el-button type="primary">选取文件</el-button>
@@ -41,7 +41,7 @@
 </template>
 
 <script setup>
-import { getToken } from "@/utils/auth"
+import { getToken, isDemoMode } from "@/utils/auth"
 import Sortable from 'sortablejs'
 
 const props = defineProps({
@@ -120,6 +120,11 @@ watch(() => props.modelValue, val => {
 
 // 上传前校检格式和大小
 function handleBeforeUpload(file) {
+  // 演示模式：按钮已隐藏，再兜一道，零真实上传
+  if (isDemoMode()) {
+    proxy.$modal.msgWarning('演示环境暂不支持文件上传')
+    return false
+  }
   // 校检文件类型
   if (props.fileType.length) {
     const fileName = file.name.split('.')

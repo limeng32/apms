@@ -1,7 +1,7 @@
-﻿import axios from 'axios'
+import axios from 'axios'
 import { ElLoading, ElMessage } from 'element-plus'
 import { saveAs } from 'file-saver'
-import { getToken } from '@/utils/auth'
+import { getToken, isDemoMode } from '@/utils/auth'
 import errorCode from '@/utils/errorCode'
 import { blobValidate } from '@/utils/ruoyi'
 
@@ -9,7 +9,13 @@ const baseURL = import.meta.env.VITE_APP_BASE_API
 let downloadLoadingInstance
 
 export default {
+  // 演示模式防御性拦截：本插件走裸 axios（非 service 实例），adapter 换不到，
+  // 三个方法在发起前统一拦截，做到零真实请求。
   name(name, isDelete = true) {
+    if (isDemoMode()) {
+      ElMessage.warning('演示环境暂不支持文件下载')
+      return
+    }
     var url = baseURL + "/common/download?fileName=" + encodeURIComponent(name) + "&delete=" + isDelete
     axios({
       method: 'get',
@@ -27,6 +33,10 @@ export default {
     })
   },
   resource(resource) {
+    if (isDemoMode()) {
+      ElMessage.warning('演示环境暂不支持文件下载')
+      return
+    }
     var url = baseURL + "/common/download/resource?resource=" + encodeURIComponent(resource)
     axios({
       method: 'get',
@@ -44,6 +54,10 @@ export default {
     })
   },
   zip(url, name) {
+    if (isDemoMode()) {
+      ElMessage.warning('演示环境暂不支持文件下载')
+      return
+    }
     var url = baseURL + url
     downloadLoadingInstance = ElLoading.service({ text: "正在下载数据，请稍候", background: "rgba(0, 0, 0, 0.7)", })
     axios({

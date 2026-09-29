@@ -237,6 +237,7 @@
                   :on-success="handleFileSuccess"
                   :on-remove="handleFileRemove"
                   :before-upload="beforeUpload"
+                  :disabled="isDemoMode()"
                   multiple
                   drag>
                   <el-icon class="el-icon--upload"><upload-filled/></el-icon>
@@ -261,7 +262,7 @@
 <script setup name="ApmsMedical">
 import { listMedical, getMedical, addMedical, updateMedical, delMedical, delMedicalFile, downloadMedicalFile } from '@/api/apms/medical'
 import { listAthlete } from '@/api/apms/athlete'
-import { getToken } from '@/utils/auth'
+import { getToken, isDemoMode } from '@/utils/auth'
 import { Plus, RefreshLeft, ArrowLeft, ArrowRight, Lock, UploadFilled } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
@@ -444,6 +445,11 @@ function handleEdit(row) {
 }
 
 function beforeUpload(file) {
+  // 演示模式：el-upload 已 :disabled，这里再兜一道，零真实上传
+  if (isDemoMode()) {
+    proxy.$modal.msgWarning('演示环境暂不支持文件上传')
+    return false
+  }
   // 仅限制大小 20MB
   const MAX = 20 * 1024 * 1024
   if (file.size > MAX) {
@@ -478,6 +484,11 @@ function submit() {
 
 // ========= 附件操作（原逻辑保留） =========
 async function handleDownload(f) {
+  // 演示模式：原生 fetch 不走 service 实例（adapter 换不到），必须前置拦截，零真实请求
+  if (isDemoMode()) {
+    proxy.$modal.msgWarning('演示环境暂不支持文件下载')
+    return
+  }
   // 修复原页缺陷：window.open 既无 /dev-api 前缀也无法携带 Bearer，dev 下必失败；
   // 改为带鉴权头的 blob 下载，保留私有下载端点的权限点校验
   try {
