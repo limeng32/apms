@@ -15,6 +15,11 @@
             <el-radio value="1">女</el-radio>
          </el-radio-group>
       </el-form-item>
+      <el-form-item v-if="isAdmin" label="归属部门">
+         <el-tree-select v-model="form.deptId" :data="deptOptions"
+            :props="{ value: 'id', label: 'label', children: 'children' }" value-key="id"
+            check-strictly filterable placeholder="仅超级管理员可调整（可选根部门）" style="width:100%"/>
+      </el-form-item>
       <el-form-item>
       <el-button type="primary" @click="submit">保存</el-button>
       <el-button type="danger" @click="close">关闭</el-button>
@@ -23,15 +28,21 @@
 </template>
 
 <script setup>
-import { updateUserProfile } from "@/api/system/user"
+import { updateUserProfile, deptTreeSelect } from "@/api/system/user"
+import useUserStore from "@/store/modules/user"
 
 const props = defineProps({
   user: {
     type: Object
   }
 })
+const emit = defineEmits(["saved"])
 
 const { proxy } = getCurrentInstance()
+const userStore = useUserStore()
+// 仅超级管理员（userId=1）可在个人中心调整归属部门
+const isAdmin = computed(() => userStore.roles.includes("admin"))
+const deptOptions = ref([])
 
 const form = ref({})
 const rules = ref({
@@ -48,6 +59,7 @@ function submit() {
         proxy.$modal.msgSuccess("修改成功")
         props.user.phonenumber = form.value.phonenumber
         props.user.email = form.value.email
+        emit("saved")
       })
     }
   })
@@ -61,7 +73,16 @@ function close() {
 // 回显当前登录用户信息
 watch(() => props.user, user => {
   if (user) {
-    form.value = { nickName: user.nickName, phonenumber: user.phonenumber, email: user.email, sex: user.sex }
+    form.value = { nickName: user.nickName, phonenumber: user.phonenumber, email: user.email, sex: user.sex, deptId: user.deptId }
   }
 },{ immediate: true })
+
+// 仅 admin 需要部门树（含根部门，check-strictly 任意节点可选）
+watch(isAdmin, val => {
+  if (val && !deptOptions.value.length) {
+    deptTreeSelect().then(res => {
+      deptOptions.value = res.data || []
+    })
+  }
+}, { immediate: true })
 </script>

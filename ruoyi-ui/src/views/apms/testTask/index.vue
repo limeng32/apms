@@ -320,7 +320,9 @@
             <el-col :span="12">
               <el-form-item label="目标队伍" prop="targetDeptId">
                 <el-tree-select v-model="taskForm.targetDeptId" :data="deptOptions" :render-after-expand="false"
-                  :props="{ label: 'label', value: 'id' }" :expand-on-click-node="false" filterable style="width:100%"/>
+                  :props="{ label: 'label', value: 'id', children: 'children', disabled: 'disabled' }"
+                  :expand-on-click-node="false" filterable
+                  placeholder="仅可选择末级队伍（灰色分组不可选）" style="width:100%"/>
               </el-form-item>
             </el-col>
             <el-col :span="12">
@@ -579,6 +581,7 @@ function loadDetail(id) {
 
 // ========= 辅助下拉 =========
 const deptOptions = ref([])
+const parentDeptIds = ref(new Set())  // 有下级的部门（非叶子），禁选
 const userOptions = ref([])
 const indicatorOptions = ref([])
 const modelOptions = ref([])
@@ -587,7 +590,21 @@ const athleteLoading = ref(false)
 
 function loadAuxData() {
   listDept({ pageNum: 1, pageSize: 500 }).then(res => {
-    deptOptions.value = (res.data || []).map(d => ({ id: d.deptId, label: d.deptName }))
+    const rows = res.data || []
+    // 目标队伍只允许选择叶子部门：构建部门树，有 children 的节点标记 disabled
+    const flat = rows.map(d => ({ id: d.deptId, label: d.deptName, parentId: d.parentId }))
+    const tree = proxy.handleTree(flat, 'id', 'parentId', 'children') || []
+    const parents = new Set()
+    const markDisabled = nodes => nodes.forEach(n => {
+      if (n.children && n.children.length) {
+        parents.add(n.id)
+        n.disabled = true
+        markDisabled(n.children)
+      }
+    })
+    markDisabled(tree)
+    parentDeptIds.value = parents
+    deptOptions.value = tree
   })
   listUser({ pageNum: 1, pageSize: 100 }).then(res => {
     userOptions.value = res.rows || []
@@ -631,6 +648,9 @@ function handleEdit(row) {
 function submitTask() {
   proxy.$refs.taskFormRef.validate(valid => {
     if (!valid) return
+    if (parentDeptIds.value.has(taskForm.targetDeptId)) {
+      return proxy.$modal.msgWarning('目标队伍只能选择末级队伍（含下级的部门为分组，不可选）')
+    }
     const req = taskForm.id ? updateTestTask(taskForm) : addTestTask(taskForm)
     req.then(() => {
       proxy.$modal.msgSuccess('保存成功'); showTaskDialog.value = false; getList(); loadStats()

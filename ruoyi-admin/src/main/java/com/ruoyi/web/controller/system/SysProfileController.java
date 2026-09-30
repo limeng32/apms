@@ -14,6 +14,7 @@ import com.ruoyi.common.annotation.Log;
 import com.ruoyi.common.config.RuoYiConfig;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
+import com.ruoyi.common.core.domain.entity.SysDept;
 import com.ruoyi.common.core.domain.entity.SysUser;
 import com.ruoyi.common.core.domain.model.LoginUser;
 import com.ruoyi.common.enums.BusinessType;
@@ -24,6 +25,7 @@ import com.ruoyi.common.utils.file.FileUploadUtils;
 import com.ruoyi.common.utils.file.FileUtils;
 import com.ruoyi.common.utils.file.MimeTypeUtils;
 import com.ruoyi.framework.web.service.TokenService;
+import com.ruoyi.system.service.ISysDeptService;
 import com.ruoyi.system.service.ISysUserService;
 
 /**
@@ -37,6 +39,9 @@ public class SysProfileController extends BaseController
 {
     @Autowired
     private ISysUserService userService;
+
+    @Autowired
+    private ISysDeptService deptService;
 
     @Autowired
     private TokenService tokenService;
@@ -68,6 +73,22 @@ public class SysProfileController extends BaseController
         currentUser.setEmail(user.getEmail());
         currentUser.setPhonenumber(user.getPhonenumber());
         currentUser.setSex(user.getSex());
+        // 归属部门：仅超级管理员可在个人中心修改自己的部门（如挂到根部门），
+        // 其他账号即使绕过页面传入 deptId 也直接忽略
+        if (currentUser.isAdmin() && user.getDeptId() != null && user.getDeptId() != 0L)
+        {
+            SysDept dept = deptService.selectDeptById(user.getDeptId());
+            if (dept == null)
+            {
+                return error("所选部门不存在");
+            }
+            if (!"0".equals(dept.getStatus()))
+            {
+                return error("所选部门已停用，无法归属");
+            }
+            currentUser.setDeptId(user.getDeptId());
+            currentUser.setDept(dept);
+        }
         if (StringUtils.isNotEmpty(user.getPhonenumber()) && !userService.checkPhoneUnique(currentUser))
         {
             return error("修改用户'" + loginUser.getUsername() + "'失败，手机号码已存在");
