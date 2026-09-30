@@ -15,6 +15,11 @@
           v-hasPermi="['apms:athlete:remove']"
         >已选 {{ ids.length }} 人 · 批量离队</el-button>
         <el-button
+          plain
+          @click="openPromotionDialog"
+          v-hasPermi="['apms:athlete:edit']"
+        >赛季晋升</el-button>
+        <el-button
           type="primary"
           class="rp-btn-primary"
           :icon="Plus"
@@ -298,11 +303,108 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- ========== 赛季整队晋升 ========== -->
+    <el-dialog title="赛季整队晋升" v-model="promotion.open" width="860px" append-to-body @closed="resetPromotion">
+      <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px">
+        <template #title>
+          按部门名识别 U 档梯队（如 U16 梯队）；仅 cut-off 日当天超龄的队员晋升到同机构上一档，
+          历史测试成绩与评级<span style="font-weight:600">不会重算</span>。
+        </template>
+      </el-alert>
+
+      <div class="rp-promotion-bar">
+        <span class="rpf-label">赛季 cut-off 日期</span>
+        <el-date-picker
+          v-model="promotion.cutoffDate"
+          type="date"
+          value-format="YYYY-MM-DD"
+          :clearable="false"
+          :disabled="promotion.loading || promotion.executing"
+          placeholder="默认下一个 1 月 1 日"
+          style="width:180px"
+          @change="loadPromotionPreview"
+        />
+        <el-icon v-if="promotion.loading" class="is-loading" style="color:#94a3b8"><Loading/></el-icon>
+        <span v-if="promotion.plan" class="rp-promotion-hint">
+          已识别 {{ promotion.plan.teams.length }} 支 U 档梯队：{{ promotionTeamNames }}
+        </span>
+      </div>
+
+      <el-alert
+        v-for="(err, i) in (promotion.plan?.configErrors || [])"
+        :key="'e' + i"
+        type="error"
+        :closable="false"
+        show-icon
+        :title="err"
+        style="margin-bottom:8px"
+      />
+
+      <template v-if="promotion.plan">
+        <div class="rp-promotion-stats">
+          <span class="rp-prom-stat is-promote">晋升 {{ promotion.plan.promoteCount }} 人</span>
+          <span class="rp-prom-stat">未超龄留队 {{ promotion.plan.stayYoungCount }} 人</span>
+          <span class="rp-prom-stat is-overage">超龄无上级 {{ promotion.plan.stayOverAgeCount }} 人</span>
+          <span class="rp-prom-stat">生日缺失 {{ promotion.plan.noBirthdayCount }} 人</span>
+          <span v-if="promotion.plan.invalidTeamCount" class="rp-prom-stat is-invalid">
+            归属无效 {{ promotion.plan.invalidTeamCount }} 人
+          </span>
+        </div>
+
+        <el-table :data="promotionRows" size="small" height="380" border style="width:100%">
+          <el-table-column label="处置" width="120">
+            <template #default="{ row }">
+              <el-tag v-if="row.action === 'PROMOTE'" type="success" size="small">晋升</el-tag>
+              <el-tag v-else-if="row.action === 'STAY_YOUNG'" type="info" size="small">留队</el-tag>
+              <el-tag v-else-if="row.action === 'STAY_OVERAGE'" type="warning" size="small">超龄留队</el-tag>
+              <el-tag v-else-if="row.action === 'INVALID_TEAM'" type="danger" size="small">归属无效</el-tag>
+              <el-tag v-else type="danger" size="small">生日缺失</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="name" label="姓名" width="90"/>
+          <el-table-column label="cut-off 年龄" width="100">
+            <template #default="{ row }">{{ row.ageAtCutoff == null ? '—' : row.ageAtCutoff + ' 岁' }}</template>
+          </el-table-column>
+          <el-table-column label="现梯队" width="150">
+            <template #default="{ row }">
+              <span v-if="row.fromTeamName">{{ row.fromTeamName }}</span>
+              <span v-else style="color:#dc2626">部门#{{ row.fromTeamId }}（已失效）</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="晋升至" width="130">
+            <template #default="{ row }">
+              <span v-if="row.toTeamName" style="color:#16a34a;font-weight:600">{{ row.toTeamName }}</span>
+              <span v-else style="color:#94a3b8">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="reason" label="说明" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span>{{ row.reason }}</span>
+              <el-tooltip v-if="row.jerseyConflict" content="晋升后球衣号与目标队现有成员重复，请赛后调整" placement="top">
+                <el-tag type="warning" size="small" style="margin-left:6px">球衣号冲突</el-tag>
+              </el-tooltip>
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
+
+      <template #footer>
+        <el-button @click="promotion.open = false">关 闭</el-button>
+        <el-button
+          type="primary"
+          :loading="promotion.executing"
+          :disabled="!canExecutePromotion"
+          @click="handleExecutePromotion"
+        >确认执行晋升（{{ promotion.plan?.promoteCount || 0 }} 人）</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup name="Athlete">
-import { listAthlete, rtpSummaryAthlete, getAthlete, addAthlete, updateAthlete, delAthlete } from '@/api/apms/athlete'
+import { listAthlete, rtpSummaryAthlete, getAthlete, addAthlete, updateAthlete, delAthlete,
+         previewPromotion, executePromotion } from '@/api/apms/athlete'
 import { listDept } from '@/api/system/dept'
 import { useDict } from '@/utils/dict'
 import { Plus, Search, RefreshLeft, MoreFilled, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
@@ -601,6 +703,79 @@ function handleDetail(row) {
 getTeamOptions()
 getList()
 getSummary()
+
+/* ===== 赛季整队晋升 ===== */
+function nextJanFirst() {
+  const now = new Date()
+  const y = now.getMonth() > 0 || (now.getMonth() === 0 && now.getDate() > 1) ? now.getFullYear() + 1 : now.getFullYear()
+  return y + '-01-01'
+}
+const promotion = reactive({
+  open: false,
+  cutoffDate: nextJanFirst(),
+  loading: false,
+  executing: false,
+  plan: null
+})
+// 表格优先展示晋升/超龄人员，便于核对
+const promotionRows = computed(() => {
+  const items = promotion.plan?.items || []
+  const rank = { PROMOTE: 0, STAY_OVERAGE: 1, INVALID_TEAM: 2, NO_BIRTHDAY: 3, STAY_YOUNG: 4 }
+  return [...items].sort((a, b) => (rank[a.action] ?? 9) - (rank[b.action] ?? 9))
+})
+// 识别到的梯队名（按上级部门、档位排序，便于看出晋升链）
+const promotionTeamNames = computed(() => {
+  const teams = [...(promotion.plan?.teams || [])]
+    .sort((a, b) => (a.parentId - b.parentId) || (a.bracket - b.bracket))
+    .map(t => t.deptName)
+  return teams.join('、')
+})
+const canExecutePromotion = computed(() =>
+  promotion.plan &&
+  !(promotion.plan.configErrors && promotion.plan.configErrors.length) &&
+  promotion.plan.promoteCount > 0 &&
+  !promotion.loading && !promotion.executing
+)
+
+function openPromotionDialog() {
+  promotion.open = true
+  loadPromotionPreview()
+}
+
+function loadPromotionPreview() {
+  promotion.loading = true
+  promotion.plan = null
+  previewPromotion({ cutoffDate: promotion.cutoffDate || null }).then(res => {
+    promotion.plan = res.data
+  }).finally(() => { promotion.loading = false })
+}
+
+function handleExecutePromotion() {
+  const n = promotion.plan.promoteCount
+  const overage = promotion.plan.stayOverAgeCount
+  const invalid = promotion.plan.invalidTeamCount
+  const conflict = promotion.plan.items.filter(i => i.action === 'PROMOTE' && i.jerseyConflict).length
+  let msg = '确认按 cut-off ' + promotion.plan.cutoffDate + ' 晋升 ' + n + ' 名队员？'
+  msg += '\n仅调整队员所属梯队，历史成绩与评级不变。'
+  if (overage) msg += '\n另有 ' + overage + ' 名超龄队员因无更高档梯队留队。'
+  if (invalid) msg += '\n另有 ' + invalid + ' 名队员所属部门非 U 档梯队/已失效，本次不动。'
+  if (conflict) msg += '\n注意：' + conflict + ' 人晋升后存在球衣号冲突（仅预警）。'
+  proxy.$modal.confirm(msg).then(() => {
+    promotion.executing = true
+    return executePromotion({ cutoffDate: promotion.cutoffDate || null })
+  }).then(res => {
+    if (!res) return
+    promotion.plan = res.data
+    proxy.$modal.msgSuccess('晋升完成：' + res.data.promoteCount + ' 人，批次号 ' + res.data.batchNo)
+    getList()
+    getSummary()
+  }).finally(() => { promotion.executing = false })
+}
+
+function resetPromotion() {
+  promotion.plan = null
+  promotion.cutoffDate = nextJanFirst()
+}
 </script>
 
 <style lang="scss" scoped>
@@ -1099,5 +1274,43 @@ $risk: #dc2626;
   .rpf-right { margin-left: 0; width: 100%; }
   .rp-search-input { width: 100%; }
   .rp-search { flex: 1; }
+}
+
+/* 赛季晋升弹窗 */
+.rp-promotion-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.rp-promotion-hint {
+  font-size: 12px;
+  color: #64748b;
+}
+.rp-promotion-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.rp-prom-stat {
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+}
+.rp-prom-stat.is-promote {
+  background: #dcfce7;
+  color: #15803d;
+  font-weight: 600;
+}
+.rp-prom-stat.is-overage {
+  background: #fef3c7;
+  color: #b45309;
+}
+.rp-prom-stat.is-invalid {
+  background: #fee2e2;
+  color: #b91c1c;
 }
 </style>

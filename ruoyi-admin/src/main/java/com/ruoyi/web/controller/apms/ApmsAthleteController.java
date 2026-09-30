@@ -12,11 +12,15 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import com.ruoyi.common.annotation.DataScope;
+import com.ruoyi.common.annotation.Log;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.page.TableDataInfo;
+import com.ruoyi.common.enums.BusinessType;
 import com.ruoyi.system.domain.apms.ApmsAthlete;
+import com.ruoyi.system.domain.apms.ApmsPromotionRequest;
 import com.ruoyi.system.service.apms.IApmsAthleteService;
+import com.ruoyi.system.service.apms.IApmsSeasonPromotionService;
 
 /**
  * 运动员档案 Controller
@@ -29,6 +33,9 @@ public class ApmsAthleteController extends BaseController {
 
     @Autowired
     private IApmsAthleteService athleteService;
+
+    @Autowired
+    private IApmsSeasonPromotionService seasonPromotionService;
 
     /**
      * 列表查询（带 DataScope：队伍级数据权限）
@@ -95,5 +102,24 @@ public class ApmsAthleteController extends BaseController {
     @GetMapping("/check_jersey_no")
     public AjaxResult checkJerseyNo(ApmsAthlete apmsAthlete) {
         return AjaxResult.success(athleteService.checkJerseyNoUnique(apmsAthlete));
+    }
+
+    /**
+     * 赛季晋升：预览名单（不落库）
+     */
+    @PreAuthorize("@ss.hasPermi('apms:athlete:list')")
+    @PostMapping("/promotion/preview")
+    public AjaxResult promotionPreview(@RequestBody(required = false) ApmsPromotionRequest request) {
+        return success(seasonPromotionService.preview(request));
+    }
+
+    /**
+     * 赛季晋升：执行（服务端重新计算，更新主队伍并写晋升记录；历史成绩不重算）
+     */
+    @PreAuthorize("@ss.hasPermi('apms:athlete:edit')")
+    @Log(title = "赛季整队晋升", businessType = BusinessType.UPDATE)
+    @PostMapping("/promotion/execute")
+    public AjaxResult promotionExecute(@RequestBody(required = false) ApmsPromotionRequest request) {
+        return success(seasonPromotionService.execute(request));
     }
 }

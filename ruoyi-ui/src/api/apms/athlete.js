@@ -60,3 +60,21 @@ export function checkJerseyNoUnique(query) {
     params: query
   })
 }
+
+// 赛季晋升：预览名单（不落库）
+export function previewPromotion(data) {
+  return request({
+    url: '/apms/athlete/promotion/preview',
+    method: 'post',
+    data: data
+  })
+}
+
+// 赛季晋升：执行批处理
+export function executePromotion(data) {
+  return request({
+    url: '/apms/athlete/promotion/execute',
+    method: 'post',
+    data: data
+  })
+}

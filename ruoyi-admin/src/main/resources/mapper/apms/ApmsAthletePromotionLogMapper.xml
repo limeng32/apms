@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsAthletePromotionLogMapper">
+
+    <insert id="batchInsert">
+        INSERT INTO apms_athlete_promotion_log
+            (batch_no, cutoff_date, athlete_id, athlete_name, from_team_id, to_team_id, season_age, create_by, create_time)
+        VALUES
+        <foreach collection="list" item="log" separator=",">
+            (#{log.batchNo}, #{log.cutoffDate}, #{log.athleteId}, #{log.athleteName},
+             #{log.fromTeamId}, #{log.toTeamId}, #{log.seasonAge}, #{log.createBy}, sysdate())
+        </foreach>
+    </insert>
+
+</mapper>

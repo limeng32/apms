@@ -83,8 +83,136 @@ function filterAthletes(query, { includeRtpStatus = true } = {}) {
   })
 }
 
+/**
+ * 赛季晋升方案（与后端 ApmsSeasonPromotionServiceImpl 同口径的演示版）
+ * U 档识别 / 仅超龄晋升 / 同上级找最小可容纳档 / 超龄留队 / 生日缺失
+ */
+const U_BRACKET_RE = /(?<![A-Za-z0-9])U(\d{1,2})(?![0-9])/i
+
+function ageAtCutoff(birthday, cutoff) {
+  if (!birthday) return null
+  const b = new Date(String(birthday) + 'T00:00:00')
+  const c = new Date(cutoff + 'T00:00:00')
+  if (isNaN(b.getTime()) || isNaN(c.getTime())) return null
+  let age = c.getFullYear() - b.getFullYear()
+  const m = c.getMonth() - b.getMonth()
+  if (m < 0 || (m === 0 && c.getDate() < b.getDate())) age--
+  return age < 0 ? 0 : age
+}
+
+function nextJanFirstStr() {
+  const now = new Date()
+  const y = (now.getMonth() > 0 || (now.getMonth() === 0 && now.getDate() > 1))
+    ? now.getFullYear() + 1 : now.getFullYear()
+  return y + '-01-01'
+}
+
+function buildPromotionPlan(ctx) {
+  const cutoff = (ctx.body && ctx.body.cutoffDate) || nextJanFirstStr()
+  const db = getDb()
+  // parentId -> Map(bracket -> dept)
+  const byParent = new Map()
+  const configErrors = []
+  db.depts.forEach(d => {
+    const m = String(d.deptName || '').match(U_BRACKET_RE)
+    if (!m) return
+    const parentId = d.parentId == null ? 0 : d.parentId
+    const bracket = Number(m[1])
+    if (!byParent.has(parentId)) byParent.set(parentId, new Map())
+    const map = byParent.get(parentId)
+    if (map.has(bracket)) {
+      configErrors.push(`同一上级下存在两个 U${bracket} 梯队`)
+    }
+    map.set(bracket, d)
+  })
+  if (!byParent.size) {
+    configErrors.push('未识别到任何 U 档梯队（部门名需含 U+数字，如 U16 梯队）')
+  }
+
+  const teams = []
+  const teamIndex = new Map()
+  byParent.forEach((map, parentId) => {
+    map.forEach((d, bracket) => {
+      teams.push({ deptId: d.deptId, deptName: d.deptName, parentId, bracket,
+        memberCount: db.athletes.filter(a => String(a.primaryTeamId) === String(d.deptId) && String(a.status) === '0').length })
+      teamIndex.set(Number(d.deptId), { dept: d, bracket, parentId })
+    })
+  })
+
+  const items = []
+  let promoteCount = 0, stayYoungCount = 0, stayOverAgeCount = 0, noBirthdayCount = 0, invalidTeamCount = 0
+  db.athletes.filter(a => String(a.status) === '0').forEach(a => {
+    const item = {
+      athleteId: a.athleteId, name: a.name, gender: a.gender, birthday: a.birthday,
+      jerseyNo: a.jerseyNo, fromTeamId: a.primaryTeamId, fromTeamName: a.teamName
+    }
+    const idx = teamIndex.get(Number(a.primaryTeamId))
+    if (!idx) {
+      // 非 U 档部门或部门已失效：单列，不参与晋升
+      item.action = 'INVALID_TEAM'
+      const label = a.teamName || ('部门#' + a.primaryTeamId)
+      item.reason = `所属「${label}」不是 U 档梯队或已停用/删除，不参与晋升，请先调整归属`
+      invalidTeamCount++
+      items.push(item)
+      return
+    }
+    const { dept: from, bracket: fromBracket, parentId } = idx
+    Object.assign(item, { fromTeamName: from.deptName, fromBracket })
+    const age = ageAtCutoff(a.birthday, cutoff)
+    if (age == null) {
+      item.action = 'NO_BIRTHDAY'; item.reason = '出生日期缺失，无法判定年龄段'; noBirthdayCount++
+    } else if (age < fromBracket) {
+        item.ageAtCutoff = age
+        item.action = 'STAY_YOUNG'
+        item.reason = `cut-off 日 ${age} 岁，未达到 U${fromBracket} 出档年龄`
+        stayYoungCount++
+      } else {
+        item.ageAtCutoff = age
+        const chain = [...byParent.get(parentId).entries()].sort((x, y) => x[0] - y[0])
+        const hit = chain.find(([n]) => n > fromBracket && age < n)
+        if (!hit) {
+          item.action = 'STAY_OVERAGE'
+          item.reason = `cut-off 日 ${age} 岁已超 U${fromBracket}，但没有更高档梯队`
+          stayOverAgeCount++
+        } else {
+          const [toBracket, to] = hit
+          item.action = 'PROMOTE'
+          item.toTeamId = to.deptId; item.toTeamName = to.deptName; item.toBracket = toBracket
+          item.reason = `cut-off 日 ${age} 岁，超出 U${fromBracket}，晋升至 U${toBracket}`
+          promoteCount++
+        }
+      }
+      items.push(item)
+    })
+
+  return {
+    cutoffDate: cutoff, teams, items, configErrors,
+    promoteCount, stayYoungCount, stayOverAgeCount, noBirthdayCount, invalidTeamCount
+  }
+}
+
 export const athleteHandlers = [
   // —— 具体字面路径必须排在 /:athleteId 之前（精确表天然优先，这里仅列分组说明）——
+  route('post', '/apms/athlete/promotion/preview', (ctx) => detail(buildPromotionPlan(ctx))),
+
+  route('post', '/apms/athlete/promotion/execute', (ctx) => {
+    const plan = buildPromotionPlan(ctx)
+    if (plan.configErrors.length) return { code: 601, msg: '梯队配置存在问题：' + plan.configErrors.join('；') }
+    const promotes = plan.items.filter(i => i.action === 'PROMOTE')
+    if (!promotes.length) return { code: 601, msg: '没有需要晋升的队员（当前 cut-off 日无人超龄）' }
+    const db = getDb()
+    const batchNo = 'P' + plan.cutoffDate.replaceAll('-', '') + '-' + String(Date.now()).slice(-6)
+    promotes.forEach(p => {
+      const row = db.athletes.find(a => String(a.athleteId) === String(p.athleteId))
+      if (row) {
+        row.primaryTeamId = p.toTeamId
+        row.teamName = p.toTeamName
+        stampUpdate(row)
+      }
+    })
+    return detail({ ...plan, batchNo })
+  }),
+
   route('get', '/apms/athlete/rtpSummary', (ctx) => {
     // 花名册筛选条 chip 计数：g/y/r + 未评估（最后一项无 status 字段，与真实接口一致）；
     // 与列表共用姓名/队伍/性别/位置/年龄组筛选，但不按 rtpStatus 自身过滤

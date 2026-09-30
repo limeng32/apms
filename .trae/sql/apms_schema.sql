@@ -97,6 +97,27 @@ CREATE TABLE apms_athlete_group (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='运动员-小组归属历史';
 
 
+-- ------------------------------------------------------------
+-- 1.3 赛季整队晋升记录（只追加；执行批处理改 primary_team_id 时留痕）
+-- ------------------------------------------------------------
+CREATE TABLE apms_athlete_promotion_log (
+    id            bigint       NOT NULL AUTO_INCREMENT  COMMENT '自增主键',
+    batch_no      varchar(32)  NOT NULL                 COMMENT '批次号（P+cutoff日期+时分秒，如 P20270101-171300）',
+    cutoff_date   date         NOT NULL                 COMMENT '赛季 cut-off 日期（该日周岁判定档位）',
+    athlete_id    bigint       NOT NULL                 COMMENT '运动员ID',
+    athlete_name  varchar(50)  DEFAULT NULL             COMMENT '运动员姓名（冗余，便于审计）',
+    from_team_id  bigint       DEFAULT NULL             COMMENT '晋升前队伍（sys_dept）',
+    to_team_id    bigint       DEFAULT NULL             COMMENT '晋升后队伍（sys_dept）',
+    season_age    int          DEFAULT NULL             COMMENT 'cut-off 日周岁',
+    create_by     varchar(64)  DEFAULT ''               COMMENT '操作人',
+    create_time   datetime     DEFAULT NULL             COMMENT '执行时间',
+    PRIMARY KEY (id),
+    KEY idx_batch_no (batch_no),
+    KEY idx_athlete_id (athlete_id),
+    KEY idx_cutoff_date (cutoff_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='赛季整队晋升记录（只追加，不修改历史成绩）';
+
+
 -- ============================================================
 -- 二、基础体态测量
 -- ============================================================

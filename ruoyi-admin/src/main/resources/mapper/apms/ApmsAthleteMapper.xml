@@ -173,4 +173,32 @@
         LIMIT 1
     </select>
 
+    <!-- 赛季晋升：全量有效部门（不走数据权限，保证梯队链完整） -->
+    <select id="selectAllValidDepts" resultType="com.ruoyi.common.core.domain.entity.SysDept">
+        SELECT dept_id AS deptId, dept_name AS deptName, parent_id AS parentId
+        FROM sys_dept
+        WHERE del_flag = '0' AND status = '0'
+    </select>
+
+    <!-- 赛季晋升：全量在训运动员（挂非 U 档/失效部门的队员也要单列提示，不能静默漏掉） -->
+    <select id="selectAllActiveAthletes" resultMap="ApmsAthleteResult">
+        SELECT
+            a.athlete_id, a.name, a.gender, a.birthday,
+            a.primary_team_id, a.jersey_no, a.position, a.status,
+            d.dept_name AS team_name
+        FROM apms_athlete a
+        LEFT JOIN sys_dept d ON a.primary_team_id = d.dept_id
+        WHERE a.status = '0'
+        ORDER BY a.primary_team_id ASC, a.birthday ASC, a.athlete_id ASC
+    </select>
+
+    <!-- 赛季晋升专用：只改主队伍，不触碰球衣号/姓名等字段 -->
+    <update id="updatePrimaryTeam">
+        UPDATE apms_athlete
+        SET primary_team_id = #{teamId},
+            update_by = #{updateBy},
+            update_time = sysdate()
+        WHERE athlete_id = #{athleteId} AND status = '0'
+    </update>
+
 </mapper>

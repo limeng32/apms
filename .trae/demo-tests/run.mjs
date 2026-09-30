@@ -464,6 +464,53 @@ test('H2', '花名册 CRUD 内存生效：增（负 ID）→ 改 → 逻辑删 �
   assert(inU15.rows.some(r => r.athleteId === 1001), '改生日后落入 U15 组')
   const inU18 = call('get', '/apms/athlete/list', { pageSize: '50', ageGroups: ['18'] })
   assert(!inU18.rows.some(r => r.athleteId === 1001), '改生日后不再属于 U18 组')
+
+  // —— 赛季整队晋升：预览/口径/执行落队 ——
+  const pv = call('post', '/apms/athlete/promotion/preview', {}, { cutoffDate: '2027-01-01' })
+  expect200(pv, 'promotion preview')
+  assertEq(pv.data.cutoffDate, '2027-01-01')
+  assert(pv.data.teams.some(t => t.bracket === 16), '识别出 U16 梯队')
+  assert(pv.data.teams.some(t => t.bracket === 18), '识别出 U18 梯队')
+  const promotes0 = pv.data.items.filter(i => i.action === 'PROMOTE')
+  promotes0.forEach(p => {
+    assertEq(p.fromBracket, 16, '2027 cut-off 仅 U16 超龄者晋升')
+    assertEq(p.toBracket, 18)
+    assert(p.ageAtCutoff >= 16 && p.ageAtCutoff < 18, '晋升者 cut-off 周岁满足 16<=age<18')
+  })
+  assert(pv.data.items.every(i => ['PROMOTE', 'STAY_YOUNG', 'STAY_OVERAGE', 'NO_BIRTHDAY', 'INVALID_TEAM'].includes(i.action)),
+    '动作枚举合法')
+  // 远期 cut-off：全员超龄且 U18 无更高档 → 没有可晋升的人
+  const future = call('post', '/apms/athlete/promotion/preview', {}, { cutoffDate: '2030-01-01' })
+  assertEq(future.data.promoteCount, 0, '2030 cut-off 无人可晋升')
+  assert(future.data.items.some(i => i.action === 'STAY_OVERAGE'), '最高档超龄标记留队')
+  const emptyExec = call('post', '/apms/athlete/promotion/execute', {}, { cutoffDate: '2020-01-01' })
+  assertEq(emptyExec.code, 601, '无人可晋升时执行被拒绝')
+  if (promotes0.length) {
+    const ex = call('post', '/apms/athlete/promotion/execute', {}, { cutoffDate: '2027-01-01' })
+    expect200(ex, 'promotion execute')
+    assert(/^P\d{8}-\d+$/.test(ex.data.batchNo), '返回批次号')
+    promotes0.forEach(p => {
+      assertEq(db().athletes.find(a => a.athleteId === p.athleteId).primaryTeamId, p.toTeamId,
+        `队员 ${p.athleteId} 主队已改为目标梯队`)
+    })
+    // 同一 cut-off 重跑：已晋升者不再出现在晋升名单
+    const pv2 = call('post', '/apms/athlete/promotion/preview', {}, { cutoffDate: '2027-01-01' })
+    assertEq(pv2.data.promoteCount, 0, '晋升不重复：同 cut-off 再预览无人晋升')
+  }
+  // 归属无效：挂到非 U 档部门（速度专项组 203）/已删除部门（999）单列、不晋升
+  const victim = db().athletes.find(a => String(a.status) === '0')
+  victim.primaryTeamId = 203
+  victim.teamName = '速度专项组'
+  const ghost = db().athletes.find(a => String(a.status) === '0' && a.athleteId !== victim.athleteId)
+  ghost.primaryTeamId = 999
+  ghost.teamName = null
+  const pvInvalid = call('post', '/apms/athlete/promotion/preview', {}, { cutoffDate: '2027-01-01' })
+  expect200(pvInvalid)
+  const invalidRows = pvInvalid.data.items.filter(i => i.action === 'INVALID_TEAM')
+  assertEq(invalidRows.length, 2, '非 U 档/已失效部门队员单列')
+  assertEq(pvInvalid.data.invalidTeamCount, 2, '归属无效计数正确')
+  assert(invalidRows.every(i => i.action !== 'PROMOTE'), '归属无效者不参与晋升')
+
   const del = call('delete', `/apms/athlete/${created.athleteId}`)
   expect200(del)
   assertEq(db().athletes.find(a => a.athleteId === created.athleteId).status, '1', '逻辑删 status=1')
