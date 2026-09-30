@@ -4,7 +4,7 @@
     <div class="rp-header">
       <div>
         <h1 class="rp-title">运动员花名册</h1>
-        <p class="rp-subtitle">{{ total }} 名在训运动员 · U13–U18</p>
+        <p class="rp-subtitle">{{ total }} 名在训运动员 · 13–18 岁</p>
       </div>
       <div class="rp-header-actions">
         <el-button
@@ -32,7 +32,7 @@
     <!-- ===== 筛选条（卡片化：年龄组 chips / 位置 / 队伍 / 性别 / RTP chips / 搜索 / 重置） ===== -->
     <div class="rp-filter">
       <div class="rpf-group">
-        <span class="rpf-label">年龄组</span>
+        <span class="rpf-label">年龄段</span>
         <button
           v-for="g in AGE_GROUPS"
           :key="g"
@@ -40,7 +40,7 @@
           class="rp-chip rp-chip-group"
           :class="{ 'is-active': filters.groups.includes(g) }"
           @click="toggleGroup(g)"
-        >{{ g }}</button>
+        >{{ g }}岁</button>
       </div>
 
       <span class="rpf-divider"></span>
@@ -113,7 +113,7 @@
             <tr>
               <th class="col-check"></th>
               <th class="text-left">运动员</th>
-              <th class="text-left">年龄组</th>
+              <th class="text-left">年龄段</th>
               <th class="text-left">位置</th>
               <th class="text-right">身高 / 体重</th>
               <th class="text-right">体脂率</th>
@@ -155,7 +155,7 @@
                   v-if="ageGroup(row)"
                   class="rp-age-badge mono"
                   :style="ageBadgeStyle(row)"
-                >{{ ageGroup(row) }}</span>
+                >{{ ageGroup(row) }}岁</span>
                 <span v-else class="rp-dash">—</span>
               </td>
               <td>
@@ -413,10 +413,11 @@ const { proxy } = getCurrentInstance()
 const { apms_position, apms_athlete_status } = useDict('apms_position', 'apms_athlete_status')
 
 /* ===== demo 花名册视觉常量（与 demo tailwind token 对齐） ===== */
-const AGE_GROUPS = ['U13', 'U14', 'U15', 'U16', 'U17', 'U18']
+// 年龄段内部值为纯数字（与后端 ageGroups 参数一致），展示时统一拼「岁」，避免与 U16 梯队混淆
+const AGE_GROUPS = [13, 14, 15, 16, 17, 18]
 const GROUP_COLORS = {
-  U13: '#8B5CF6', U14: '#06B6D4', U15: '#3B82F6',
-  U16: '#22C55E', U17: '#F59E0B', U18: '#EF4444'
+  13: '#8B5CF6', 14: '#06B6D4', 15: '#3B82F6',
+  16: '#22C55E', 17: '#F59E0B', 18: '#EF4444'
 }
 const STATUS_CHIPS = [
   { key: '', label: '全部', dot: '' },
@@ -481,10 +482,10 @@ const pageNumbers = computed(() => {
 })
 
 /* ===== 展示辅助 ===== */
-// 年龄组推导：与后端 SQL 同口径（age+1 收敛到 13~18）
+// 年龄段推导：与后端 SQL 同口径（age+1 收敛到 13~18），返回纯数字
 function ageGroup(row) {
   if (row.age == null) return null
-  return 'U' + Math.min(18, Math.max(13, row.age + 1))
+  return Math.min(18, Math.max(13, row.age + 1))
 }
 function groupColor(row) {
   const g = ageGroup(row)
@@ -521,7 +522,7 @@ function buildParams() {
     gender: filters.gender || undefined,
     position: filters.position || undefined,
     rtpStatus: filters.rtpStatus || undefined,
-    ageGroups: filters.groups.map(g => Number(g.slice(1)))
+    ageGroups: filters.groups
   }
 }
 

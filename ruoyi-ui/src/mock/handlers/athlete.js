@@ -40,11 +40,11 @@ function decorate(row) {
   return { ...row, age: effectiveAge(row) }
 }
 
-// 与后端列表同口径：年龄组 U13~U18 = age+1 收敛
+// 与后端列表同口径：年龄段 13~18 = age+1 收敛（纯数字，展示层再拼「岁」）
 function ageGroupOf(row) {
   const age = effectiveAge(row)
   if (age == null) return null
-  return 'U' + Math.min(18, Math.max(13, age + 1))
+  return Math.min(18, Math.max(13, age + 1))
 }
 
 function deptName(deptId) {
@@ -77,7 +77,7 @@ function filterAthletes(query, { includeRtpStatus = true } = {}) {
       && String(r.rtpStatus ?? '') !== String(query.rtpStatus)) return false
     if (groups.length) {
       const g = ageGroupOf(r)
-      if (!g || !groups.map(String).includes(String(g.slice(1)))) return false
+      if (g == null || !groups.map(String).includes(String(g))) return false
     }
     return true
   })
