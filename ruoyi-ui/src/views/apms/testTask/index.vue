@@ -321,7 +321,7 @@
               <el-form-item label="目标队伍" prop="targetDeptId">
                 <el-tree-select v-model="taskForm.targetDeptId" :data="deptOptions" :render-after-expand="false"
                   :props="{ label: 'label', value: 'id', children: 'children', disabled: 'disabled' }"
-                  :expand-on-click-node="false" filterable
+                  expand-on-click-node filterable popper-class="tt-dept-popper"
                   placeholder="仅可选择末级队伍（灰色分组不可选）" style="width:100%"/>
               </el-form-item>
             </el-col>
@@ -632,7 +632,8 @@ const dialogTitle = ref('')
 const taskForm = reactive({ id: null, taskName: '', targetDeptId: null, testerId: null, startDate: null, endDate: null, status: 'pending' })
 const taskRules = {
   taskName: [{ required: true, message: '请输入任务名称', trigger: 'blur' }],
-  targetDeptId: [{ required: true, message: '请选择目标队伍', trigger: 'change' }]
+  targetDeptId: [{ required: true, message: '请选择目标队伍', trigger: 'change' }],
+  testerId: [{ required: true, message: '请选择主测人', trigger: 'change' }]
 }
 
 function handleAdd() {
@@ -930,5 +931,17 @@ loadStats()
   .tt-sum-item:nth-child(3),
   .tt-sum-item:nth-child(5) { border-top: 1px solid $rk-line; }
   .tt-sum-item:nth-child(5) { grid-column: 1 / -1; }
+}
+</style>
+
+<!-- 非 scoped：目标队伍下拉面板 teleport 到 body，只能靠 popper-class 命中 -->
+<style lang="scss">
+/* 分组部门虽不可选中，但点整行可展开/收起，统一显示手型。
+   注意：标签文字实际是内部 .el-select-dropdown__item.is-disabled，
+   EP 对它单独设了 not-allowed，必须覆盖到该内层元素 */
+.tt-dept-popper .el-tree-node__content,
+.tt-dept-popper .el-select-dropdown__item,
+.tt-dept-popper .el-select-dropdown__item.is-disabled {
+  cursor: pointer !important;
 }
 </style>

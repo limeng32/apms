@@ -45,6 +45,12 @@ public class ApmsTestTaskServiceImpl implements IApmsTestTaskService {
 
     @Override
     public int insert(ApmsTestTask task) {
+        if (task.getTargetDeptId() == null) {
+            throw new ServiceException("请选择目标队伍");
+        }
+        if (task.getTesterId() == null) {
+            throw new ServiceException("请选择主测人");
+        }
         if (task.getStatus() == null) task.setStatus("pending");
         return taskMapper.insert(task);
     }
