@@ -25,6 +25,10 @@
         <result property="createTime"          column="create_time"/>
         <result property="athleteName"         column="athlete_name"/>
         <result property="athleteTeam"         column="athlete_team"/>
+        <result property="athleteAdultHeight"  column="athlete_adult_height"/>
+        <result property="adultHeightAlgo"     column="adult_height_algo"/>
+        <result property="adultHeightCalcDate" column="adult_height_calc_date"/>
+        <result property="athleteAge"          column="athlete_age"/>
     </resultMap>
 
     <sql id="selectApmsPhvRecordVo">
@@ -35,7 +39,12 @@
             r.maturity_offset, r.predicted_phv_age, r.predicted_adult_height,
             r.mirwald_version, r.khamis_version, r.input_snapshot,
             r.create_by, r.create_time,
-            a.name AS athlete_name, d.dept_name AS athlete_team
+            a.name AS athlete_name, d.dept_name AS athlete_team,
+            a.predicted_adult_height AS athlete_adult_height,
+            a.adult_height_algo AS adult_height_algo,
+            a.adult_height_calc_date AS adult_height_calc_date,
+            CASE WHEN a.birthday IS NULL THEN NULL
+                 ELSE TIMESTAMPDIFF(YEAR, a.birthday, CURDATE()) END AS athlete_age
         FROM apms_phv_record r
         LEFT JOIN apms_athlete a ON r.athlete_id = a.athlete_id
         LEFT JOIN sys_dept d     ON a.primary_team_id = d.dept_id

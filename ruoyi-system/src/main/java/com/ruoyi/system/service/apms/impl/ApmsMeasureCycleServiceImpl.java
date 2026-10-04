@@ -92,6 +92,7 @@ public class ApmsMeasureCycleServiceImpl implements IApmsMeasureCycleService {
             item.put("athleteId", a.getAthleteId());
             item.put("athleteName", a.getName());
             item.put("teamName", a.getTeamName());
+            item.put("athleteGender", a.getGender());
             ApmsBodyMeasure m = measuredMap.get(a.getAthleteId());
             if (m != null) {
                 item.put("measureId", m.getId());

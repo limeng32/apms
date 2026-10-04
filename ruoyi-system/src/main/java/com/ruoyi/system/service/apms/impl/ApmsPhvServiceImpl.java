@@ -6,7 +6,9 @@ import java.time.LocalDate;
 import java.time.Period;
 import java.time.ZoneId;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -256,5 +258,59 @@ public class ApmsPhvServiceImpl implements IApmsPhvService {
         // 月和天转成年的小数部分
         double fraction = (months * 30.0 + days) / 365.25;
         return new BigDecimal(years + fraction).setScale(4, RoundingMode.HALF_UP);
+    }
+
+    @Override
+    public Map<String, Object> adultHeightDerivation(Long athleteId) {
+        ApmsAthlete athlete = athleteMapper.selectApmsAthleteByAthleteId(athleteId);
+        if (athlete == null) throw new ServiceException("运动员不存在：" + athleteId);
+
+        Date calcDate = athlete.getAdultHeightCalcDate() != null
+                ? athlete.getAdultHeightCalcDate() : new Date();
+
+        // K-R 在体态保存时按"当时最新一条测量"的 H/W 计算（selectLatestByAthleteId 按 measure_date 排序）。
+        // adult_height_calc_date 列为 DATE（无时分），故按测量日期 <= 计算日 复现当时最新测量。
+        ApmsBodyMeasure source = null;
+        LocalDate calcDay = calcDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+        for (ApmsBodyMeasure m : measureMapper.selectByAthleteId(athleteId)) {
+            if (m.getMeasureDate() == null) continue;
+            LocalDate md = m.getMeasureDate().toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+            if (md.isAfter(calcDay)) continue;
+            if (source == null
+                    || md.isAfter(source.getMeasureDate().toInstant().atZone(ZoneId.systemDefault()).toLocalDate())
+                    || (md.equals(source.getMeasureDate().toInstant().atZone(ZoneId.systemDefault()).toLocalDate())
+                        && m.getId() > source.getId())) {
+                source = m;
+            }
+        }
+
+        // 年龄口径与 ApmsBodyMeasureServiceImpl#tryKhamisRoche 完全一致：
+        // 年 + 月/12 + 天/365.25，参考点为计算时间（非测量日期）
+        BigDecimal decimalAge = null;
+        if (athlete.getBirthday() != null) {
+            LocalDate birth = athlete.getBirthday().toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+            LocalDate ref = calcDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+            Period p = Period.between(birth, ref);
+            decimalAge = BigDecimal.valueOf(
+                    p.getYears() + p.getMonths() / 12.0 + p.getDays() / 365.25);
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("athleteId", athleteId);
+        out.put("athleteName", athlete.getName());
+        out.put("gender", athlete.getGender());
+        out.put("version", athlete.getAdultHeightAlgo());
+        out.put("savedHeight", athlete.getPredictedAdultHeight());
+        out.put("calcDate", calcDate);
+        out.put("decimalAge", decimalAge);
+        if (source != null) {
+            Map<String, Object> src = new LinkedHashMap<>();
+            src.put("id", source.getId());
+            src.put("measureDate", source.getMeasureDate());
+            src.put("height", source.getHeight());
+            src.put("weight", source.getWeight());
+            out.put("sourceMeasure", src);
+        }
+        return out;
     }
 }

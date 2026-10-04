@@ -78,7 +78,10 @@
                 <span class="rk-avatar rt-avatar" :style="{ background: avatarColor(row) }">
                   {{ (row.athleteName || '?').charAt(0) }}
                 </span>
-                <span class="rk-kanban-card-name">{{ row.athleteName || '未评估' }}</span>
+                <span class="rk-kanban-card-name">
+                  {{ row.athleteName || '未评估' }}
+                  <GenderBadge :gender="row.athleteGender" :size="14"/>
+                </span>
               </div>
               <div class="rk-kanban-card-sub">{{ row.athleteTeam || '—' }} · #{{ row.athleteId }}</div>
               <template v-if="row.status">
@@ -145,6 +148,7 @@
               <div class="rt-drawer-id">
                 <div class="rt-drawer-name">
                   {{ currentAthlete.athleteName || '未评估' }}
+                  <GenderBadge :gender="currentAthlete.athleteGender" :size="16"/>
                   <span class="rk-status-badge" :class="statusTone(currentAthlete.status)">
                     <i class="rk-status-dot"></i>{{ statusLabel(currentAthlete.status) }}
                   </span>
@@ -238,6 +242,8 @@ import { listAthlete } from '@/api/apms/athlete'
 import { listDept } from '@/api/system/dept'
 import { checkPermi } from '@/utils/permission'
 import { Close, RefreshLeft, CircleCheck, Warning, CircleClose, QuestionFilled } from '@element-plus/icons-vue'
+import GenderBadge from '@/components/GenderBadge/index.vue'
+import { ageAvatarColor } from '@/utils/athleteAvatar'
 
 const { proxy } = getCurrentInstance()
 
@@ -255,11 +261,7 @@ const statusTone  = (s) => s === 'g' ? 'tone-green' : s === 'y' ? 'tone-amber' :
 const statusIcon  = (s) => s === 'g' ? CircleCheck : s === 'y' ? Warning : s === 'r' ? CircleClose : QuestionFilled
 const logDotColor = (s) => s === 'g' ? '#16A34A' : s === 'y' ? '#D97706' : s === 'r' ? '#DC2626' : '#94A3B8'
 
-const avatarColors = ['#f0a23a', '#7b9dc9', '#c14747', '#5fa080', '#a878d8', '#d88a3a', '#5f9abf', '#8fbf5f']
-function avatarColor(row) {
-  const id = row.athleteId || 0
-  return avatarColors[id % avatarColors.length]
-}
+const avatarColor = (row) => ageAvatarColor(row.athleteAge)
 
 function formatDT(d) { if (!d) return '—'; return String(d).substring(0, 19).replace('T', ' ') }
 function isOverdue(d) { return d && new Date(d) < new Date() }
@@ -310,6 +312,8 @@ function loadAll() {
       return {
         athleteId: a.athleteId,
         athleteName: a.name,
+        athleteGender: a.gender,
+        athleteAge: a.age,
         athleteTeam: (r && r.athleteTeam) || a.primaryTeamName || '—',
         jerseyNo: a.jerseyNo,
         position: a.position,
@@ -544,6 +548,7 @@ loadAll()
   font-weight: 700;
   color: $rk-text-1;
 }
+.rk-kanban-card-name { display: inline-flex; align-items: center; gap: 5px; }
 .rt-drawer-sub { margin-top: 4px; font-size: 12px; color: $rk-text-3; }
 .rt-drawer-close {
   display: inline-flex;

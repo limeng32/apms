@@ -1,5 +1,9 @@
 <template>
-  <el-drawer :title="`体态测量历史 · ${athleteName || ''}`" v-model="visible" size="720px" append-to-body>
+  <el-drawer v-model="visible" size="720px" append-to-body>
+    <template #header>
+      <span class="amd-title">体态测量历史 · {{ athleteName || '' }}</span>
+      <GenderBadge :gender="records[0]?.athleteGender" :size="16" class="amd-title-gender"/>
+    </template>
     <div v-loading="loading" class="amd-body">
       <!-- 最新值卡带 -->
       <div class="amd-latest" v-if="records.length">
@@ -58,6 +62,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import BodyTrendChart from '@/components/BodyTrendChart/index.vue'
+import GenderBadge from '@/components/GenderBadge/index.vue'
 import { listByAthlete } from '@/api/apms/bodyMeasure'
 
 const visible = ref(false)
@@ -117,6 +122,8 @@ defineExpose({ open, reload })
 @use "@/assets/styles/roster-kit.scss" as *;
 
 .amd-body { display: flex; flex-direction: column; gap: 14px; padding: 0 4px 20px; }
+.amd-title { font-weight: 700; }
+.amd-title-gender { vertical-align: -2px; margin-left: 6px; }
 .amd-latest { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
 .amd-latest-card {
   background: #f8fafc; border: 1px solid #eef2f7; border-radius: 10px; padding: 10px 12px;

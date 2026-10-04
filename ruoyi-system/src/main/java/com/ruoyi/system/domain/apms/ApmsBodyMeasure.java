@@ -60,6 +60,12 @@ public class ApmsBodyMeasure extends BaseEntity {
     /** 运动员所在队伍（关联查询） */
     private String athleteTeam;
 
+    /** 运动员性别 M/F（关联查询） */
+    private String athleteGender;
+
+    /** 运动员当前周岁年龄（关联查询，按生日实时计算） */
+    private Integer athleteAge;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public Long getAthleteId() { return athleteId; }
@@ -78,6 +84,10 @@ public class ApmsBodyMeasure extends BaseEntity {
     public void setWaist(BigDecimal waist) { this.waist = waist; }
     public String getDataSource() { return dataSource; }
     public void setDataSource(String dataSource) { this.dataSource = dataSource; }
+    public String getAthleteGender() { return athleteGender; }
+    public void setAthleteGender(String athleteGender) { this.athleteGender = athleteGender; }
+    public Integer getAthleteAge() { return athleteAge; }
+    public void setAthleteAge(Integer athleteAge) { this.athleteAge = athleteAge; }
     public Long getSourceTaskId() { return sourceTaskId; }
     public void setSourceTaskId(Long sourceTaskId) { this.sourceTaskId = sourceTaskId; }
     public String getSourceSessionKey() { return sourceSessionKey; }

@@ -80,6 +80,19 @@ public class ApmsPhvRecord {
     /** 运动员所在队伍（关联查询） */
     private String athleteTeam;
 
+    /** 档案最新预测成年身高 cm（Khamis-Roche，关联 apms_athlete，非本表） */
+    private BigDecimal athleteAdultHeight;
+
+    /** 档案成年身高算法版本 */
+    private String adultHeightAlgo;
+
+    /** 档案成年身高计算时间 */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date adultHeightCalcDate;
+
+    /** 运动员当前周岁年龄（关联查询，按生日实时计算，用于头像配色） */
+    private Integer athleteAge;
+
     /** 队伍筛选条件（非持久化） */
     private Long deptId;
 
@@ -132,6 +145,14 @@ public class ApmsPhvRecord {
     public void setAthleteName(String athleteName) { this.athleteName = athleteName; }
     public String getAthleteTeam() { return athleteTeam; }
     public void setAthleteTeam(String athleteTeam) { this.athleteTeam = athleteTeam; }
+    public BigDecimal getAthleteAdultHeight() { return athleteAdultHeight; }
+    public void setAthleteAdultHeight(BigDecimal athleteAdultHeight) { this.athleteAdultHeight = athleteAdultHeight; }
+    public String getAdultHeightAlgo() { return adultHeightAlgo; }
+    public void setAdultHeightAlgo(String adultHeightAlgo) { this.adultHeightAlgo = adultHeightAlgo; }
+    public Date getAdultHeightCalcDate() { return adultHeightCalcDate; }
+    public void setAdultHeightCalcDate(Date adultHeightCalcDate) { this.adultHeightCalcDate = adultHeightCalcDate; }
+    public Integer getAthleteAge() { return athleteAge; }
+    public void setAthleteAge(Integer athleteAge) { this.athleteAge = athleteAge; }
     public Long getDeptId() { return deptId; }
     public void setDeptId(Long deptId) { this.deptId = deptId; }
 }

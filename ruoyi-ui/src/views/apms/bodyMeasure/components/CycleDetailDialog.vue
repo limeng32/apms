@@ -50,7 +50,7 @@
           </thead>
           <tbody>
             <tr v-for="p in list" :key="p.athleteId">
-              <td>{{ p.athleteName }}</td>
+              <td>{{ p.athleteName }} <GenderBadge :gender="p.athleteGender" :size="14" class="cd-gender"/></td>
               <td class="re-muted">{{ p.teamName || '—' }}</td>
               <template v-if="view === 'measured'">
                 <td class="text-center rk-mono">{{ fmtDate(p.measureDate) }}</td>
@@ -86,7 +86,7 @@
             </thead>
             <tbody>
               <tr v-for="row in batchRows" :key="row.athleteId">
-                <td>{{ row.athleteName }} <span class="re-muted">{{ row.teamName }}</span></td>
+                <td>{{ row.athleteName }} <GenderBadge :gender="row.athleteGender" :size="14" class="cd-gender"/> <span class="re-muted">{{ row.teamName }}</span></td>
                 <td class="text-center"><el-input-number v-model="row.height" :precision="1" :step="0.5" :controls="false" :min="100" :max="230" size="small" style="width:96px"/></td>
                 <td class="text-center"><el-input-number v-model="row.weight" :precision="1" :step="0.5" :controls="false" :min="30" :max="150" size="small" style="width:96px"/></td>
                 <td class="text-center"><el-input-number v-model="row.sitHeight" :precision="1" :step="0.5" :controls="false" :min="40" :max="150" size="small" style="width:96px"/></td>
@@ -112,6 +112,7 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { cycleProgress, batchSaveCycle } from '@/api/apms/measureCycle'
+import GenderBadge from '@/components/GenderBadge/index.vue'
 
 const { proxy } = getCurrentInstance()
 const emit = defineEmits(['saved'])
@@ -159,6 +160,7 @@ function enterBatch() {
         measureId: old?.measureId ?? null,
         athleteId: p.athleteId,
         athleteName: p.athleteName,
+        athleteGender: p.athleteGender ?? old?.athleteGender ?? null,
         teamName: p.teamName ? `（${p.teamName}）` : '',
         height: old?.height ?? null,
         weight: old?.weight ?? null,
@@ -216,5 +218,6 @@ defineExpose({ open, reload })
 .cd-batch-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; color: #475569; }
 .cd-batch-hint { font-size: 12px; color: #94a3b8; }
 .re-muted { color: #94a3b8; font-size: 11px; margin-left: 6px; }
+.cd-gender { vertical-align: middle; margin: 0 3px; }
 :deep(.el-input-number .el-input__inner) { text-align: center; }
 </style>

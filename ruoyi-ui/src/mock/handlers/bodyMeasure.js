@@ -8,7 +8,7 @@ import {
 
 function athleteMeta(id) {
   const a = getDb().athletes.find(x => String(x.athleteId) === String(id))
-  return a ? { athleteName: a.name, athleteTeam: a.teamName } : {}
+  return a ? { athleteName: a.name, athleteGender: a.gender, athleteAge: a.age ?? null, athleteTeam: a.teamName } : {}
 }
 
 function listFilter(query) {

@@ -14,6 +14,8 @@
         <result column="calculated_at"      property="calculatedAt"/>
         <result column="athlete_name"       property="athleteName"/>
         <result column="athlete_team"       property="athleteTeam"/>
+        <result column="athlete_gender"     property="athleteGender"/>
+        <result column="athlete_age"        property="athleteAge"/>
         <result column="combo_model_name"   property="comboModelName"/>
     </resultMap>
 
@@ -22,6 +24,9 @@
             s.id, s.combo_model_id, s.athlete_id, s.trigger_result_id,
             s.combo_score, s.ref_snapshot, s.algo_version, s.calculated_at,
             a.name AS athlete_name, d.dept_name AS athlete_team,
+            a.gender AS athlete_gender,
+            CASE WHEN a.birthday IS NULL THEN NULL
+                 ELSE TIMESTAMPDIFF(YEAR, a.birthday, CURDATE()) END AS athlete_age,
             cm.formula AS combo_model_name
         FROM apms_combo_score s
         LEFT JOIN apms_athlete a ON s.athlete_id = a.athlete_id

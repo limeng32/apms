@@ -325,6 +325,12 @@ $rk-brand-gradient: linear-gradient(90deg, #2563eb, #06b6d4);
   font-size: 14px;
   font-weight: 600;
 }
+.rk-person-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
 .rk-person-main {
   margin: 0;
   font-size: 14px;
@@ -345,8 +351,9 @@ $rk-brand-gradient: linear-gradient(90deg, #2563eb, #06b6d4);
   &:hover { color: $rk-brand-600; }
 }
 .rk-person-sub {
-  margin: 1px 0 0;
+  margin: 0;
   font-size: 11px;
+  line-height: 16px;
   color: $rk-text-3;
 }
 
@@ -1115,7 +1122,7 @@ button.rk-status-badge {
   text-overflow: ellipsis;
 }
 .rk-kanban-card-sub {
-  margin-top: 3px;
+  margin-top: 7px;
   font-size: 11px;
   color: $rk-text-3;
   white-space: nowrap;

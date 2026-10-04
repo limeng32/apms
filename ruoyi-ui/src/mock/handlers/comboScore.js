@@ -91,6 +91,7 @@ export const comboScoreHandlers = [
         id: nextId(),
         comboModelId: Number(comboModelId), comboModelName: model.name,
         athleteId: Number(athleteId), athleteName: athlete?.name ?? null,
+        athleteGender: athlete?.gender ?? null,
         athleteTeam: athlete?.teamName ?? null,
         comboScore, calculatedAt: ts,
         algoVersion: model.algoVersion || 'combo-demo-v1',
@@ -115,6 +116,15 @@ export const comboScoreHandlers = [
       && (q.athleteId === undefined || q.athleteId === ''
         || String(r.athleteId) === String(q.athleteId)))
       .sort((a, b) => (b.calculatedAt || '').localeCompare(a.calculatedAt || ''))
+      .map(r => {
+        const a = getDb().athletes.find(x => String(x.athleteId) === String(r.athleteId))
+        return {
+          ...r,
+          athleteGender: r.athleteGender ?? a?.gender ?? null,
+          athleteAge: r.athleteAge ?? a?.age ?? null,
+          athleteTeam: r.athleteTeam ?? a?.teamName ?? null
+        }
+      })
     return listData(rows)
   }),
 

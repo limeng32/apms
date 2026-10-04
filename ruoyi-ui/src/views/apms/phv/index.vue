@@ -68,7 +68,10 @@
                       {{ (row.athleteName || '?').charAt(0) }}
                     </span>
                     <div class="rk-person-meta">
-                      <span class="rk-person-main">{{ row.athleteName || '—' }}</span>
+                      <span class="rk-person-main">
+                        {{ row.athleteName || '—' }}
+                        <GenderBadge :gender="row.gender" :size="15" class="pm-gender"/>
+                      </span>
                       <span class="rk-person-sub">{{ row.athleteTeam || '无队伍' }} · #{{ row.athleteId }}</span>
                     </div>
                   </div>
@@ -78,21 +81,26 @@
                 <td class="text-right rk-mono col-sit">{{ row.sitHeight ?? '—' }}</td>
                 <td class="text-right rk-mono">{{ row.decimalAge != null ? Number(row.decimalAge).toFixed(1) + ' 岁' : '—' }}</td>
                 <td class="text-center col-offset">
-                  <span v-if="row.maturityOffset != null" class="rk-status-badge" :class="offsetMeta(row.maturityOffset).tone">
-                    <i class="rk-status-dot"></i>{{ offsetText(row.maturityOffset) }}
-                  </span>
+                  <button v-if="row.maturityOffset != null" type="button" class="pm-offset-btn"
+                          :title="'点击查看 Mirwald 计算过程'" @click="openFormula(row)">
+                    <span class="rk-status-badge" :class="offsetMeta(row.maturityOffset).tone">
+                      <i class="rk-status-dot"></i>{{ offsetText(row.maturityOffset) }}
+                    </span>
+                  </button>
                   <span v-else class="rk-dash">—</span>
                 </td>
                 <td class="text-center col-phv">
-                  <span v-if="row.predictedPhvAge != null" class="pm-phv-age">
+                  <button v-if="row.predictedPhvAge != null" type="button" class="pm-value-btn pm-phv-age"
+                          title="点击查看预测 PHV 年龄由来" @click="openFormula(row)">
                     {{ Number(row.predictedPhvAge).toFixed(1) }}<small> 岁</small>
-                  </span>
+                  </button>
                   <span v-else class="rk-dash">—</span>
                 </td>
                 <td class="text-center col-adult">
-                  <span v-if="row.predictedAdultHeight != null" class="pm-adult-h rk-mono">
-                    {{ row.predictedAdultHeight }}<small> cm</small>
-                  </span>
+                  <button v-if="adultHeightOf(row) != null" type="button" class="pm-value-btn pm-adult-h rk-mono"
+                          title="点击查看预测成年身高由来" @click="openAdult(row)">
+                    {{ adultHeightOf(row) }}<small> cm</small>
+                  </button>
                   <span v-else class="rk-dash">—</span>
                 </td>
                 <td class="text-center col-method">
@@ -210,15 +218,165 @@
           <el-button type="primary" :loading="saving" @click="submitCalc">执行计算</el-button>
         </template>
       </el-dialog>
+
+      <!-- ========= Mirwald 公式推导弹窗 ========= -->
+      <el-dialog title="成熟度偏移计算过程 · Mirwald 2014.1" v-model="showFormula" width="720px" append-to-body>
+        <div v-if="formula" class="mf-body">
+          <el-alert v-if="!formula.versionMatch" type="warning" :closable="false" show-icon>
+            <template #title>
+              该记录由旧版算法（{{ formula.row.mirwaldVersion }}）计算。下表为使用相同输入按当前
+              <b>Mirwald 2014.1</b> 的重新推导（参考值）；记录中的保存值仍为旧版结果，二者可能不同。
+            </template>
+          </el-alert>
+          <div class="mf-head">
+            <span class="mf-name">{{ formula.row.athleteName }}</span>
+            <span class="rk-soft-chip">{{ formula.row.measureDate }}</span>
+            <span class="rk-soft-chip">{{ formula.male ? '男性公式' : '女性公式' }}</span>
+            <span class="rk-soft-chip">v{{ formula.row.mirwaldVersion || '2014.1' }}</span>
+          </div>
+
+          <!-- 输入参数 -->
+          <div class="mf-section-title">输入参数</div>
+          <div class="mf-inputs">
+            <div class="mf-input"><label>精确年龄 A</label><b>{{ formula.fmt(formula.A, 4) }}</b><i>岁</i></div>
+            <div class="mf-input"><label>站立身高 H</label><b>{{ formula.fmt(formula.H, 1) }}</b><i>cm</i></div>
+            <div class="mf-input"><label>坐高 S</label><b>{{ formula.fmt(formula.S, 1) }}</b><i>cm</i></div>
+            <div class="mf-input"><label>体重 W</label><b>{{ formula.fmt(formula.W, 1) }}</b><i>kg</i></div>
+            <div class="mf-input"><label>腿长 L = H − S</label><b>{{ formula.fmt(formula.L, 1) }}</b><i>cm</i></div>
+          </div>
+
+          <!-- 公式 -->
+          <div class="mf-section-title">公式（单位：岁）</div>
+          <pre class="mf-formula">{{ formula.male
+            ? '成熟度偏移 = −9.236\n           + 0.0002708 × (L × S)\n           − 0.001663 × (A × L)\n           + 0.007216 × (A × S)\n           + 0.02292  × (W ÷ H × 100)'
+            : '成熟度偏移 = −9.376\n           + 0.0001882 × (L × S)\n           + 0.0022   × (A × L)\n           + 0.005841 × (A × S)\n           − 0.002658 × (A × W)\n           + 0.07693  × (W ÷ H × 100)' }}</pre>
+
+          <!-- 逐项代入 -->
+          <div class="mf-section-title">逐项代入</div>
+          <table class="mf-table">
+            <thead><tr><th>项目</th><th>代入计算</th><th class="text-right">结果(岁)</th></tr></thead>
+            <tbody>
+              <tr v-for="(t, i) in formula.terms" :key="i">
+                <td>{{ t.label }}</td>
+                <td class="rk-mono">{{ t.expr }}</td>
+                <td class="text-right rk-mono">{{ t.signed }}</td>
+              </tr>
+              <tr class="mf-sum-row">
+                <td colspan="2">
+                  合计 = 成熟度偏移（Mirwald 2014.1，保留 4 位小数）
+                  <span v-if="!formula.versionMatch" class="mf-old-saved">
+                    ｜记录保存值（{{ formula.row.mirwaldVersion }}）：<b>{{ formula.fmt(formula.savedOffset, 4) }}</b>
+                  </span>
+                </td>
+                <td class="text-right rk-mono"><b>{{ formula.fmt(formula.computedOffset, 4) }}</b></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- 结论 -->
+          <div class="mf-result">
+            <div class="mf-result-item">
+              <span>
+                预测 PHV 年龄 = A − 成熟度偏移 = {{ formula.fmt(formula.A, 4) }} − ({{ formula.fmt(formula.versionMatch ? formula.savedOffset : formula.computedOffset, 4) }})
+                <span v-if="!formula.versionMatch" class="mf-old-saved">
+                  ｜记录保存值：<b>{{ formula.fmt(formula.savedPhvAge, 2) }} 岁</b>
+                </span>
+              </span>
+              <b class="pm-phv-age">{{ formula.fmt(formula.versionMatch ? formula.savedPhvAge : formula.computedPhvAge, 2) }}<small> 岁</small></b>
+            </div>
+            <div class="mf-note">
+              成熟度偏移 &lt; 0：尚未到达身高突增高峰（PHV）；= 0 附近：峰值期前后；&gt; 0：已越过 PHV。
+              各项按完整精度求和后末位四舍五入；结果用于成长跟踪与训练分组参考，不作为医学诊断。
+            </div>
+          </div>
+        </div>
+        <template #footer>
+          <el-button type="primary" @click="showFormula = false">关 闭</el-button>
+        </template>
+      </el-dialog>
+
+      <!-- ========= Khamis-Roche 成年身高推导窗 ========= -->
+      <el-dialog title="预测成年身高计算过程 · Khamis-Roche" v-model="showAdult" width="720px" append-to-body>
+        <div v-loading="adultLoading" v-if="adult" class="mf-body">
+          <div class="mf-head">
+            <span class="mf-name">{{ adult.athleteName }}</span>
+            <span class="rk-soft-chip">{{ adult.male ? '男性公式' : '女性公式' }}</span>
+            <span class="rk-soft-chip">{{ adult.version || 'khamis-roche-v1' }}</span>
+            <span class="rk-soft-chip">更新于 {{ String(adult.calcDate || '').substring(0, 16) }}</span>
+          </div>
+
+          <el-alert type="info" :closable="false" show-icon>
+            <template #title>
+              该值保存在运动员档案中，每次体态测量保存后按<b>当时最新一条体态测量</b>的身高、体重自动重算，
+              年龄取计算日的日历年龄。
+            </template>
+          </el-alert>
+
+          <template v-if="adult.terms.length">
+            <!-- 输入参数 -->
+            <div class="mf-section-title">计算输入（{{ adult.sourceMeasureDate }} 的体态测量）</div>
+            <div class="mf-inputs">
+              <div class="mf-input"><label>日历年龄 A</label><b>{{ adult.fmt(adult.A, 2) }}</b><i>岁</i></div>
+              <div class="mf-input"><label>当前身高 H</label><b>{{ adult.fmt(adult.H, 1) }}</b><i>cm</i></div>
+              <div class="mf-input"><label>当前体重 W</label><b>{{ adult.fmt(adult.W, 1) }}</b><i>kg</i></div>
+            </div>
+
+            <div class="mf-section-title">公式（单位：cm）</div>
+            <pre class="mf-formula">{{ adult.male
+              ? 'H成年 = −3.32 + 1.04×H + 0.03×W + 0.45×A − 0.04×A²'
+              : 'H成年 = 3.50 + 1.02×H + 0.03×W + 0.10×A − 0.03×A² + 0.001×A³' }}</pre>
+
+            <div class="mf-section-title">逐项代入</div>
+            <table class="mf-table">
+              <thead><tr><th>项目</th><th>代入计算</th><th class="text-right">结果(cm)</th></tr></thead>
+              <tbody>
+                <tr v-for="(t, i) in adult.terms" :key="i">
+                  <td>{{ t.label }}</td>
+                  <td class="rk-mono">{{ t.expr }}</td>
+                  <td class="text-right rk-mono">{{ t.signed }}</td>
+                </tr>
+                <tr class="mf-sum-row">
+                  <td colspan="2">合计 = 预测成年身高（保留 1 位小数）</td>
+                  <td class="text-right rk-mono"><b>{{ adult.fmt(adult.computedHeight, 1) }}</b></td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div class="mf-result">
+              <div class="mf-result-item">
+                <span>
+                  档案保存值
+                  <span v-if="!adult.match" class="mf-old-saved">
+                    ｜与按现有数据重算值（{{ adult.fmt(adult.computedHeight, 1) }} cm）存在差异，
+                    可能因档案年龄或测量数据后续被修改
+                  </span>
+                </span>
+                <b class="pm-adult-h">{{ adult.fmt(adult.savedHeight, 1) }}<small> cm</small></b>
+              </div>
+              <div class="mf-note">
+                简化版 Khamis-Roche 无需骨龄/父母身高，RMSE 约 3.2cm，适合日常训练场景；
+                预测值随测量更新逐步收敛，仅作成长跟踪与选材辅助参考，不作为医学诊断。
+              </div>
+            </div>
+          </template>
+          <el-alert v-else type="warning" :closable="false" show-icon
+                    title="无法复现当时的计算输入（缺少生日或关联体态测量），档案保存值为 {{ adult.savedHeight }} cm"/>
+        </div>
+        <template #footer>
+          <el-button type="primary" @click="showAdult = false">关 闭</el-button>
+        </template>
+      </el-dialog>
     </div>
   </div>
 </template>
 
 <script setup name="ApmsPhv">
-import { list as listPhv, calculate, calculateDirect, delPhv } from '@/api/apms/phv'
+import { list as listPhv, calculate, calculateDirect, delPhv, adultHeightDerivation } from '@/api/apms/phv'
 import { listAthlete } from '@/api/apms/athlete'
 import { listByAthlete as listMeasuresByAthlete } from '@/api/apms/bodyMeasure'
 import { MagicStick, RefreshLeft } from '@element-plus/icons-vue'
+import GenderBadge from '@/components/GenderBadge/index.vue'
+import { ageAvatarColor } from '@/utils/athleteAvatar'
 
 const { proxy } = getCurrentInstance()
 
@@ -229,8 +387,7 @@ const currentAthleteMeasures = ref([])
 const filters = reactive({ keyword: '' })
 
 /* ===== 头像色板（同运动员同色，沿用原页按 athleteId 取色口径） ===== */
-const AVATAR_COLORS = ['#f0a23a', '#7b9dc9', '#c14747', '#5fa080', '#a878d8', '#d88a3a']
-const avatarColor = (row) => AVATAR_COLORS[(row.athleteId || 0) % AVATAR_COLORS.length]
+const avatarColor = (row) => ageAvatarColor(row.athleteAge)
 
 /* ===== 成熟度偏移语义（沿用原页阈值：>0.5 早熟 / <-0.5 晚熟） ===== */
 function offsetMeta(v) {
@@ -239,6 +396,108 @@ function offsetMeta(v) {
   return { tone: 'tone-amber', hint: '峰值期前后', chipTone: 'tone-warn' }
 }
 const offsetText = (v) => (v > 0 ? '+' : '') + Number(v).toFixed(2)
+
+/* 成年身高：取运动员档案的 Khamis-Roche 最新预测值（PHV 记录表该列恒为空） */
+const adultHeightOf = (row) => row.athleteAdultHeight ?? row.predictedAdultHeight ?? null
+
+/* ===== Mirwald 公式推导弹窗（系数与后端 MirwaldCalculator 完全一致） ===== */
+const showFormula = ref(false)
+const formula = ref(null)
+const mfFmt = (v, n) => (v == null || Number.isNaN(Number(v)) ? '—' : Number(v).toFixed(n))
+const signed4 = (v) => (v > 0 ? '+' : '') + mfFmt(v, 4)
+
+function openFormula(row) {
+  const male = !['F', '1', '女'].includes(String(row.gender || '').trim().toUpperCase())
+  const A = Number(row.decimalAge), H = Number(row.height), S = Number(row.sitHeight), W = Number(row.weight)
+  const L = H - S
+  const ratio = W / H * 100
+  const A4 = mfFmt(A, 4), H1 = mfFmt(H, 1), S1 = mfFmt(S, 1), W1 = mfFmt(W, 1), L1 = mfFmt(L, 1)
+
+  const terms = male
+    ? [
+        { label: '常数项', expr: '—', val: -9.236 },
+        { label: '腿长 × 坐高', expr: `0.0002708 × (${L1} × ${S1})`, val: 0.0002708 * L * S },
+        { label: '年龄 × 腿长', expr: `−0.001663 × (${A4} × ${L1})`, val: -0.001663 * A * L },
+        { label: '年龄 × 坐高', expr: `0.007216 × (${A4} × ${S1})`, val: 0.007216 * A * S },
+        { label: '体重身高比', expr: `0.02292 × (${W1} ÷ ${H1} × 100)`, val: 0.02292 * ratio }
+      ]
+    : [
+        { label: '常数项', expr: '—', val: -9.376 },
+        { label: '腿长 × 坐高', expr: `0.0001882 × (${L1} × ${S1})`, val: 0.0001882 * L * S },
+        { label: '年龄 × 腿长', expr: `0.0022 × (${A4} × ${L1})`, val: 0.0022 * A * L },
+        { label: '年龄 × 坐高', expr: `0.005841 × (${A4} × ${S1})`, val: 0.005841 * A * S },
+        { label: '年龄 × 体重', expr: `−0.002658 × (${A4} × ${W1})`, val: -0.002658 * A * W },
+        { label: '体重身高比', expr: `0.07693 × (${W1} ÷ ${H1} × 100)`, val: 0.07693 * ratio }
+      ]
+
+  const round4 = (v) => Math.round((v + Number.EPSILON) * 10000) / 10000
+  const computedOffset = round4(terms.reduce((sum, t) => sum + t.val, 0))
+
+  formula.value = {
+    row, male, A, H, S, W, L,
+    terms: terms.map(t => ({ ...t, signed: signed4(t.val) })),
+    versionMatch: (row.mirwaldVersion || '2014.1') === '2014.1',
+    computedOffset,
+    computedPhvAge: round4(A - computedOffset),
+    savedOffset: Number(row.maturityOffset),
+    savedPhvAge: Number(row.predictedPhvAge),
+    fmt: mfFmt
+  }
+  showFormula.value = true
+}
+
+/* ===== Khamis-Roche 成年身高推导（系数与后端 KhamisRocheCalculator 一致） ===== */
+const showAdult = ref(false)
+const adultLoading = ref(false)
+const adult = ref(null)
+const krSigned = (v) => (v > 0 ? '+' : '') + mfFmt(v, 3)
+
+async function openAdult(row) {
+  adult.value = null
+  showAdult.value = true
+  adultLoading.value = true
+  try {
+    const res = await adultHeightDerivation(row.athleteId)
+    const d = res.data || {}
+    const male = ['m', '0', '男'].includes(String(d.gender || '').toLowerCase())
+    const src = d.sourceMeasure
+    const A = Number(d.decimalAge), H = src != null ? Number(src.height) : NaN, W = src != null ? Number(src.weight) : NaN
+    let terms = []
+    if (Number.isFinite(A) && Number.isFinite(H) && Number.isFinite(W)) {
+      const A2 = mfFmt(A, 2)
+      terms = male
+        ? [
+            { label: '常数项', expr: '—', val: -3.32 },
+            { label: '身高项', expr: `1.04 × ${mfFmt(H, 1)}`, val: 1.04 * H },
+            { label: '体重项', expr: `0.03 × ${mfFmt(W, 1)}`, val: 0.03 * W },
+            { label: '年龄项', expr: `0.45 × ${A2}`, val: 0.45 * A },
+            { label: '年龄平方项', expr: `−0.04 × ${A2}²`, val: -0.04 * A * A }
+          ]
+        : [
+            { label: '常数项', expr: '—', val: 3.50 },
+            { label: '身高项', expr: `1.02 × ${mfFmt(H, 1)}`, val: 1.02 * H },
+            { label: '体重项', expr: `0.03 × ${mfFmt(W, 1)}`, val: 0.03 * W },
+            { label: '年龄项', expr: `0.10 × ${A2}`, val: 0.10 * A },
+            { label: '年龄平方项', expr: `−0.03 × ${A2}²`, val: -0.03 * A * A },
+            { label: '年龄立方项', expr: `0.001 × ${A2}³`, val: 0.001 * A * A * A }
+          ]
+    }
+    const computedHeight = Math.round((terms.reduce((s, t) => s + t.val, 0) + Number.EPSILON) * 10) / 10
+    const savedHeight = d.savedHeight != null ? Number(d.savedHeight) : null
+    adult.value = {
+      ...d,
+      male, A, H, W,
+      sourceMeasureDate: src ? String(src.measureDate).substring(0, 10) : '',
+      terms: terms.map(t => ({ ...t, signed: krSigned(t.val) })),
+      computedHeight,
+      savedHeight,
+      match: savedHeight != null && Math.abs(computedHeight - savedHeight) < 0.051,
+      fmt: mfFmt
+    }
+  } finally {
+    adultLoading.value = false
+  }
+}
 
 /* ===== 汇总（全部记录口径，与原页一致） ===== */
 const summary = reactive({ total: 0, athletes: 0, avgPhvAge: '—', avgOffset: null })
@@ -382,6 +641,7 @@ loadList()
 @use "@/assets/styles/roster-kit.scss" as *;
 
 .pm-filter { margin-bottom: 14px; }
+.pm-table .rk-person-main { display: inline-flex; align-items: center; gap: 6px; }
 
 /* 数值单元格 */
 .pm-avatar { width: 32px; height: 32px; font-size: 13px; }
@@ -428,4 +688,52 @@ loadList()
 
 /* 弹窗内提示卡 */
 .calc-tip { margin-bottom: 14px; }
+
+/* 成熟度偏移：可点击查看公式 */
+.pm-offset-btn {
+  background: none; border: 0; padding: 0; cursor: pointer; border-radius: 999px;
+  transition: transform .15s;
+  &:hover { transform: translateY(-1px); .rk-status-badge { box-shadow: 0 2px 8px rgba(0,0,0,.12); } }
+}
+/* 成年身高 / PHV 年龄：可点击查看由来 */
+.pm-value-btn {
+  background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit;
+  border-radius: 4px; transition: transform .15s;
+  &:hover { transform: translateY(-1px); }
+}
+.pm-adult-h { text-decoration: underline dotted #c4b5fd; text-underline-offset: 3px; }
+
+/* Mirwald 推导弹窗 */
+.mf-body { display: flex; flex-direction: column; gap: 12px; }
+.mf-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mf-name { font-size: 15px; font-weight: 700; color: #1e293b; margin-right: 4px; }
+.mf-section-title { font-size: 13px; font-weight: 600; color: #334155; padding-left: 8px; border-left: 3px solid #8b5cf6; }
+.mf-inputs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.mf-input {
+  background: #f8fafc; border: 1px solid #eef2f7; border-radius: 8px; padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 2px;
+  label { font-size: 11px; color: #94a3b8; }
+  b { font-size: 16px; color: #1e293b; font-family: var(--app-font-mono); font-weight: 700; }
+  i { font-style: normal; font-size: 10px; color: #cbd5e1; }
+}
+.mf-formula {
+  margin: 0; background: #f8fafc; border: 1px solid #e8edf4; border-radius: 8px;
+  padding: 12px 14px; font-size: 12.5px; line-height: 1.75; color: #334155;
+  font-family: var(--app-font-mono); white-space: pre-wrap;
+}
+.mf-table {
+  width: 100%; border-collapse: collapse; font-size: 12.5px;
+  border: 1px solid #e8edf4; border-radius: 8px; overflow: hidden;
+  :is(th, td) { padding: 7px 12px; border-bottom: 1px solid #eef2f7; }
+  thead th { background: #f8fafc; color: #64748b; font-weight: 600; text-align: left; }
+  tbody tr:last-child td { border-bottom: 0; }
+}
+.mf-sum-row td { background: #f5f3ff; color: #5b21b6; font-weight: 600; }
+.mf-result-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 8px; padding: 10px 14px;
+  font-size: 12.5px; color: #4c1d95;
+}
+.mf-note { font-size: 12px; color: #94a3b8; line-height: 1.7; }
+.mf-old-saved { color: #b45309; }
 </style>

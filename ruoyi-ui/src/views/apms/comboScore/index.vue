@@ -71,7 +71,10 @@
                     <div class="rk-person">
                       <span class="cs-avatar" :style="{ background: avatarColor(row) }">{{ (row.athleteName || '?').charAt(0) }}</span>
                       <div class="rk-person-main">
-                        <div class="rk-person-link">{{ row.athleteName }}</div>
+                        <div class="rk-person-link">
+                          {{ row.athleteName }}
+                          <GenderBadge :gender="row.athleteGender" :size="15"/>
+                        </div>
                         <div class="rk-person-sub">{{ row.athleteTeam || '—' }} · #{{ row.athleteId }}</div>
                       </div>
                     </div>
@@ -143,11 +146,20 @@
           <div class="preview-title">📋 参与队员预览（{{ previewItems.length }} 人）</div>
           <el-table :data="previewItems" border size="small" max-height="240">
             <el-table-column label="#" type="index" width="40"/>
-            <el-table-column label="队员" min-width="120" prop="athleteName"/>
+            <el-table-column label="队员" min-width="130">
+              <template #default="scope">
+                {{ scope.row.athleteName }}
+                <GenderBadge :gender="scope.row.gender || scope.row.athleteGender" :size="14"/>
+              </template>
+            </el-table-column>
             <el-table-column label="队伍" min-width="120">
               <template #default="scope">{{ scope.row.primaryTeamName || '—' }}</template>
             </el-table-column>
-            <el-table-column label="性别" width="60" align="center" prop="gender"/>
+            <el-table-column label="性别" width="60" align="center">
+              <template #default="scope">
+                <GenderBadge :gender="scope.row.gender || scope.row.athleteGender" :size="15"/>
+              </template>
+            </el-table-column>
           </el-table>
         </div>
 
@@ -329,6 +341,8 @@ import { list, calculate as calcBatch, delScore, getById } from '@/api/apms/comb
 import { listComboModel } from '@/api/apms/comboModel'
 import { listTestTask, listTaskMember } from '@/api/apms/testTask'
 import { RefreshLeft, Cpu } from '@element-plus/icons-vue'
+import GenderBadge from '@/components/GenderBadge/index.vue'
+import { ageAvatarColor } from '@/utils/athleteAvatar'
 
 const { proxy } = getCurrentInstance()
 
@@ -341,8 +355,7 @@ const previewItems = ref([])
 const filters = reactive({ keyword: '' })
 const sortDir = ref('')  // '' | 'asc' | 'desc'
 
-const avatarColors = ['#f0a23a', '#7b9dc9', '#c14747', '#5fa080', '#a878d8', '#d88a3a']
-function avatarColor(row) { return avatarColors[(row.athleteId || 0) % avatarColors.length] }
+const avatarColor = (row) => ageAvatarColor(row.athleteAge)
 function modelLabel(row) {
   const m = modelOpts.value.find(x => x.id === row.comboModelId)
   if (m) return `模型#${m.modelId} · ${m.normalizationMethod || 'z_score'}`
@@ -537,6 +550,8 @@ loadList()
 
 .cs-search { width: 180px; }
 .rk-empty-cell { padding: 36px 0; }
+.rk-person-main { display: flex; flex-direction: column; gap: 3px; }
+.rk-person-link { display: flex; align-items: center; gap: 6px; }
 
 .col-idx { width: 56px; }
 .col-score { width: 120px; }

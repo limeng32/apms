@@ -74,6 +74,13 @@ public class ApmsPhvController extends BaseController {
         return success(phvService.calculateAndSave(input));
     }
 
+    /** 档案预测成年身高（Khamis-Roche）的推导数据 */
+    @PreAuthorize("@ss.hasPermi('apms:phv:query')")
+    @GetMapping("/athlete/{athleteId}/adult-height")
+    public AjaxResult adultHeightDerivation(@PathVariable Long athleteId) {
+        return success(phvService.adultHeightDerivation(athleteId));
+    }
+
     /** 删除 PHV 记录 */
     @PreAuthorize("@ss.hasPermi('apms:phv:remove')")
     @DeleteMapping("/{id}")

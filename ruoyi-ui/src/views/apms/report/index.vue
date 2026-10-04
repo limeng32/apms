@@ -78,7 +78,10 @@
                     </td>
                     <td>
                       <div class="rp-subject">
-                        <span class="rp-subject-name">{{ subjectOf(row) }}</span>
+                        <span class="rp-subject-name">
+                          {{ subjectOf(row) }}
+                          <GenderBadge v-if="row.reportType === 'INDIVIDUAL'" :gender="row.athleteGender" :size="14"/>
+                        </span>
                         <span class="rp-subject-sub">{{ subjectSub(row) }}</span>
                       </div>
                     </td>
@@ -148,7 +151,7 @@
               </div>
               <div class="rp-banner-meta">
                 <span v-if="current.athleteName">
-                  Athlete: <b>{{ current.athleteName }}（{{ genderText(current.athleteGender) }}/{{ current.athleteTeam || '—' }}）</b>
+                  Athlete: <b>{{ current.athleteName }}</b> <GenderBadge :gender="current.athleteGender" :size="14"/> <b>/ {{ current.athleteTeam || '—' }}</b>
                 </span>
                 <span v-if="current.taskName">Task: <b>{{ current.taskName }}</b></span>
                 <span v-if="current.deptName">Team: <b>{{ current.deptName }}</b></span>
@@ -246,6 +249,7 @@ import { listAthlete } from '@/api/apms/athlete'
 import { listDept } from '@/api/system/dept'
 import { getToken, isDemoMode } from '@/utils/auth'
 import { Plus, RefreshLeft, ArrowLeft, ArrowRight, Download, Document } from '@element-plus/icons-vue'
+import GenderBadge from '@/components/GenderBadge/index.vue'
 
 const { proxy } = getCurrentInstance()
 
@@ -268,7 +272,7 @@ function genderText(g) { return g === 'F' ? '女' : '男' }
 function subjectOf(row) { return row.athleteName || row.taskName || row.deptName || '—' }
 function subjectSub(row) {
   if (row.reportType === 'INDIVIDUAL') {
-    return [genderText(row.athleteGender), row.athleteTeam].filter(Boolean).join(' · ')
+    return [row.athleteTeam].filter(Boolean).join(' · ')
   }
   return ({ TASK: '测试任务', TEAM: '部门队伍' })[row.reportType] || ''
 }
@@ -464,8 +468,9 @@ loadStats()
 .rp-time { font-size: 12px; color: $rk-text-2; }
 .rp-subject { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .rp-subject-name {
+  display: inline-flex; align-items: center; gap: 5px;
   font-size: 13px; font-weight: 600; color: $rk-text-1;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 100%;
 }
 .rp-subject-sub { font-size: 11px; color: $rk-text-3; }
 

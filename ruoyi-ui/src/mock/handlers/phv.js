@@ -59,7 +59,24 @@ function adultEstimate(height, maturityOffset) {
 
 function enrich(p) {
   const a = athleteOf(p.athleteId)
-  return { ...p, athleteName: a?.name ?? null, athleteTeam: a?.teamName ?? null }
+  return {
+    ...p,
+    athleteName: a?.name ?? null,
+    athleteTeam: a?.teamName ?? null,
+    athleteAge: a?.age ?? null,
+    athleteAdultHeight: a?.predictedAdultHeight ?? null,
+    adultHeightAlgo: a?.adultHeightAlgo ?? null,
+    adultHeightCalcDate: a?.adultHeightCalcDate ?? null
+  }
+}
+
+/** 演示态 Khamis-Roche v1（与后端简化公式同系数） */
+function khamisRoche({ gender, age, height, weight }) {
+  const A = age, H = height, W = weight
+  const v = gender === 'F'
+    ? 3.50 + 1.02 * H + 0.03 * W + 0.10 * A - 0.03 * A * A + 0.001 * A * A * A
+    : -3.32 + 1.04 * H + 0.03 * W + 0.45 * A - 0.04 * A * A
+  return Math.round(v * 10) / 10
 }
 
 function buildAndSave({ athleteId, height, sitHeight, weight, gender, measureDate,
@@ -118,6 +135,26 @@ export const phvHandlers = [
       .sort((a, b) => (b.measureDate || '').localeCompare(a.measureDate || ''))
       .map(enrich)
     return listData(rows)
+  }),
+
+  route('get', '/apms/phv/athlete/:athleteId/adult-height', (ctx) => {
+    const a = athleteOf(ctx.params.athleteId)
+    if (!a) return { code: 601, msg: '运动员不存在' }
+    const m = getDb().bodyMeasures
+      .filter(x => String(x.athleteId) === ctx.params.athleteId && x.height != null && x.weight != null)
+      .sort((x, y) => (y.measureDate || '').localeCompare(x.measureDate || ''))[0]
+    const age = decimalAge(a.birthday, new Date().toISOString().slice(0, 10))
+    return detail({
+      athleteId: a.athleteId,
+      athleteName: a.name,
+      gender: a.gender,
+      version: a.adultHeightAlgo || 'khamis-roche-v1',
+      savedHeight: a.predictedAdultHeight ?? (m && age != null
+        ? khamisRoche({ gender: normGender(a.gender), age, height: m.height, weight: m.weight }) : null),
+      calcDate: a.adultHeightCalcDate ?? new Date().toISOString(),
+      decimalAge: age,
+      sourceMeasure: m ? { id: m.id, measureDate: m.measureDate, height: m.height, weight: m.weight } : null
+    })
   }),
 
   route('get', '/apms/phv/athlete/:athleteId', (ctx) => {

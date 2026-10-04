@@ -145,7 +145,10 @@
                 <div class="rp-user">
                   <span class="rp-avatar" :style="{ background: groupColor(row) }">{{ row.name.charAt(0) }}</span>
                   <div class="rp-user-meta">
-                    <p class="rp-user-name">{{ row.name }}</p>
+                    <p class="rp-user-name">
+                      {{ row.name }}
+                      <GenderBadge :gender="row.gender" :size="15" class="rp-gender"/>
+                    </p>
                     <p class="rp-user-sub mono">{{ row.teamName || '未分队伍' }} · #{{ row.jerseyNo || '—' }}</p>
                   </div>
                 </div>
@@ -406,6 +409,8 @@
 import { listAthlete, rtpSummaryAthlete, getAthlete, addAthlete, updateAthlete, delAthlete,
          previewPromotion, executePromotion } from '@/api/apms/athlete'
 import { listDept } from '@/api/system/dept'
+import GenderBadge from '@/components/GenderBadge/index.vue'
+import { ageAvatarColor } from '@/utils/athleteAvatar'
 import { useDict } from '@/utils/dict'
 import { Plus, Search, RefreshLeft, MoreFilled, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 
@@ -415,10 +420,6 @@ const { apms_position, apms_athlete_status } = useDict('apms_position', 'apms_at
 /* ===== demo 花名册视觉常量（与 demo tailwind token 对齐） ===== */
 // 年龄段内部值为纯数字（与后端 ageGroups 参数一致），展示时统一拼「岁」，避免与 U16 梯队混淆
 const AGE_GROUPS = [13, 14, 15, 16, 17, 18]
-const GROUP_COLORS = {
-  13: '#8B5CF6', 14: '#06B6D4', 15: '#3B82F6',
-  16: '#22C55E', 17: '#F59E0B', 18: '#EF4444'
-}
 const STATUS_CHIPS = [
   { key: '', label: '全部', dot: '' },
   { key: 'g', label: '绿', dot: '#16A34A' },
@@ -488,8 +489,7 @@ function ageGroup(row) {
   return Math.min(18, Math.max(13, row.age + 1))
 }
 function groupColor(row) {
-  const g = ageGroup(row)
-  return (g && GROUP_COLORS[g]) || '#94A3B8'
+  return ageAvatarColor(row.age)
 }
 function ageBadgeStyle(row) {
   const c = groupColor(row)
@@ -1072,9 +1072,12 @@ $risk: #dc2626;
   font-weight: 600;
   line-height: 20px;
   color: $text-1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 .rp-user-sub {
-  margin: 1px 0 0;
+  margin: 3px 0 0;
   font-size: 11px;
   color: $text-3;
 }

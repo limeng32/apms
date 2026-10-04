@@ -55,6 +55,7 @@ function buildProgress(cycleId) {
       measured.push({
         athleteId: a.athleteId,
         athleteName: a.name,
+        athleteGender: a.gender,
         teamName: a.teamName,
         measureId: m.id,
         measureDate: m.measureDate,
@@ -65,7 +66,7 @@ function buildProgress(cycleId) {
         waist: m.waist
       })
     } else {
-      pending.push({ athleteId: a.athleteId, athleteName: a.name, teamName: a.teamName })
+      pending.push({ athleteId: a.athleteId, athleteName: a.name, athleteGender: a.gender, teamName: a.teamName })
     }
   }
   const byTeam = (x, y) => (x.teamName || '').localeCompare(y.teamName || '') || x.athleteId - y.athleteId
@@ -205,6 +206,8 @@ export const measureCycleHandlers = [
           sourceSessionKey: null,
           remark: null,
           athleteName: a ? a.name : null,
+          athleteGender: a ? a.gender : null,
+          athleteAge: a ? (a.age ?? null) : null,
           athleteTeam: a ? a.teamName : null
         })
         stampCreate(db.bodyMeasures[0])

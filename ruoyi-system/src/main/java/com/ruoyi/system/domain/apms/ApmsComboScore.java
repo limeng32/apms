@@ -24,6 +24,9 @@ public class ApmsComboScore {
     /** 关联字段（SELECT 时 JOIN 解析） */
     private String athleteName;
     private String athleteTeam;
+    private String athleteGender;
+    /** 运动员当前周岁年龄（关联查询，按生日实时计算，用于头像配色） */
+    private Integer athleteAge;
     private String comboModelName;
 
     /** DataScope 注入（非持久化） */
@@ -51,6 +54,10 @@ public class ApmsComboScore {
     public void setAthleteName(String athleteName) { this.athleteName = athleteName; }
     public String getAthleteTeam() { return athleteTeam; }
     public void setAthleteTeam(String athleteTeam) { this.athleteTeam = athleteTeam; }
+    public String getAthleteGender() { return athleteGender; }
+    public void setAthleteGender(String athleteGender) { this.athleteGender = athleteGender; }
+    public Integer getAthleteAge() { return athleteAge; }
+    public void setAthleteAge(Integer athleteAge) { this.athleteAge = athleteAge; }
     public String getComboModelName() { return comboModelName; }
     public void setComboModelName(String comboModelName) { this.comboModelName = comboModelName; }
 }

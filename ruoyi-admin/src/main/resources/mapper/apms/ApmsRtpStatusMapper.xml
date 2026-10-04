@@ -13,13 +13,18 @@
         <result property="updatedTime"    column="updated_time"/>
         <result property="athleteName"    column="athlete_name"/>
         <result property="athleteTeam"    column="athlete_team"/>
+        <result property="athleteGender"  column="athlete_gender"/>
+        <result property="athleteAge"     column="athlete_age"/>
     </resultMap>
 
     <sql id="selectApmsRtpStatusVo">
         SELECT
             s.id, s.athlete_id, s.status, s.reason, s.training_limit,
             s.next_review_date, s.updated_by, s.updated_time,
-            a.name AS athlete_name, d.dept_name AS athlete_team
+            a.name AS athlete_name, d.dept_name AS athlete_team,
+            a.gender AS athlete_gender,
+            CASE WHEN a.birthday IS NULL THEN NULL
+                 ELSE TIMESTAMPDIFF(YEAR, a.birthday, CURDATE()) END AS athlete_age
         FROM apms_rtp_status s
         LEFT JOIN apms_athlete a ON s.athlete_id = a.athlete_id
         LEFT JOIN sys_dept d     ON a.primary_team_id = d.dept_id

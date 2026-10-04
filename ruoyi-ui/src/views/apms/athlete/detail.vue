@@ -21,7 +21,7 @@
             {{ rtpStatus ? rtpLabel(rtpStatus.status) : '未评估' }}
           </span>
           <span class="rk-status-badge" :class="'tone-' + athleteStatusTone">{{ statusLabel(athlete.status) }}</span>
-          <span class="rk-soft-chip">{{ genderLabel }}</span>
+          <GenderBadge :gender="athlete.gender" :size="20"/>
           <span v-if="athlete.position" class="rk-soft-chip">{{ positionLabel(athlete.position) }}</span>
         </div>
         <div class="rk-profile-meta">
@@ -424,6 +424,8 @@ import * as rtpApi from '@/api/apms/rtp'
 import * as phvApi from '@/api/apms/phv'
 import { listDept } from '@/api/system/dept'
 import BodyTrendChart from '@/components/BodyTrendChart/index.vue'
+import GenderBadge from '@/components/GenderBadge/index.vue'
+import { ageAvatarColor } from '@/utils/athleteAvatar'
 import { useDict } from '@/utils/dict'
 import { ArrowDown, ArrowLeft, Minus, Plus, Delete, Edit, RefreshLeft, DataLine, InfoFilled, CircleCheck, Warning, CircleClose } from '@element-plus/icons-vue'
 
@@ -471,7 +473,6 @@ function toneByListClass(val) {
 }
 const athleteStatusTone = computed(() => toneByListClass(athlete.value.status))
 
-const genderLabel = computed(() => athlete.value.gender === 'M' ? '男' : athlete.value.gender === 'F' ? '女' : '—')
 
 // 小组 dept 选项（dept_type 30/40/50）
 const groupDeptOptions = ref([])
@@ -480,15 +481,9 @@ async function loadGroupDeptOptions() {
   groupDeptOptions.value = (res.data || []).filter(d => ['30', '40', '50', 30, 40, 50].includes(d.deptType))
 }
 
-// 头像：与花名册列表一致，按年龄组取色
-const GROUP_COLORS = { U13: '#8B5CF6', U14: '#06B6D4', U15: '#3B82F6', U16: '#22C55E', U17: '#F59E0B', U18: '#EF4444' }
+// 头像：全站统一，按年龄组取色
 const nameChar = computed(() => (athlete.value.name || '?').charAt(0))
-const avatarBg = computed(() => {
-  const age = athlete.value.age
-  if (age == null) return '#94A3B8'
-  const g = 'U' + Math.min(18, Math.max(13, age + 1))
-  return GROUP_COLORS[g] || '#94A3B8'
-})
+const avatarBg = computed(() => ageAvatarColor(athlete.value.age))
 
 // ===== RTP 辅助 =====
 const RTP_TONE = { g: 'green', y: 'amber', r: 'red' }

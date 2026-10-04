@@ -42,6 +42,12 @@ public class ApmsRtpStatus {
     /** 运动员所在队伍（关联查询） */
     private String athleteTeam;
 
+    /** 运动员性别 M/F（关联查询） */
+    private String athleteGender;
+
+    /** 运动员当前周岁年龄（关联查询，按生日实时计算，用于头像配色） */
+    private Integer athleteAge;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public Long getAthleteId() { return athleteId; }
@@ -62,4 +68,8 @@ public class ApmsRtpStatus {
     public void setAthleteName(String athleteName) { this.athleteName = athleteName; }
     public String getAthleteTeam() { return athleteTeam; }
     public void setAthleteTeam(String athleteTeam) { this.athleteTeam = athleteTeam; }
+    public String getAthleteGender() { return athleteGender; }
+    public void setAthleteGender(String athleteGender) { this.athleteGender = athleteGender; }
+    public Integer getAthleteAge() { return athleteAge; }
+    public void setAthleteAge(Integer athleteAge) { this.athleteAge = athleteAge; }
 }

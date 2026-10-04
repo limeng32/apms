@@ -1,6 +1,7 @@
 package com.ruoyi.system.service.apms;
 
 import java.util.List;
+import java.util.Map;
 import com.ruoyi.system.domain.apms.ApmsPhvRecord;
 
 /**
@@ -51,4 +52,10 @@ public interface IApmsPhvService {
      * @return 新计算的 PHV 记录，或 null（条件不齐 / 已算过 / athlete 没 birthday）
      */
     ApmsPhvRecord tryAutoCalculate(Long athleteId);
+
+    /**
+     * 档案预测成年身高（Khamis-Roche）的推导数据：
+     * 档案保存值、算法版本、计算时间，以及计算时点使用的年龄/身高/体重（取截至该时间点最新体态测量）。
+     */
+    Map<String, Object> adultHeightDerivation(Long athleteId);
 }

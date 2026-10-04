@@ -51,6 +51,14 @@ export function calculateDirect(data) {
   })
 }
 
+// 档案预测成年身高（Khamis-Roche）推导数据
+export function adultHeightDerivation(athleteId) {
+  return request({
+    url: '/apms/phv/athlete/' + athleteId + '/adult-height',
+    method: 'get'
+  })
+}
+
 // 删除PHV记录
 export function delPhv(id) {
   return request({

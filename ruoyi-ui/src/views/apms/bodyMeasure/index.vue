@@ -85,7 +85,10 @@
                         {{ (row.athleteName || '?').charAt(0) }}
                       </span>
                       <div class="rk-person-meta">
-                        <span class="rk-person-main">{{ row.athleteName || '—' }}</span>
+                        <span class="rk-person-main">
+                          {{ row.athleteName || '—' }}
+                          <GenderBadge :gender="row.athleteGender" :size="15" class="pm-gender"/>
+                        </span>
                         <span class="rk-person-sub">{{ row.athleteTeam || '无队伍' }} · #{{ row.athleteId }}</span>
                       </div>
                     </div>
@@ -204,6 +207,8 @@ import { Plus, RefreshLeft, Calendar } from '@element-plus/icons-vue'
 import AthleteMeasureDrawer from './components/AthleteMeasureDrawer.vue'
 import MeasureCyclePanel from './components/MeasureCyclePanel.vue'
 import CycleDetailDialog from './components/CycleDetailDialog.vue'
+import GenderBadge from '@/components/GenderBadge/index.vue'
+import { ageAvatarColor } from '@/utils/athleteAvatar'
 
 const { proxy } = getCurrentInstance()
 
@@ -244,8 +249,7 @@ const editForm = reactive({
 })
 
 /* ===== 展示辅助（口径与原页一致） ===== */
-const AVATAR_COLORS = ['#f0a23a', '#7b9dc9', '#c14747', '#5fa080', '#a878d8', '#d88a3a']
-const avatarColor = (row) => AVATAR_COLORS[(row.athleteId || 0) % AVATAR_COLORS.length]
+const avatarColor = (row) => ageAvatarColor(row.athleteAge)
 const calcLeg = (r) => r.height && r.sitHeight ? (r.height - r.sitHeight).toFixed(1) : '—'
 const calcBmi = (r) => {
   if (!r.height || !r.weight) return null
@@ -365,6 +369,7 @@ loadCycleNames()
 :deep(.pm-tabs .el-tabs__header) { margin-bottom: 14px; }
 
 .pm-person-btn { background: none; border: 0; padding: 0; cursor: pointer; text-align: left; width: 100%; }
+.pm-person-btn .rk-person-main { display: inline-flex; align-items: center; gap: 6px; }
 .pm-person-btn:hover .rk-person-main { color: #2563eb; }
 .pm-cycle-chip {
   display: inline-block; background: #eff6ff; color: #2563eb; border-radius: 10px;

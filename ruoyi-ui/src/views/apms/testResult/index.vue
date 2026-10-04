@@ -100,9 +100,7 @@
                     <td>
                       <div class="tr-athlete">
                         <span class="tr-name">{{ row.athleteName }}</span>
-                        <span class="tr-gender" :class="row.athleteGender === 'F' ? 'is-f' : 'is-m'">
-                          {{ row.athleteGender === 'F' ? '♀' : '♂' }}
-                        </span>
+                        <GenderBadge :gender="row.athleteGender" :size="15"/>
                       </div>
                     </td>
                     <td class="text-center">
@@ -168,7 +166,11 @@
                   {{ current.indicatorName || current.modelName }}
                 </div>
                 <div class="tr-banner-meta">
-                  <span class="rk-soft-chip">{{ current.athleteName }}（{{ current.athleteTeam || '无队伍' }}）</span>
+                  <span class="rk-soft-chip">
+                    {{ current.athleteName }}
+                    <GenderBadge :gender="current.athleteGender" :size="14"/>
+                    （{{ current.athleteTeam || '无队伍' }}）
+                  </span>
                   <span class="rk-mono">{{ formatDate(current.measureDate) }}</span>
                   <span class="tr-dir-banner" :class="dirClass(current.indicatorDirection)">
                     {{ dirLabel(current.indicatorDirection) }}
@@ -291,6 +293,7 @@ import { listTestTask } from '@/api/apms/testTask'
 import { listAthlete } from '@/api/apms/athlete'
 import ResultEntryDialog from '@/components/ResultEntryDialog/index.vue'
 import DeviceAccessDialog from '@/components/DeviceAccessDialog/index.vue'
+import GenderBadge from '@/components/GenderBadge/index.vue'
 import { checkPermi } from '@/utils/permission'
 import { EditPen, Connection, RefreshLeft, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 
@@ -458,13 +461,6 @@ loadStats()
 
 .tr-athlete { display: flex; align-items: center; gap: 6px; }
 .tr-name { font-size: 13px; font-weight: 600; color: $rk-text-1; }
-.tr-gender {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 17px; height: 17px; border-radius: 50%;
-  font-size: 11px; font-style: normal; font-weight: 700; line-height: 1;
-  &.is-m { background: #eff5ff; color: #2563eb; }
-  &.is-f { background: #fdeef1; color: #dc2626; }
-}
 .tr-item { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .tr-code { font-size: 12px; font-weight: 600; color: $rk-brand-600; }
 .tr-item-name {

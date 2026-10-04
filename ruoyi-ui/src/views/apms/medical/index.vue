@@ -81,9 +81,7 @@
                       @click="handleRowClick(row)">
                     <td class="col-athlete">
                       <span class="md-name">{{ row.athleteName || '—' }}</span>
-                      <span class="md-gender" :class="row.athleteGender === 'F' ? 'is-female' : 'is-male'">
-                        {{ row.athleteGender === 'F' ? '女' : '男' }}
-                      </span>
+                      <GenderBadge :gender="row.athleteGender" :size="15" class="md-gender-ic"/>
                     </td>
                     <td class="text-center col-type">
                       <span class="md-type-chip" :style="typeChipStyle(row.recordType)">
@@ -148,7 +146,11 @@
                 <div class="md-banner-meta">
                   <span class="rk-mono">{{ formatDate(current.recordDate) }}</span>
                   <span v-if="current.institution">· {{ current.institution }}</span>
-                  <span class="rk-soft-chip">{{ current.athleteName }}（{{ current.athleteTeam || '无队伍' }}）</span>
+                  <span class="rk-soft-chip">
+                    {{ current.athleteName }}
+                    <GenderBadge :gender="current.athleteGender" :size="14" class="md-gender-ic"/>
+                    （{{ current.athleteTeam || '无队伍' }}）
+                  </span>
                 </div>
               </div>
             </div>
@@ -264,6 +266,7 @@ import { listMedical, getMedical, addMedical, updateMedical, delMedical, delMedi
 import { listAthlete } from '@/api/apms/athlete'
 import { getToken, isDemoMode } from '@/utils/auth'
 import { Plus, RefreshLeft, ArrowLeft, ArrowRight, Lock, UploadFilled } from '@element-plus/icons-vue'
+import GenderBadge from '@/components/GenderBadge/index.vue'
 
 const { proxy } = getCurrentInstance()
 
@@ -588,19 +591,9 @@ loadStats()
   color: $rk-text-1;
   margin-right: 5px;
 }
-.md-gender {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 17px;
-  padding: 0 4px;
-  font-size: 10px;
-  font-weight: 600;
-  border-radius: 6px;
-  &.is-male { color: #2563eb; background: #eff5ff; }
-  &.is-female { color: #dc2626; background: #fcebeb; }
-}
+.md-name { display: inline-flex; align-items: center; gap: 5px; }
+.md-gender-ic { flex: none; }
+.md-banner-meta .rk-soft-chip { display: inline-flex; align-items: center; gap: 4px; }
 .md-type-chip {
   display: inline-flex;
   align-items: center;

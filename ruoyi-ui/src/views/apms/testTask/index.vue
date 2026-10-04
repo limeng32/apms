@@ -280,7 +280,7 @@
                       <tr v-for="(m, idx) in detail.members" :key="m.athleteId" class="rk-row" :class="{ 'is-zebra': idx % 2 === 1 }">
                         <td class="tt-mname">{{ m.athleteName }}</td>
                         <td class="text-center">
-                          <span class="tr-gender" :class="m.athleteGender === 'F' ? 'is-f' : 'is-m'">{{ m.athleteGender === 'F' ? '♀' : '♂' }}</span>
+                          <GenderBadge :gender="m.athleteGender" :size="16"/>
                         </td>
                         <td class="tt-mteam">{{ m.athleteTeam || '—' }}</td>
                         <td class="text-center">
@@ -367,6 +367,7 @@
         <el-form label-width="90px">
           <el-form-item label="运动员">
             <span>{{ currentMember?.athleteName }}</span>
+            <GenderBadge :gender="currentMember?.athleteGender" :size="15" style="margin-left:6px"/>
           </el-form-item>
           <el-form-item label="新状态">
             <el-radio-group v-model="memberStatus">
@@ -481,6 +482,7 @@ import { listDept } from '@/api/system/dept'
 import { listUser } from '@/api/system/user'
 import request from '@/utils/request'
 import { Plus, Delete, RefreshLeft, Refresh, ArrowLeft, ArrowRight, User } from '@element-plus/icons-vue'
+import GenderBadge from '@/components/GenderBadge/index.vue'
 import ResultEntryDialog from '@/components/ResultEntryDialog/index.vue'
 
 const { proxy } = getCurrentInstance()
@@ -932,14 +934,6 @@ loadStats()
 .col-mops { width: 130px; }
 .tt-mname { font-size: 13px; font-weight: 600; color: $rk-text-1; }
 .tt-mteam { font-size: 12px; color: $rk-text-2; }
-
-.tr-gender {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 17px; height: 17px; border-radius: 50%;
-  font-size: 11px; font-weight: 700; line-height: 1;
-  &.is-m { background: #eff5ff; color: #2563eb; }
-  &.is-f { background: #fdeef1; color: #dc2626; }
-}
 
 .form-tip { margin-top: 4px; font-size: 12px; color: #909399; line-height: 1.4; }
 

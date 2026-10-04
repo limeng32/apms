@@ -31,9 +31,10 @@
         <result property="dataSource"         column="data_source"/>
         <result property="cycleId"            column="cycle_id"/>
         <result property="createBy"           column="create_by"/>
-        <result property="createTime"         column="create_time"/>
+        <result property="createTime"      column="create_time"/>
         <result property="athleteName"        column="athlete_name"/>
         <result property="athleteTeam"        column="athlete_team"/>
+        <result property="athleteGender"      column="athlete_gender"/>
     </resultMap>
 
     <sql id="selectCycleVo">
@@ -97,7 +98,7 @@
     <select id="selectMeasuredByCycle" resultMap="MeasureResult">
         SELECT m.id, m.athlete_id, m.measure_date, m.height, m.weight, m.sit_height,
                m.body_fat_rate, m.waist, m.data_source, m.cycle_id, m.create_by, m.create_time,
-               a.name AS athlete_name, d.dept_name AS athlete_team
+               a.name AS athlete_name, d.dept_name AS athlete_team, a.gender AS athlete_gender
         FROM apms_body_measure m
         LEFT JOIN apms_athlete a ON m.athlete_id = a.athlete_id
         LEFT JOIN sys_dept d ON a.primary_team_id = d.dept_id
