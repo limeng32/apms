@@ -200,6 +200,7 @@
                       <th class="col-fname">显示名</th>
                       <th class="text-center col-unit">单位</th>
                       <th class="text-center col-type">类型</th>
+                      <th class="text-center col-mode">采集</th>
                       <th class="text-center col-req">必填</th>
                       <th class="text-center col-sort">排序</th>
                       <th class="text-center col-fops">操作</th>
@@ -213,6 +214,11 @@
                       <td class="text-center">{{ f.unit || '—' }}</td>
                       <td class="text-center">
                         <span class="rk-soft-chip" :class="dataTypeChipClass(f.dataType)">{{ f.dataType }}</span>
+                      </td>
+                      <td class="text-center">
+                        <span class="rk-soft-chip" :class="f.collectMode === 'DERIVED' ? 'tm-mode-derived' : 'tm-mode-input'">
+                          {{ f.collectMode === 'DERIVED' ? '系统计算' : '人工采集' }}
+                        </span>
                       </td>
                       <td class="text-center">
                         <span class="tm-req" :class="f.isRequired === '1' ? 'is-req' : 'is-opt'">
@@ -285,6 +291,15 @@
               </el-form-item>
             </el-col>
             <el-col :span="12">
+              <el-form-item label="派生算法">
+                <el-select v-model="modelForm.algoId" style="width:100%" clearable
+                           placeholder="无（纯采集模型）">
+                  <el-option v-for="a in algorithmOptions" :key="a.algoId"
+                             :label="a.displayName" :value="a.algoId"/>
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
               <el-form-item label="状态">
                 <el-radio-group v-model="modelForm.status">
                   <el-radio value="0">启用</el-radio>
@@ -346,6 +361,14 @@
                 </el-radio-group>
               </el-form-item>
             </el-col>
+            <el-col :span="24">
+              <el-form-item label="采集方式">
+                <el-radio-group v-model="fieldForm.collectMode">
+                  <el-radio value="INPUT">人工/设备采集（录入表单填写）</el-radio>
+                  <el-radio value="DERIVED">系统计算（由派生算法自动产出，只读）</el-radio>
+                </el-radio-group>
+              </el-form-item>
+            </el-col>
           </el-row>
         </el-form>
         <template #footer>
@@ -360,7 +383,7 @@
 <script setup name="ApmsTestModel">
 import {
   listTestModel, getTestModel, addTestModel, updateTestModel, delTestModel,
-  addField, updateField, delField
+  addField, updateField, delField, listAlgorithms
 } from '@/api/apms/testModel'
 import { Plus, Delete, RefreshLeft, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 
@@ -495,7 +518,14 @@ const showModelDialog = ref(false)
 const modelFormRef = ref(null)
 const dialogTitle = ref('')
 
-const modelForm = reactive({ id: null, category: '速度耐力', name: '', code: '', protocol: '', isCombo: '0', algoVersion: '', status: '0' })
+const modelForm = reactive({ id: null, category: '速度耐力', name: '', code: '', protocol: '', isCombo: '0', algoVersion: '', algoId: null, status: '0' })
+const algorithmOptions = ref([])
+async function loadAlgorithms() {
+  try {
+    const res = await listAlgorithms()
+    algorithmOptions.value = res.data || []
+  } catch { algorithmOptions.value = [] }
+}
 const modelRules = {
   code: [{ required: true, message: '请输入模型编码', trigger: 'blur' }],
   name: [{ required: true, message: '请输入模型名称', trigger: 'blur' }],
@@ -504,7 +534,7 @@ const modelRules = {
 
 function handleAdd() {
   dialogTitle.value = '新增测试模型'
-  Object.assign(modelForm, { id: null, category: '速度耐力', name: '', code: '', protocol: '', isCombo: '0', algoVersion: '', status: '0' })
+  Object.assign(modelForm, { id: null, category: '速度耐力', name: '', code: '', protocol: '', isCombo: '0', algoVersion: '', algoId: null, status: '0' })
   showModelDialog.value = true
 }
 function handleEdit(row) {
@@ -543,7 +573,7 @@ function handleDelete(row) {
 const showFieldDialogVisible = ref(false)
 const showFieldDialog = ref(null)
 
-const fieldForm = reactive({ id: null, modelId: null, fieldKey: '', fieldName: '', unit: '', dataType: 'decimal', isRequired: '1', sortOrder: 0 })
+const fieldForm = reactive({ id: null, modelId: null, fieldKey: '', fieldName: '', unit: '', dataType: 'decimal', isRequired: '1', collectMode: 'INPUT', sortOrder: 0 })
 
 function openFieldDialog(field) {
   if (!currentModel.value) return proxy.$modal.msgWarning('请先选择一个模型')
@@ -557,6 +587,7 @@ function openFieldDialog(field) {
     unit: field?.unit || '',
     dataType: field?.dataType || 'decimal',
     isRequired: field?.isRequired ?? '1',
+    collectMode: field?.collectMode || 'INPUT',
     sortOrder: field?.sortOrder ?? nextOrder
   })
   showFieldDialogVisible.value = true
@@ -588,6 +619,7 @@ function dataTypeChipClass(t) { return ({ decimal: 'tm-type-decimal', number: 't
 // init
 getList()
 loadStats()
+loadAlgorithms()
 </script>
 
 <style lang="scss" scoped>
@@ -669,6 +701,9 @@ loadStats()
 .col-key { width: 150px; }
 .col-unit { width: 64px; }
 .col-type { width: 92px; }
+.col-mode { width: 92px; }
+:deep(.rk-soft-chip.tm-mode-input) { background: #ecfdf5; color: #047857; }
+:deep(.rk-soft-chip.tm-mode-derived) { background: #eef2ff; color: #4338ca; }
 .col-req { width: 54px; }
 .col-sort { width: 54px; }
 .col-fops { width: 110px; }

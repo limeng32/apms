@@ -1,6 +1,10 @@
 package com.ruoyi.web.controller.apms;
 
+import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -13,6 +17,7 @@ import com.ruoyi.system.domain.apms.ApmsTestResult;
 import com.ruoyi.system.domain.apms.ApmsTestResultValue;
 import com.ruoyi.system.service.apms.IApmsTestResultService;
 import com.ruoyi.system.service.apms.ITestResultImportProvider;
+import com.ruoyi.system.service.apms.ITestResultTemplateService;
 
 /**
  * 测试结果 Controller
@@ -26,6 +31,9 @@ public class ApmsTestResultController extends BaseController {
 
     @Autowired
     private ITestResultImportProvider csvImportProvider;
+
+    @Autowired
+    private ITestResultTemplateService templateService;
 
     /** 列表查询 */
     @PreAuthorize("@ss.hasPermi('apms:testResult:list')")
@@ -49,6 +57,15 @@ public class ApmsTestResultController extends BaseController {
     @GetMapping("/by-task-member")
     public AjaxResult byTaskMember(@RequestParam Long taskId, @RequestParam Long athleteId) {
         return AjaxResult.success(resultService.listByTaskMember(taskId, athleteId));
+    }
+
+    /** 散录成绩的同组尝试（不绑任务：同队员+同指标/模型）；indicatorId/modelId 二选一 */
+    @PreAuthorize("@ss.hasPermi('apms:testResult:query')")
+    @GetMapping("/by-free-group")
+    public AjaxResult byFreeGroup(@RequestParam Long athleteId,
+                                  @RequestParam(required = false) Long indicatorId,
+                                  @RequestParam(required = false) Long modelId) {
+        return AjaxResult.success(resultService.listFreeGroup(athleteId, indicatorId, modelId));
     }
 
     /** 新增（Service 自动 REP 计算 + autoSelectBest） */
@@ -114,13 +131,14 @@ public class ApmsTestResultController extends BaseController {
      */
     @PreAuthorize("@ss.hasPermi('apms:testResult:add')")
     @PostMapping("/import/csv")
-    public AjaxResult importCsv(@RequestParam("file") MultipartFile file) {
+    public AjaxResult importCsv(@RequestParam("file") MultipartFile file,
+                                @RequestParam(value = "taskId", required = false) Long taskId) {
         if (file.isEmpty()) {
             return AjaxResult.error("上传文件为空");
         }
         try {
             ITestResultImportProvider.ImportResult result =
-                csvImportProvider.importAll(file.getInputStream(), null);
+                    csvImportProvider.importAll(file.getInputStream(), taskId);
 
             AjaxResult ajax = AjaxResult.success();
             ajax.put("writtenResultCount", result.writtenResultCount);
@@ -131,6 +149,29 @@ public class ApmsTestResultController extends BaseController {
         } catch (Exception e) {
             return AjaxResult.error("CSV 导入失败：" + e.getMessage());
         }
+    }
+
+    /**
+     * 下载 CSV 导入模板
+     *
+     * <p>带 taskId：任务模板（预填 task_id、参测队员，列只含该任务测试项）。
+     * 不带：通用模板（全部启用指标列，预填在训队员）。
+     */
+    @PreAuthorize("@ss.hasPermi('apms:testResult:list')")
+    @GetMapping("/import/template")
+    public void downloadTemplate(@RequestParam(value = "taskId", required = false) Long taskId,
+                                 HttpServletResponse response) throws IOException {
+        String csv = templateService.buildTemplateCsv(taskId);
+        String fileName = (taskId == null ? "test-result-template.csv" : "test-result-task-" + taskId + "-template.csv");
+        response.setContentType("text/csv; charset=UTF-8");
+        response.setCharacterEncoding("UTF-8");
+        response.setHeader("Content-Disposition",
+                "attachment; filename=\"" + fileName + "\"; filename*=UTF-8''"
+                        + URLEncoder.encode(fileName, StandardCharsets.UTF_8.name()).replace("+", "%20"));
+        // UTF-8 BOM（EF BB BF），保证 Excel 双击打开中文不乱码。
+        // 注意 OutputStream.write(int) 只写低字节，不能直接 write(0xFEFF)（会变成单字节 0xFF）
+        response.getOutputStream().write(new byte[]{(byte) 0xEF, (byte) 0xBB, (byte) 0xBF});
+        response.getOutputStream().write(csv.getBytes(StandardCharsets.UTF_8));
     }
 
     /** 请求体包装 */

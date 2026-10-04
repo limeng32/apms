@@ -6,7 +6,9 @@ import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
-import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -15,6 +17,7 @@ import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.system.domain.apms.*;
 import com.ruoyi.system.mapper.apms.ApmsAthleteMapper;
 import com.ruoyi.system.mapper.apms.ApmsIndicatorMapper;
+import com.ruoyi.system.mapper.apms.ApmsTaskItemMapper;
 import com.ruoyi.system.mapper.apms.ApmsTestModelMapper;
 import com.ruoyi.system.service.apms.IApmsTestResultService;
 import com.ruoyi.system.service.apms.ITestResultImportProvider;
@@ -25,9 +28,11 @@ import com.ruoyi.system.service.apms.ITestResultImportProvider;
  * <p>
  * 格式约定（UTF-8）：
  * <pre>
- *   athlete_id,measure_date,session_key,HEIGHT,WEIGHT,50M_SPRINT,RSA_10X40
- *   1001,2026-09-18,S1,178.5,72.3,5.21,"5.21,5.34,5.19,5.28,5.31,5.22,5.30,5.26,5.24,5.27"
+ *   #运动员ID,运动员姓名,测试日期,场次,身高(cm),体重(kg),RSA(10×40)
+ *   athlete_id,athlete_name,measure_date,session_key,HEIGHT,WEIGHT,RSA_10X40
+ *   1001,张志远,2026-09-18,S1,178.5,72.3,"5.21,5.34,5.19,5.28,5.31,5.22,5.30,5.26,5.24,5.27"
  * </pre>
+ * 首行以 # 开头为中文说明行（整行忽略）；无说明行的旧格式同样兼容。
  *
  * <p>
  * 写操作（persist）调用链路复用现有 ApmsTestResultServiceImpl.add()：
@@ -44,6 +49,7 @@ public class CsvResultImportProvider implements ITestResultImportProvider {
     @Autowired private ApmsIndicatorMapper       indicatorMapper;
     @Autowired private ApmsTestModelMapper       modelMapper;
     @Autowired private ApmsAthleteMapper         athleteMapper;
+    @Autowired private ApmsTaskItemMapper        taskItemMapper;
     @Autowired private IApmsTestResultService    testResultService;
 
     // ============== 解析阶段 ==============
@@ -62,15 +68,30 @@ public class CsvResultImportProvider implements ITestResultImportProvider {
             return result;
         }
 
-        String[] header = lines.get(0);
+        // 跳过以 # 开头的中文说明行与空行，定位机器表头（兼容无说明行的旧模板）
+        int headerLineIdx = -1;
+        for (int i = 0; i < lines.size(); i++) {
+            String[] l = lines.get(i);
+            if (isAllBlank(l)) continue;
+            if (l[0].trim().startsWith("#")) continue;
+            headerLineIdx = i;
+            break;
+        }
+        if (headerLineIdx < 0) {
+            result.errorRows.add("CSV 缺少表头行（需包含 athlete_id、measure_date 列）");
+            return result;
+        }
+        String[] header = lines.get(headerLineIdx);
 
         // 1. 校验必须列 + 解析指标/模型列
-        int athleteIdx = -1, dateIdx = -1, sessionIdx = -1;
+        int athleteIdx = -1, dateIdx = -1, sessionIdx = -1, taskIdx = -1, nameIdx = -1;
         for (int i = 0; i < header.length; i++) {
             String h = header[i].trim().toLowerCase();
             if ("athlete_id".equals(h)) athleteIdx = i;
+            else if ("athlete_name".equals(h)) nameIdx = i; // 模板保留列：仅核对/兜底，不作成绩列
             else if ("measure_date".equals(h)) dateIdx = i;
             else if ("session_key".equals(h)) sessionIdx = i;
+            else if ("task_id".equals(h)) taskIdx = i;
             else resolveHeader(h, i, result);
         }
 
@@ -83,17 +104,33 @@ public class CsvResultImportProvider implements ITestResultImportProvider {
         }
 
         // 2. 解析数据行
-        for (int lineNo = 1; lineNo < lines.size(); lineNo++) {
+        for (int lineNo = headerLineIdx + 1; lineNo < lines.size(); lineNo++) {
             String[] cols = lines.get(lineNo);
-            if (cols.length == 0 || cols[0].trim().isEmpty()) continue; // 跳过空行
+            if (isAllBlank(cols)) continue;  // 跳过整行空白
+            if (cols[0].trim().startsWith("#")) continue; // 跳过说明/注释行（任务模板注释行首列 task_id 位置为 #...）
 
             ImportResult.Row row = new ImportResult.Row();
             row.lineNo = lineNo + 1; // CSV 从 1 计数
             row.measureDate = get(cols, dateIdx);
             row.sessionKey  = sessionIdx >= 0 ? get(cols, sessionIdx) : null;
+            // 任务绑定：优先 CSV 行内 task_id 列，缺省用接口参数 taskId
+            String rowTaskRaw = taskIdx >= 0 ? get(cols, taskIdx) : null;
+            if (rowTaskRaw != null && !rowTaskRaw.isEmpty()) {
+                try {
+                    row.taskId = Long.parseLong(rowTaskRaw);
+                } catch (NumberFormatException e) {
+                    result.errorRows.add("第 " + row.lineNo + " 行：task_id='" + rowTaskRaw + "' 不是数字");
+                    continue;
+                }
+            } else {
+                row.taskId = taskId;
+            }
 
-            // athlete_id 可能是纯数字也可能是名字，先当数字解析，失败当名字查
+            // athlete_id 可能是纯数字也可能是名字；ID 列留空时回退用 athlete_name 列解析
             String athleteRaw = get(cols, athleteIdx);
+            if ((athleteRaw == null || athleteRaw.isEmpty()) && nameIdx >= 0) {
+                athleteRaw = get(cols, nameIdx);
+            }
             row.athleteId = resolveAthleteId(athleteRaw);
             if (row.athleteId == null) {
                 result.errorRows.add("第 " + row.lineNo + " 行：athlete_id='" + athleteRaw + "' 无法解析");
@@ -162,6 +199,28 @@ public class CsvResultImportProvider implements ITestResultImportProvider {
         return v != null ? v.trim() : null;
     }
 
+    /** 整行所有单元格都为空白（含首列留空、仅靠 athlete_name 列识别队员的行不能误跳） */
+    private boolean isAllBlank(String[] cols) {
+        if (cols == null || cols.length == 0) return true;
+        for (String c : cols) {
+            if (c != null && !c.trim().isEmpty()) return false;
+        }
+        return true;
+    }
+
+    /** 加载任务测试项索引："I:"+indicatorId / "M:"+modelId → taskItemId */
+    private Map<String, Long> loadTaskItemIndex(Long taskId) {
+        Map<String, Long> index = new HashMap<>();
+        for (ApmsTaskItem item : taskItemMapper.selectByTaskId(taskId)) {
+            if ("INDICATOR".equals(item.getItemType()) && item.getIndicatorId() != null) {
+                index.put("I:" + item.getIndicatorId(), item.getId());
+            } else if ("MODEL".equals(item.getItemType()) && item.getModelId() != null) {
+                index.put("M:" + item.getModelId(), item.getId());
+            }
+        }
+        return index;
+    }
+
     /** athlete_id 可以是数字 ID 也可以是名字 → 先数字解析，失败当名字查库 */
     private Long resolveAthleteId(String raw) {
         if (raw == null || raw.trim().isEmpty()) return null;
@@ -183,19 +242,56 @@ public class CsvResultImportProvider implements ITestResultImportProvider {
 
     // ============== 持久化阶段 ==============
 
+    /**
+     * 解析测试日期。
+     *
+     * <p>兼容 WPS/Excel 编辑后保存的不同写法：
+     * <ul>
+     *   <li>YYYY-MM-DD（模板默认，如 2026-10-03）</li>
+     *   <li>YYYY/MM/DD（Excel/WPS 常见，如 2026/10/03、2026/10/3，月日可不补零）</li>
+     *   <li>YYYY.M.D 点号分隔也一并兼容</li>
+     *   <li>尾部带时间（如 "2026/10/3 0:00"）时只取日期部分</li>
+     * </ul>
+     * 用正则白名单严格校验，避免 SimpleDateFormat 宽松解析产生歧义日期。
+     */
+    private Date parseMeasureDate(String raw) throws ParseException {
+        if (raw == null || raw.trim().isEmpty()) throw new ParseException("日期为空", 0);
+        String s = raw.trim();
+        // 截掉时间部分：空格或 T 之后（2026/10/3 0:00、2026-10-03T08:00）
+        int cut = s.length();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == ' ' || c == 'T' || c == '\t') { cut = i; break; }
+        }
+        s = s.substring(0, cut).replace('/', '-').replace('.', '-');
+        if (!s.matches("\\d{4}-\\d{1,2}-\\d{1,2}")) {
+            throw new ParseException("不支持的日期格式: " + raw, 0);
+        }
+        try {
+            LocalDate ld = LocalDate.parse(s, DateTimeFormatter.ofPattern("yyyy-M-d"));
+            return java.sql.Date.valueOf(ld);
+        } catch (DateTimeParseException e) {
+            throw new ParseException("非法日期: " + raw, 0);
+        }
+    }
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int persist(ImportResult parsed) {
         int written = 0;
-        SimpleDateFormat fmt = new SimpleDateFormat("yyyy-MM-dd");
+        // 任务测试项缓存：taskId → (指标/模型 → taskItemId)，用于把导入结果挂到任务进度上
+        Map<Long, Map<String, Long>> taskItemCache = new HashMap<>();
 
         for (ImportResult.Row row : parsed.rows) {
             Date measureDate;
             try {
-                measureDate = fmt.parse(row.measureDate);
+                measureDate = parseMeasureDate(row.measureDate);
             } catch (ParseException e) {
-                throw new ServiceException("第 " + row.lineNo + " 行 measure_date 格式错误：" + row.measureDate);
+                throw new ServiceException("第 " + row.lineNo + " 行 measure_date 格式错误："
+                        + row.measureDate + "（支持 YYYY-MM-DD 或 YYYY/MM/DD）");
             }
+            Map<String, Long> itemIndex = row.taskId == null ? null
+                    : taskItemCache.computeIfAbsent(row.taskId, this::loadTaskItemIndex);
 
             // 每个指标列 → 一条 ApmsTestResult + ApmsTestResultValue
             for (Map.Entry<String, String> valEntry : row.values.entrySet()) {
@@ -207,17 +303,26 @@ public class CsvResultImportProvider implements ITestResultImportProvider {
 
                 ApmsTestResult result = new ApmsTestResult();
                 result.setAthleteId(row.athleteId);
+                result.setTaskId(row.taskId);
                 result.setMeasureDate(measureDate);
                 result.setSessionKey(row.sessionKey);
                 result.setIsValid("1");
-                result.setIsSelected("0"); // 先不选，由 autoSelectBest 决定
+                // 不显式置 is_selected：add() 默认选中并自动重算同组最佳
+                // （任务内按 task_item 分组；无任务按 同队员+同指标 散录分组）
+                result.setDataSource("CSV_IMPORT");
 
                 if (indicatorId != null) {
                     result.setItemType("INDICATOR");
                     result.setIndicatorId(indicatorId);
+                    if (itemIndex != null) {
+                        result.setTaskItemId(itemIndex.get("I:" + indicatorId));
+                    }
                 } else if (modelId != null) {
                     result.setItemType("MODEL");
                     result.setModelId(modelId);
+                    if (itemIndex != null) {
+                        result.setTaskItemId(itemIndex.get("M:" + modelId));
+                    }
                 }
 
                 // 组装 values

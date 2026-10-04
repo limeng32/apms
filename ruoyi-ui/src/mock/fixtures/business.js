@@ -1079,6 +1079,20 @@ export const testFields = [
   }
 ]
 
+// 结构化采集配置：字段角色（INPUT 人工采集 / DERIVED 系统计算）与模型派生算法绑定。
+// 与 patches/patch-0.0.6-202610032124.sql 的存量归类保持一致。
+const DERIVED_FIELD_IDS = new Set([
+  5,   // YOYO estimated_vo2max
+  17, 18, 19, // RSA best_time / mean_time / sdec
+  22   // T_TEST best_time
+])
+for (const f of testFields) {
+  f.collectMode = DERIVED_FIELD_IDS.has(f.id) ? 'DERIVED' : 'INPUT'
+}
+for (const m of testModels) {
+  if (m.code === 'RSA_10X20') m.algoId = 'rsa-sdec'
+}
+
 // 测试任务主表（7 行）
 export const testTasks = [
   {

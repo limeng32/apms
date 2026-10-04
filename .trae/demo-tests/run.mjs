@@ -649,6 +649,147 @@ test('H6', '测试结果：列表默认只看最佳，自动选最佳遵守方�
   assert(before > 0, '清空前确有数据')
 })
 
+test('H6b', '设备接入：注册→列表→密钥鉴权→推送成绩真实落库（dataSource=DEVICE:xxx）', async () => {
+  reset()
+  const n0 = db().testResults.length
+  const reg = call('post', '/apms/device/register', {}, {
+    deviceCode: 'GATE-T1', deviceName: '计时门', deviceType: 'TIMING_GATE', vendor: 'XX'
+  })
+  expect200(reg)
+  assert(reg.data.apiKey && reg.data.apiKey.startsWith('dk-'), '注册返回 dk- 开头密钥')
+  const dup = call('post', '/apms/device/register', {}, { deviceCode: 'GATE-T1' })
+  assert(dup.code === 601, '重复编码拒绝')
+  const lst = call('get', '/apms/device/list')
+  expect200(lst); assert(lst.data.some(d => d.deviceCode === 'GATE-T1'), '列表含新设备')
+
+  const bad = call('post', '/apms/device/push', {}, { apiKey: 'dk-wrong', athleteId: 1001, indicatorCode: 'HEIGHT', value: 180 })
+  assertEq(bad.code, 401, '错误密钥 401')
+  const badInd = call('post', '/apms/device/push', {}, { apiKey: reg.data.apiKey, athleteId: 1001, indicatorCode: 'NO_SUCH', value: 1 })
+  assertEq(badInd.code, 601, '未知指标 601')
+
+  const push = call('post', '/apms/device/push', {}, {
+    apiKey: reg.data.apiKey, athleteId: 1001, indicatorCode: 'height', value: 180.5,
+    measureDate: '2026-09-30', sessionKey: 'S1'
+  })
+  expect200(push)
+  assertEq(db().testResults.length, n0 + 1, '推送成绩落库一条')
+  const row = db().testResults.find(r => r.id === push.data.resultId)
+  assert(row, '返回 resultId 可定位')
+  assertEq(row.dataSource, 'DEVICE:GATE-T1', 'dataSource 带设备编码')
+  assertEq(row.indicatorCode, 'HEIGHT', '指标 code 大小写不敏感匹配')
+  assertEq(row.values[0].numericValue, 180.5, '主值落 numericValue')
+  assertEq(row.taskId, null, '设备推送默认不绑任务')
+})
+
+test('H6c', '手动录入：AddBody{result,values} 契约落库，散录（无任务）回填指标冗余字段', async () => {
+  reset()
+  const n0 = db().testResults.length
+  const r = call('post', '/apms/test-result', {}, {
+    result: {
+      taskId: null, taskItemId: null, athleteId: 1001,
+      itemType: 'INDICATOR', indicatorId: 1, modelId: null,
+      measureDate: '2026-09-30', sessionKey: 'S2',
+      isValid: '1', isSelected: '1', dataSource: 'MANUAL'
+    },
+    values: [{ indicatorId: 1, fieldKey: 'result', isDerived: '0', numericValue: 181.2, textValue: null }]
+  })
+  expect200(r)
+  assertEq(db().testResults.length, n0 + 1, '新增一条')
+  const row = db().testResults[db().testResults.length - 1]
+  assertEq(row.indicatorCode, 'HEIGHT', '散录回填指标 code')
+  assertEq(row.indicatorName, '身高', '散录回填指标名')
+  assertEq(row.athleteName, db().athletes.find(a => a.athleteId === 1001).name, '回填队员名')
+  assertEq(row.dataSource, 'MANUAL')
+  assertEq(row.values[0].numericValue, 181.2, 'values 随主表保存')
+})
+
+test('H6d', '散录指定最佳：无 taskItemId 时只影响同队员同指标的散录行，不串其他指标/任务行', async () => {
+  reset()
+  const mk = (over) => call('post', '/apms/test-result', {}, {
+    result: {
+      taskId: null, taskItemId: null, athleteId: 1001,
+      itemType: 'INDICATOR', indicatorId: over.indicatorId, modelId: null,
+      measureDate: '2026-10-03', sessionKey: over.sessionKey,
+      isValid: '1', isSelected: over.sel ?? '1', dataSource: 'MANUAL'
+    },
+    values: [{ indicatorId: over.indicatorId, fieldKey: 'result', isDerived: '0', numericValue: over.v, textValue: null }]
+  })
+  mk({ indicatorId: 1, sessionKey: 'FA', v: 180, sel: '1' }) // 散录 身高 A
+  mk({ indicatorId: 1, sessionKey: 'FB', v: 182, sel: '1' }) // 散录 身高 B
+  mk({ indicatorId: 2, sessionKey: 'FC', v: 70, sel: '1' })  // 散录 体重，不应受影响
+  // 找 FB 的真实 id
+  const rowB = db().testResults.find(r => r.sessionKey === 'FB')
+  // 找一条任务内行作为哨兵（蓝本里有 taskItemId）
+  const sentinel = db().testResults.find(r => r.taskItemId != null && String(r.athleteId) === '1001')
+  if (sentinel) sentinel.isSelected = '1'
+  expect200(call('post', `/apms/test-result/select-attempt/${rowB.id}`))
+  const a = db().testResults.find(r => r.sessionKey === 'FA')
+  const b = db().testResults.find(r => r.sessionKey === 'FB')
+  const c = db().testResults.find(r => r.sessionKey === 'FC')
+  assertEq(a.isSelected, '0', '同指标另一条被取消')
+  assertEq(b.isSelected, '1', '目标被选中')
+  assertEq(c.isSelected, '1', '其他指标散录行不受影响')
+  if (sentinel) assertEq(sentinel.isSelected, '1', '任务内行不受散录选择影响')
+})
+
+test('H6e', '散录归一：模型无方向→最新一次当选（不看数值大小）；指标有方向→按方向取优；attemptNo 递增', async () => {
+  reset()
+  const mk = (o) => call('post', '/apms/test-result', {}, {
+    result: {
+      taskId: null, taskItemId: null, athleteId: 1001,
+      itemType: o.itemType, indicatorId: o.indicatorId ?? null, modelId: o.modelId ?? null,
+      measureDate: o.date, sessionKey: o.sessionKey,
+      isValid: '1', isSelected: '1', dataSource: 'MANUAL'
+    },
+    values: [{ fieldKey: 'result', isDerived: '0', numericValue: o.v,
+      indicatorId: o.indicatorId ?? null, modelId: o.modelId ?? null }]
+  })
+  // 模型 YOYO（无方向）：先 1000m@10-01，再 900m@10-03 → 数值更小但日期更新，应当选
+  mk({ itemType: 'MODEL', modelId: 1, date: '2026-10-01', sessionKey: 'MA', v: 1000 })
+  mk({ itemType: 'MODEL', modelId: 1, date: '2026-10-03', sessionKey: 'MB', v: 900 })
+  // 指标 VJUMP（HIGHER_BETTER，id=4）：55 再 57 → 57 当选
+  mk({ itemType: 'INDICATOR', indicatorId: 4, date: '2026-10-01', sessionKey: 'VA', v: 55 })
+  mk({ itemType: 'INDICATOR', indicatorId: 4, date: '2026-10-03', sessionKey: 'VB', v: 57 })
+
+  const modelRows = db().testResults.filter(r => r.sessionKey === 'MA' || r.sessionKey === 'MB')
+  const indRows = db().testResults.filter(r => r.sessionKey === 'VA' || r.sessionKey === 'VB')
+  assertEq(modelRows.find(r => r.sessionKey === 'MA').isSelected, '0', '旧模型记录转备选')
+  assertEq(modelRows.find(r => r.sessionKey === 'MB').isSelected, '1', '最新模型记录当选（与数值大小无关）')
+  assertEq(indRows.find(r => r.sessionKey === 'VA').isSelected, '0', '低指标值转备选')
+  assertEq(indRows.find(r => r.sessionKey === 'VB').isSelected, '1', '高指标值按方向当选')
+  assertEq(modelRows.find(r => r.sessionKey === 'MB').attemptNo, 2, '模型尝试序号递增')
+  assertEq(indRows.find(r => r.sessionKey === 'VB').attemptNo, 2, '指标尝试序号递增')
+  // by-free-group：只返回同队员同模型的散录行，不串指标
+  const fg = call('get', '/apms/test-result/by-free-group', { athleteId: '1001', modelId: '1' })
+  expect200(fg)
+  assertEq(fg.data.length, 2, '散录同组返回两条')
+  assert(fg.data.every(r => String(r.modelId) === '1'), '全是该模型')
+})
+
+test('H6f', '结构化采集配置：算法注册表可枚举；RSA 绑定算法；字段角色可配置且 CRUD 保留；设备模型推送永远 401', async () => {
+  reset()
+  // 算法注册表
+  const algos = call('get', '/apms/test-model/algorithms')
+  expect200(algos)
+  assert(algos.data.some(a => a.algoId === 'rsa-sdec'), '注册表含 rsa-sdec')
+  // RSA 模型绑定算法
+  const rsa = db().testModels.find(m => m.code === 'RSA_10X20')
+  assertEq(rsa.algoId, 'rsa-sdec', 'RSA 模型绑定派生算法')
+  // 字段角色：RSA 冲刺为 INPUT，sdec/best/mean 为 DERIVED
+  const fields = call('get', '/apms/test-model/field/list/2')
+  const byKey = Object.fromEntries(fields.data.map(f => [f.fieldKey, f.collectMode]))
+  assertEq(byKey.sprint_1, 'INPUT', '冲刺趟次人工采集')
+  assertEq(byKey.sdec, 'DERIVED', 'Sdec 系统计算')
+  assertEq(byKey.best_time, 'DERIVED', '最佳时间系统计算')
+  // 字段 CRUD 保留 collectMode
+  call('post', '/apms/test-model/field', {}, { modelId: 3, fieldKey: 'probe', fieldName: '探针', collectMode: 'DERIVED' })
+  const probe = db().testFields.find(f => f.fieldKey === 'probe')
+  assertEq(probe.collectMode, 'DERIVED', '新字段角色落库')
+  // 设备模型推送假门禁：任意密钥一律 401
+  const push = call('post', '/apms/device/model-push', {}, { apiKey: 'anything', modelCode: 'RSA_10X20' })
+  assertEq(push.code, 401, '设备模型推送永远拒绝')
+})
+
 test('H7', '体态测量：data 数组列表/最新/upsert 幂等', async () => {
   reset()
   const list = call('get', '/apms/body-measure/list', {})
@@ -832,6 +973,7 @@ test('H16', 'strict 模式：13 页面真实请求序列零 MISS', async () => {
     ['get', '/apms/indicator/ref/list/5'],
     ['get', '/apms/indicator/level/list/3'],
     ['get', '/apms/test-model/list?pageNum=1&pageSize=10'],
+    ['get', '/apms/test-model/algorithms'],
     ['get', '/apms/test-model/3'],
     ['get', '/apms/test-model/field/list/3'],
     ['get', '/apms/test-task/list?pageNum=1&pageSize=10'],

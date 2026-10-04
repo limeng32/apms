@@ -36,6 +36,13 @@ export const testModelHandlers = [
     return ok('删除成功')
   }),
 
+  /* ---------------- 派生算法注册表 ---------------- */
+  route('get', '/apms/test-model/algorithms', () => {
+    return listData([
+      { algoId: 'rsa-sdec', displayName: 'RSA 重复冲刺衰减率（Sdec/最佳/平均）' }
+    ])
+  }),
+
   /* ---------------- 模型主表 ---------------- */
   route('get', '/apms/test-model/list', (ctx) => {
     const q = ctx.query

@@ -79,6 +79,8 @@ public interface ITestResultImportProvider {
         public static class Row {
             public int lineNo;
             public Long athleteId;
+            /** 可选：CSV 中 task_id 列（或接口参数）指定的任务 */
+            public Long taskId;
             public String measureDate; // YYYY-MM-DD
             public String sessionKey;
             public Map<String, String> values = new java.util.LinkedHashMap<>(); // header → 原始值

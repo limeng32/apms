@@ -11,12 +11,13 @@
         <result column="protocol"     property="protocol"/>
         <result column="is_combo"     property="isCombo"/>
         <result column="algo_version" property="algoVersion"/>
+        <result column="algo_id"      property="algoId"/>
         <result column="status"       property="status"/>
         <result column="create_time"  property="createTime"/>
     </resultMap>
 
     <sql id="selectVo">
-        SELECT id, category, name, code, protocol, is_combo, algo_version, status, create_time
+        SELECT id, category, name, code, protocol, is_combo, algo_version, algo_id, status, create_time
         FROM apms_test_model
     </sql>
 
@@ -40,14 +41,14 @@
     </select>
 
     <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsTestModel" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO apms_test_model (category, name, code, protocol, is_combo, algo_version, status, create_time)
-        VALUES (#{category}, #{name}, #{code}, #{protocol}, #{isCombo}, #{algoVersion}, #{status}, NOW())
+        INSERT INTO apms_test_model (category, name, code, protocol, is_combo, algo_version, algo_id, status, create_time)
+        VALUES (#{category}, #{name}, #{code}, #{protocol}, #{isCombo}, #{algoVersion}, #{algoId}, #{status}, NOW())
     </insert>
 
     <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsTestModel">
         UPDATE apms_test_model
         SET category = #{category}, name = #{name}, code = #{code}, protocol = #{protocol},
-            is_combo = #{isCombo}, algo_version = #{algoVersion}, status = #{status}
+            is_combo = #{isCombo}, algo_version = #{algoVersion}, algo_id = #{algoId}, status = #{status}
         WHERE id = #{id}
     </update>
 

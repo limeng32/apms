@@ -1,6 +1,8 @@
 package com.ruoyi.web.controller.apms;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -12,6 +14,8 @@ import com.ruoyi.common.enums.BusinessType;
 import com.ruoyi.system.domain.apms.ApmsTestModel;
 import com.ruoyi.system.domain.apms.ApmsTestModelField;
 import com.ruoyi.system.service.apms.IApmsTestModelService;
+import com.ruoyi.system.service.apms.algorithm.ModelAlgorithmRegistry;
+import com.ruoyi.system.service.apms.algorithm.ModelDeriveAlgorithm;
 
 /**
  * 测试模型库 Controller
@@ -22,6 +26,22 @@ public class ApmsTestModelController extends BaseController {
 
     @Autowired
     private IApmsTestModelService modelService;
+    @Autowired
+    private ModelAlgorithmRegistry algorithmRegistry;
+
+    /** 可绑定的派生算法清单（模型配置页下拉用；新增算法只需实现 ModelDeriveAlgorithm） */
+    @PreAuthorize("@ss.hasPermi('apms:testModel:list')")
+    @GetMapping("/algorithms")
+    public AjaxResult algorithms() {
+        List<Map<String, String>> list = new java.util.ArrayList<>();
+        for (ModelDeriveAlgorithm a : algorithmRegistry.list()) {
+            Map<String, String> item = new LinkedHashMap<>();
+            item.put("algoId", a.algoId());
+            item.put("displayName", a.displayName());
+            list.add(item);
+        }
+        return success(list);
+    }
 
     // ===== Model CRUD =====
     @PreAuthorize("@ss.hasPermi('apms:testModel:list')")

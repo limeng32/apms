@@ -11,8 +11,11 @@
           </p>
         </div>
         <div class="rk-header-actions">
-          <el-button class="rk-btn rk-btn-primary" :disabled="!hasImportPerm" @click="importDialogRef?.open()">
-            <el-icon><Upload /></el-icon>CSV 批量导入
+          <el-button class="rk-btn" :disabled="!hasImportPerm" @click="entryDialogRef?.openFree()">
+            <el-icon><EditPen /></el-icon>手动录入
+          </el-button>
+          <el-button class="rk-btn" @click="deviceDialogRef?.open()">
+            <el-icon><Connection /></el-icon>设备接入
           </el-button>
         </div>
       </div>
@@ -181,7 +184,7 @@
                 <div class="tr-section-title">
                   同项目尝试记录
                   <span class="tr-section-count rk-mono">{{ attempts.length }}</span>
-                  <span class="tr-section-hint">方向：{{ dirLabel(current.indicatorDirection) }}</span>
+                  <span class="tr-section-hint">{{ current.indicatorDirection ? '方向：' + dirLabel(current.indicatorDirection) : '无评价方向：默认最新一次当选' }}</span>
                 </div>
                 <div class="rk-table-scroll tr-attempt-scroll">
                   <table class="rk-table tr-attempt-table">
@@ -225,7 +228,8 @@
                   </table>
                 </div>
                 <div v-if="attempts.length > 1" class="tr-tip">
-                  自动选最佳按方向（{{ dirLabel(current.indicatorDirection) }}）判定；手动「选为最佳」可覆盖。
+                  <template v-if="current.indicatorDirection">自动选最佳按方向（{{ dirLabel(current.indicatorDirection) }}）判定；手动「选为最佳」可覆盖。</template>
+                  <template v-else>该项目无评价方向，系统默认把最新一次测量选为当前结果；手动「选为最佳」可覆盖。</template>
                 </div>
               </template>
 
@@ -273,26 +277,30 @@
         </div>
       </div>
 
-      <!-- CSV 导入对话框（原逻辑保留） -->
-      <csv-import-dialog ref="importDialogRef" action="/apms/test-result/import/csv" @success="handleImportSuccess" />
+      <!-- 手动录入成绩 -->
+      <result-entry-dialog ref="entryDialogRef" @success="handleImportSuccess"/>
+      <!-- 设备接入 -->
+      <device-access-dialog ref="deviceDialogRef" @pushed="handleImportSuccess"/>
     </div>
   </div>
 </template>
 
 <script setup name="ApmsTestResult">
-import { listTestResult, getTestResult, listByTaskMember, selectAttempt } from '@/api/apms/testResult'
+import { listTestResult, getTestResult, listByTaskMember, listFreeGroup, selectAttempt } from '@/api/apms/testResult'
 import { listTestTask } from '@/api/apms/testTask'
 import { listAthlete } from '@/api/apms/athlete'
-import CsvImportDialog from '@/components/CsvImportDialog/index.vue'
+import ResultEntryDialog from '@/components/ResultEntryDialog/index.vue'
+import DeviceAccessDialog from '@/components/DeviceAccessDialog/index.vue'
 import { checkPermi } from '@/utils/permission'
-import { Upload, RefreshLeft, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
+import { EditPen, Connection, RefreshLeft, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
 
 const PAGE_SIZE = 10
 
-// ========= CSV 导入 =========
-const importDialogRef = ref(null)
+// ========= 手动录入 / 设备推送 =========
+const entryDialogRef = ref(null)
+const deviceDialogRef = ref(null)
 // 修复原页缺陷：proxy.$checkPermi 全局未注册（main.js 无此挂载）且 checkPermi 要求传数组（原传字符串），
 // 导致 hasImportPerm 恒为 undefined、导入按钮恒禁用
 const hasImportPerm = computed(() => checkPermi(['apms:testResult:add']))
@@ -390,10 +398,16 @@ function loadDetail(id) {
   attempts.value = []
   getTestResult(id).then(res => {
     current.value = res.data
-    // 查同 athlete + task_item 下的所有 attempt
-    if (res.data && res.data.taskId && res.data.taskItemId && res.data.athleteId) {
-      listByTaskMember(res.data.taskId, res.data.athleteId).then(r => {
-        attempts.value = (r.data || []).filter(x => x.taskItemId === res.data.taskItemId)
+    const d = res.data
+    if (d && d.taskId && d.taskItemId && d.athleteId) {
+      // 任务内：查该队员在本任务的所有结果，筛出同任务项的尝试
+      listByTaskMember(d.taskId, d.athleteId).then(r => {
+        attempts.value = (r.data || []).filter(x => x.taskItemId === d.taskItemId)
+      }).finally(() => { detailLoading.value = false })
+    } else if (d && d.athleteId && (d.indicatorId || d.modelId)) {
+      // 散录：查同队员+同指标/模型（不绑任务）的尝试
+      listFreeGroup(d.athleteId, d.indicatorId, d.modelId).then(r => {
+        attempts.value = r.data || []
       }).finally(() => { detailLoading.value = false })
     } else {
       detailLoading.value = false

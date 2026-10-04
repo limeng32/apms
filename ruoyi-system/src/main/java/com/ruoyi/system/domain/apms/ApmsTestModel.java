@@ -16,6 +16,8 @@ public class ApmsTestModel {
     /** 1=组合模型 0=否 */
     private String isCombo;
     private String algoVersion;
+    /** 派生算法标识（算法注册表 key，如 rsa-sdec；为空=纯采集模型） */
+    private String algoId;
     private String status;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date createTime;
@@ -37,6 +39,8 @@ public class ApmsTestModel {
     public void setIsCombo(String isCombo) { this.isCombo = isCombo; }
     public String getAlgoVersion() { return algoVersion; }
     public void setAlgoVersion(String algoVersion) { this.algoVersion = algoVersion; }
+    public String getAlgoId() { return algoId; }
+    public void setAlgoId(String algoId) { this.algoId = algoId; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public Date getCreateTime() { return createTime; }

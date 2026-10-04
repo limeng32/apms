@@ -139,12 +139,24 @@ export function download(url, params, filename, config) {
     return Promise.resolve()
   }
   downloadLoadingInstance = ElLoading.service({ text: "正在下载数据，请稍候", background: "rgba(0, 0, 0, 0.7)", })
-  return service.post(url, params, {
-    transformRequest: [(params) => { return tansParams(params) }],
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    responseType: 'blob',
-    ...config
-  }).then(async (data) => {
+  // 下载类接口默认 POST（RuoYi 导出惯例）；后端只支持 GET 时传 config.method='get'
+  const useGet = String(config?.method || 'post').toLowerCase() === 'get'
+  const request = useGet
+    // GET 无请求体：不能带 POST 的 transformRequest（axios 会以 undefined 调用，
+    // tansParams 内部 Object.keys 会抛 "Cannot convert undefined or null to object"）；
+    // params 交给请求拦截器统一拼到 URL（同全站其他 GET）
+    ? service.get(url, {
+      params,
+      responseType: 'blob',
+      ...config
+    })
+    : service.post(url, params, {
+      transformRequest: [(p) => tansParams(p)],
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      responseType: 'blob',
+      ...config
+    })
+  return request.then(async (data) => {
     const isBlob = blobValidate(data)
     if (isBlob) {
       const blob = new Blob([data])

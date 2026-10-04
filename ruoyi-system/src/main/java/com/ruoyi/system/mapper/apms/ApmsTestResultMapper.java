@@ -23,6 +23,19 @@ public interface ApmsTestResultMapper {
     /** 取消同组 attempt 的选中（为 autoSelectBest 做准备） */
     int clearSelectedForGroup(@Param("taskItemId") Long taskItemId, @Param("athleteId") Long athleteId);
 
+    /**
+     * 查「无任务」成绩同组：同队员 + 同指标/模型，且 task_item_id IS NULL
+     * （散录/CSV 不绑任务/设备推送的记录，独立选最佳，不与任务内成绩串组）
+     */
+    List<ApmsTestResult> selectFreeGroup(@Param("athleteId") Long athleteId,
+                                         @Param("indicatorId") Long indicatorId,
+                                         @Param("modelId") Long modelId);
+
+    /** 清除「无任务」同组的选中标记 */
+    int clearSelectedFreeGroup(@Param("athleteId") Long athleteId,
+                               @Param("indicatorId") Long indicatorId,
+                               @Param("modelId") Long modelId);
+
     /** 更新 attempt 的 is_selected */
     int updateSelected(@Param("id") Long id, @Param("isSelected") String isSelected);
 

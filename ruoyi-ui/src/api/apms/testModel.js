@@ -16,6 +16,9 @@ export function updateTestModel(data) {
 export function delTestModel(ids) {
   return request({ url: '/apms/test-model/' + ids, method: 'delete' })
 }
+export function listAlgorithms() {
+  return request({ url: '/apms/test-model/algorithms', method: 'get' })
+}
 
 // ============ Field ============
 export function listField(modelId) {

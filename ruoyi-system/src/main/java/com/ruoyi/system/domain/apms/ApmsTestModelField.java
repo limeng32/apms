@@ -12,6 +12,8 @@ public class ApmsTestModelField {
     private String dataType;
     /** 1=必填 0=选填 */
     private String isRequired;
+    /** 采集方式：INPUT=人工/设备采集 DERIVED=系统计算 */
+    private String collectMode;
     private Integer sortOrder;
 
     public Long getId() { return id; }
@@ -28,6 +30,8 @@ public class ApmsTestModelField {
     public void setDataType(String dataType) { this.dataType = dataType; }
     public String getIsRequired() { return isRequired; }
     public void setIsRequired(String isRequired) { this.isRequired = isRequired; }
+    public String getCollectMode() { return collectMode; }
+    public void setCollectMode(String collectMode) { this.collectMode = collectMode; }
     public Integer getSortOrder() { return sortOrder; }
     public void setSortOrder(Integer sortOrder) { this.sortOrder = sortOrder; }
 }

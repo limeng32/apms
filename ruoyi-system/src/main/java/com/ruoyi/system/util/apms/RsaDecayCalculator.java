@@ -86,7 +86,9 @@ public class RsaDecayCalculator implements AlgorithmCalculator<RsaDecayCalculato
      * 静态便捷入口
      */
     public static Result calculate(List<BigDecimal> sprintTimes) {
-        return new RsaDecayCalculator().calculate(new Input() {{ this.sprintTimes = sprintTimes; }});
+        Input input = new Input();
+        input.sprintTimes = sprintTimes;
+        return new RsaDecayCalculator().calculate(input);
     }
 
     /**

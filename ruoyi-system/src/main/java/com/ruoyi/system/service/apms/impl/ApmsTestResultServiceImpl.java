@@ -14,7 +14,6 @@ import com.ruoyi.system.service.apms.IApmsTestResultService;
 import com.ruoyi.system.service.apms.ITaskProgressService;
 import com.ruoyi.system.service.apms.IBodyMeasureSyncService;
 import com.ruoyi.system.service.apms.IApmsPhvService;
-import com.ruoyi.system.util.apms.RsaDecayCalculator;
 
 /**
  * 测试结果 Service
@@ -33,6 +32,8 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
     @Autowired private ApmsTestResultRepMapper repMapper;
     @Autowired private ApmsAthleteMapper athleteMapper;
     @Autowired private ApmsTestModelMapper testModelMapper;
+    @Autowired private ApmsTestModelFieldMapper testModelFieldMapper;
+    @Autowired private com.ruoyi.system.service.apms.algorithm.ModelAlgorithmRegistry algorithmRegistry;
     @Autowired private ITaskProgressService taskProgressService;
     @Autowired private IBodyMeasureSyncService bodyMeasureSyncService;
     @Autowired private IApmsPhvService phvService;
@@ -60,12 +61,25 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
     }
 
     @Override
+    public List<ApmsTestResult> listFreeGroup(Long athleteId, Long indicatorId, Long modelId) {
+        List<ApmsTestResult> list = resultMapper.selectFreeGroup(athleteId, indicatorId, modelId);
+        list.forEach(this::fillAggregate);
+        return list;
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public int add(ApmsTestResult result, List<ApmsTestResultValue> values) {
         validateType(result);
+        // MODEL 型：按模型字段配置校验/归一采集值（字段角色、必填、类型、单位）
+        if ("MODEL".equals(result.getItemType())) prepareModelValues(result, values);
         // 默认选中
         if (result.getIsSelected() == null || result.getIsSelected().isEmpty()) {
             result.setIsSelected("1");
+        }
+        // 尝试序号：同组（任务项 或 散录同队员+同指标/模型）内递增
+        if (result.getAttemptNo() == null) {
+            result.setAttemptNo(nextAttemptNo(result));
         }
         result.setCreateBy(SecurityUtils.getUsername());
         resultMapper.insert(result);
@@ -80,9 +94,15 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
         // REP 计算（仅 INDICATOR 型 + numeric_value）
         computeRepIfNeeded(result, values);
 
-        // 若 is_selected=1，自动清除同组其他 attempt 的选中
+        // 若 is_selected=1，自动重算同组最佳：
+        // 任务内成绩按 task_item+队员分组；无任务散录（CSV 不绑任务/设备推送/手动散录）
+        // 按 同队员+同指标/模型 且 task_item_id IS NULL 独立分组，禁止跨任务/跨指标串组
         if ("1".equals(result.getIsSelected())) {
-            autoSelectBest(result.getTaskItemId(), result.getAthleteId());
+            if (result.getTaskItemId() != null) {
+                autoSelectBest(result.getTaskItemId(), result.getAthleteId());
+            } else {
+                autoSelectBestFree(result);
+            }
         }
 
         // 结果写入后，重算任务成员完成状态
@@ -96,8 +116,8 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
         // 🟢 PHV 自动触发：同步完体态后，尝试 Mirwald 计算
         try { phvService.tryAutoCalculate(result.getAthleteId()); } catch (Exception ignored) {}
 
-        // MODEL 型：自动尝试 RSA 衰减率计算（需要 ≥2 趟 sprint 数据）
-        computeRsaDecayIfNeeded(result);
+        // MODEL 型：按模型绑定的派生算法（algo_id）计算派生字段；无绑定则纯采集
+        deriveModelResult(result, values);
         return 1;
     }
 
@@ -128,7 +148,11 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
             values != null ? values : valueMapper.selectByResultId(result.getId()));
 
         if ("1".equals(result.getIsSelected())) {
-            autoSelectBest(result.getTaskItemId(), result.getAthleteId());
+            if (result.getTaskItemId() != null) {
+                autoSelectBest(result.getTaskItemId(), result.getAthleteId());
+            } else {
+                autoSelectBestFree(result);
+            }
         }
 
         // 结果更新后，重算任务成员完成状态
@@ -142,8 +166,10 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
         // 🟢 PHV 自动触发
         try { phvService.tryAutoCalculate(result.getAthleteId()); } catch (Exception ignored) {}
 
-        // MODEL 型：自动尝试 RSA 衰减率计算
-        computeRsaDecayIfNeeded(result);
+        // MODEL 型：按模型绑定的派生算法重算派生字段
+        if ("MODEL".equals(result.getItemType())) {
+            deriveModelResult(result, values != null ? values : valueMapper.selectByResultId(result.getId()));
+        }
         return 1;
     }
 
@@ -185,28 +211,76 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
     @Transactional(rollbackFor = Exception.class)
     public int autoSelectBest(Long taskItemId, Long athleteId) {
         List<ApmsTestResult> group = resultMapper.selectList(
-            buildQuery(taskItemId, athleteId));
-        if (group.size() < 2) return 0; // 单条不用选
+                buildQuery(taskItemId, athleteId));
+        if (group.size() < 2) return 0; // 单条保持已选中
 
-        // 查 direction
+        // 有评价方向（指标）→ 按方向取最优；无方向（模型）→ 最新有效测量自动当选
+        ApmsTestResult target = pickRepresentative(group);
+        if (target == null) return 0;
+        resultMapper.clearSelectedForGroup(taskItemId, athleteId);
+        return resultMapper.updateSelected(target.getId(), "1");
+    }
+
+    /**
+     * 无任务散录成绩的自动选最佳。
+     *
+     * <p>分组范围：同队员 + 同指标（或同模型）且 task_item_id IS NULL 的记录，
+     * 与任务内成绩互不影响。
+     */
+    private int autoSelectBestFree(ApmsTestResult justAdded) {
+        Long athleteId = justAdded.getAthleteId();
+        Long indicatorId = "INDICATOR".equals(justAdded.getItemType()) ? justAdded.getIndicatorId() : null;
+        Long modelId = indicatorId == null ? justAdded.getModelId() : null;
+
+        List<ApmsTestResult> group = resultMapper.selectFreeGroup(athleteId, indicatorId, modelId);
+        if (group.size() < 2) return 0; // 单条保持已选中
+
+        ApmsTestResult target = pickRepresentative(group);
+        if (target == null) return 0;
+        resultMapper.clearSelectedFreeGroup(athleteId, indicatorId, modelId);
+        return resultMapper.updateSelected(target.getId(), "1");
+    }
+
+    /**
+     * 在同组尝试中选「代表记录」。这与「有没有评价方向」是两件事：
+     * <ul>
+     *   <li>组内记录有方向（指标）：按方向比主数值，取最优；</li>
+     *   <li>组内无方向（模型，系统不知道多少算好）：不做优劣判断，
+     *       取最新一次有效测量（measure_date 最大，同日取 id 最大）自动当选，
+     *       教练仍可在测试结果页手动改选任意一次。</li>
+     * </ul>
+     */
+    private ApmsTestResult pickRepresentative(List<ApmsTestResult> group) {
         String direction = resolveDirection(group.get(0));
-        if (direction == null) return 0;
-
-        // 找每个 result 的主 numeric_value（第一个非派生 field）
+        if (direction == null) {
+            return pickLatestValid(group);
+        }
         ApmsTestResult best = null;
         BigDecimal bestVal = null;
         for (ApmsTestResult r : group) {
             BigDecimal v = extractMainValue(r.getId());
             if (v == null) continue;
             boolean better = (bestVal == null)
-                || ("HIGHER_BETTER".equals(direction) && v.compareTo(bestVal) > 0)
-                || ("LOWER_BETTER".equals(direction) && v.compareTo(bestVal) < 0);
+                    || ("HIGHER_BETTER".equals(direction) && v.compareTo(bestVal) > 0)
+                    || ("LOWER_BETTER".equals(direction) && v.compareTo(bestVal) < 0);
             if (better) { best = r; bestVal = v; }
         }
+        return best;
+    }
 
-        if (best == null) return 0;
-        resultMapper.clearSelectedForGroup(taskItemId, athleteId);
-        return resultMapper.updateSelected(best.getId(), "1");
+    /** 最新一次有效测量；measure_date 相同取 id 最大（最后录入） */
+    private ApmsTestResult pickLatestValid(List<ApmsTestResult> group) {
+        ApmsTestResult latest = null;
+        for (ApmsTestResult r : group) {
+            if ("0".equals(r.getIsValid())) continue;
+            if (latest == null) { latest = r; continue; }
+            Date d1 = r.getMeasureDate();
+            Date d0 = latest.getMeasureDate();
+            if (d1 != null && (d0 == null || d1.after(d0) || (d1.equals(d0) && r.getId() > latest.getId()))) {
+                latest = r;
+            }
+        }
+        return latest;
     }
 
     @Override
@@ -217,11 +291,20 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
         if ("0".equals(target.getIsValid())) {
             throw new ServiceException("无效 attempt 不能被选中（is_valid=0）");
         }
-        if (target.getTaskItemId() == null || target.getAthleteId() == null) {
-            throw new ServiceException("result 缺少 task_item_id 或 athlete_id，无法确定选择范围");
+        if (target.getAthleteId() == null) {
+            throw new ServiceException("result 缺少 athlete_id，无法确定选择范围");
         }
 
-        // 清同组其他 + 选中目标
+        if (target.getTaskItemId() == null) {
+            // 无任务散录：在 同队员+同指标/模型 且 task_item_id IS NULL 的范围内选择
+            Long indicatorId = target.getIndicatorId();
+            Long modelId = indicatorId == null ? target.getModelId() : null;
+            resultMapper.clearSelectedFreeGroup(target.getAthleteId(), indicatorId, modelId);
+            resultMapper.updateSelected(resultId, "1");
+            return;
+        }
+
+        // 任务内：清同组其他 + 选中目标
         resultMapper.clearSelectedForGroup(target.getTaskItemId(), target.getAthleteId());
         resultMapper.updateSelected(resultId, "1");
 
@@ -245,101 +328,128 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
         if ("1".equals(old.getIsSelected())) {
             incoming.setIsSelected("0");
 
-            // 取消选中后，尝试让 autoSelectBest 从剩余有效 attempt 中选一个最优
-            if (old.getTaskItemId() != null && old.getAthleteId() != null) {
-                autoSelectBest(old.getTaskItemId(), old.getAthleteId());
+            // 取消选中后，尝试从剩余 attempt 中选一个最优
+            if (old.getAthleteId() != null) {
+                if (old.getTaskItemId() != null) {
+                    autoSelectBest(old.getTaskItemId(), old.getAthleteId());
+                } else {
+                    autoSelectBestFree(old);
+                }
             }
         }
     }
 
-    // ============== RSA 衰减率自动计算 ==============
+    // ============== 模型结构化采集：字段校验 + 派生算法分发 ==============
+
     /**
-     * MODEL 型 result 存完后，尝试自动计算 RSA 衰减率 Sdec
-     *
-     * 触发条件：result.model_id != null + result.values 中能收集到 ≥2 趟 sprint 时间
-     * 结果：Sdec 作为 is_derived=1, algorithm_id='rsa-decay' 的 result_value 存回
-     *
-     * 设计选择：
-     *   - 只对 is_selected=1 的 attempt 计算（Sdec 是模型整体派生值，不随 attempt 变）
-     *   - 不依赖 model.code 判断是不是 RSA（任何有 ≥2 个 sprint 类数值的模型都算）
-     *   - 读原始输入时排除 is_derived=1 的派生值（避免把旧 Sdec 当输入）
+     * 按 {@code apms_test_model_field} 配置校验并归一 MODEL 结果的采集值。
+     * <ul>
+     *   <li>模型必须存在、非组合模型（组合模型成绩由综合评分模块产出）；</li>
+     *   <li>每个值必须匹配一个已配置字段，且 collect_mode=INPUT（派生字段禁止手填）；</li>
+     *   <li>decimal/number 必须为数字；text 可文本；补齐 fieldId/fieldName/unit/modelId/isDerived；</li>
+     *   <li>所有必填 INPUT 字段必须有值；至少提交一个采集值。</li>
+     * </ul>
      */
-    private void computeRsaDecayIfNeeded(ApmsTestResult result) {
-        if (result.getModelId() == null) return;
-        if (!"1".equals(result.getIsSelected())) return; // 只给选中 attempt 算
+    private void prepareModelValues(ApmsTestResult result, List<ApmsTestResultValue> values) {
+        if (result.getModelId() == null) throw new ServiceException("模型结果缺少 modelId");
+        ApmsTestModel model = testModelMapper.selectById(result.getModelId());
+        if (model == null) throw new ServiceException("测试模型不存在：id=" + result.getModelId());
+        if ("1".equals(model.getIsCombo())) {
+            throw new ServiceException("「" + model.getName() + "」为组合模型，成绩由综合评分模块生成，不支持手工录入");
+        }
+        List<ApmsTestModelField> fields = testModelFieldMapper.selectByModelId(result.getModelId());
+        if (fields == null || fields.isEmpty()) {
+            throw new ServiceException("模型「" + model.getName() + "」尚未配置采集字段，无法录入");
+        }
+        if (values == null || values.isEmpty()) {
+            throw new ServiceException("模型「" + model.getName() + "」至少需要填写一项采集数据");
+        }
 
-        List<ApmsTestResultValue> vals = valueMapper.selectByResultId(result.getId());
-        if (vals.size() < 2) return;
+        Map<Long, ApmsTestModelField> byId = new HashMap<>();
+        Map<String, ApmsTestModelField> byKey = new HashMap<>();
+        for (ApmsTestModelField f : fields) {
+            byId.put(f.getId(), f);
+            if (f.getFieldKey() != null) byKey.put(f.getFieldKey().trim(), f);
+        }
+        Set<Long> providedFieldIds = new HashSet<>();
 
-        // 收集所有"非派生 + 有 numeric_value"的数值，按 field_key 排序取前 N 个
-        List<BigDecimal> sprintTimes = new ArrayList<>();
-        for (ApmsTestResultValue v : vals) {
-            if ("1".equals(v.getIsDerived())) continue;  // 跳过已有派生值
-            if (v.getNumericValue() == null) continue;
-            // 排除明显的"汇总"类 field_key（如 result, total_time 等）
-            String fk = v.getFieldKey() != null ? v.getFieldKey().toLowerCase() : "";
-            if (fk.startsWith("result") || fk.startsWith("total")
-                    || fk.startsWith("average") || fk.startsWith("best")
-                    || fk.contains("sdec") || fk.contains("decay")) {
-                continue;
+        for (ApmsTestResultValue v : values) {
+            ApmsTestModelField f = v.getFieldId() != null ? byId.get(v.getFieldId())
+                    : (v.getFieldKey() != null ? byKey.get(v.getFieldKey().trim()) : null);
+            if (f == null) {
+                throw new ServiceException("字段不在模型「" + model.getName() + "」配置中："
+                        + (v.getFieldKey() != null ? v.getFieldKey() : v.getFieldId()));
             }
-            sprintTimes.add(v.getNumericValue());
+            if ("DERIVED".equals(f.getCollectMode())) {
+                throw new ServiceException("「" + f.getFieldName() + "」由系统自动计算，不允许手工填写");
+            }
+            String raw = v.getTextValue();
+            if (v.getNumericValue() != null) raw = v.getNumericValue().toPlainString();
+            boolean empty = raw == null || raw.trim().isEmpty();
+
+            String type = f.getDataType();
+            boolean numericType = "decimal".equalsIgnoreCase(type) || "number".equalsIgnoreCase(type);
+            if (!empty && numericType) {
+                try {
+                    new BigDecimal(raw.trim());
+                } catch (NumberFormatException e) {
+                    throw new ServiceException("「" + f.getFieldName() + "」需要数字，实际为：" + raw);
+                }
+            }
+            // 归一：统一按配置落值
+            v.setModelId(result.getModelId());
+            v.setIndicatorId(null);
+            v.setFieldId(f.getId());
+            v.setFieldKey(f.getFieldKey());
+            v.setFieldName(f.getFieldName());
+            v.setUnit(f.getUnit());
+            v.setIsDerived("0");
+            if (numericType) {
+                v.setNumericValue(empty ? null : new BigDecimal(raw.trim()));
+                v.setTextValue(null);
+            } else {
+                v.setNumericValue(null);
+                if (!empty) v.setTextValue(raw.trim());
+            }
+            if (!empty) providedFieldIds.add(f.getId());
         }
 
-        if (sprintTimes.size() < 2) return; // 至少 2 趟
-
-        // 计算
-        RsaDecayCalculator.Result calc;
-        try {
-            calc = RsaDecayCalculator.calculate(sprintTimes);
-        } catch (IllegalArgumentException e) {
-            return; // 参数不合法（比如有 0 或负数），静默跳过
-        }
-
-        // 先删旧的 rsa-decay 派生值
-        for (ApmsTestResultValue v : vals) {
-            if (RsaDecayCalculator.ALGORITHM_ID.equals(v.getAlgorithmId())) {
-                valueMapper.deleteById(v.getId());
+        for (ApmsTestModelField f : fields) {
+            if ("INPUT".equals(f.getCollectMode()) && "1".equals(f.getIsRequired())
+                    && !providedFieldIds.contains(f.getId())) {
+                throw new ServiceException("「" + f.getFieldName() + "」为必填项");
             }
         }
+        if (providedFieldIds.isEmpty()) {
+            throw new ServiceException("模型「" + model.getName() + "」至少需要填写一项采集数据");
+        }
+    }
 
-        // 插入 Sdec 派生值
-        ApmsTestResultValue derived = new ApmsTestResultValue();
-        derived.setResultId(result.getId());
-        derived.setModelId(result.getModelId());
-        derived.setFieldKey("rsa_sdec");
-        derived.setFieldName("Sdec 衰减率");
-        derived.setNumericValue(calc.sdecPercent);
-        derived.setUnit("%");
-        derived.setIsDerived("1");
-        derived.setAlgorithmId(RsaDecayCalculator.ALGORITHM_ID);
-        derived.setAlgorithmVersion(RsaDecayCalculator.ALGO_VERSION);
-        valueMapper.insert(derived);
+    /**
+     * 保存后分发模型派生算法：按 model.algo_id 在算法注册表中查找实现；
+     * 未绑定算法的模型为纯采集模型，不产生派生值。
+     * 传给算法的原始值只含非派生采集字段，并按字段 sortOrder 升序排列。
+     */
+    private void deriveModelResult(ApmsTestResult result, List<ApmsTestResultValue> values) {
+        if (!"MODEL".equals(result.getItemType()) || result.getModelId() == null) return;
+        ApmsTestModel model = testModelMapper.selectById(result.getModelId());
+        if (model == null || model.getAlgoId() == null || model.getAlgoId().trim().isEmpty()) return;
+        com.ruoyi.system.service.apms.algorithm.ModelDeriveAlgorithm algo =
+                algorithmRegistry.get(model.getAlgoId());
+        if (algo == null) {
+            throw new ServiceException("模型「" + model.getName() + "」绑定的派生算法未注册：" + model.getAlgoId());
+        }
+        if (values == null || values.isEmpty()) return;
 
-        // 额外：best_time / avg_time 也作为派生值存（前面清理循环已删干净，这里纯 insert）
-        ApmsTestResultValue derived2 = new ApmsTestResultValue();
-        derived2.setResultId(result.getId());
-        derived2.setModelId(result.getModelId());
-        derived2.setFieldKey("rsa_best_time");
-        derived2.setFieldName("最佳成绩");
-        derived2.setNumericValue(calc.bestTime);
-        derived2.setUnit("s");
-        derived2.setIsDerived("1");
-        derived2.setAlgorithmId(RsaDecayCalculator.ALGORITHM_ID);
-        derived2.setAlgorithmVersion(RsaDecayCalculator.ALGO_VERSION);
-        valueMapper.insert(derived2);
-
-        ApmsTestResultValue derived3 = new ApmsTestResultValue();
-        derived3.setResultId(result.getId());
-        derived3.setModelId(result.getModelId());
-        derived3.setFieldKey("rsa_avg_time");
-        derived3.setFieldName("平均成绩");
-        derived3.setNumericValue(calc.avgTime);
-        derived3.setUnit("s");
-        derived3.setIsDerived("1");
-        derived3.setAlgorithmId(RsaDecayCalculator.ALGORITHM_ID);
-        derived3.setAlgorithmVersion(RsaDecayCalculator.ALGO_VERSION);
-        valueMapper.insert(derived3);
+        Map<Long, Integer> sortMap = new HashMap<>();
+        for (ApmsTestModelField f : testModelFieldMapper.selectByModelId(result.getModelId())) {
+            sortMap.put(f.getId(), f.getSortOrder() == null ? 0 : f.getSortOrder());
+        }
+        List<ApmsTestResultValue> rawOrdered = values.stream()
+                .filter(v -> !"1".equals(v.getIsDerived()))
+                .sorted(Comparator.comparingInt(v -> sortMap.getOrDefault(v.getFieldId(), Integer.MAX_VALUE)))
+                .collect(Collectors.toList());
+        algo.derive(result, rawOrdered);
     }
 
     // ============== 内部方法 ==============
@@ -349,6 +459,23 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
         q.setTaskItemId(taskItemId);
         q.setAthleteId(athleteId);
         return q;
+    }
+
+    /** 同组内下一个尝试序号（最大 attempt_no + 1，无历史则 1） */
+    private int nextAttemptNo(ApmsTestResult result) {
+        List<ApmsTestResult> group;
+        if (result.getTaskItemId() != null) {
+            group = resultMapper.selectList(buildQuery(result.getTaskItemId(), result.getAthleteId()));
+        } else {
+            Long indicatorId = "INDICATOR".equals(result.getItemType()) ? result.getIndicatorId() : null;
+            Long modelId = indicatorId == null ? result.getModelId() : null;
+            group = resultMapper.selectFreeGroup(result.getAthleteId(), indicatorId, modelId);
+        }
+        int max = 0;
+        for (ApmsTestResult r : group) {
+            if (r.getAttemptNo() != null && r.getAttemptNo() > max) max = r.getAttemptNo();
+        }
+        return max + 1;
     }
 
     /** 互斥校验 */

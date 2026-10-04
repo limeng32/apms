@@ -287,6 +287,9 @@
                           <span class="rk-status-badge" :class="memberStatusTone(m.status)">{{ memberStatusLabel(m.status) }}</span>
                         </td>
                         <td class="text-center">
+                          <button type="button" class="rk-link"
+                                  v-hasPermi="['apms:testResult:add']"
+                                  @click="openEntryForMember(m)">录成绩</button>
                           <button type="button" class="rk-link" @click="openQuickChangeStatus(m)">改状态</button>
                           <button type="button" class="rk-link tt-link-danger" @click="handleRemoveMember(m)">离队</button>
                         </td>
@@ -463,6 +466,9 @@
           <el-button type="primary" @click="submitBatchEnroll">批量登记</el-button>
         </template>
       </el-dialog>
+
+      <!-- 成绩录入 -->
+      <result-entry-dialog ref="entryDialogRef" @success="handleEntrySuccess"/>
     </div>
   </div>
 </template>
@@ -475,6 +481,7 @@ import { listDept } from '@/api/system/dept'
 import { listUser } from '@/api/system/user'
 import request from '@/utils/request'
 import { Plus, Delete, RefreshLeft, Refresh, ArrowLeft, ArrowRight, User } from '@element-plus/icons-vue'
+import ResultEntryDialog from '@/components/ResultEntryDialog/index.vue'
 
 const { proxy } = getCurrentInstance()
 
@@ -795,6 +802,21 @@ function handleRemoveMember(row) {
     proxy.$modal.msgSuccess('已移出')
     loadDetail(currentTask.value.id); getList(); loadStats()
   }).catch(() => {})
+}
+
+// ========= 成绩录入 =========
+const entryDialogRef = ref(null)
+
+function openEntryForMember(m) {
+  entryDialogRef.value?.openForTask({
+    taskId: currentTask.value.id,
+    taskName: currentTask.value.taskName,
+    athleteId: m.athleteId,
+    athleteName: m.athleteName
+  })
+}
+function handleEntrySuccess() {
+  loadDetail(currentTask.value.id); getList(); loadStats()
 }
 
 // ========= 辅助 =========

@@ -13,6 +13,7 @@ import { indicatorHandlers } from './indicator'
 import { testModelHandlers } from './testModel'
 import { testTaskHandlers } from './testTask'
 import { testResultHandlers } from './testResult'
+import { deviceHandlers } from './device'
 import { bodyMeasureHandlers } from './bodyMeasure'
 import { phvHandlers } from './phv'
 import { rtpHandlers } from './rtp'
@@ -30,6 +31,7 @@ export const handlers = [
   ...testModelHandlers,
   ...testTaskHandlers,
   ...testResultHandlers,
+  ...deviceHandlers,
   ...bodyMeasureHandlers,
   ...phvHandlers,
   ...rtpHandlers,

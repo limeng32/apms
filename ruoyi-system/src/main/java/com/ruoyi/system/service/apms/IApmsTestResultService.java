@@ -12,6 +12,12 @@ public interface IApmsTestResultService {
     ApmsTestResult getById(Long id);
     List<ApmsTestResult> listByTaskMember(Long taskId, Long athleteId);
 
+    /**
+     * 散录（不绑任务）成绩的同组尝试：同队员 + 同指标/模型，且 task_item_id IS NULL。
+     * indicatorId/modelId 二选一。
+     */
+    List<ApmsTestResult> listFreeGroup(Long athleteId, Long indicatorId, Long modelId);
+
     int add(ApmsTestResult result, List<ApmsTestResultValue> values);
     int update(ApmsTestResult result, List<ApmsTestResultValue> values);
     int delete(Long id);

@@ -11,11 +11,12 @@
         <result column="unit"        property="unit"/>
         <result column="data_type"   property="dataType"/>
         <result column="is_required" property="isRequired"/>
+        <result column="collect_mode" property="collectMode"/>
         <result column="sort_order"  property="sortOrder"/>
     </resultMap>
 
     <sql id="selectVo">
-        SELECT id, model_id, field_key, field_name, unit, data_type, is_required, sort_order
+        SELECT id, model_id, field_key, field_name, unit, data_type, is_required, collect_mode, sort_order
         FROM apms_test_model_field
     </sql>
 
@@ -30,14 +31,18 @@
     </select>
 
     <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsTestModelField" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO apms_test_model_field (model_id, field_key, field_name, unit, data_type, is_required, sort_order)
-        VALUES (#{modelId}, #{fieldKey}, #{fieldName}, #{unit}, #{dataType}, #{isRequired}, #{sortOrder})
+        INSERT INTO apms_test_model_field (model_id, field_key, field_name, unit, data_type, is_required, collect_mode, sort_order)
+        VALUES (#{modelId}, #{fieldKey}, #{fieldName}, #{unit}, #{dataType}, #{isRequired},
+                <choose><when test="collectMode != null and collectMode != ''">#{collectMode}</when><otherwise>'INPUT'</otherwise></choose>,
+                #{sortOrder})
     </insert>
 
     <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsTestModelField">
         UPDATE apms_test_model_field
         SET field_key = #{fieldKey}, field_name = #{fieldName}, unit = #{unit},
-            data_type = #{dataType}, is_required = #{isRequired}, sort_order = #{sortOrder}
+            data_type = #{dataType}, is_required = #{isRequired},
+            collect_mode = <choose><when test="collectMode != null and collectMode != ''">#{collectMode}</when><otherwise>'INPUT'</otherwise></choose>,
+            sort_order = #{sortOrder}
         WHERE id = #{id}
     </update>
 

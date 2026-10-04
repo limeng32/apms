@@ -119,6 +119,23 @@
         WHERE task_item_id=#{taskItemId} AND athlete_id=#{athleteId}
     </update>
 
+    <!-- 无任务散录成绩：同队员+同指标/模型，task_item_id IS NULL 的独立分组 -->
+    <select id="selectFreeGroup" resultMap="ApmsTestResultResult">
+        <include refid="selectVo"/>
+        WHERE r.task_item_id IS NULL AND r.athlete_id = #{athleteId}
+        <if test="indicatorId != null"> AND r.indicator_id = #{indicatorId}</if>
+        <if test="modelId != null">     AND r.model_id = #{modelId}</if>
+        ORDER BY r.measure_date, r.id
+    </select>
+
+    <update id="clearSelectedFreeGroup">
+        UPDATE apms_test_result
+        SET is_selected='0'
+        WHERE task_item_id IS NULL AND athlete_id = #{athleteId}
+        <if test="indicatorId != null"> AND indicator_id = #{indicatorId}</if>
+        <if test="modelId != null">     AND model_id = #{modelId}</if>
+    </update>
+
     <update id="updateSelected">
         UPDATE apms_test_result SET is_selected=#{isSelected} WHERE id=#{id}
     </update>
