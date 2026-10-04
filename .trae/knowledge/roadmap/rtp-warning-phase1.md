@@ -65,23 +65,26 @@ relations:
 
 默认 5 条，阈值 / 权重 / 开关全部存 `apms_rtp_risk_rule`，可按机构校准。
 
-**核心设计：两个维度分离**
+**核心设计：三个维度分离，且先按类别切开**
 
-- `severity`（健康风险严重度 1/2/3）：参与加权评分，回答「这件事对健康有多大风险」；
-- `urgency`（流程紧迫度 1/2/3）：**只用于待办排序**，回答「多快该处理」，不参与健康评分、不影响建议级别；
-- `forceWarning`（布尔）：是否为「可直接建议红色」的健康危急因子。
+- `kind`（因子类别）：**HEALTH（健康因子）/ PROCESS（流程因子）**。这是第一道闸门——
+  - 只有 **HEALTH** 因子进入 `riskScore` 和黄 / 红建议计算；
+  - **PROCESS** 因子健康分贡献恒为 0，**只**产生流程待办、影响 `todoPriority`，永远不可能抬高或压低黄 / 红建议；
+- `severity`（健康风险严重度 1/2/3）：仅对 HEALTH 因子有意义，参与加权评分；PROCESS 规则该列固定 0（不参与评分）；
+- `urgency`（流程紧迫度 1/2/3）：**只用于待办排序**，回答「多快该处理」；
+- `forceWarning`（布尔）：仅 HEALTH 因子可置 true，「可直接建议红色」的健康危急因子。
 
-流程类提醒（复检逾期 / 临近）紧迫但不代表健康恶化：`urgency` 高、`forceWarning=false`；真正的健康危急因子（未闭环手术等）才 `forceWarning=true`。
+流程类提醒（复检逾期 / 临近）属于 PROCESS：再紧迫也只是待办优先级，不代表健康恶化，**不向 riskScore 加一分**；真正的健康因子（未闭环伤病、PHV、体测）属于 HEALTH；未闭环手术等危急项才 `forceWarning=true`。
 
-| 代码 | 规则 | 数据来源 | 默认触发条件 | severity | urgency | forceWarning |
+| 代码 | kind | 规则 | 默认触发条件 | severity（仅HEALTH计分） | urgency | forceWarning |
 |---|---|---|---|---|---|---|
-| `REVIEW_OVERDUE` | RTP 复检逾期 | `apms_rtp_status.next_review_date` | 复检日 < 今天 | 3 | 3 | **false** |
-| `REVIEW_SOON` | 复检临近 | 同上 | 0 ≤ 距今天数 ≤ `reviewSoonDays`(14) | 1 | 2 | false |
-| `INJURY_OPEN` | 伤病 / 手术未闭环 | `apms_medical_record` | `injuryWindowDays`(45) 天内有 injury/surgery，且其后无更晚的 rehabilitation/checkup 记录 | surgery=3 / injury=2 | surgery=3 / injury=2 | surgery **true** / injury false |
-| `PHV_PEAK` | 身高突增峰期 | 最新 `apms_phv_record` | `|maturity_offset| ≤ phvPeakBand`(0.5) 且记录日距今 ≤ `phvFreshDays`(180) | 1 | 1 | false |
-| `TEST_DECLINE` | 关键体测异常 / 下滑 | `apms_test_result(_value)` + 指标评级 | 最新最佳成绩落入 POOR/ATTENTION 区间；**或**同一指标最近两次最佳成绩按方向恶化 ≥ `declineRatio`(8%)；仅关键指标白名单 | 2 | 2 | false |
+| `REVIEW_OVERDUE` | **PROCESS** | RTP 复检逾期 | 复检日 < 今天 | 0（不计分） | 3 | false |
+| `REVIEW_SOON` | **PROCESS** | 复检临近 | 0 ≤ 距今天数 ≤ `reviewSoonDays`(14) | 0（不计分） | 2 | false |
+| `INJURY_OPEN` | HEALTH | 伤病 / 手术未闭环 | `injuryWindowDays`(45) 天内有 injury/surgery，且其后无更晚的 rehabilitation/checkup 记录 | surgery=3 / injury=2 | surgery=3 / injury=2 | surgery **true** / injury false |
+| `PHV_PEAK` | HEALTH | 身高突增峰期 | `|maturity_offset| ≤ phvPeakBand`(0.5) 且记录日距今 ≤ `phvFreshDays`(180) | 1 | 1 | false |
+| `TEST_DECLINE` | HEALTH | 关键体测异常 / 下滑 | 最新最佳成绩落入 POOR/ATTENTION 区间；**或**同一指标最近两次最佳成绩按方向恶化 ≥ `declineRatio`(8%)；仅关键指标白名单 | 2 | 2 | false |
 
-> 说明：`REVIEW_OVERDUE` 虽 `severity=3`（使其在汇总中有足够权重、单独出现即为 INFO 级提示），但 `forceWarning=false`，因此**绝不会**仅因逾期就给出「建议红 / 停训就医」；它通过 `urgency=3` 排在待办最前面。是否把复检类因子的 severity 也调低（使其不参与健康分）可在规则表配置，一期保留上述默认。
+> 这样即使一个运动员同时「复检逾期」+ 命中 PHV_PEAK：health riskScore 也只有 PHV 的 1 分（INFO），逾期的 3 分 urgency 只让待办置顶，绝不会把建议从 INFO 推到 ATTENTION/WARNING。
 
 ### 2.1 规则细则
 
@@ -94,22 +97,27 @@ relations:
 ### 2.2 评分与建议级别
 
 ```
-因子分 = severity(健康严重度 1/2/3) × weight(默认 1.00，可配)
-总分   = Σ 因子分
-待办优先级 todoPriority = max(urgency)   // 仅排序用，不参与定级
+healthScore = Σ [仅 kind=HEALTH 的因子] (severity × weight)
+              PROCESS 因子一律不计入（即使 urgency 再高）
+forceWarningHit = 存在任一 (kind=HEALTH 且 forceWarning=true) 的因子
+todoPriority = max(所有因子 urgency)   // HEALTH + PROCESS 一起取最大，仅排序用
 
-total = 0                → NONE（不生成提示）
-total ≥ scoreInfo(3)     → INFO       关注
-total ≥ scoreAttention(6)→ ATTENTION  建议黄（限制参训评估）
-total ≥ scoreWarning(9)，或「存在任一 forceWarning=true 的因子」
-                         → WARNING    建议红（停训 / 就医评估）
+# 建议级别只由健康因子决定：
+存在 forceWarningHit            → WARNING   建议红（停训 / 就医评估）
+healthScore ≥ scoreWarning(9)   → WARNING
+healthScore ≥ scoreAttention(6) → ATTENTION 建议黄（限制参训评估）
+healthScore ≥ scoreInfo(3)，
+  或命中任一 HEALTH 因子        → INFO      健康关注
+healthScore = 0 且仅命中 PROCESS 因子
+                                → INFO（流程待办，标记 processOnly=true，riskScore=0）
+无任何因子                      → NONE（不生成待办）
 ```
 
 关键区别：
 
-- **红色建议只可能由健康危急因子触发**（总分极高，或 `forceWarning=true`）；
-- **复检逾期**：`forceWarning=false` → 最高只会因累计分到 ATTENTION，单独出现时为 INFO，但 `todoPriority=3` 置顶并标红「逾期 N 天」的流程徽标（区别于健康级别的红色建议）；
-- 待办列表默认排序：`todoPriority DESC, suggested_level DESC, snapshot_date ASC`，逾期项天然排最前。
+- **黄色 / 红色建议只由健康因子决定**，流程因子（复检逾期 / 临近）对 `healthScore` 贡献恒为 0，不可能单独或叠加地影响黄 / 红；
+- **纯流程提醒**（如只有复检逾期）也产生待办：级别显示为 INFO，但带独立的 **`processOnly` 流程标记**（`riskScore=0`），与健康 INFO 视觉区分，置顶显示「逾期 N 天」；
+- 待办列表默认排序：`todoPriority DESC, suggested_level DESC, snapshot_date ASC`，逾期项凭 urgency=3 置顶，与健康级别无关。
 
 阈值 `scoreInfo / scoreAttention / scoreWarning` 存规则配置（一期可放全局参数行或常量类，后续做配置页）。所有输出文案带「建议 / 供参考」字样。
 
@@ -119,7 +127,7 @@ total ≥ scoreWarning(9)，或「存在任一 forceWarning=true 的因子」
 
 | suggested_level | 含义 | 是否产生 RTP 状态建议 | 采纳动作 |
 |---|---|---|---|
-| `INFO` | 仅关注 | **否** | 只能「已知悉 / 忽略」，不预填、不写任何 RTP 状态 |
+| `INFO` | 健康关注（HEALTH）或纯流程提醒（PROCESS，`processOnly=true`） | **否** | 只能「已知悉 / 忽略」，不预填、不写任何 RTP 状态 |
 | `ATTENTION` | 建议限制 | 是 → 建议 **yellow** | 采纳时预填 yellow（仍需人工确认提交） |
 | `WARNING` | 建议停训 / 就医评估 | 是 → 建议 **red** | 采纳时预填 red（仍需人工确认提交） |
 
@@ -130,8 +138,8 @@ total ≥ scoreWarning(9)，或「存在任一 forceWarning=true 的因子」
 
 实现约束：
 
-1. `handle(... ACCEPT)` 仅当 `suggested_level ∈ {ATTENTION, WARNING}` 时可用；INFO 快照不返回「采纳并更新 RTP」按钮，只返回「已知悉 / 忽略」；
-2. 后端 `handle` 对 ACCEPT 的目标状态做白名单校验：ATTENTION 只接受 `y`、WARNING 只接受 `r`，收到 `g` 一律拒绝；
+1. 采纳**不是两次 HTTP，而是单个本地事务接口**（见 4.4 与 5.1）；
+2. 后端在采纳接口内对目标状态做白名单校验：ATTENTION 只接受 `y`、WARNING 只接受 `r`，收到 `g` 一律拒绝；
 3. 采纳时若运动员当前 RTP 已是更高级别（如当前 red、本次建议 yellow），后端不降级，前端给出「当前为更严格状态，无需下调」提示；是否由红转黄由康复师走常规 RTP 评估完成；
 4. 前端 RTP 编辑弹窗从预警进入时，状态单选框不提供 green 选项（或 green 禁用并提示「green 需在 RTP 模块主动评估」）。
 
@@ -147,10 +155,12 @@ CREATE TABLE apms_rtp_risk_snapshot (
   athlete_id      bigint NOT NULL,
   dept_id         bigint DEFAULT NULL COMMENT '扫描时主属队伍（筛选/DataScope）',
   snapshot_date   date NOT NULL COMMENT '快照日期',
-  risk_score      decimal(5,2) NOT NULL DEFAULT 0,
-  todo_priority   tinyint NOT NULL DEFAULT 0 COMMENT '待办优先级=max(因子urgency)，仅排序用',
-  suggested_level varchar(16) NOT NULL COMMENT 'NONE/INFO/ATTENTION/WARNING',
-  factors         json NOT NULL COMMENT '因子明细[{code,severity,urgency,forceWarning,weight,title,detail,refData}]',
+  risk_score      decimal(5,2) NOT NULL DEFAULT 0 COMMENT '健康分=仅HEALTH因子加权和；纯流程待办为0',
+  todo_priority   tinyint NOT NULL DEFAULT 0 COMMENT '待办优先级=max(所有因子urgency)，仅排序用',
+  process_only    char(1) NOT NULL DEFAULT '0' COMMENT '1=纯流程待办（无健康因子，不计RTP建议）',
+  process_flags   json DEFAULT NULL COMMENT '命中的流程因子码，如["REVIEW_OVERDUE"]',
+  suggested_level varchar(16) NOT NULL COMMENT 'NONE/INFO/ATTENTION/WARNING（INFO含健康关注与纯流程两种，由process_only区分）',
+  factors         json NOT NULL COMMENT '因子明细[{code,kind,severity,urgency,forceWarning,weight,title,detail,refData}]',
   status          varchar(10) NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE/ACKED/ACCEPTED/DISMISSED/EXPIRED',
   handled_by      varchar(64) DEFAULT NULL,
   handled_time    datetime DEFAULT NULL,
@@ -175,10 +185,11 @@ CREATE TABLE apms_rtp_risk_rule (
   rule_code    varchar(40) NOT NULL,
   rule_name    varchar(100) NOT NULL,
   enabled      char(1) NOT NULL DEFAULT '1',
-  severity     tinyint NOT NULL DEFAULT 1 COMMENT '健康风险严重度 1低 2中 3高（参与评分）',
-  urgency      tinyint NOT NULL DEFAULT 1 COMMENT '流程紧迫度 1低 2中 3高（仅待办排序）',
-  force_warning char(1) NOT NULL DEFAULT '0' COMMENT '是否可直接建议红色（健康危急因子）',
-  weight       decimal(4,2) NOT NULL DEFAULT 1.00,
+  kind         varchar(10) NOT NULL DEFAULT 'HEALTH' COMMENT 'HEALTH健康因子(计分)/PROCESS流程因子(不计分,仅待办)',
+  severity     tinyint NOT NULL DEFAULT 0 COMMENT '健康严重度1低2中3高（仅HEALTH参与评分；PROCESS固定0）',
+  urgency      tinyint NOT NULL DEFAULT 1 COMMENT '紧迫度1低2中3高（仅待办排序）',
+  force_warning char(1) NOT NULL DEFAULT '0' COMMENT 'HEALTH因子是否可直接建议红色；PROCESS恒为0',
+  weight       decimal(4,2) NOT NULL DEFAULT 1.00 COMMENT '权重（仅HEALTH计分使用）',
   params       json DEFAULT NULL COMMENT '阈值参数（窗口天数/下滑率/指标白名单等）',
   update_by    varchar(64) DEFAULT '',
   update_time  datetime DEFAULT NULL,
@@ -189,15 +200,16 @@ CREATE TABLE apms_rtp_risk_rule (
 
 5 条规则的种子取值（列 + `params`）：
 
-| rule_code | severity | urgency | force_warning | params |
-|---|---|---|---|---|
-| REVIEW_OVERDUE | 3 | 3 | 0 | `{}` |
-| REVIEW_SOON | 1 | 2 | 0 | `{ "reviewSoonDays": 14 }` |
-| INJURY_OPEN | 动态：surgery 取 3/injury 取 2（引擎按记录类型覆盖） | 同 severity | surgery 时覆盖为 1 | `{ "injuryWindowDays": 45, "closureWindowDays": 90 }` |
-| PHV_PEAK | 1 | 1 | 0 | `{ "phvPeakBand": 0.5, "phvFreshDays": 180 }` |
-| TEST_DECLINE | 2 | 2 | 0 | `{ "declineRatio": 0.08, "indicatorCodes": ["..."] }` |
+| rule_code | kind | severity | urgency | force_warning | params |
+|---|---|---|---|---|---|
+| REVIEW_OVERDUE | **PROCESS** | 0（不计分） | 3 | 0 | `{}` |
+| REVIEW_SOON | **PROCESS** | 0（不计分） | 2 | 0 | `{ "reviewSoonDays": 14 }` |
+| INJURY_OPEN | HEALTH | 动态：surgery 取 3/injury 取 2（引擎按记录类型覆盖） | surgery=3/injury=2 | surgery 时覆盖为 1 | `{ "injuryWindowDays": 45, "closureWindowDays": 90 }` |
+| PHV_PEAK | HEALTH | 1 | 1 | 0 | `{ "phvPeakBand": 0.5, "phvFreshDays": 180 }` |
+| TEST_DECLINE | HEALTH | 2 | 2 | 0 | `{ "declineRatio": 0.08, "indicatorCodes": ["..."] }` |
 
-> `INJURY_OPEN` 的 severity/urgency/forceWarning 由引擎在命中时按记录子类型（surgery vs injury）在规则表默认值基础上覆盖，避免拆成两条规则；覆盖结果仍写入快照 `factors` 明细，可追溯。
+> 规则表对 PROCESS 行强制约束：`kind='PROCESS'` 时引擎忽略其 severity/weight/forceWarning（按 0 分处理），只取 urgency；防止后续有人误把流程规则 severity 调高又间接污染健康分。
+> `INJURY_OPEN` 的 severity/urgency/forceWarning 由引擎在命中时按记录子类型（surgery vs injury）在 HEALTH 规则默认值基础上覆盖，避免拆成两条规则；覆盖结果仍写入快照 `factors` 明细，可追溯。
 
 ### 3.3 补丁与种子
 
@@ -235,18 +247,24 @@ Result summarize(List<RiskFactor>)     // 加权求和 + 定级
 ```
 
 - 规则按 `rule_code` 组织为策略（`Map<code, Rule>` 或独立方法），阈值全部从规则表读取，禁止硬编码；
-- 汇总产出三件事：`riskScore = Σ severity×weight`、`todoPriority = max(urgency)`、`forceWarningHit = 任一因子 forceWarning=true`，定级规则见 2.2；
+- **计分前先按 `kind` 过滤**：
+  - `healthScore = Σ(kind=HEALTH) severity×weight`；PROCESS 因子跳过，不累加；
+  - `forceWarningHit = any(kind=HEALTH && forceWarning)`；
+  - `todoPriority = max(所有因子 urgency)`；
+  - `processFlags = [PROCESS 因子的 code]`；`processOnly = health 因子数=0 && processFlags 非空`；
+- 汇总输出：`riskScore / suggested_level / todoPriority / processOnly / processFlags`（定级见 2.2），纯流程时 `riskScore=0、processOnly=true、suggested_level=INFO`；
 - 因子结构（落库到 `factors` JSON，前端直接渲染）：
 
 ```json
 {
   "code": "REVIEW_OVERDUE",
-  "severity": 3,
+  "kind": "PROCESS",
+  "severity": 0,
   "urgency": 3,
   "forceWarning": false,
   "weight": 1.00,
   "title": "RTP复检已逾期",
-  "detail": "复检日 2026-09-20，已逾期 14 天（流程待办，不代表健康风险升高）",
+  "detail": "复检日 2026-09-20，已逾期 14 天（流程待办，不参与健康风险评分）",
   "refData": { "nextReviewDate": "2026-09-20", "daysOverdue": 14 }
 }
 ```
@@ -256,6 +274,7 @@ Result summarize(List<RiskFactor>)     // 加权求和 + 定级
 ```json
 {
   "code": "INJURY_OPEN",
+  "kind": "HEALTH",
   "severity": 3,
   "urgency": 3,
   "forceWarning": true,
@@ -271,15 +290,42 @@ Result summarize(List<RiskFactor>)     // 加权求和 + 定级
 - `scanDaily()`：
   1. `expireBefore(今天)`：昨日未处理 ACTIVE → EXPIRED；
   2. 取全部在训运动员（`status='0'`）；
-  3. 逐条 `evaluate`，结果为 NONE 也 upsert（便于次日对比，列表只查非 NONE）；
+  3. 逐条 `evaluate`，结果为 NONE 也 upsert（便于次日对比）；列表待办条件：`suggested_level != 'NONE'`，即「有 HEALTH 因子」**或**「processOnly 纯流程待办」都入列；
   4. 返回 `{total, withRisk, byLevel}` 统计；
-- `scanOne(athleteId)`：事件驱动增量重算（医疗新增、PHV 自动计算、RTP 更新后调用）。参照 PHV 的 `tryAutoCalculate` 模式：异常只记日志，不阻断主业务；
-- `handle(snapshotId, action, remark)`：
-  - `ACK`（已知悉，**仅 INFO 可用**）：置状态 + 留痕，不触碰 RTP 状态；
-  - `DISMISS`（忽略，任意级别可用，需理由）：置状态 + 处理人 / 时间 / 理由；
-  - `ACCEPT`（**仅 ATTENTION / WARNING 可用**）：只负责把快照 ACTIVE → ACCEPTED 并留痕。调用前由前端先完成 RTP 更新（见 5.1 时序），后端在此仍做级别 / 目标状态白名单（ATTENTION→`y`、WARNING→`r`，拒绝 `g`）与「不降级」校验作为兜底；INFO 快照调用 ACCEPT 直接返回业务错误。
+- `scanOne(athleteId)`：事件驱动增量重算（**医疗新增、PHV 自动计算后调用；RTP 更新不在此处触发**——常规 `/apms/rtp/update` 不触发扫描，预警采纳路径在 accept 事务 afterCommit 内自行触发，避免重复/竞争）。参照 PHV 的 `tryAutoCalculate` 模式：异常只记日志，不阻断主业务；
+  - 重算规则：**当日快照已处于终态（ACCEPTED/ACKED/DISMISSED）时不覆盖**，仅当存在 ACTIVE 快照或无快照时才 upsert；
+  - `scanDaily` 每日负责先把昨日终态/未处理快照置 EXPIRED，再为当天生成新快照，因此「人工已处理的当天不被重算覆盖、次日重新评估」的语义成立。
+- `ack(snapshotId, remark)`（**仅 INFO 可用**，对应 `processOnly` 或健康 INFO）：快照 ACTIVE → ACKED + 留痕，不触碰 RTP；
+- `dismiss(snapshotId, remark)`（任意级别可用，需理由）：快照 → DISMISSED + 处理人 / 时间 / 理由；
+- **`acceptAndApplyRtp(snapshotId, rtpForm)`（核心，仅 ATTENTION / WARNING 可用）**——单个本地事务方法，一次完成闭环，避免「两次 HTTP + 自动重扫」的竞争（详见下）。
 
-> **不设「采纳中」中间状态，也不做分布式事务。** 采纳是两次独立 HTTP 调用（见 5.1），存在「RTP 已更新成功但 ACCEPT 标记失败、快照仍 ACTIVE」的小概率异常窗口；一期接受该窗口，前端在第二步失败时提示「RTP 已更新，待办关闭失败，请重试」并允许再次点击 ACCEPT（后端 ACCEPT 设计为幂等：已 ACCEPTED 再调返回成功/幂等），不为此引入 Saga/事务消息。
+#### acceptAndApplyRtp 事务设计（P0：消除采纳与 scanOne 竞争）
+
+问题背景：若沿用「先 `/apms/rtp/update`（其内触发 scanOne upsert 当日快照）再 ACCEPT 旧快照」的两步方案，复检日一更新、逾期因子消失，第二步面对的可能已是重算后的 NONE/INFO 快照，闭环断裂。因此合并为**同库本地事务**（非 Saga、非分布式事务）：
+
+```
+POST /apms/rtp-risk/{id}/accept   body = { status, reason, trainingLimit, nextReviewDate }
+
+@Transactional(rollbackFor = Exception.class)
+acceptAndApplyRtp(snapshotId, rtpForm):
+  1. SELECT 快照 FOR UPDATE（行锁，锁定该 athlete 当日快照）
+  2. 校验：快照存在、status=ACTIVE、suggested_level ∈ {ATTENTION,WARNING}
+  3. 校验目标状态白名单：ATTENTION→y / WARNING→r（拒绝 g）；不降级校验
+  4. 更新/插入 apms_rtp_status（复用现有 upsert 逻辑，记录更新人）
+  5. INSERT apms_rtp_log（from→to，复用现有留痕字段）
+  6. UPDATE 快照：ACTIVE → ACCEPTED（handled_by/time/remark、记录采纳的 rtpForm）
+  —— 同一事务提交（RTP、log、snapshot 原子可见）——
+7. 事务提交后（TransactionSynchronization afterCommit）再触发 scanOne(athleteId)：
+   当日快照已是 ACCEPTED，重算结果写入「次日/新的待办判定」或仅刷新统计，不再覆盖本次 ACCEPTED 结论
+```
+
+要点：
+
+- 步骤 1–6 在**一个数据库事务**里，要么全成功要么全回滚，不存在「RTP 改了但待办没关」的中间态；
+- 用 `SELECT ... FOR UPDATE` 锁定快照行，串行化同一运动员的并发采纳 / 扫描，彻底消除 upsert 竞争；
+- **scanOne 移到事务 afterCommit**，且扫描逻辑跳过「当日已 ACCEPTED/ACKED/DISMISSED」快照（人工已处理的当天结论不被自动重算覆盖），只在次日定时扫描时置 EXPIRED 并重算；
+- 接口幂等：快照已非 ACTIVE（重复点击 / 重试）时直接返回当前状态，不重复写 RTP / log；
+- 该接口同时需要 `apms:rtpRisk:handle` 与 `apms:rtp:edit` 权限（在同一调用内完成风险采纳与 RTP 写入）。
 
 ### 4.5 Controller `ApmsRtpRiskController`
 
@@ -288,7 +334,9 @@ Result summarize(List<RiskFactor>)     // 加权求和 + 定级
 | GET | `/apms/rtp-risk/list` | `apms:rtpRisk:list` | 待办列表（DataScope `deptAlias`，筛选 级别/状态/队伍/姓名） |
 | GET | `/apms/rtp-risk/athlete/{athleteId}/latest` | `apms:rtpRisk:query` | 运动员详情页当前建议 |
 | GET | `/apms/rtp-risk/rules` | `apms:rtpRisk:query` | 规则配置（一期只读） |
-| POST | `/apms/rtp-risk/{id}/handle` | `apms:rtpRisk:handle` | body: `{action: ACK|ACCEPT|DISMISS, remark}`；动作与级别、目标状态的合法性由后端按 2.3 校验 |
+| POST | `/apms/rtp-risk/{id}/ack` | `apms:rtpRisk:handle` | body: `{remark}`；仅 INFO，标记已知悉 |
+| POST | `/apms/rtp-risk/{id}/dismiss` | `apms:rtpRisk:handle` | body: `{remark}`；忽略（必填理由） |
+| POST | `/apms/rtp-risk/{id}/accept` | `apms:rtpRisk:handle` + `apms:rtp:edit` | body: `{status, reason, trainingLimit, nextReviewDate}`；**单接口本地事务**：写 RTP+log+快照置 ACCEPTED，见 4.4 |
 | POST | `/apms/rtp-risk/scan` | `apms:rtpRisk:scan` | 手动全量扫描 |
 
 ### 4.6 Quartz
@@ -302,14 +350,15 @@ Result summarize(List<RiskFactor>)     // 加权求和 + 定级
 沿用 roster-kit 花名册风格。
 
 - 页头：标题「RTP 风险预警」+「立即扫描」按钮（`apms:rtpRisk:scan`，二次确认 + loading）；
-- KPI 卡带：待处理总数、WARNING / ATTENTION / INFO 各多少、其中「复检逾期」待办数（流程维度单独统计，便于队务催办）；
-- 筛选：建议级别（WARNING/ATTENTION/INFO）、状态（待处理/已处理）、队伍、姓名，另设「仅看复检逾期」快捷开关；
+- KPI 卡带：待处理总数、WARNING / ATTENTION / 健康 INFO 各多少、纯流程待办（复检逾期 / 临近）单独统计，便于队务催办；
+- 筛选：建议级别（WARNING/ATTENTION/健康 INFO/流程提醒）、状态（待处理/已处理）、队伍、姓名，另设「仅看复检逾期」快捷开关；
 - 列表列（默认按 `todoPriority DESC, suggested_level DESC, snapshot_date ASC` 排序）：
   - 队员（头像用统一的 `ageAvatarColor` + `GenderBadge` + 名字 / 队伍两行）；
-  - 建议级别徽标（WARNING 红 / ATTENTION 橙 / INFO 蓝）——**健康建议维度**；
-  - 待办优先级 / 流程标记：复检逾期类显示独立的「逾期 N 天」红色流程徽标（与健康红色建议视觉区分，如加描边/时钟图标），避免被误读为建议停训；
-  - 风险分；
-  - 触发因子（多个 chip，悬浮 tooltip 显示 `detail`）；
+  - 级别徽标——分两类视觉：
+    - 健康建议：WARNING 红 / ATTENTION 橙 / 健康 INFO 蓝；
+    - **流程提醒**（`processOnly=true`）：中性灰蓝 + 时钟图标（如「逾期 14 天」），不用健康红 / 橙色，避免被误读为停训建议；
+  - 风险分（纯流程待办显示 0 或「—」）；
+  - 触发因子（chip 按 kind 区分颜色：HEALTH 暖色 / PROCESS 中性色，悬浮 tooltip 显示 `detail`）；
   - 快照日期；状态；操作；
 - 行点击 → 抽屉：
   - 因子明细卡：每条规则的标题、人话原因、参考数据、级别；
@@ -317,30 +366,31 @@ Result summarize(List<RiskFactor>)     // 加权求和 + 定级
     - **INFO**：只有「已知悉」（ACK）和「忽略」（DISMISS，必填理由），**没有**「采纳并更新 RTP」按钮；
     - **ATTENTION / WARNING**：
       - **采纳并更新 RTP**：见下方 5.1 时序；若当前已是更严格状态，按钮置灰并提示无需下调；
-      - **忽略**（必填理由，handle DISMISS）；
+      - **忽略**（必填理由，调 `/dismiss`）；
     - 关闭。
 - 新增 `src/api/apms/rtpRisk.js`；演示模式补 mock handler 与种子规则。
 
-#### 5.1 「采纳并更新 RTP」调用时序（统一口径，无中间状态）
+#### 5.1 「采纳并更新 RTP」调用时序（单接口、本地事务、无竞争）
 
 ```
 用户点「采纳并更新 RTP」（仅 ATTENTION/WARNING）
         ↓
-弹出现有 RTP 编辑弹窗（ATTENTION 仅 yellow / WARNING 仅 red，green 不出现，预填因子汇总原因）
+弹出 RTP 编辑弹窗（ATTENTION 仅 yellow / WARNING 仅 red，green 不出现，预填因子汇总原因）
         ↓
 人工确认状态、原因、训练限制、复检日
         ↓
-POST /apms/rtp/update          ← 第 1 步：写 RTP（事务内写 apms_rtp_log）
-        ↓ 成功
-POST /apms/rtp-risk/{id}/handle  body: { action: 'ACCEPT' }   ← 第 2 步：快照 ACTIVE → ACCEPTED
-        ↓
-刷新待办（该条消失 / 标记已采纳）
+POST /apms/rtp-risk/{id}/accept        ← 唯一一次 HTTP
+     body = { status, reason, trainingLimit, nextReviewDate }
+        ↓ 后端单事务：锁快照行 → 校验 → 写 RTP → 写 rtp_log → 快照置 ACCEPTED（一起提交）
+        ↓ 事务 afterCommit：再 scanOne（已 ACCEPTED 当日快照不被覆盖）
+刷新待办（该条原子地消失 / 标记已采纳）
 ```
 
-- 顺序固定为**先 RTP 更新、后标记快照**；快照表不设「采纳中」状态；
-- 第 1 步失败：快照保持 ACTIVE，弹窗停留，可修改后重试，无副作用；
-- 第 1 步成功、第 2 步失败（网络抖动等小概率窗口）：RTP 实际已更新，但待办仍在。前端提示「RTP 已更新，待办关闭失败，请重试」，「采纳」按钮可再次点击；由于 RTP 已达建议状态，第 2 步重试是幂等的（后端对已 ACCEPTED 快照再调 ACCEPT 返回成功），不会重复写 RTP；
-- 不为该窗口引入分布式事务 / Saga / 本地消息表，一期按上述「提示 + 幂等重试」处理。
+- 前端只发**一次**请求，不再先调 `/apms/rtp/update` 再调 handle；
+- 后端在同一本地事务内完成 RTP 写入、日志、快照收尾，前端无需处理「两步部分成功」窗口，也不需要「采纳中」中间状态；
+- 请求失败（校验拒绝 / 网络错误 / 事务回滚）：RTP 与快照都不变，弹窗停留，可修改后重试；
+- 重复提交（双击 / 超时重试）由后端按快照状态幂等处理；
+- 因为复检日更新导致逾期因子消失这类情况，发生在「快照已 ACCEPTED 之后」的 afterCommit 重扫中，不影响本次闭环。
 
 ### 5.2 运动员详情页
 
@@ -370,17 +420,21 @@ RTP Tab 顶部增加「当前系统建议」横幅（复用 `rk-banner tone-ambe
 - 伤病闭环为推断结果，UI 明确提示人工核实；
 - 评分阈值、权重、窗口天数、指标白名单全部配置化，初始值仅为建议默认，上线后用机构数据校准；
 - 建议文案统一「建议 / 供参考」，不作为医学诊断或单独选材 / 停训依据（与 `product.rtp`、`domain.rtp` 一致）；
-- **流程紧迫 ≠ 健康风险**：复检类因子只能产生流程待办（高 urgency），不能单独触发 WARNING；UI 上流程徽标与健康级别徽标视觉分离，防止康复师把「逾期未复检」误读为「建议停训」；
+- **流程紧迫 ≠ 健康风险（双层隔离）**：① 规则分 `kind=PROCESS/HEALTH`，流程因子**不进 healthScore**（不是靠 severity 设小、也不是靠 forceWarning 兜底，而是计分入口直接排除），无论 urgency 多高都不可能直接或间接影响黄 / 红；② 流程因子只贡献 `todoPriority` 与独立的流程徽标；UI 上流程提醒与健康级别徽标视觉分离，防止康复师把「逾期未复检」误读为「建议停训」；
 - **预警永不建议 green、永不降级**：INFO 不映射任何 RTP 状态（仅知悉/忽略），ATTENTION→yellow、WARNING→red；系统不存在任何把 green 作为建议值的路径，green 只能由康复师在 RTP 模块主动评估产生；后端对采纳动作做级别白名单与「不降级」双重校验，前端限制只是体验层，最终以后端校验为准；
-- 扫描异常不影响医疗 / PHV / RTP 主写入链路（事件增量调用 try/catch 包裹）。
+- 扫描异常不影响医疗 / PHV / RTP 主写入链路（事件增量调用 try/catch 包裹）；
+- **采纳闭环原子化**：采纳为单接口单本地事务（RTP + rtp_log + 快照 ACCEPTED 一起提交），快照行 `FOR UPDATE`，从根本上消除「先更新 RTP 触发重扫、再 ACCEPT 旧快照」的竞争；scanOne 只在事务 afterCommit 执行且不覆盖当日终态快照，无需 Saga / 分布式事务 / 「采纳中」状态。
 
 ## 9. 交付物与实施顺序
 
 1. SQL 补丁：2 张表 + 5 条规则种子 + 菜单 / 权限 + sys_job；
-2. 后端：domain/mapper/xml + 评估引擎 + JUnit 单测（构造因子组合验证定级与互斥规则）；
-3. 扫描服务 / Controller / Quartz task；在医疗、PHV、RTP 写入点接入 `scanOne`；
+2. 后端：domain/mapper/xml + 评估引擎 + JUnit 单测，单测必须覆盖：
+   - **PROCESS 隔离**：仅 REVIEW_OVERDUE → riskScore=0、processOnly=true、INFO、todoPriority=3；逾期 + PHV_PEAK → riskScore 仍为 1（不被逾期推高）；逾期 + 多健康因子组合时黄/红阈值只由健康分决定；
+   - forceWarning（术后未闭环）→ WARNING；普通 injury → 按健康分定级；
+   - REVIEW_OVERDUE/SOON 互斥；阈值边界（含 scoreInfo/Attention/Warning 临界值）；
+3. 扫描服务 / Controller / Quartz task；在**医疗新增、PHV 自动计算**写入点接入 `scanOne`（RTP 常规更新不接入，采纳路径在 accept 事务 afterCommit 内处理）；
 4. 前端：api + 预警待办页 + 详情页横幅 + mock；
-5. 联调：手动 scan → 待办 → 采纳（落 RTP + 日志）→ 忽略（留痕）→ 次日 EXPIRED 全链路。
+5. 联调：手动 scan → 待办 → **accept 单接口原子闭环（RTP + 日志 + ACCEPTED 同事务）** → ACK / DISMISS（留痕）→ 采纳后 scanOne 不覆盖当日结论 → 次日 EXPIRED 重算 全链路；并发：对同一快照重复 accept 验证行锁与幂等。
 
 量级预估：约 2–3 人日（后端约 12 个文件、前端约 5 个文件、补丁 1 个）。
 
