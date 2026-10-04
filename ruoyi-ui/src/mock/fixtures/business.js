@@ -4183,3 +4183,99 @@ export const reports = [
     "updateTime": null
   }
 ]
+
+// 体态测量周期（2 个蓝本：1 个进行中、1 个已关闭）
+export const measureCycles = [
+  {
+    "id": 1,
+    "name": "2026 秋季入队体态测量",
+    "targetDeptId": 201,
+    "planStartDate": "2026-09-10",
+    "planEndDate": "2026-09-20",
+    "status": "0",
+    "remark": "秋季赛季前基础体态数据采集，用于 PHV 与成年身高预测",
+    "createBy": "admin",
+    "createTime": "2026-09-09 10:00:00",
+    "updateBy": null,
+    "updateTime": null
+  },
+  {
+    "id": 2,
+    "name": "2026 九月全队常规监测",
+    "targetDeptId": null,
+    "planStartDate": "2026-09-01",
+    "planEndDate": "2026-09-05",
+    "status": "1",
+    "remark": "月度常规监测，已关闭归档",
+    "createBy": "admin",
+    "createTime": "2026-08-30 14:00:00",
+    "updateBy": null,
+    "updateTime": null
+  }
+]
+
+// 周期关联的体态测量记录（并入 bodyMeasures 表；id 接 11+，避免与蓝本 1-10 冲突）
+export const cycleMeasures = [
+  // —— 周期 1：U18 秋季测量（12 人目标，已测 4 人）——
+  { "id": 11, "athleteId": 1001, "athleteName": "张志远", "athleteTeam": "U18 梯队",
+    "measureDate": "2026-09-15", "height": 175.5, "weight": 65.8, "sitHeight": 92.2,
+    "legLength": 83.3, "bodyFatRate": 12.6, "waist": 72.0, "dataSource": "cycle", "cycleId": 1,
+    "sourceTaskId": null, "sourceSessionKey": null, "remark": null,
+    "createBy": "admin", "createTime": "2026-09-15 09:10:00", "updateBy": null, "updateTime": null },
+  { "id": 12, "athleteId": 1003, "athleteName": "王浩然", "athleteTeam": "U18 梯队",
+    "measureDate": "2026-09-15", "height": 180.5, "weight": 73.0, "sitHeight": 94.4,
+    "legLength": 86.1, "bodyFatRate": 12.1, "waist": 78.0, "dataSource": "cycle", "cycleId": 1,
+    "sourceTaskId": null, "sourceSessionKey": null, "remark": null,
+    "createBy": "admin", "createTime": "2026-09-15 09:12:00", "updateBy": null, "updateTime": null },
+  { "id": 13, "athleteId": 1006, "athleteName": "赵天明", "athleteTeam": "U18 梯队",
+    "measureDate": "2026-09-15", "height": 176.0, "weight": 68.5, "sitHeight": 91.0,
+    "legLength": 85.0, "bodyFatRate": 13.5, "waist": 75.0, "dataSource": "cycle", "cycleId": 1,
+    "sourceTaskId": null, "sourceSessionKey": null, "remark": null,
+    "createBy": "admin", "createTime": "2026-09-15 09:15:00", "updateBy": null, "updateTime": null },
+  { "id": 14, "athleteId": 1014, "athleteName": "徐梦瑶", "athleteTeam": "U18 梯队",
+    "measureDate": "2026-09-15", "height": 164.0, "weight": 57.0, "sitHeight": 87.4,
+    "legLength": 76.6, "bodyFatRate": 15.0, "waist": 68.0, "dataSource": "cycle", "cycleId": 1,
+    "sourceTaskId": null, "sourceSessionKey": null, "remark": null,
+    "createBy": "admin", "createTime": "2026-09-15 09:18:00", "updateBy": null, "updateTime": null },
+  // —— 周期 2：九月全队监测（15 人目标，已测 8 人）——
+  { "id": 15, "athleteId": 1001, "athleteName": "张志远", "athleteTeam": "U18 梯队",
+    "measureDate": "2026-09-03", "height": 174.8, "weight": 65.0, "sitHeight": 91.8,
+    "legLength": 83.0, "bodyFatRate": 12.8, "waist": 72.5, "dataSource": "cycle", "cycleId": 2,
+    "sourceTaskId": null, "sourceSessionKey": null, "remark": null,
+    "createBy": "admin", "createTime": "2026-09-03 09:00:00", "updateBy": null, "updateTime": null },
+  { "id": 16, "athleteId": 1002, "athleteName": "李铭昊", "athleteTeam": "U18 梯队",
+    "measureDate": "2026-09-03", "height": 178.0, "weight": 69.8, "sitHeight": 93.2,
+    "legLength": 84.8, "bodyFatRate": 11.9, "waist": 76.5, "dataSource": "cycle", "cycleId": 2,
+    "sourceTaskId": null, "sourceSessionKey": null, "remark": null,
+    "createBy": "admin", "createTime": "2026-09-03 09:03:00", "updateBy": null, "updateTime": null },
+  { "id": 17, "athleteId": 1003, "athleteName": "王浩然", "athleteTeam": "U18 梯队",
+    "measureDate": "2026-09-03", "height": 179.6, "weight": 72.4, "sitHeight": 94.0,
+    "legLength": 85.6, "bodyFatRate": 12.5, "waist": 78.5, "dataSource": "cycle", "cycleId": 2,
+    "sourceTaskId": null, "sourceSessionKey": null, "remark": null,
+    "createBy": "admin", "createTime": "2026-09-03 09:05:00", "updateBy": null, "updateTime": null },
+  { "id": 18, "athleteId": 1004, "athleteName": "陈嘉宇", "athleteTeam": "U18 梯队",
+    "measureDate": "2026-09-03", "height": 171.8, "weight": 63.2, "sitHeight": 89.8,
+    "legLength": 82.0, "bodyFatRate": 10.8, "waist": 74.2, "dataSource": "cycle", "cycleId": 2,
+    "sourceTaskId": null, "sourceSessionKey": null, "remark": null,
+    "createBy": "admin", "createTime": "2026-09-03 09:07:00", "updateBy": null, "updateTime": null },
+  { "id": 19, "athleteId": 1005, "athleteName": "刘子轩", "athleteTeam": "U18 梯队",
+    "measureDate": "2026-09-03", "height": 171.5, "weight": 62.0, "sitHeight": 89.8,
+    "legLength": 81.7, "bodyFatRate": null, "waist": null, "dataSource": "cycle", "cycleId": 2,
+    "sourceTaskId": null, "sourceSessionKey": null, "remark": null,
+    "createBy": "admin", "createTime": "2026-09-03 09:09:00", "updateBy": null, "updateTime": null },
+  { "id": 20, "athleteId": 1011, "athleteName": "冯思源", "athleteTeam": "U16 梯队",
+    "measureDate": "2026-09-03", "height": 168.2, "weight": 55.0, "sitHeight": 89.0,
+    "legLength": 79.2, "bodyFatRate": 14.0, "waist": 69.0, "dataSource": "cycle", "cycleId": 2,
+    "sourceTaskId": null, "sourceSessionKey": null, "remark": null,
+    "createBy": "admin", "createTime": "2026-09-03 09:12:00", "updateBy": null, "updateTime": null },
+  { "id": 21, "athleteId": 1012, "athleteName": "许俊豪", "athleteTeam": "U16 梯队",
+    "measureDate": "2026-09-03", "height": 170.5, "weight": 60.2, "sitHeight": 90.2,
+    "legLength": 80.3, "bodyFatRate": 13.2, "waist": 70.5, "dataSource": "cycle", "cycleId": 2,
+    "sourceTaskId": null, "sourceSessionKey": null, "remark": null,
+    "createBy": "admin", "createTime": "2026-09-03 09:14:00", "updateBy": null, "updateTime": null },
+  { "id": 22, "athleteId": 1015, "athleteName": "陈思琪", "athleteTeam": "U16 梯队",
+    "measureDate": "2026-09-03", "height": 164.2, "weight": 58.0, "sitHeight": 88.2,
+    "legLength": 76.0, "bodyFatRate": 15.1, "waist": 70.2, "dataSource": "cycle", "cycleId": 2,
+    "sourceTaskId": null, "sourceSessionKey": null, "remark": null,
+    "createBy": "admin", "createTime": "2026-09-03 09:16:00", "updateBy": null, "updateTime": null }
+]

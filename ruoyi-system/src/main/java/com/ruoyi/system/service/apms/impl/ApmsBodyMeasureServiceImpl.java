@@ -7,6 +7,7 @@ import java.time.ZoneId;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.SecurityUtils;
 import com.ruoyi.system.domain.apms.ApmsAthlete;
 import com.ruoyi.system.domain.apms.ApmsBodyMeasure;
@@ -59,17 +60,29 @@ public class ApmsBodyMeasureServiceImpl implements IApmsBodyMeasureService {
 
     @Override
     public int upsert(ApmsBodyMeasure measure) {
-        // 用唯一键查询是否已存在
-        ApmsBodyMeasure existing = measureMapper.selectByUniqueKey(measure);
         int rows;
-        if (existing != null) {
-            // 更新已有记录
-            measure.setId(existing.getId());
+        Long carryId = measure.getId();
+        if (carryId != null && measureMapper.selectById(carryId) != null) {
+            // 编辑已有记录：以 id 为准更新，允许修改测量日期
+            // 仅当新日期与同队员另一条记录撞唯一键时拦截，避免静默产生重复
+            ApmsBodyMeasure onDate = measureMapper.selectByUniqueKey(measure);
+            if (onDate != null && !carryId.equals(onDate.getId())) {
+                throw new ServiceException("该队员在所选日期已存在测量记录，请更换日期或直接编辑当日记录");
+            }
             rows = measureMapper.update(measure);
         } else {
-            // 新增
-            measure.setCreateBy(SecurityUtils.getUsername());
-            rows = measureMapper.insert(measure);
+            // 新增（或 id 已失效）：按 队员+日期(+任务/会话) 唯一键 upsert
+            if (carryId != null) measure.setId(null);
+            ApmsBodyMeasure existing = measureMapper.selectByUniqueKey(measure);
+            if (existing != null) {
+                // 更新已有记录
+                measure.setId(existing.getId());
+                rows = measureMapper.update(measure);
+            } else {
+                // 新增
+                measure.setCreateBy(SecurityUtils.getUsername());
+                rows = measureMapper.insert(measure);
+            }
         }
 
         // 🟢 PHV 自动触发：upsert 成功后尝试 Mirwald 计算

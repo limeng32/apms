@@ -14,6 +14,7 @@
         <result property="dataSource"      column="data_source"/>
         <result property="sourceTaskId"    column="source_task_id"/>
         <result property="sourceSessionKey" column="source_session_key"/>
+        <result property="cycleId"          column="cycle_id"/>
         <result property="createBy"        column="create_by"/>
         <result property="createTime"      column="create_time"/>
         <result property="athleteName"     column="athlete_name"/>
@@ -23,7 +24,7 @@
     <sql id="selectApmsBodyMeasureVo">
         SELECT
             m.id, m.athlete_id, m.measure_date, m.height, m.weight, m.sit_height,
-            m.body_fat_rate, m.waist, m.data_source, m.source_task_id, m.source_session_key,
+            m.body_fat_rate, m.waist, m.data_source, m.source_task_id, m.source_session_key, m.cycle_id,
             m.create_by, m.create_time,
             a.name AS athlete_name, d.dept_name AS athlete_team
         FROM apms_body_measure m
@@ -35,6 +36,7 @@
         <include refid="selectApmsBodyMeasureVo"/>
         <where>
             <if test="athleteId != null"> AND m.athlete_id = #{athleteId}</if>
+            <if test="cycleId != null"> AND m.cycle_id = #{cycleId}</if>
             <if test="params.dataScope != null and params.dataScope != ''"> AND ${params.dataScope}</if>
         </where>
         ORDER BY m.measure_date DESC, m.id DESC
@@ -71,11 +73,11 @@
     <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsBodyMeasure" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO apms_body_measure (
             athlete_id, measure_date, height, weight, sit_height,
-            body_fat_rate, waist, data_source, source_task_id, source_session_key,
+            body_fat_rate, waist, data_source, source_task_id, source_session_key, cycle_id,
             create_by, create_time
         ) VALUES (
             #{athleteId}, #{measureDate}, #{height}, #{weight}, #{sitHeight},
-            #{bodyFatRate}, #{waist}, #{dataSource}, #{sourceTaskId}, #{sourceSessionKey},
+            #{bodyFatRate}, #{waist}, #{dataSource}, #{sourceTaskId}, #{sourceSessionKey}, #{cycleId},
             #{createBy}, sysdate()
         )
     </insert>
@@ -92,6 +94,7 @@
             <if test="dataSource != null">data_source = #{dataSource},</if>
             <if test="sourceTaskId != null">source_task_id = #{sourceTaskId},</if>
             <if test="sourceSessionKey != null">source_session_key = #{sourceSessionKey},</if>
+            <if test="cycleId != null">cycle_id = #{cycleId},</if>
         </set>
         WHERE id = #{id}
     </update>

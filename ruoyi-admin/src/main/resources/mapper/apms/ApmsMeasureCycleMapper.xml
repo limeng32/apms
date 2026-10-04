@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsMeasureCycleMapper">
+
+    <resultMap id="CycleResult" type="com.ruoyi.system.domain.apms.ApmsMeasureCycle">
+        <id     property="id"             column="id"/>
+        <result property="name"           column="name"/>
+        <result property="targetDeptId"   column="target_dept_id"/>
+        <result property="planStartDate"  column="plan_start_date"/>
+        <result property="planEndDate"    column="plan_end_date"/>
+        <result property="status"         column="status"/>
+        <result property="remark"         column="remark"/>
+        <result property="createBy"       column="create_by"/>
+        <result property="createTime"     column="create_time"/>
+        <result property="updateBy"       column="update_by"/>
+        <result property="updateTime"     column="update_time"/>
+        <result property="targetDeptName" column="target_dept_name"/>
+        <result property="memberTotal"    column="member_total"/>
+        <result property="measuredCount"  column="measured_count"/>
+    </resultMap>
+
+    <resultMap id="MeasureResult" type="com.ruoyi.system.domain.apms.ApmsBodyMeasure">
+        <id     property="id"                 column="id"/>
+        <result property="athleteId"          column="athlete_id"/>
+        <result property="measureDate"        column="measure_date"/>
+        <result property="height"             column="height"/>
+        <result property="weight"             column="weight"/>
+        <result property="sitHeight"          column="sit_height"/>
+        <result property="bodyFatRate"        column="body_fat_rate"/>
+        <result property="waist"              column="waist"/>
+        <result property="dataSource"         column="data_source"/>
+        <result property="cycleId"            column="cycle_id"/>
+        <result property="createBy"           column="create_by"/>
+        <result property="createTime"         column="create_time"/>
+        <result property="athleteName"        column="athlete_name"/>
+        <result property="athleteTeam"        column="athlete_team"/>
+    </resultMap>
+
+    <sql id="selectCycleVo">
+        SELECT c.id, c.name, c.target_dept_id, c.plan_start_date, c.plan_end_date,
+               c.status, c.remark, c.create_by, c.create_time, c.update_by, c.update_time,
+               d.dept_name AS target_dept_name,
+               (SELECT COUNT(1) FROM apms_athlete a
+                 WHERE a.status != '2'
+                   AND (c.target_dept_id IS NULL OR a.primary_team_id = c.target_dept_id)) AS member_total,
+               (SELECT COUNT(DISTINCT m.athlete_id) FROM apms_body_measure m
+                 WHERE m.cycle_id = c.id) AS measured_count
+        FROM apms_measure_cycle c
+        LEFT JOIN sys_dept d ON c.target_dept_id = d.dept_id
+    </sql>
+
+    <select id="selectList" parameterType="com.ruoyi.system.domain.apms.ApmsMeasureCycle" resultMap="CycleResult">
+        <include refid="selectCycleVo"/>
+        <where>
+            <if test="status != null and status != ''">AND c.status = #{status}</if>
+            <if test="name != null and name != ''">AND c.name LIKE CONCAT('%', #{name}, '%')</if>
+        </where>
+        ORDER BY c.plan_start_date DESC, c.id DESC
+    </select>
+
+    <select id="selectById" parameterType="Long" resultMap="CycleResult">
+        <include refid="selectCycleVo"/> WHERE c.id = #{id}
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsMeasureCycle" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_measure_cycle
+            (name, target_dept_id, plan_start_date, plan_end_date, status, remark, create_by, create_time, update_by, update_time)
+        VALUES
+            (#{name}, #{targetDeptId}, #{planStartDate}, #{planEndDate},
+             <choose><when test="status != null and status != ''">#{status}</when><otherwise>'0'</otherwise></choose>,
+             #{remark}, #{createBy}, NOW(), #{updateBy}, NOW())
+    </insert>
+
+    <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsMeasureCycle">
+        UPDATE apms_measure_cycle
+        <set>
+            <if test="name != null and name != ''">name = #{name},</if>
+            <if test="targetDeptId != null">target_dept_id = #{targetDeptId},</if>
+            <if test="planStartDate != null">plan_start_date = #{planStartDate},</if>
+            <if test="planEndDate != null">plan_end_date = #{planEndDate},</if>
+            <if test="status != null and status != ''">status = #{status},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            update_by = #{updateBy},
+            update_time = NOW()
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <update id="unlinkMeasures">
+        UPDATE apms_body_measure SET cycle_id = NULL WHERE cycle_id = #{cycleId}
+    </update>
+
+    <delete id="deleteById" parameterType="Long">
+        DELETE FROM apms_measure_cycle WHERE id = #{id}
+    </delete>
+
+    <select id="selectMeasuredByCycle" resultMap="MeasureResult">
+        SELECT m.id, m.athlete_id, m.measure_date, m.height, m.weight, m.sit_height,
+               m.body_fat_rate, m.waist, m.data_source, m.cycle_id, m.create_by, m.create_time,
+               a.name AS athlete_name, d.dept_name AS athlete_team
+        FROM apms_body_measure m
+        LEFT JOIN apms_athlete a ON m.athlete_id = a.athlete_id
+        LEFT JOIN sys_dept d ON a.primary_team_id = d.dept_id
+        WHERE m.cycle_id = #{cycleId}
+        ORDER BY d.dept_name, a.jersey_no, a.athlete_id
+    </select>
+
+    <select id="selectByCycleAndAthlete" resultMap="MeasureResult">
+        SELECT m.id, m.athlete_id, m.measure_date, m.height, m.weight, m.sit_height,
+               m.body_fat_rate, m.waist, m.data_source, m.cycle_id
+        FROM apms_body_measure m
+        WHERE m.cycle_id = #{cycleId} AND m.athlete_id = #{athleteId}
+        LIMIT 1
+    </select>
+</mapper>

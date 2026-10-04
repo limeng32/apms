@@ -48,6 +48,9 @@ public class ApmsBodyMeasure extends BaseEntity {
     /** 来源测量会话Key */
     private String sourceSessionKey;
 
+    /** 测量周期ID（可空=非周期测量） */
+    private Long cycleId;
+
     /** 腿高（非数据库字段，计算用：height - sitHeight） */
     private BigDecimal legLength;
 
@@ -79,6 +82,8 @@ public class ApmsBodyMeasure extends BaseEntity {
     public void setSourceTaskId(Long sourceTaskId) { this.sourceTaskId = sourceTaskId; }
     public String getSourceSessionKey() { return sourceSessionKey; }
     public void setSourceSessionKey(String sourceSessionKey) { this.sourceSessionKey = sourceSessionKey; }
+    public Long getCycleId() { return cycleId; }
+    public void setCycleId(Long cycleId) { this.cycleId = cycleId; }
     public BigDecimal getLegLength() {
         if (height != null && sitHeight != null) {
             return height.subtract(sitHeight);

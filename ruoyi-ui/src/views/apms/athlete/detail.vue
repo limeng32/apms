@@ -136,34 +136,18 @@
           <el-icon><Plus/></el-icon>新增测量
         </button>
         <button class="rk-btn rk-btn-sm" @click="showTrend = !showTrend">
-          <el-icon><DataLine/></el-icon>{{ showTrend ? '隐藏趋势' : '查看身高/体重趋势' }}
+          <el-icon><DataLine/></el-icon>{{ showTrend ? '隐藏趋势' : '查看体态趋势' }}
         </button>
       </div>
 
-      <!-- 近 6 次趋势 -->
-      <div v-if="showTrend && bodyMeasures.length >= 2" class="rk-card">
+      <!-- 趋势图（echarts，指标可勾选） -->
+      <div v-if="showTrend" class="rk-card">
         <div class="rk-card-head">
-          <span class="rk-card-title">近 6 次变化趋势</span>
-          <span class="rk-card-sub">按测量日期倒序</span>
+          <span class="rk-card-title">体态变化趋势</span>
+          <span class="rk-card-sub">全部 {{ bodyMeasures.length }} 次测量，按日期升序</span>
         </div>
-        <div class="rk-card-body flush">
-          <div class="rk-table-scroll">
-            <table class="rk-table">
-              <thead>
-                <tr><th>日期</th><th class="text-right">身高(cm)</th><th class="text-right">坐高(cm)</th><th class="text-right">体重(kg)</th><th class="text-right">腿长(cm)</th><th class="text-right">体脂率(%)</th></tr>
-              </thead>
-              <tbody>
-                <tr v-for="(m, i) in bodyMeasures.slice(0, 6)" :key="m.id" class="rk-row" :class="{ 'is-zebra': i % 2 === 1 }">
-                  <td class="rk-mono">{{ m.measureDate }}</td>
-                  <td class="text-right rk-mono">{{ num(m.height) }}</td>
-                  <td class="text-right rk-mono">{{ num(m.sitHeight) }}</td>
-                  <td class="text-right rk-mono">{{ num(m.weight) }}</td>
-                  <td class="text-right rk-mono">{{ fmtLeg(m, 1) }}</td>
-                  <td class="text-right rk-mono">{{ num(m.bodyFatRate) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+        <div class="rk-card-body">
+          <BodyTrendChart :records="bodyMeasures"/>
         </div>
       </div>
 
@@ -373,13 +357,6 @@
       <el-form :model="bodyForm" label-width="90px">
         <el-row :gutter="12">
           <el-col :span="12"><el-form-item label="测量日期"><el-date-picker v-model="bodyForm.measureDate" type="date" value-format="YYYY-MM-DD" style="width: 100%"/></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="来源">
-            <el-select v-model="bodyForm.dataSource" style="width: 100%">
-              <el-option label="手动录入" value="manual"/>
-              <el-option label="CSV导入" value="csv"/>
-              <el-option label="任务流程" value="task"/>
-            </el-select>
-          </el-form-item></el-col>
           <el-col :span="12"><el-form-item label="身高(cm)"><el-input-number v-model="bodyForm.height" :precision="1" :step="0.1" :min="0" style="width: 100%"/></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="坐高(cm)"><el-input-number v-model="bodyForm.sitHeight" :precision="1" :step="0.1" :min="0" style="width: 100%"/></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="体重(kg)"><el-input-number v-model="bodyForm.weight" :precision="1" :step="0.1" :min="0" style="width: 100%"/></el-form-item></el-col>
@@ -446,6 +423,7 @@ import * as bodyMeasureApi from '@/api/apms/bodyMeasure'
 import * as rtpApi from '@/api/apms/rtp'
 import * as phvApi from '@/api/apms/phv'
 import { listDept } from '@/api/system/dept'
+import BodyTrendChart from '@/components/BodyTrendChart/index.vue'
 import { useDict } from '@/utils/dict'
 import { ArrowDown, ArrowLeft, Minus, Plus, Delete, Edit, RefreshLeft, DataLine, InfoFilled, CircleCheck, Warning, CircleClose } from '@element-plus/icons-vue'
 
