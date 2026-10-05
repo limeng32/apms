@@ -182,16 +182,9 @@ public class RtpRiskEvaluator {
         if (ageDays > closureWindowDays) {
             return null; // 旧伤过期，静默
         }
-        // 其后存在更晚（含同日）的 rehabilitation/checkup → 视为已闭环
-        for (ApmsMedicalRecord r : medicals) {
-            LocalDate d = toLocalDate(r.getRecordDate());
-            if (d == null) {
-                continue;
-            }
-            if (("rehabilitation".equals(r.getRecordType()) || "checkup".equals(r.getRecordType()))
-                    && !d.isBefore(issueDate)) {
-                return null;
-            }
+        // 其后存在更晚（含同日）的 rehabilitation/checkup → 视为已闭环（与热力图统计共用此口径）
+        if (isInjuryClosed(issueDate, medicals)) {
+            return null;
         }
         if (ageDays > injuryWindowDays) {
             return null; // 45~90 天的未闭环旧伤本期不提示
@@ -251,6 +244,27 @@ public class RtpRiskEvaluator {
     }
 
     // ============================ 辅助 ============================
+
+    /**
+     * 伤病闭环判定（风险预警与「伤病部位分布」热力图共用，保证活跃/已康复口径唯一）：
+     * 伤病/手术记录之后（含同日）存在 rehabilitation/checkup 记录即视为已康复。
+     */
+    public boolean isInjuryClosed(LocalDate issueDate, List<ApmsMedicalRecord> medicals) {
+        if (issueDate == null || medicals == null) {
+            return false;
+        }
+        for (ApmsMedicalRecord r : medicals) {
+            LocalDate d = toLocalDate(r.getRecordDate());
+            if (d == null) {
+                continue;
+            }
+            if (("rehabilitation".equals(r.getRecordType()) || "checkup".equals(r.getRecordType()))
+                    && !d.isBefore(issueDate)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     private RiskFactor baseFactor(ApmsRtpRiskRule rule) {
         RiskFactor f = new RiskFactor(rule.getRuleCode(), rule.getKind());

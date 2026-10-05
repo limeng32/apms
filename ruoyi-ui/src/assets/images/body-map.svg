@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 588" width="400" height="588">
+  <g stroke="#475569" stroke-width="2.5" fill="#F1F5F9" stroke-linejoin="round" stroke-linecap="round">
+    <!-- ===== front view (left) ===== -->
+    <g>
+      <!-- head -->
+      <circle cx="105" cy="60" r="26"/>
+      <!-- torso -->
+      <path d="M78 98 q27 -12 54 0 l8 20 q6 40 4 78 l-8 66 h-62 l-8 -66 q-2 -38 4 -78 Z"/>
+      <!-- left arm -->
+      <path d="M74 104 q-18 8 -24 30 l-12 66 q-3 12 6 20 l10 6 12 -10 -8 -8 12 -56 q4 -18 12 -26 Z"/>
+      <!-- right arm -->
+      <path d="M136 104 q18 8 24 30 l12 66 q3 12 -6 20 l-10 6 -12 -10 8 -8 -12 -56 q-4 -18 -12 -26 Z"/>
+      <!-- left leg -->
+      <path d="M74 262 h30 l-4 130 q0 10 -6 16 l-2 96 q0 10 -10 10 h-14 q-10 0 -10 -10 l2 -96 q-6 -6 -6 -16 Z"/>
+      <!-- right leg -->
+      <path d="M106 262 h30 l10 130 q0 10 -6 16 l2 96 q0 10 -10 10 h-14 q-10 0 -10 -10 l-2 -96 q-6 -6 -6 -16 Z"/>
+      <!-- joints hint -->
+      <circle cx="105" cy="200" r="3" fill="#475569" stroke="none" opacity="0.4"/>
+      <circle cx="89" cy="392" r="3" fill="#475569" stroke="none" opacity="0.4"/>
+      <circle cx="121" cy="392" r="3" fill="#475569" stroke="none" opacity="0.4"/>
+    </g>
+    <!-- ===== back view (right) ===== -->
+    <g>
+      <circle cx="295" cy="60" r="26"/>
+      <path d="M268 98 q27 -12 54 0 l8 20 q6 40 4 78 l-8 66 h-62 l-8 -66 q-2 -38 4 -78 Z"/>
+      <!-- spine hint -->
+      <line x1="295" y1="100" x2="295" y2="258" stroke-dasharray="3 6" opacity="0.5"/>
+      <path d="M264 104 q-18 8 -24 30 l-12 66 q-3 12 6 20 l10 6 12 -10 -8 -8 12 -56 q4 -18 12 -26 Z"/>
+      <path d="M326 104 q18 8 24 30 l12 66 q3 12 -6 20 l-10 6 -12 -10 8 -8 -12 -56 q-4 -18 -12 -26 Z"/>
+      <path d="M264 262 h30 l-4 130 q0 10 -6 16 l-2 96 q0 10 -10 10 h-14 q-10 0 -10 -10 l2 -96 q-6 -6 -6 -16 Z"/>
+      <path d="M296 262 h30 l10 130 q0 10 -6 16 l2 96 q0 10 -10 10 h-14 q-10 0 -10 -10 l-2 -96 q-6 -6 -6 -16 Z"/>
+      <!-- calf hints -->
+      <path d="M276 420 q8 10 6 30 M324 420 q-8 10 -6 30" fill="none" opacity="0.5"/>
+    </g>
+  </g>
+  <text x="105" y="560" text-anchor="middle" font-family="'Noto Sans SC',sans-serif" font-size="14" fill="#94A3B8">正面</text>
+  <text x="295" y="560" text-anchor="middle" font-family="'Noto Sans SC',sans-serif" font-size="14" fill="#94A3B8">背面</text>
+</svg>

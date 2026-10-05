@@ -41,11 +41,22 @@ public class ApmsMedicalController extends BaseController {
     // ========== 记录 CRUD ==========
 
     @PreAuthorize("@ss.hasPermi('apms:medicalRecord:list')")
-    @DataScope(deptAlias = "a", deptField = "primary_team_id")
+    @DataScope(deptAlias = "a")
     @GetMapping("/list")
     public TableDataInfo list(ApmsMedicalRecord query) {
         startPage();
         return getDataTable(medicalService.list(query));
+    }
+
+    /**
+     * 伤病部位分布统计（人体热力图）。
+     * @param range 12m=近12个月（默认）/ all=全部历史
+     */
+    @PreAuthorize("@ss.hasPermi('apms:medicalRecord:list')")
+    @DataScope(deptAlias = "a")
+    @GetMapping("/site-stats")
+    public AjaxResult siteStats(ApmsMedicalRecord query, String range) {
+        return success(medicalService.siteStats(query, range));
     }
 
     @PreAuthorize("@ss.hasPermi('apms:medicalRecord:query')")

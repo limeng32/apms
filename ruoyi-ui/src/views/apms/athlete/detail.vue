@@ -27,7 +27,6 @@
         <div class="rk-profile-meta">
           <span>{{ athlete.teamName || '未分配队伍' }}</span>
           <span>编号 <span class="rk-mono">#{{ athlete.athleteId || athleteId }}</span></span>
-          <span v-if="athlete.jerseyNo">球衣 {{ athlete.jerseyNo }}</span>
           <span v-if="athlete.age != null">{{ athlete.age }} 岁</span>
           <span v-if="athlete.birthday">出生 {{ athlete.birthday }}</span>
           <span v-if="athlete.phone">电话 {{ athlete.phone }}</span>

@@ -337,7 +337,6 @@ function loadAll() {
         athleteGender: a.gender,
         athleteAge: a.age,
         athleteTeam: (r && r.athleteTeam) || a.primaryTeamName || '—',
-        jerseyNo: a.jerseyNo,
         position: a.position,
         status: r ? r.status : null,
         reason: r ? r.reason : null,

@@ -3,6 +3,10 @@ import request from '@/utils/request'
 export function listMedical(query) {
   return request({ url: '/apms/medical-record/list', method: 'get', params: query })
 }
+// 伤病部位分布（人体热力图）：range=12m（近12个月，默认）/ all
+export function medicalSiteStats(query) {
+  return request({ url: '/apms/medical-record/site-stats', method: 'get', params: query })
+}
 export function getMedical(id) {
   return request({ url: '/apms/medical-record/' + id, method: 'get' })
 }

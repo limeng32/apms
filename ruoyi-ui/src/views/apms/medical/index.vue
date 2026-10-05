@@ -45,6 +45,13 @@
             <option v-for="t in typeOptions" :key="t.v" :value="t.v">{{ t.label }}</option>
           </select>
         </label>
+        <label class="rk-group" v-if="queryParams.bodySite">
+          <span class="rk-label">部位</span>
+          <span class="md-site-filter-chip">
+            {{ siteLabel(queryParams.bodySite) }}
+            <i class="md-site-filter-x" @click="queryParams.bodySite = null">✕</i>
+          </span>
+        </label>
         <div class="rk-filter-right">
           <button type="button" class="rk-btn-reset" @click="resetQuery">
             <el-icon><RefreshLeft /></el-icon>重置
@@ -52,14 +59,14 @@
         </div>
       </div>
 
-      <!-- ===== 主从双栏 ===== -->
-      <div class="rk-split-grid" style="--rk-split-l: 11fr; --rk-split-r: 13fr;">
+      <!-- ===== 台账 + 伤病部位分布双栏（详情走抽屉） ===== -->
+      <div class="rk-split-grid md-main-grid" style="--rk-split-l: 13fr; --rk-split-r: 9fr;">
 
         <!-- 左：记录台账（服务端分页） -->
         <div class="rk-table-card">
           <div class="rk-card-head">
             <h3 class="rk-card-title">医疗记录</h3>
-            <span class="rk-card-sub">共 {{ total }} 条 · 点击行查看详情</span>
+            <span class="rk-card-sub">共 {{ total }} 条 · 点击行打开详情</span>
           </div>
           <div class="rk-card-body flush">
             <div v-loading="loading" class="rk-table-scroll">
@@ -68,6 +75,7 @@
                   <tr>
                     <th class="col-athlete">运动员</th>
                     <th class="text-center col-type">类型</th>
+                    <th class="text-center col-site">部位</th>
                     <th class="col-title">标题</th>
                     <th class="text-center col-date">日期</th>
                     <th class="text-center col-files">附件</th>
@@ -87,6 +95,10 @@
                       <span class="md-type-chip" :style="typeChipStyle(row.recordType)">
                         {{ typeLabel(row.recordType) }}
                       </span>
+                    </td>
+                    <td class="text-center col-site">
+                      <span v-if="row.bodySite" class="md-site-cell">{{ siteLabel(row.bodySite) }}</span>
+                      <span v-else class="rk-dash">—</span>
                     </td>
                     <td class="col-title">
                       <span class="md-title-text" :title="row.title">{{ row.title || '—' }}</span>
@@ -134,71 +146,125 @@
           </div>
         </div>
 
-        <!-- 右：详情 -->
-        <div class="rk-card md-detail-card">
-          <template v-if="current">
-            <div class="md-detail-banner" :style="bannerStyle(current.recordType)">
-              <span class="md-type-chip md-type-chip-lg" :style="typeChipStyle(current.recordType)">
-                {{ typeLabel(current.recordType) }}
-              </span>
-              <div class="md-banner-info">
-                <div class="md-banner-title">{{ current.title }}</div>
-                <div class="md-banner-meta">
-                  <span class="rk-mono">{{ formatDate(current.recordDate) }}</span>
-                  <span v-if="current.institution">· {{ current.institution }}</span>
-                  <span class="rk-soft-chip">
-                    {{ current.athleteName }}
-                    <GenderBadge :gender="current.athleteGender" :size="14" class="md-gender-ic"/>
-                    （{{ current.athleteTeam || '无队伍' }}）
-                  </span>
-                </div>
-              </div>
+        <!-- 右：伤病部位分布（常驻人体热力图） -->
+        <div class="rk-card md-bodymap-card">
+          <div class="rk-card-head md-bodymap-head">
+            <h3 class="rk-card-title">伤病部位分布</h3>
+            <div class="md-range-switch">
+              <button type="button" :class="{ 'is-active': siteRange === '12m' }" @click="switchRange('12m')">近 12 月</button>
+              <button type="button" :class="{ 'is-active': siteRange === 'all' }" @click="switchRange('all')">全部</button>
             </div>
+          </div>
 
-            <div class="rk-card-body">
-              <div v-if="current.remark" class="md-remark">
-                <div class="md-section-title">诊疗说明</div>
-                <p>{{ current.remark }}</p>
-              </div>
-              <div v-else-if="!current.files || !current.files.length" class="md-only-files-gap"></div>
-
-              <div class="md-section-title md-files-title">
-                附件（{{ current.files ? current.files.length : 0 }}）
-                <span class="md-privacy"><el-icon><Lock /></el-icon>仅授权用户可下载</span>
-              </div>
-              <div v-if="current.files && current.files.length" class="md-file-list">
-                <div v-for="f in current.files" :key="f.id" class="md-file-card">
-                  <span class="md-file-icon" :class="'icon-' + extKey(f.fileExt)">{{ extIcon(f.fileExt) }}</span>
-                  <div class="md-file-info">
-                    <div class="md-file-name" :title="f.fileName">{{ f.fileName }}</div>
-                    <div class="md-file-meta rk-mono">{{ formatSize(f.fileSize) }} · {{ formatDate(f.uploadTime) }}</div>
-                  </div>
-                  <div class="md-file-actions">
-                    <button type="button" class="rk-link" @click="handleDownload(f)">下载</button>
-                    <button type="button" class="rk-link md-link-danger" @click="handleDeleteFile(f)">删除</button>
-                  </div>
+          <div class="md-bodymap-body">
+            <BodyMap :hotspots="siteHotspots" @select="pickSite"/>
+            <p class="md-bodymap-legend">
+              <i class="md-dot is-red"></i>活跃（未闭环）<i class="md-dot is-green"></i>已康复 · 点大小=例数
+            </p>
+            <div v-if="queryParams.bodySite" class="md-site-filter-tip">
+              已筛选：<b>{{ siteLabel(queryParams.bodySite) }}</b>
+              <button type="button" class="rk-link" @click="pickSite(queryParams.bodySite)">清除</button>
+            </div>
+            <div class="md-site-rank">
+              <div v-for="d in siteHotspots" :key="d.site"
+                   class="md-site-rank-row" :class="{ 'is-active': queryParams.bodySite === d.site }"
+                   @click="pickSite(d.site)">
+                <span class="md-site-name">{{ siteLabel(d.site) }}</span>
+                <div class="md-site-bar">
+                  <i class="md-site-bar-blue" :style="{ width: barWidth(d.total) }"></i>
                 </div>
+                <span class="md-site-cnt rk-mono">{{ d.total }}</span>
               </div>
-              <div v-else class="md-no-files">无附件</div>
+              <div v-if="!siteHotspots.length" class="md-site-empty">该时段暂无带部位的损伤/手术</div>
             </div>
-          </template>
-          <div v-else class="md-detail-empty">
-            <div class="rk-empty">
-              <p class="rk-empty-title">选择左侧记录查看详情</p>
-              <p class="rk-empty-desc">诊疗说明、机构与影像附件将在此展示</p>
-            </div>
+            <p class="md-site-note">其后存在康复/复查记录即视为已康复，与风险预警口径一致；点击热点筛选台账。</p>
           </div>
         </div>
       </div>
 
-      <!-- ========== 新增/编辑 Dialog（原逻辑保留） ========== -->
-      <el-dialog :title="dialogTitle" v-model="showDialog" width="580px">
+      <!-- ========== 医疗记录详情抽屉 ========== -->
+      <el-drawer v-model="drawerVisible" size="500px" :with-header="false" class="md-drawer-wrap">
+        <div class="md-drawer" v-if="current">
+          <div class="md-drawer-head">
+            <span class="md-drawer-avatar" :style="{ background: typeColor(current.recordType) }">
+              {{ (current.athleteName || '?').charAt(0) }}
+            </span>
+            <div class="md-drawer-id">
+              <div class="md-drawer-name">
+                {{ current.athleteName || '—' }}
+                <GenderBadge :gender="current.athleteGender" :size="15"/>
+              </div>
+              <div class="md-drawer-sub">
+                {{ current.athleteTeam || '无队伍' }} · #{{ current.athleteId }} · {{ formatDate(current.recordDate) }}
+              </div>
+            </div>
+            <button type="button" class="md-drawer-close" @click="drawerVisible = false">
+              <el-icon><Close /></el-icon>
+            </button>
+          </div>
+
+          <div class="md-detail-banner" :style="bannerStyle(current.recordType)">
+            <span class="md-type-chip md-type-chip-lg" :style="typeChipStyle(current.recordType)">
+              {{ typeLabel(current.recordType) }}
+            </span>
+            <div class="md-banner-info">
+              <div class="md-banner-title">{{ current.title }}</div>
+              <div class="md-banner-meta">
+                <span v-if="current.bodySite" class="md-site-cell">{{ siteLabel(current.bodySite) }}</span>
+                <span v-if="current.institution">{{ current.institution }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="current.remark" class="md-remark">
+            <div class="md-section-title">诊疗说明</div>
+            <p>{{ current.remark }}</p>
+          </div>
+
+          <div class="md-section-title md-files-title">
+            附件（{{ current.files ? current.files.length : 0 }}）
+            <span class="md-privacy"><el-icon><Lock /></el-icon>仅授权可下载</span>
+          </div>
+          <div v-if="current.files && current.files.length" class="md-file-list">
+            <div v-for="f in current.files" :key="f.id" class="md-file-card">
+              <span class="md-file-icon" :class="'icon-' + extKey(f.fileExt)">{{ extIcon(f.fileExt) }}</span>
+              <div class="md-file-info">
+                <div class="md-file-name" :title="f.fileName">{{ f.fileName }}</div>
+                <div class="md-file-meta rk-mono">{{ formatSize(f.fileSize) }} · {{ formatDate(f.uploadTime) }}</div>
+              </div>
+              <div class="md-file-actions">
+                <button type="button" class="rk-link" @click="handleDownload(f)">下载</button>
+                <button type="button" class="rk-link md-link-danger" @click="handleDeleteFile(f)">删除</button>
+              </div>
+            </div>
+          </div>
+          <div v-else class="md-no-files">无附件</div>
+
+          <div class="md-drawer-foot">
+            <button type="button" class="rk-btn rk-btn-sm" @click="handleEdit(current)"
+                    v-hasPermi="['apms:medicalRecord:edit']">
+              <el-icon><Edit /></el-icon>编辑记录
+            </button>
+            <button type="button" class="rk-btn rk-btn-sm rk-btn-danger" @click="handleDelete(current)"
+                    v-hasPermi="['apms:medicalRecord:remove']">删除记录</button>
+          </div>
+        </div>
+      </el-drawer>
+
+      <!-- ========== 新增/编辑 Dialog（损伤/手术时右侧常驻人体图点选） ========== -->
+      <el-dialog :title="dialogTitle" v-model="showDialog"
+                 :width="isInjuryType ? '920px' : '580px'"
+                 class="md-form-dialog">
+        <div class="md-form-layout">
+          <div class="md-form-main">
         <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
           <el-row :gutter="12">
             <el-col :span="12">
               <el-form-item label="运动员" prop="athleteId">
                 <el-select v-model="form.athleteId" placeholder="选运动员" style="width:100%" filterable>
-                  <el-option v-for="a in athleteOptions" :key="a.athleteId" :label="a.name + ' (' + a.primaryTeamId + ')'" :value="a.athleteId"/>
+                  <el-option v-for="a in athleteOptions" :key="a.athleteId"
+                             :label="a.name + ' #' + a.athleteId"
+                             :value="a.athleteId"/>
                 </el-select>
               </el-form-item>
             </el-col>
@@ -217,6 +283,15 @@
             <el-col :span="12">
               <el-form-item label="机构">
                 <el-input v-model="form.institution" placeholder="如：北医三院"/>
+              </el-form-item>
+            </el-col>
+            <el-col v-if="isInjuryType" :span="24">
+              <el-form-item label="伤病部位" prop="bodySite">
+                <el-select v-model="form.bodySite" placeholder="可在下拉选择，也可直接在右侧人体图上点选" style="width:100%">
+                  <el-option-group v-for="g in BODY_SITE_GROUPS" :key="g.group" :label="g.group">
+                    <el-option v-for="s in g.items" :key="s.code" :label="s.label" :value="s.code"/>
+                  </el-option-group>
+                </el-select>
               </el-form-item>
             </el-col>
             <el-col :span="24">
@@ -252,6 +327,18 @@
             </el-col>
           </el-row>
         </el-form>
+          </div><!-- /.md-form-main -->
+
+          <!-- 右侧常驻：人体图点选（损伤/手术时显示，与下拉双向联动） -->
+          <div v-if="isInjuryType" class="md-form-pick">
+            <div class="md-form-pick-title">点选伤病部位</div>
+            <BodyMap selectable v-model="form.bodySite"/>
+            <div class="md-pick-current">
+              当前选择：<b v-if="form.bodySite">{{ siteLabel(form.bodySite) }}</b>
+              <span v-else class="rk-dash">未选择（含图下「其它」）</span>
+            </div>
+          </div>
+        </div>
         <template #footer>
           <el-button @click="showDialog = false">取 消</el-button>
           <el-button type="primary" @click="submit">保 存</el-button>
@@ -262,11 +349,13 @@
 </template>
 
 <script setup name="ApmsMedical">
-import { listMedical, getMedical, addMedical, updateMedical, delMedical, delMedicalFile, downloadMedicalFile } from '@/api/apms/medical'
+import { listMedical, medicalSiteStats, getMedical, addMedical, updateMedical, delMedical, delMedicalFile, downloadMedicalFile } from '@/api/apms/medical'
 import { listAthlete } from '@/api/apms/athlete'
 import { getToken, isDemoMode } from '@/utils/auth'
-import { Plus, RefreshLeft, ArrowLeft, ArrowRight, Lock, UploadFilled } from '@element-plus/icons-vue'
+import { Plus, RefreshLeft, ArrowLeft, ArrowRight, Lock, UploadFilled, Close, Edit } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
+import BodyMap from './components/BodyMap.vue'
+import { BODY_SITE_GROUPS, siteLabel } from './bodySites'
 
 const { proxy } = getCurrentInstance()
 
@@ -288,6 +377,7 @@ const TYPE_META = {
   checkup:        { label: '体检', color: '#64748B', bg: '#F1F5F9' }
 }
 function typeLabel(t) { return TYPE_META[t]?.label || t || '—' }
+function typeColor(t) { return TYPE_META[t]?.color || '#64748B' }
 function typeChipStyle(t) {
   const m = TYPE_META[t]
   if (!m) return { color: '#64748B', background: '#F1F5F9' }
@@ -341,7 +431,32 @@ function loadStats() {
 const loading = ref(false)
 const recordList = ref([])
 const total = ref(0)
-const queryParams = reactive({ pageNum: 1, pageSize: PAGE_SIZE, athleteId: null, recordType: null })
+const queryParams = reactive({ pageNum: 1, pageSize: PAGE_SIZE, athleteId: null, recordType: null, bodySite: null })
+
+// ========= 伤病部位热力图 =========
+const siteRange = ref('12m')
+const siteHotspots = ref([])
+// 条形按固定基准 10 例换算：n 例 → n/10 占比（5=半条、3=30%、2=20%），满 10 例即满格
+const SITE_BAR_BASE = 10
+function barWidth(n) {
+  const pct = Math.min(100, Math.max(0, (Number(n) || 0) / SITE_BAR_BASE * 100))
+  return pct + '%'
+}
+function loadSiteStats() {
+  medicalSiteStats({ range: siteRange.value }).then(r => { siteHotspots.value = r.data || [] })
+}
+function switchRange(r) {
+  if (siteRange.value === r) return
+  siteRange.value = r
+  loadSiteStats()
+}
+// 点热点/部位行：同部位再点一次取消；查询由 bodySite watcher 统一触发，避免双请求
+function pickSite(site) {
+  queryParams.bodySite = queryParams.bodySite === site ? null : site
+}
+
+// ========= 表单内人体图（损伤/手术时右侧常驻） =========
+const isInjuryType = computed(() => form.recordType === 'injury' || form.recordType === 'surgery')
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)))
 const pageNumbers = computed(() => {
@@ -382,6 +497,7 @@ function resetQuery() {
   filterGuard = true
   queryParams.athleteId = null
   queryParams.recordType = null
+  queryParams.bodySite = null
   queryParams.pageNum = 1
   getList()
   loadStats()
@@ -390,7 +506,7 @@ function resetQuery() {
 
 // 筛选变化 300ms 防抖自动查询（服务端分页口径）
 let filterTimer = null
-watch(() => [queryParams.athleteId, queryParams.recordType], () => {
+watch(() => [queryParams.athleteId, queryParams.recordType, queryParams.bodySite], () => {
   if (filterGuard) return
   clearTimeout(filterTimer)
   filterTimer = setTimeout(handleQuery, 300)
@@ -400,10 +516,12 @@ watch(() => [queryParams.athleteId, queryParams.recordType], () => {
 const athleteOptions = ref([])
 listAthlete({ pageNum: 1, pageSize: 300 }).then(r => { athleteOptions.value = r.rows || [] })
 
-// ========= 主从（原逻辑：点行拉完整详情，含 files） =========
+// ========= 主从（点行打开详情抽屉，含 files） =========
+const drawerVisible = ref(false)
 const current = ref(null)
 function handleRowClick(row) {
   current.value = row
+  drawerVisible.value = true
   loadDetail(row.id)
 }
 function loadDetail(id) {
@@ -417,24 +535,33 @@ function loadDetail(id) {
 const showDialog = ref(false)
 const formRef = ref(null)
 const dialogTitle = ref('')
-const form = reactive({ id: null, athleteId: null, recordType: 'injury', recordDate: null, institution: '', title: '', remark: '', fileList: [], files: [] })
+const form = reactive({ id: null, athleteId: null, recordType: 'injury', bodySite: null, recordDate: null, institution: '', title: '', remark: '', fileList: [], files: [] })
 const rules = {
   athleteId: [{ required: true, message: '请选运动员', trigger: 'change' }],
   recordType: [{ required: true, message: '请选记录类型', trigger: 'change' }],
+  bodySite: [{
+    validator: (rule, value, cb) =>
+      (isInjuryType.value && !value) ? cb(new Error('损伤/手术记录必须选择伤病部位')) : cb(),
+    trigger: 'change'
+  }],
   recordDate: [{ required: true, message: '请选日期', trigger: 'change' }],
   title: [{ required: true, message: '请输入标题', trigger: 'blur' }]
 }
+// 切到非伤病类型时清掉部位（人体图面板随 v-if 隐藏、弹窗宽度自动收回）
+watch(() => form.recordType, (t) => {
+  if (t !== 'injury' && t !== 'surgery') form.bodySite = null
+})
 
 const uploadHeaders = computed(() => ({ Authorization: 'Bearer ' + getToken() }))
 
 function handleAdd() {
   dialogTitle.value = '新增医疗记录'
-  Object.assign(form, { id: null, athleteId: null, recordType: 'injury', recordDate: null, institution: '', title: '', remark: '', fileList: [], files: [] })
+  Object.assign(form, { id: null, athleteId: null, recordType: 'injury', bodySite: null, recordDate: null, institution: '', title: '', remark: '', fileList: [], files: [] })
   showDialog.value = true
 }
 function handleEdit(row) {
   dialogTitle.value = '编辑医疗记录'
-  // 修复原页缺陷：list 不回传 files，直接用行数据回填会导致保存时附件被「删旧增新」清空
+  // 编辑在抽屉上层弹窗进行；修复原页缺陷：list 不回传 files，必须先 getById 回填附件
   getMedical(row.id).then(res => {
     const detail = res.data || row
     Object.assign(form, detail)
@@ -479,7 +606,7 @@ function submit() {
     const req = form.id ? updateMedical(body) : addMedical(body)
     req.then(() => {
       proxy.$modal.msgSuccess('保存成功'); showDialog.value = false
-      getList(); loadStats()
+      getList(); loadStats(); loadSiteStats()
       if (current.value && current.value.id === form.id) loadDetail(current.value.id)
     })
   })
@@ -536,8 +663,9 @@ function handleDelete(row) {
   proxy.$modal.confirm('确认删除该医疗记录？附件一并删除。').then(() => {
     delMedical(row.id).then(() => {
       proxy.$modal.msgSuccess('删除成功')
-      getList(); loadStats()
-      if (current.value && current.value.id === row.id) current.value = null
+      getList(); loadStats(); loadSiteStats()
+      drawerVisible.value = false
+      current.value = null
     })
   }).catch(() => {})
 }
@@ -565,6 +693,7 @@ function extIcon(ext) {
 
 getList()
 loadStats()
+loadSiteStats()
 </script>
 
 <style lang="scss" scoped>
@@ -629,19 +758,12 @@ loadStats()
 }
 .md-link-danger { color: $rk-risk; &:hover { color: #b91c1c; } }
 
-/* ===== 右：详情 ===== */
-.md-detail-card { min-height: 420px; }
-.md-detail-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 420px;
-}
+/* ===== 右：详情 banner（详情已移入抽屉） ===== */
 .md-detail-banner {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin: 16px 18px 0;
+  margin: 4px 20px 0;
   padding: 14px 16px;
   background: var(--pm-bg, #f1f5f9);
   border: 1px solid var(--pm-tone, #94a3b8);
@@ -754,5 +876,194 @@ loadStats()
   width: 100%;
   padding: 20px;
   border-radius: 12px;
+}
+
+/* ===== 右栏：伤病部位热力图卡（纵向） ===== */
+.md-bodymap-card { min-height: 420px; }
+.md-bodymap-head { justify-content: space-between; }
+.md-range-switch {
+  display: inline-flex;
+  border: 1px solid $rk-line;
+  border-radius: 9px;
+  overflow: hidden;
+  button {
+    border: 0;
+    background: #fff;
+    padding: 4px 10px;
+    font-size: 12px;
+    color: $rk-text-2;
+    cursor: pointer;
+    &.is-active { background: $rk-brand-600; color: #fff; }
+  }
+}
+.md-bodymap-body { padding: 6px 16px 14px; }
+.md-bodymap-legend {
+  margin: 4px 0 2px;
+  font-size: 11.5px;
+  color: $rk-text-3;
+  text-align: center;
+}
+.md-site-filter-tip {
+  margin: 8px auto 0;
+  width: fit-content;
+  font-size: 12px;
+  color: $rk-text-2;
+  b { color: $rk-brand-700; margin: 0 2px; }
+}
+.md-dot {
+  display: inline-block;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  margin: 0 5px 0 12px;
+  vertical-align: -1px;
+  &:first-child { margin-left: 0; }
+  &.is-red { background: rgba(220, 38, 38, 0.88); }
+  &.is-green { background: rgba(22, 163, 74, 0.82); }
+}
+.md-site-rank { display: flex; flex-direction: column; gap: 9px; margin-top: 10px; }
+.md-site-rank-row {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 8px;
+  &:hover { background: $rk-canvas; }
+  &.is-active { background: $rk-brand-50; }
+}
+.md-site-name { width: 84px; flex: none; font-size: 12px; color: $rk-text-2; }
+.md-site-bar {
+  position: relative;
+  flex: 1;
+  height: 9px;
+  border-radius: 999px;
+  background: #EEF2F7;
+}
+.md-site-bar-blue {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  background: $rk-brand-600;
+  border-radius: 999px;
+}
+.md-site-cnt {
+  width: 40px; flex: none; text-align: right;
+  font-size: 12px; font-weight: 600; color: $rk-text-1;
+  em { font-style: normal; color: $rk-risk; font-weight: 700; }
+}
+.md-site-empty { padding: 14px 0; font-size: 12.5px; color: $rk-text-3; text-align: center; }
+.md-site-note {
+  margin: 14px 0 0;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: $rk-canvas;
+  font-size: 11.5px;
+  line-height: 18px;
+  color: $rk-text-3;
+}
+
+/* ===== 医疗详情抽屉 ===== */
+.md-drawer-wrap :deep(.el-drawer__body) { padding: 0; }
+.md-drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 18px 0 20px;
+  overflow-y: auto;
+}
+.md-drawer-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 0 20px 14px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid $rk-line;
+}
+.md-drawer-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+}
+.md-drawer-id { flex: 1; min-width: 0; }
+.md-drawer-name {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 16px; font-weight: 700; color: $rk-text-1;
+}
+.md-drawer-sub { margin-top: 4px; font-size: 12px; color: $rk-text-3; }
+.md-drawer-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; flex: none;
+  color: $rk-text-3; background: #fff;
+  border: 1px solid $rk-line; border-radius: 9px;
+  cursor: pointer;
+  &:hover { background: $rk-canvas; color: $rk-text-1; }
+}
+.md-drawer :deep(.md-remark),
+.md-drawer .md-remark { margin: 14px 20px 0; }
+.md-drawer .md-files-title { margin: 18px 20px 10px; }
+.md-drawer .md-file-list { margin: 0 20px; }
+.md-drawer .md-no-files { margin: 0 20px; }
+.md-drawer-foot {
+  margin: auto 20px 0;
+  padding-top: 16px;
+  display: flex; gap: 10px; flex-wrap: wrap;
+  border-top: 1px solid $rk-line;
+}
+@media (max-width: 1279px) {
+  .md-main-grid { --rk-split-l: 1fr; --rk-split-r: 1fr; }
+}
+
+/* 列表/详情的部位 */
+.col-site { width: 92px; }
+.md-site-cell {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: $rk-brand-700;
+  background: $rk-brand-50;
+  white-space: nowrap;
+}
+.md-site-filter-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 10px;
+  border: 1px solid #bfd9fb;
+  border-radius: 9px;
+  font-size: 13px; color: $rk-brand-700; background: $rk-brand-50;
+}
+.md-site-filter-x { font-style: normal; cursor: pointer; font-size: 12px; opacity: .7; &:hover { opacity: 1; } }
+
+/* 编辑弹窗：左表单 + 右侧常驻人体图点选面板 */
+.md-form-dialog { transition: width .22s ease; }
+.md-form-dialog :deep(.el-dialog__body) { padding-top: 10px; }
+.md-form-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 22px;
+}
+.md-form-main { flex: 1; min-width: 0; }
+.md-form-pick {
+  width: 300px;
+  flex: none;
+  padding-left: 20px;
+  border-left: 1px solid $rk-line;
+}
+.md-form-pick-title {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: $rk-text-1;
+}
+.md-pick-current {
+  text-align: center;
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: $rk-text-2;
+  b { color: $rk-brand-700; }
 }
 </style>

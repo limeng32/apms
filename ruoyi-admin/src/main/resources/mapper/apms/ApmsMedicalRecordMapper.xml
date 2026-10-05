@@ -7,6 +7,7 @@
         <id     column="id"            property="id"/>
         <result column="athlete_id"    property="athleteId"/>
         <result column="record_type"   property="recordType"/>
+        <result column="body_site"     property="bodySite"/>
         <result column="record_date"   property="recordDate"/>
         <result column="institution"   property="institution"/>
         <result column="title"         property="title"/>
@@ -21,7 +22,7 @@
     </resultMap>
 
     <sql id="selectVo">
-        SELECT r.id, r.athlete_id, r.record_type, r.record_date, r.institution,
+        SELECT r.id, r.athlete_id, r.record_type, r.body_site, r.record_date, r.institution,
                r.title, r.remark, r.create_by, r.create_time,
                a.name AS a_name, a.gender AS a_gender, d.dept_name
         FROM apms_medical_record r
@@ -38,6 +39,7 @@
         <where>
             <if test="athleteId != null">  AND r.athlete_id = #{athleteId}</if>
             <if test="recordType != null and recordType != ''"> AND r.record_type = #{recordType}</if>
+            <if test="bodySite != null and bodySite != ''"> AND r.body_site = #{bodySite}</if>
             <if test="recordDate != null"> AND r.record_date = #{recordDate}</if>
             <if test="params.dataScope != null and params.dataScope != ''">
                 AND ${params.dataScope}
@@ -47,13 +49,13 @@
     </select>
 
     <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsMedicalRecord" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO apms_medical_record (athlete_id, record_type, record_date, institution, title, remark, create_by, create_time)
-        VALUES (#{athleteId}, #{recordType}, #{recordDate}, #{institution}, #{title}, #{remark}, #{createBy}, NOW())
+        INSERT INTO apms_medical_record (athlete_id, record_type, body_site, record_date, institution, title, remark, create_by, create_time)
+        VALUES (#{athleteId}, #{recordType}, #{bodySite}, #{recordDate}, #{institution}, #{title}, #{remark}, #{createBy}, NOW())
     </insert>
 
     <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsMedicalRecord">
         UPDATE apms_medical_record
-        SET athlete_id=#{athleteId}, record_type=#{recordType}, record_date=#{recordDate},
+        SET athlete_id=#{athleteId}, record_type=#{recordType}, body_site=#{bodySite}, record_date=#{recordDate},
             institution=#{institution}, title=#{title}, remark=#{remark}
         WHERE id=#{id}
     </update>

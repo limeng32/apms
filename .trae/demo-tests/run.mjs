@@ -882,6 +882,47 @@ test('H11', '医疗：筛选/详情挂附件/附件删除独立于主表删除',
   assert(db().medicals.some(r => r.id === f.recordId), '删附件不动主表')
 })
 
+test('H11b', '伤病部位：部位统计聚合/闭环口径/部位筛选/录入校验/路由不错配', async () => {
+  reset()
+  // 蓝本 4 条 injury/surgery 均带 bodySite；1014 右膝、1015 左踝其后有康复记录 → 已康复；
+  // 1004 右大腿后、1007 左手腕无后续 rehab/checkup → 活跃（按 recordDate 2024 数据，仅在 all 范围出现）
+  const all = call('get', '/apms/medical-record/site-stats', { range: 'all' })
+  expect200(all, 'site-stats 200')
+  assert(Array.isArray(all.data) && all.data.length === 4, `4 个部位聚合，实际 ${all.data.length}`)
+  const bySite = Object.fromEntries(all.data.map(x => [x.site, x]))
+  assertEq(bySite.THIGH_BACK_R.total, 1); assertEq(bySite.THIGH_BACK_R.active, 1, '右大腿后群：无康复记录=活跃')
+  assertEq(bySite.WRIST_L.total, 1); assertEq(bySite.WRIST_L.active, 1, '左手腕：活跃')
+  assertEq(bySite.KNEE_R.total, 1); assertEq(bySite.KNEE_R.active, 0, '右膝：有 2024-11-20 康复=已康复')
+  assertEq(bySite.ANKLE_L.total, 1); assertEq(bySite.ANKLE_L.active, 0, '左踝：有 2024-12-01 康复=已康复')
+  // 近 12 个月（mock 以当前日期回看，蓝本 2024 数据全部落在窗口外）
+  const y1 = call('get', '/apms/medical-record/site-stats', { range: '12m' })
+  expect200(y1); assertEq(y1.data.length, 0, '近 12 个月无蓝本伤病')
+  // 部位筛选
+  const filtered = call('get', '/apms/medical-record/list', { pageSize: '10', bodySite: 'KNEE_R' })
+  expect200(filtered); assert(filtered.rows.length === 1 && filtered.rows.every(r => r.bodySite === 'KNEE_R'), 'bodySite 精确筛选')
+  // 精确路由不落到 :id
+  expect200(call('get', '/apms/medical-record/site-stats'))
+  // 录入校验：损伤无部位 → 601；非伤病类型部位被清空
+  const noSite = call('post', '/apms/medical-record', {}, {
+    record: { athleteId: 1001, recordType: 'injury', recordDate: '2026-10-05', title: '测试伤' }
+  })
+  assertEq(noSite.code, 601, '损伤必须选部位')
+  const okAdd = call('post', '/apms/medical-record', {}, {
+    record: { athleteId: 1001, recordType: 'injury', bodySite: 'ANKLE_R', recordDate: '2026-10-05', title: '测试踝扭伤' }
+  })
+  expect200(okAdd)
+  const added = db().medicals.find(r => r.title === '测试踝扭伤')
+  assertEq(added.bodySite, 'ANKLE_R', 'AddBody.record 正确解包落库')
+  const statsAfter = call('get', '/apms/medical-record/site-stats', { range: '12m' }).data
+  assertEq(statsAfter.find(x => x.site === 'ANKLE_R').active, 1, '新伤进入近 12 月活跃统计')
+  // 疾病记录带部位也会被清空
+  const illness = call('post', '/apms/medical-record', {}, {
+    record: { athleteId: 1001, recordType: 'illness', bodySite: 'KNEE_L', recordDate: '2026-10-05', title: '感冒' }
+  })
+  expect200(illness)
+  assertEq(db().medicals.find(r => r.title === '感冒').bodySite, null, '非伤病类型部位强制清空')
+})
+
 test('H12', '报告：类型筛选/生成回填任务冗余/删除', async () => {
   reset()
   const list = call('get', '/apms/report/list', { pageNum: '1', pageSize: '10', reportType: 'INDIVIDUAL' })
@@ -1056,6 +1097,7 @@ test('H16', 'strict 模式：14 页面真实请求序列零 MISS', async () => {
     ['get', '/apms/combo-model/component/list/1'],
     ['get', '/apms/combo-score/list'],
     ['get', '/apms/medical-record/list?pageNum=1&pageSize=10'],
+    ['get', '/apms/medical-record/site-stats?range=12m'],
     ['get', '/apms/medical-record/1'],
     ['get', '/apms/report/list?pageNum=1&pageSize=10'],
     ['get', '/apms/report/1']

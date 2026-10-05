@@ -247,7 +247,7 @@ function loadDashboard() {
     attentionPlayers.value = (data.rtpList || []).map((p, idx) => ({
       id: p.athleteId,
       name: p.athleteName,
-      no: p.jerseyNo || '—',
+      no: p.athleteId,
       pos: p.position || '—',
       rtp: p.status,
       color: avatarColors[idx % avatarColors.length]

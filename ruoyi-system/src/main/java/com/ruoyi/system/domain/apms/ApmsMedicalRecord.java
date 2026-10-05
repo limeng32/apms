@@ -13,6 +13,9 @@ public class ApmsMedicalRecord extends BaseEntity {
     private Long athleteId;
     /** injury / illness / surgery / rehabilitation / checkup */
     private String recordType;
+
+    /** 伤病部位编码（仅 injury/surgery 必填，19 点位字典由前端维护） */
+    private String bodySite;
     @JsonFormat(pattern = "yyyy-MM-dd")
     private Date recordDate;
     private String institution;
@@ -31,8 +34,21 @@ public class ApmsMedicalRecord extends BaseEntity {
     public void setId(Long id) { this.id = id; }
     public Long getAthleteId() { return athleteId; }
     public void setAthleteId(Long athleteId) { this.athleteId = athleteId; }
-    public String getRecordType() { return recordType; }
-    public void setRecordType(String recordType) { this.recordType = recordType; }
+    public String getRecordType() {
+        return recordType;
+    }
+
+    public void setRecordType(String recordType) {
+        this.recordType = recordType;
+    }
+
+    public String getBodySite() {
+        return bodySite;
+    }
+
+    public void setBodySite(String bodySite) {
+        this.bodySite = bodySite;
+    }
     public Date getRecordDate() { return recordDate; }
     public void setRecordDate(Date recordDate) { this.recordDate = recordDate; }
     public String getInstitution() { return institution; }

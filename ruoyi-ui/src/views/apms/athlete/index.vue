@@ -149,7 +149,7 @@
                       {{ row.name }}
                       <GenderBadge :gender="row.gender" :size="15" class="rp-gender"/>
                     </p>
-                    <p class="rp-user-sub mono">{{ row.teamName || '未分队伍' }} · #{{ row.jerseyNo || '—' }}</p>
+                    <p class="rp-user-sub mono">{{ row.teamName || '未分队伍' }} · #{{ row.athleteId }}</p>
                   </div>
                 </div>
               </td>
