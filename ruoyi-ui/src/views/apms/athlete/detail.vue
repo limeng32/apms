@@ -190,6 +190,15 @@
 
     <!-- ===== Tab 3: RTP 参训状态 ===== -->
     <div v-show="activeTab === 'rtp'" class="rk-tab-panel">
+      <!-- 风险预警系统建议（只读，点击跳转预警待办） -->
+      <div v-if="rtpRiskBanner" class="rk-banner ad-risk-banner"
+           :class="'tone-' + rtpRiskBanner.tone" @click="goRtpWarning">
+        <span class="rk-banner-title">
+          {{ rtpRiskBanner.label }}（{{ rtpRiskBanner.count }} 个因子，系统建议仅供参考）
+        </span>
+        <span class="rk-banner-item">点击前往「RTP 风险预警」查看因子明细与处置 →</span>
+      </div>
+
       <div class="rk-toolbar">
         <button class="rk-btn rk-btn-primary rk-btn-sm" @click="showRtpDialog = true" v-hasPermi="['apms:athlete:edit']">
           <el-icon><Edit/></el-icon>更新状态
@@ -421,6 +430,7 @@ import { getAthlete } from '@/api/apms/athlete'
 import * as athleteGroupApi from '@/api/apms/athleteGroup'
 import * as bodyMeasureApi from '@/api/apms/bodyMeasure'
 import * as rtpApi from '@/api/apms/rtp'
+import { latestByAthlete as latestRtpRisk } from '@/api/apms/rtpRisk'
 import * as phvApi from '@/api/apms/phv'
 import { listDept } from '@/api/system/dept'
 import BodyTrendChart from '@/components/BodyTrendChart/index.vue'
@@ -431,6 +441,7 @@ import { ArrowDown, ArrowLeft, Minus, Plus, Delete, Edit, RefreshLeft, DataLine,
 
 const { proxy } = getCurrentInstance()
 const route = useRoute()
+const router = useRouter()
 const { apms_position, apms_athlete_status } = useDict('apms_position', 'apms_athlete_status')
 
 const athleteId = computed(() => Number(route.params.athleteId))
@@ -452,6 +463,7 @@ const currentGroup = ref(null)
 const bodyMeasures = ref([])
 const rtpStatus = ref(null)
 const rtpLogs = ref([])
+const rtpRiskAdvice = ref(null)
 const phvRecords = ref([])
 
 const latestPhv = computed(() => phvRecords.value.length > 0 ? phvRecords.value[0] : null)
@@ -495,6 +507,17 @@ const rtpBanner = computed(() => {
   if (rtpStatus.value.status === 'r') return { tone: 'red', label: '不建议参训' }
   return null
 })
+// RTP 风险预警系统建议横幅（只读，点击跳转预警待办；流程提醒中性色，不暗示停训）
+const rtpRiskBanner = computed(() => {
+  const a = rtpRiskAdvice.value
+  if (!a) return null
+  const n = (a.factorList || []).length
+  if (a.processOnly === '1') return { tone: 'gray', label: '流程提醒（复检逾期/临近）', count: n }
+  if (a.suggestedLevel === 'WARNING') return { tone: 'red', label: '系统建议：停训 / 就医评估', count: n }
+  if (a.suggestedLevel === 'ATTENTION') return { tone: 'amber', label: '系统建议：限制参训评估', count: n }
+  return { tone: 'blue', label: '健康关注（INFO）', count: n }
+})
+function goRtpWarning() { router.push('/apms/rtpWarning') }
 function rtpLabel(status) {
   const map = { g: '正常参训', y: '限制参训', r: '不建议参训' }
   return map[status] ?? (status ? status : '未评估')
@@ -542,8 +565,9 @@ async function loadAll() {
     const rtpStatusPromise = rtpApi.getStatus(athleteId.value).then(r => { rtpStatus.value = r.data || null })
     const rtpLogPromise = rtpApi.getLog(athleteId.value).then(r => { rtpLogs.value = r.data || [] })
     const phvPromise = phvApi.listByAthlete(athleteId.value).then(r => { phvRecords.value = r.data || [] })
+    const rtpRiskPromise = latestRtpRisk(athleteId.value).then(r => { rtpRiskAdvice.value = r.data || null }).catch(() => {})
 
-    await Promise.all([athletePromise, groupPromise, bodyPromise, rtpStatusPromise, rtpLogPromise, phvPromise])
+    await Promise.all([athletePromise, groupPromise, bodyPromise, rtpStatusPromise, rtpLogPromise, phvPromise, rtpRiskPromise])
   } catch (e) {
     console.error('load detail failed', e)
     proxy.$modal.msgError('加载详情失败')
@@ -695,4 +719,9 @@ loadAll()
 
 /* 下拉钮内箭头 */
 .ad-caret { margin-left: 2px; font-size: 12px; }
+
+/* 风险预警建议横幅：健康 INFO 蓝 / 纯流程中性灰（roster-kit 仅提供 amber/red） */
+.ad-risk-banner { cursor: pointer; margin-bottom: 14px; }
+.ad-risk-banner.tone-blue { background: #e8f1fe; border-color: #bfd9fb; color: #1d5bb8; }
+.ad-risk-banner.tone-gray { background: #f1f5f9; border-color: #e2e8f0; color: #5b6b7f; }
 </style>

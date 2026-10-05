@@ -249,7 +249,11 @@ test('D1', '框架接口：getInfo/getRouters/字典/公告/部门', async () =>
 
   const routers = mockDispatch({ method: 'get', path: '/getRouters', query: {}, body: {} })
   assertEq(routers.data[0].path, '/apms')
-  assertEq(routers.data[0].children.length, 13, '13 个业务子菜单')
+  assertEq(routers.data[0].children.length, 14, '14 个业务子菜单（含 RTP 风险预警）')
+  assert(routers.data[0].children.some(c => c.path === 'rtpWarning'
+    && c.meta.title === 'RTP 风险预警'), '新增 RTP 风险预警菜单')
+  assert(routers.data[0].children.some(c => c.path === 'rtp'
+    && c.meta.title === 'RTP 状态管理'), '旧 RTP 菜单改名为 RTP 状态管理')
 
   const pos = mockDispatch({ method: 'get', path: '/system/dict/data/type/apms_position', query: {}, body: {} })
   assertEq(pos.data.length, 4)
@@ -351,7 +355,7 @@ test('G1', '模块加载即初始化：21 张表齐全、无 undefined', async (
   const db = await import(src('mock/db'))
   const d = db.getDb()
   const tables = Object.keys(d)
-  assertEq(tables.length, 23, `表数量 ${tables.length}`)
+  assertEq(tables.length, 25, `表数量 ${tables.length}`)
   for (const t of tables) assert(Array.isArray(d[t]), `${t} 必须是数组`)
   assertEq(d.notices.length, 2)
   // depts 与真实接口一致：扁平列表（children 均为空，树由前端构建）
@@ -944,7 +948,67 @@ test('H15', '子路径不错配：具体路径绝不落到 :param 泛匹配', as
   expect200(call('get', '/apms/combo-model/component/list/1'), 'component list')
 })
 
-test('H16', 'strict 模式：13 页面真实请求序列零 MISS', async () => {
+test('H17', 'RTP 风险预警：双维度筛选/统计/知悉/忽略/采纳单接口原子语义/幂等', async () => {
+  reset()
+  const list = call('get', '/apms/rtp-risk/list', { pageNum: '1', pageSize: '10' })
+  expect200(list, 'risk list')
+  assertEq(list.total, 4, '当日 ACTIVE 4 条（ACKED 不入待办）')
+  assertEq(list.rows[0].suggestedLevel, 'WARNING', '排序首条 WARNING（priority 最高）')
+  const stat = call('get', '/apms/rtp-risk/stat').data
+  assertEq(stat.total, 4); assertEq(stat.warning, 1); assertEq(stat.attention, 1)
+  assertEq(stat.infoHealth, 1); assertEq(stat.processOnly, 1, '流程待办独立计数')
+
+  // PROCESS 隔离筛选
+  assertEq(call('get', '/apms/rtp-risk/list', { processOnly: '1' }).rows.length, 1, '纯流程待办 1 条')
+  assertEq(call('get', '/apms/rtp-risk/list', { processFlag: 'REVIEW_OVERDUE' }).rows.length, 1, '仅看复检逾期')
+  assertEq(call('get', '/apms/rtp-risk/list', { suggestedLevel: 'INFO', processOnly: '0' }).rows.length, 1, '健康 INFO 与流程 INFO 分开')
+  assertEq(call('get', '/apms/rtp-risk/list', { suggestedLevel: 'WARNING' }).rows[0].athleteId, 1004)
+  assertEq(call('get', '/apms/rtp-risk/list', { status: 'ACKED,ACCEPTED,DISMISSED' }).total, 1, '已处理列表含 ACKED')
+  assertEq(call('get', '/apms/rtp-risk/athlete/1004/latest').data.suggestedLevel, 'WARNING', '详情页当前建议')
+  assertEq(call('get', '/apms/rtp-risk/athlete/1005/latest').data, null, '已 ACKED 当日不再作 ACTIVE 建议')
+
+  // INFO 才能 ACK；ACK 幂等
+  assertEq(call('post', '/apms/rtp-risk/-901/ack', {}, { remark: 'x' }).code, 601, 'WARNING 不可知悉')
+  expect200(call('post', '/apms/rtp-risk/-904/ack', {}, { remark: '已知悉' }))
+  assertEq(db().rtpRiskSnapshots.find(s => s.id === -904).status, 'ACKED')
+  expect200(call('post', '/apms/rtp-risk/-904/ack', {}, { remark: '再点' }), 'ACK 幂等')
+  assertEq(db().rtpRiskSnapshots.filter(s => s.status === 'ACKED' && s.handledBy === 'super').length, 2)
+
+  // DISMISS 必须填理由
+  assertEq(call('post', '/apms/rtp-risk/-903/dismiss', {}, { remark: '' }).code, 601, '忽略理由必填')
+  expect200(call('post', '/apms/rtp-risk/-903/dismiss', {}, { remark: '线下已复检，系统未采集' }))
+  assertEq(db().rtpRiskSnapshots.find(s => s.id === -903).status, 'DISMISSED')
+
+  // 采纳：级别白名单（ATTENTION→y / WARNING→r，拒绝 g）
+  assertEq(call('post', '/apms/rtp-risk/-902/accept', {}, { status: 'g' }).code, 601, 'ATTENTION 拒绝 green')
+  const acc = call('post', '/apms/rtp-risk/-902/accept', {}, {
+    status: 'y', reason: '采纳测试', trainingLimit: '限制跳跃', nextReviewDate: '2026-10-20'
+  })
+  expect200(acc)
+  assertEq(acc.data.status, 'ACCEPTED'); assertEq(acc.data.acceptedStatus, 'y')
+  const rtpRow = db().rtpStatuses.find(s => s.athleteId === 1015)
+  assertEq(rtpRow.status, 'y'); assertEq(rtpRow.reason, '采纳测试')
+  assertEq(rtpRow.nextReviewDate, '2026-10-20')
+  assert(db().rtpLogs.some(l => l.athleteId === 1015 && l.toStatus === 'y' && l.reason === '采纳测试'),
+    '采纳同调用写 rtp_log')
+  assertEq(db().athletes.find(a => a.athleteId === 1015).rtpStatus, 'y', '同步花名册冗余')
+  // 重复采纳幂等：不重复写日志
+  const logsBefore = db().rtpLogs.filter(l => l.athleteId === 1015).length
+  expect200(call('post', '/apms/rtp-risk/-902/accept', {}, { status: 'y' }))
+  assertEq(db().rtpLogs.filter(l => l.athleteId === 1015).length, logsBefore, '重复采纳不重复写 RTP/日志')
+
+  // 不降级校验（同级允许）：陈嘉宇当前已是 r，WARNING 采纳 r 不拦截；rank(r)>rank(y) 的拦截由后端同口径保证
+  const sameLevel = call('post', '/apms/rtp-risk/-901/accept', {}, { status: 'r' })
+  expect200(sameLevel, '同级 r→r 允许')
+  // 规则只读
+  expect200(call('get', '/apms/rtp-risk/rules'), '规则列表 200')
+  assertEq(call('get', '/apms/rtp-risk/rules').data.length, 4, '一期 4 条规则')
+  // 扫描
+  const scan = call('post', '/apms/rtp-risk/scan')
+  expect200(scan); assertEq(scan.data.withRisk, 0, '全部处置后当日无剩余 ACTIVE')
+})
+
+test('H16', 'strict 模式：14 页面真实请求序列零 MISS', async () => {
   reset()
   globalThis.__VITE_ENV__.VITE_DEMO_MOCK_STRICT = 'true'
   missLog.length = 0
@@ -968,6 +1032,10 @@ test('H16', 'strict 模式：13 页面真实请求序列零 MISS', async () => {
     ['get', '/apms/rtp/status/list'],
     ['get', '/apms/rtp/status/1001'],
     ['get', '/apms/rtp/log/1001'],
+    ['get', '/apms/rtp-risk/athlete/1001/latest'],
+    ['get', '/apms/rtp-risk/list?pageNum=1&pageSize=10'],
+    ['get', '/apms/rtp-risk/stat'],
+    ['get', '/apms/rtp-risk/-901'],
     ['get', '/apms/indicator/list?pageNum=1&pageSize=10'],
     ['get', '/apms/indicator/5'],
     ['get', '/apms/indicator/ref/list/5'],

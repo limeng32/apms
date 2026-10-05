@@ -18,6 +18,7 @@ import { bodyMeasureHandlers } from './bodyMeasure'
 import { measureCycleHandlers } from './measureCycle'
 import { phvHandlers } from './phv'
 import { rtpHandlers } from './rtp'
+import { rtpRiskHandlers } from './rtpRisk'
 import { comboModelHandlers } from './comboModel'
 import { comboScoreHandlers } from './comboScore'
 import { medicalHandlers } from './medical'
@@ -37,6 +38,7 @@ export const handlers = [
   ...measureCycleHandlers,
   ...phvHandlers,
   ...rtpHandlers,
+  ...rtpRiskHandlers,
   ...comboModelHandlers,
   ...comboScoreHandlers,
   ...medicalHandlers,

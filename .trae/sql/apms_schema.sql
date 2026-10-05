@@ -170,7 +170,7 @@ CREATE TABLE apms_rtp_log (
     id               bigint       NOT NULL AUTO_INCREMENT  COMMENT '自增',
     athlete_id       bigint       NOT NULL                COMMENT '运动员ID',
     from_status      char(1)      DEFAULT NULL            COMMENT '变更前状态',
-    to_status        char(1)      NOT NULL                COMMENT '变更后状态',
+    to_status        char(1)      DEFAULT NULL            COMMENT '变更后状态（NULL=清除，回到未评估）',
     reason           varchar(500) DEFAULT NULL            COMMENT '变更原因',
     training_limit   varchar(500) DEFAULT NULL            COMMENT '训练限制',
     next_review_date date         DEFAULT NULL            COMMENT '当时计划的下次复核日期',

@@ -23,6 +23,7 @@ import com.ruoyi.system.mapper.apms.ApmsAthleteMapper;
 import com.ruoyi.system.mapper.apms.ApmsBodyMeasureMapper;
 import com.ruoyi.system.mapper.apms.ApmsPhvRecordMapper;
 import com.ruoyi.system.service.apms.IApmsPhvService;
+import com.ruoyi.system.service.apms.IRtpRiskService;
 import com.ruoyi.system.util.apms.MirwaldCalculator;
 
 /**
@@ -50,6 +51,9 @@ public class ApmsPhvServiceImpl implements IApmsPhvService {
 
     @Autowired
     private ApmsAthleteMapper athleteMapper;
+
+    @Autowired
+    private IRtpRiskService rtpRiskService;
 
     @Override
     public ApmsPhvRecord selectById(Long id) {
@@ -238,6 +242,13 @@ public class ApmsPhvServiceImpl implements IApmsPhvService {
         log.info("[PHV auto] athleteId={} measureId={} → Mirwald calculating...", athleteId, latest.getId());
         ApmsPhvRecord rec = calculateAndSave(athleteId, latest.getId());
         log.info("[PHV auto] athleteId={} PHV#{} offset={} predPHV={}", athleteId, rec.getId(), rec.getMaturityOffset(), rec.getPredictedPhvAge());
+
+        // 6. 事件增量：PHV 新增可能改变 PHV_PEAK 因子，重算当日风险（异常不阻断主链路）
+        try {
+            rtpRiskService.scanOne(athleteId);
+        } catch (Exception e) {
+            log.warn("[rtp-risk] scanOne after PHV auto failed, athleteId={}: {}", athleteId, e.getMessage());
+        }
         return rec;
     }
 

@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsRtpRiskSnapshotMapper">
+
+    <resultMap id="ApmsRtpRiskSnapshotResult" type="com.ruoyi.system.domain.apms.ApmsRtpRiskSnapshot">
+        <id     property="id"              column="id"/>
+        <result property="athleteId"      column="athlete_id"/>
+        <result property="deptId"         column="dept_id"/>
+        <result property="snapshotDate"   column="snapshot_date"/>
+        <result property="riskScore"      column="risk_score"/>
+        <result property="todoPriority"   column="todo_priority"/>
+        <result property="processOnly"    column="process_only"/>
+        <result property="processFlags"   column="process_flags"/>
+        <result property="suggestedLevel" column="suggested_level"/>
+        <result property="factors"        column="factors"/>
+        <result property="status"         column="status"/>
+        <result property="handledBy"      column="handled_by"/>
+        <result property="handledTime"    column="handled_time"/>
+        <result property="handleRemark"   column="handle_remark"/>
+        <result property="acceptedStatus" column="accepted_status"/>
+        <result property="createBy"       column="create_by"/>
+        <result property="createTime"     column="create_time"/>
+        <result property="updateTime"     column="update_time"/>
+        <result property="athleteName"    column="athlete_name"/>
+        <result property="athleteTeam"    column="athlete_team"/>
+        <result property="athleteGender"  column="athlete_gender"/>
+        <result property="athleteAge"     column="athlete_age"/>
+    </resultMap>
+
+    <sql id="selectVo">
+        SELECT
+            s.id, s.athlete_id, s.dept_id, s.snapshot_date, s.risk_score, s.todo_priority,
+            s.process_only, s.process_flags, s.suggested_level, s.factors, s.status,
+            s.handled_by, s.handled_time, s.handle_remark, s.accepted_status,
+            s.create_by, s.create_time, s.update_time,
+            a.name AS athlete_name, d.dept_name AS athlete_team,
+            a.gender AS athlete_gender,
+            CASE WHEN a.birthday IS NULL THEN NULL
+                 ELSE TIMESTAMPDIFF(YEAR, a.birthday, CURDATE()) END AS athlete_age
+        FROM apms_rtp_risk_snapshot s
+        LEFT JOIN apms_athlete a ON s.athlete_id = a.athlete_id
+        LEFT JOIN sys_dept d     ON a.primary_team_id = d.dept_id
+    </sql>
+
+    <select id="selectById" parameterType="Long" resultMap="ApmsRtpRiskSnapshotResult">
+        <include refid="selectVo"/>
+        WHERE s.id = #{id}
+    </select>
+
+    <!-- 采纳事务行锁：只锁快照行本身，避免 JOIN 放大锁范围（复用 resultMap 完成下划线映射） -->
+    <select id="selectByIdForUpdate" resultMap="ApmsRtpRiskSnapshotResult">
+        SELECT id, athlete_id, dept_id, snapshot_date, risk_score, todo_priority,
+               process_only, process_flags, suggested_level, factors, status,
+               handled_by, handled_time, handle_remark, accepted_status,
+               create_by, create_time, update_time
+        FROM apms_rtp_risk_snapshot
+        WHERE id = #{id}
+        FOR UPDATE
+    </select>
+
+    <select id="selectByAthleteAndDate" resultMap="ApmsRtpRiskSnapshotResult">
+        <include refid="selectVo"/>
+        WHERE s.athlete_id = #{athleteId} AND s.snapshot_date = #{snapshotDate}
+    </select>
+
+    <select id="selectLatestActiveByAthlete" parameterType="Long" resultMap="ApmsRtpRiskSnapshotResult">
+        <include refid="selectVo"/>
+        WHERE s.athlete_id = #{athleteId}
+          AND s.status = 'ACTIVE'
+          AND s.suggested_level != 'NONE'
+        ORDER BY s.snapshot_date DESC, s.id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectList" parameterType="com.ruoyi.system.domain.apms.ApmsRtpRiskSnapshot"
+            resultMap="ApmsRtpRiskSnapshotResult">
+        <include refid="selectVo"/>
+        <where>
+            <!-- 待办页永不展示 NONE -->
+            s.suggested_level != 'NONE'
+            <if test="snapshotDate != null">AND s.snapshot_date = #{snapshotDate}</if>
+            <if test="deptId != null">AND a.primary_team_id = #{deptId}</if>
+            <if test="processOnly != null and processOnly != ''">AND s.process_only = #{processOnly}</if>
+            <if test="processFlag != null and processFlag != ''">
+                AND JSON_CONTAINS(s.process_flags, JSON_QUOTE(#{processFlag}))
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND a.name LIKE CONCAT('%', #{keyword}, '%')
+            </if>
+            <if test="statusList != null and statusList.size() > 0">
+                AND s.status IN
+                <foreach collection="statusList" item="st" open="(" separator="," close=")">#{st}</foreach>
+            </if>
+            <if test="levelList != null and levelList.size() > 0">
+                AND s.suggested_level IN
+                <foreach collection="levelList" item="lv" open="(" separator="," close=")">#{lv}</foreach>
+            </if>
+            <if test="params != null and params.dataScope != null and params.dataScope != ''">
+                AND ${params.dataScope}
+            </if>
+        </where>
+        ORDER BY s.todo_priority DESC,
+                 FIELD(s.suggested_level, 'WARNING', 'ATTENTION', 'INFO'),
+                 s.snapshot_date ASC, s.id ASC
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsRtpRiskSnapshot"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_rtp_risk_snapshot (
+            athlete_id, dept_id, snapshot_date, risk_score, todo_priority,
+            process_only, process_flags, suggested_level, factors, status,
+            create_by, create_time, update_time
+        ) VALUES (
+            #{athleteId}, #{deptId}, #{snapshotDate}, #{riskScore}, #{todoPriority},
+            #{processOnly}, #{processFlags}, #{suggestedLevel}, #{factors}, 'ACTIVE',
+            #{createBy}, sysdate(), sysdate()
+        )
+    </insert>
+
+    <update id="updateIfActive" parameterType="com.ruoyi.system.domain.apms.ApmsRtpRiskSnapshot">
+        UPDATE apms_rtp_risk_snapshot
+        SET risk_score      = #{riskScore},
+            todo_priority   = #{todoPriority},
+            process_only    = #{processOnly},
+            process_flags   = #{processFlags},
+            suggested_level = #{suggestedLevel},
+            factors         = #{factors},
+            dept_id         = #{deptId},
+            update_time     = sysdate()
+        WHERE id = #{id} AND status = 'ACTIVE'
+    </update>
+
+    <update id="markHandled" parameterType="com.ruoyi.system.domain.apms.ApmsRtpRiskSnapshot">
+        UPDATE apms_rtp_risk_snapshot
+        SET status        = #{status},
+            handled_by    = #{handledBy},
+            handled_time  = sysdate(),
+            handle_remark = #{handleRemark}
+            <if test="acceptedStatus != null and acceptedStatus != ''">
+                , accepted_status = #{acceptedStatus}
+            </if>
+            , update_time = sysdate()
+        WHERE id = #{id} AND status = 'ACTIVE'
+    </update>
+
+    <update id="expireBefore">
+        UPDATE apms_rtp_risk_snapshot
+        SET status = 'EXPIRED', update_time = sysdate()
+        WHERE snapshot_date &lt; #{snapshotDate} AND status = 'ACTIVE'
+    </update>
+
+</mapper>

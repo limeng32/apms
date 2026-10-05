@@ -3,8 +3,8 @@ id: roadmap.rtp-warning-phase1
 title: RTP风险预警一期详细设计（规则引擎·待办闭环）
 capability: rtp
 scope: roadmap
-phase: phase-1-design
-status: proposed
+phase: phase-1
+status: implemented
 authority: 60
 conflict_group: rtp-decision-mode
 sources:
@@ -26,8 +26,9 @@ relations:
 
 # RTP 风险预警 · 第一期详细设计
 
-> 版本：设计稿（未实现）
-> 范围：在不采集训练负荷的前提下，用现有医疗 / PHV / 体测 / RTP 复检数据，做**规则驱动的风险提示 + 人工确认闭环**。
+> 版本：一期已实现（2026-10-05，补丁 patch-0.0.6-202610042315）
+> 范围：在不采集训练负荷的前提下，用现有医疗 / PHV / RTP 复检数据，做**规则驱动的风险提示 + 人工确认闭环**。
+> 实现差异：① `TEST_DECLINE` 体测下滑规则按决策移至 1.1，一期上线 4 条规则（REVIEW_OVERDUE / REVIEW_SOON / INJURY_OPEN / PHV_PEAK）；② 菜单 2261 更名为「RTP 状态管理」，新增 2264「RTP 风险预警」；③ 规则阈值一期为引擎常量（INFO 3 / ATTENTION 6 / WARNING 9），规则表只存规则自身 severity/weight/params。
 > 与二期（ACWR / sRPE 训练负荷预警，见 `roadmap/acwr.md`）的边界：一期不引入任何日常训练负荷数据。
 
 ## 1. 目标与边界
@@ -410,7 +411,7 @@ RTP Tab 顶部增加「当前系统建议」横幅（复用 `rk-banner tone-ambe
 ## 7. 触发与时效
 
 - **定时全量**：每天 07:00（sys_job，可停用 / 改 cron）；
-- **事件增量**：医疗记录新增、PHV 自动计算、RTP 状态更新后调 `scanOne`，当日即更新；
+- **事件增量**：医疗记录新增/修改/删除、PHV 自动计算后调 `scanOne`，当日即更新；常规 `/apms/rtp/update` 不触发扫描（预警采纳路径在 accept 事务 afterCommit 自行触发）；
 - 快照按日 upsert + 旧 ACTIVE 置 EXPIRED，待办不堆积，每天看到的都是最新结论；
 - 已 ACCEPTED / DISMISSED 的当日快照不被扫描覆盖（保留人工处理结果）。
 

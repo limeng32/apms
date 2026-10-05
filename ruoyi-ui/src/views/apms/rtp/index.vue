@@ -57,13 +57,30 @@
           @dragleave="onDragLeave(col.key, $event)"
           @drop="onDrop(col.key, $event)"
         >
-          <div class="rk-kanban-head">
+          <div class="rk-kanban-head" :class="{ 'is-collapsible': col.collapse }"
+               @click="col.collapse && toggleCollapse(col.key)">
             <span class="rk-kanban-dot"></span>
             <span class="rk-kanban-title">{{ col.title }}</span>
             <span class="rk-kanban-count rk-mono">{{ columnList(col.key).length }}</span>
-            <span class="rk-kanban-hint" v-if="canEdit">{{ col.hint }}</span>
+            <span class="rk-kanban-hint" v-if="canEdit && !col.collapse">{{ col.hint }}</span>
+            <el-icon v-if="col.collapse" class="rt-col-caret"
+                     :class="{ 'is-open': !collapsed[col.key] }"><ArrowRight /></el-icon>
           </div>
-          <div class="rk-kanban-body">
+
+          <!-- 折叠态：全名胶囊墙（人数多、无需细节的两列），点列头展开 -->
+          <div v-if="col.collapse && collapsed[col.key]" class="rt-avatar-wall">
+            <span v-for="row in columnList(col.key)"
+                  :key="row.athleteId"
+                  class="rt-name-chip"
+                  :style="{ background: avatarColor(row) }"
+                  :title="(row.athleteTeam || '无队伍') + ' · #' + row.athleteId + '（点击查看详情）'"
+                  @click="openDrawer(row)">
+              {{ row.athleteName || '未评估' }}
+            </span>
+            <span v-if="!loading && columnList(col.key).length === 0" class="rk-kanban-empty">暂无队员</span>
+          </div>
+
+          <div v-else class="rk-kanban-body">
             <div
               v-for="row in columnList(col.key)"
               :key="row.athleteId"
@@ -241,7 +258,7 @@ import { listStatus, getLog, updateStatus, clearStatus } from '@/api/apms/rtp'
 import { listAthlete } from '@/api/apms/athlete'
 import { listDept } from '@/api/system/dept'
 import { checkPermi } from '@/utils/permission'
-import { Close, RefreshLeft, CircleCheck, Warning, CircleClose, QuestionFilled } from '@element-plus/icons-vue'
+import { Close, RefreshLeft, CircleCheck, Warning, CircleClose, QuestionFilled, ArrowRight } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
 
@@ -253,9 +270,14 @@ const canEdit = checkPermi(['apms:athlete:edit'])
 const COLUMNS = [
   { key: 'r', title: '不建议训练', tone: 'tone-red', hint: '拖入即停训' },
   { key: 'y', title: '限制参训', tone: 'tone-amber', hint: '拖入即限制' },
-  { key: 'g', title: '正常参训', tone: 'tone-green', hint: '拖入即正常' },
-  { key: 'na', title: '未评估', tone: 'tone-gray', hint: '拖入即清除' }
+  { key: 'g', title: '正常参训', tone: 'tone-green', collapse: true },
+  { key: 'na', title: '未评估', tone: 'tone-gray', collapse: true }
 ]
+/* 人数多、无需细节的两列默认折叠（只显示姓氏首字）；状态不跨会话记忆 */
+const collapsed = reactive({ g: true, na: true })
+function toggleCollapse(key) {
+  collapsed[key] = !collapsed[key]
+}
 const statusLabel = (s) => s === 'g' ? '正常参训' : s === 'y' ? '限制参训' : s === 'r' ? '不建议训练' : '未评估'
 const statusTone  = (s) => s === 'g' ? 'tone-green' : s === 'y' ? 'tone-amber' : s === 'r' ? 'tone-red' : 'tone-gray'
 const statusIcon  = (s) => s === 'g' ? CircleCheck : s === 'y' ? Warning : s === 'r' ? CircleClose : QuestionFilled
@@ -377,6 +399,8 @@ function onDragOver(key, ev) {
   ev.preventDefault()
   if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move'
   dragOverKey.value = key
+  // 折叠的目标列在拖拽悬停时自动展开，便于看清投放位置
+  if (collapsed[key] === true) collapsed[key] = false
 }
 function onDragLeave(key, ev) {
   // 进入子元素时不清高亮，只有真正离开列才清
@@ -513,6 +537,43 @@ loadAll()
   font-size: 13px;
 }
 .rt-card-time { margin-left: auto; color: $rk-text-3; }
+
+/* ===== 列折叠（正常参训/未评估：人数多，默认只显姓氏首字） ===== */
+.rk-kanban-head.is-collapsible { cursor: pointer; user-select: none; }
+.rk-kanban-head.is-collapsible:hover { background: rgba(148, 163, 184, 0.10); }
+.rt-col-caret {
+  margin-left: 2px;
+  font-size: 13px;
+  color: $rk-text-3;
+  transition: transform .18s ease;
+  &.is-open { transform: rotate(90deg); }
+}
+.rt-avatar-wall {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-content: flex-start;
+  padding: 4px 2px;
+}
+.rt-name-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease;
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(15, 23, 42, 0.18);
+    z-index: 1;
+  }
+}
 
 /* ===== 抽屉 ===== */
 .rt-drawer-wrap :deep(.el-drawer__body) {

@@ -3633,6 +3633,90 @@ export const rtpLogs = [
   }
 ]
 
+// RTP 风险预警每日快照（当日演示种子；factorList/processFlagList 为后端 enrich 后的结构）
+export const rtpRiskSnapshots = [
+  {
+    id: -901, athleteId: 1004, deptId: 201, snapshotDate: '2026-10-05',
+    riskScore: 3.00, todoPriority: 3, processOnly: '0', suggestedLevel: 'WARNING', status: 'ACTIVE',
+    handledBy: null, handledTime: null, handleRemark: null, acceptedStatus: null,
+    createTime: '2026-10-05 07:00:02',
+    athleteName: '陈嘉宇', athleteTeam: 'U18 梯队', athleteGender: 'M', athleteAge: 17,
+    processFlagList: [],
+    factorList: [
+      {
+        code: 'INJURY_OPEN', kind: 'HEALTH', severity: 3, urgency: 3, forceWarning: true, weight: 1.00,
+        title: '术后未检测到康复/复查记录',
+        detail: '2026-09-10 有手术记录（肩关节手术），其后无康复或复查记录，建议停训就医评估（供参考）。未检测到康复/复查记录，请人工核实',
+        refData: { recordType: 'surgery', recordDate: '2026-09-10', recordTitle: '肩关节手术', ageDays: 25 }
+      }
+    ]
+  },
+  {
+    id: -902, athleteId: 1015, deptId: 202, snapshotDate: '2026-10-05',
+    riskScore: 6.00, todoPriority: 2, processOnly: '0', suggestedLevel: 'ATTENTION', status: 'ACTIVE',
+    handledBy: null, handledTime: null, handleRemark: null, acceptedStatus: null,
+    createTime: '2026-10-05 07:00:02',
+    athleteName: '陈思琪', athleteTeam: 'U16 梯队', athleteGender: 'F', athleteAge: 16,
+    processFlagList: [],
+    factorList: [
+      {
+        code: 'INJURY_OPEN', kind: 'HEALTH', severity: 2, urgency: 2, forceWarning: false, weight: 3.00,
+        title: '伤病未检测到康复/复查记录',
+        detail: '2026-09-20 有伤病记录（髌骨疼痛综合征），其后无康复或复查记录，建议关注恢复情况、必要时限制参训（供参考）。未检测到康复/复查记录，请人工核实',
+        refData: { recordType: 'injury', recordDate: '2026-09-20', recordTitle: '髌骨疼痛综合征', ageDays: 15 }
+      }
+    ]
+  },
+  {
+    id: -903, athleteId: 1014, deptId: 201, snapshotDate: '2026-10-05',
+    riskScore: 0.00, todoPriority: 3, processOnly: '1', suggestedLevel: 'INFO', status: 'ACTIVE',
+    handledBy: null, handledTime: null, handleRemark: null, acceptedStatus: null,
+    createTime: '2026-10-05 07:00:02',
+    athleteName: '徐梦瑶', athleteTeam: 'U18 梯队', athleteGender: 'F', athleteAge: 17,
+    processFlagList: ['REVIEW_OVERDUE'],
+    factorList: [
+      {
+        code: 'REVIEW_OVERDUE', kind: 'PROCESS', severity: 0, urgency: 3, forceWarning: false, weight: 1.00,
+        title: 'RTP复检已逾期',
+        detail: '复检日 2026-09-20，已逾期 15 天（流程待办，不参与健康风险评分），请尽快安排复检',
+        refData: { nextReviewDate: '2026-09-20', daysOverdue: 15 }
+      }
+    ]
+  },
+  {
+    id: -904, athleteId: 1001, deptId: 201, snapshotDate: '2026-10-05',
+    riskScore: 1.00, todoPriority: 1, processOnly: '0', suggestedLevel: 'INFO', status: 'ACTIVE',
+    handledBy: null, handledTime: null, handleRemark: null, acceptedStatus: null,
+    createTime: '2026-10-05 07:00:02',
+    athleteName: '张志远', athleteTeam: 'U18 梯队', athleteGender: 'M', athleteAge: 18,
+    processFlagList: [],
+    factorList: [
+      {
+        code: 'PHV_PEAK', kind: 'HEALTH', severity: 1, urgency: 1, forceWarning: false, weight: 1.00,
+        title: '身高突增峰期',
+        detail: '最新 PHV 成熟度偏移 0.2（测量日 2026-09-12），处于身高突增峰期带（±0.5），训练安排请注意生长发育风险（供参考）',
+        refData: { maturityOffset: 0.2, measureDate: '2026-09-12', ageDays: 23 }
+      }
+    ]
+  },
+  {
+    id: -905, athleteId: 1005, deptId: 201, snapshotDate: '2026-10-05',
+    riskScore: 1.00, todoPriority: 1, processOnly: '0', suggestedLevel: 'INFO', status: 'ACKED',
+    handledBy: 'super', handledTime: '2026-10-05 09:12:40', handleRemark: '已知悉，持续观察', acceptedStatus: null,
+    createTime: '2026-10-05 07:00:02',
+    athleteName: '刘子轩', athleteTeam: 'U18 梯队', athleteGender: 'M', athleteAge: 17,
+    processFlagList: [],
+    factorList: [
+      {
+        code: 'PHV_PEAK', kind: 'HEALTH', severity: 1, urgency: 1, forceWarning: false, weight: 1.00,
+        title: '身高突增峰期',
+        detail: '最新 PHV 成熟度偏移 -0.3（测量日 2026-09-10），处于身高突增峰期带（±0.5），训练安排请注意生长发育风险（供参考）',
+        refData: { maturityOffset: -0.3, measureDate: '2026-09-10', ageDays: 25 }
+      }
+    ]
+  }
+]
+
 // 组合模型主表（1 行）
 export const comboModels = [
   {

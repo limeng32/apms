@@ -4,16 +4,33 @@ import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.ruoyi.common.utils.SecurityUtils;
 import com.ruoyi.system.domain.apms.*;
 import com.ruoyi.system.mapper.apms.*;
 import com.ruoyi.system.service.apms.IApmsMedicalService;
+import com.ruoyi.system.service.apms.IRtpRiskService;
 
 @Service
 public class ApmsMedicalServiceImpl implements IApmsMedicalService {
 
+    private static final Logger log = LoggerFactory.getLogger(ApmsMedicalServiceImpl.class);
+
     @Autowired private ApmsMedicalRecordMapper recordMapper;
     @Autowired private ApmsMedicalFileMapper fileMapper;
+    @Autowired private IRtpRiskService rtpRiskService;
+
+    /** 事件增量：医疗变更后重算当日 RTP 风险，异常只记日志不阻断主写入链路 */
+    private void refreshRisk(Long athleteId) {
+        if (athleteId == null) return;
+        try {
+            rtpRiskService.scanOne(athleteId);
+        } catch (Exception e) {
+            log.warn("[rtp-risk] scanOne after medical write failed, athleteId={}: {}",
+                    athleteId, e.getMessage());
+        }
+    }
 
     @Override
     public List<ApmsMedicalRecord> list(ApmsMedicalRecord query) {
@@ -39,6 +56,7 @@ public class ApmsMedicalServiceImpl implements IApmsMedicalService {
                 fileMapper.insert(f);
             }
         }
+        refreshRisk(r.getAthleteId());
         return 1;
     }
 
@@ -56,13 +74,19 @@ public class ApmsMedicalServiceImpl implements IApmsMedicalService {
                 fileMapper.insert(f);
             }
         }
+        refreshRisk(r.getAthleteId());
         return 1;
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int delete(Long id) {
+        ApmsMedicalRecord existing = recordMapper.selectById(id);
         fileMapper.deleteByRecordId(id);
-        return recordMapper.deleteById(id);
+        int rows = recordMapper.deleteById(id);
+        if (existing != null) {
+            refreshRisk(existing.getAthleteId());
+        }
+        return rows;
     }
 }

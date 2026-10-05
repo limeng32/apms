@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsRtpRiskRuleMapper">
+
+    <resultMap id="ApmsRtpRiskRuleResult" type="com.ruoyi.system.domain.apms.ApmsRtpRiskRule">
+        <id     property="id"           column="id"/>
+        <result property="ruleCode"     column="rule_code"/>
+        <result property="ruleName"     column="rule_name"/>
+        <result property="enabled"      column="enabled"/>
+        <result property="kind"         column="kind"/>
+        <result property="severity"     column="severity"/>
+        <result property="urgency"      column="urgency"/>
+        <result property="forceWarning" column="force_warning"/>
+        <result property="weight"       column="weight"/>
+        <result property="params"       column="params"/>
+        <result property="updateBy"     column="update_by"/>
+        <result property="updateTime"   column="update_time"/>
+    </resultMap>
+
+    <sql id="selectVo">
+        SELECT id, rule_code, rule_name, enabled, kind, severity, urgency,
+               force_warning, weight, params, update_by, update_time
+        FROM apms_rtp_risk_rule
+    </sql>
+
+    <select id="selectAll" resultMap="ApmsRtpRiskRuleResult">
+        <include refid="selectVo"/>
+        ORDER BY id
+    </select>
+
+    <select id="selectAllEnabled" resultMap="ApmsRtpRiskRuleResult">
+        <include refid="selectVo"/>
+        WHERE enabled = '1'
+        ORDER BY id
+    </select>
+
+</mapper>

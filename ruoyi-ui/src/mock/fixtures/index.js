@@ -28,6 +28,7 @@ export const tables = {
   phvs: business.phvs,
   rtpStatuses: business.rtpStatuses,
   rtpLogs: business.rtpLogs,
+  rtpRiskSnapshots: business.rtpRiskSnapshots,
   comboModels: business.comboModels,
   comboComponents: business.comboComponents,
   comboScores: business.comboScores,
