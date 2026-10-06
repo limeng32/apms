@@ -90,8 +90,9 @@
                       <span class="rk-soft-chip rp-ver-chip">{{ row.templateVersion || '—' }}</span>
                     </td>
                     <td class="text-center col-ops">
-                      <button type="button" class="rk-link" @click.stop="handleDownload(row)"
+                      <button v-if="row.filePath" type="button" class="rk-link" @click.stop="handleDownload(row)"
                               v-hasPermi="['apms:report:download']">下载</button>
+                      <span v-else class="rk-dash">—</span>
                       <button type="button" class="rk-link is-danger" @click.stop="handleDelete(row)"
                               v-hasPermi="['apms:report:remove']">删</button>
                     </td>
@@ -170,16 +171,36 @@
                 <span class="rp-file-name">{{ current.filePath?.split('/').pop() || '未生成' }}</span>
                 <span v-if="current.filePath" class="rk-soft-chip rp-file-ready">PDF Ready</span>
                 <span v-else class="rk-soft-chip rp-file-missing">No File</span>
+                <button v-if="current.filePath" type="button" class="rk-link rp-snapshot-toggle"
+                        @click="showSnapshot = !showSnapshot">
+                  {{ showSnapshot ? '查看 PDF' : '查看数据快照' }}
+                </button>
               </div>
 
-              <!-- JSON 快照 -->
-              <div class="rp-section-title">
-                Data Snapshot 🔒
-                <span class="rp-privacy-note">历史不漂移 · 可复现</span>
+              <!-- PDF 在线预览（默认） -->
+              <div v-if="current.filePath && !showSnapshot">
+                <div class="rp-section-title">
+                  报告预览
+                  <span class="rp-privacy-note">与下载文件完全一致</span>
+                </div>
+                <div v-if="pdfLoading" class="rp-pdf-state">PDF 加载中…</div>
+                <div v-else-if="pdfError" class="rp-pdf-state">
+                  PDF 无法在线预览（{{ pdfError }}），请点击下方按钮下载查看
+                </div>
+                <iframe v-else-if="pdfPreviewUrl" class="rp-pdf-frame" :src="pdfPreviewUrl"
+                        :title="current.filePath"></iframe>
               </div>
-              <div class="rp-snapshot">
-                <pre>{{ formatSnapshot(current.contentSnapshot) }}</pre>
-              </div>
+
+              <!-- JSON 快照（无 PDF 或手动切换时显示） -->
+              <template v-else>
+                <div class="rp-section-title">
+                  Data Snapshot 🔒
+                  <span class="rp-privacy-note">历史不漂移 · 可复现</span>
+                </div>
+                <div class="rp-snapshot">
+                  <pre>{{ formatSnapshot(current.contentSnapshot) }}</pre>
+                </div>
+              </template>
 
               <!-- 下载 -->
               <div v-if="current.filePath" class="rp-download-bar">
@@ -243,11 +264,12 @@
 </template>
 
 <script setup name="ApmsReport">
-import { listReport, getReport, generateReport, delReport, downloadReportUrl } from '@/api/apms/report'
+import { listReport, getReport, generateReport, regenerateReport, delReport, downloadReportUrl } from '@/api/apms/report'
 import { listTestTask } from '@/api/apms/testTask'
 import { listAthlete } from '@/api/apms/athlete'
 import { listDept } from '@/api/system/dept'
 import { getToken, isDemoMode } from '@/utils/auth'
+import { checkPermi } from '@/utils/permission'
 import { Plus, RefreshLeft, ArrowLeft, ArrowRight, Download, Document } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 
@@ -351,14 +373,62 @@ listDept({ pageNum: 1, pageSize: 500 }).then(r => { deptOpts.value = r.data || [
 // ========= 主从 =========
 const current = ref(null)
 const detailLoading = ref(false)
+
+// PDF 在线预览（blob URL 随报告切换回收）
+const pdfPreviewUrl = ref('')
+const pdfLoading = ref(false)
+const pdfError = ref('')
+const showSnapshot = ref(false)
+let previewSeq = 0
+
+function revokePreview() {
+  if (pdfPreviewUrl.value) {
+    URL.revokeObjectURL(pdfPreviewUrl.value)
+    pdfPreviewUrl.value = ''
+  }
+}
+
+/** 拉取 PDF 供 iframe 预览；返回的业务错误（如文件被清理）以字符串形式呈现 */
+async function loadPdfPreview(row) {
+  revokePreview()
+  pdfError.value = ''
+  if (!row?.filePath) return
+  if (isDemoMode()) { pdfError.value = '演示环境不支持文件访问'; return }
+  const seq = ++previewSeq
+  pdfLoading.value = true
+  try {
+    const res = await fetch(import.meta.env.VITE_APP_BASE_API + downloadReportUrl(row.id), {
+      headers: { 'Authorization': 'Bearer ' + getToken() }
+    })
+    if (!res.ok) { if (seq === previewSeq) pdfError.value = '无下载权限或请求失败'; return }
+    const contentType = res.headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      const errBody = await res.json().catch(() => null)
+      if (seq === previewSeq) pdfError.value = errBody?.msg || '文件不可用'
+      return
+    }
+    const blob = await res.blob()
+    if (seq === previewSeq) pdfPreviewUrl.value = URL.createObjectURL(blob)
+  } catch (e) {
+    if (seq === previewSeq) pdfError.value = '网络错误'
+  } finally {
+    if (seq === previewSeq) pdfLoading.value = false
+  }
+}
+
 function handleRowClick(row) {
   current.value = row
   detailLoading.value = true
+  showSnapshot.value = false
+  revokePreview()
   getReport(row.id).then(r => {
     if (current.value?.id !== row.id) return
     current.value = r.data
+    loadPdfPreview(r.data)
   }).finally(() => { detailLoading.value = false })
 }
+
+onBeforeUnmount(() => revokePreview())
 
 // ========= 生成 =========
 const showGenDialog = ref(false)
@@ -396,37 +466,77 @@ function submitGen() {
 }
 
 // ========= 操作 =========
-async function handleDownload(row) {
+/** 物理文件缺失类错误（filePath 有记录但 PDF 已被清理，或压根没生成） */
+function isFileMissingError(body) {
+  const msg = body?.msg || ''
+  return msg.includes('文件不存在') || msg.includes('未生成文件')
+}
+
+/**
+ * 下载报告 PDF。
+ * @param regenerating true 表示下载的是刚重新生成的新报告，此时文件再缺失就不再二次询问
+ */
+async function handleDownload(row, regenerating = false) {
   // 演示模式：原生 fetch 不走 service 实例（adapter 换不到），前置拦截，零真实请求
   if (isDemoMode()) {
     proxy.$modal.msgWarning('演示环境暂不支持文件下载')
     return
   }
-  // 修复原页缺陷：裸相对路径缺 /dev-api 前缀且读 localStorage（本项目 token 在 Cookie），dev 下必失败；
-  // 改为带鉴权头的 blob 下载，并识别 200+JSON 业务错误（如 PDF 物理文件被清理）而非把错误体存成 .pdf
+  // 裸相对路径缺 /dev-api 前缀；改为带鉴权头的 blob 下载，
+  // 并识别 200+JSON 业务错误（如 PDF 物理文件被清理）而非把错误体存成 .pdf
+  let res
   try {
-    const res = await fetch(import.meta.env.VITE_APP_BASE_API + downloadReportUrl(row.id), {
+    res = await fetch(import.meta.env.VITE_APP_BASE_API + downloadReportUrl(row.id), {
       headers: { 'Authorization': 'Bearer ' + getToken() }
     })
-    if (!res.ok) {
-      proxy.$modal.msgError('下载失败或无下载权限')
-      return
-    }
-    const contentType = res.headers.get('content-type') || ''
-    if (contentType.includes('application/json')) {
-      const errBody = await res.json().catch(() => null)
-      proxy.$modal.msgError(errBody?.msg || '下载失败')
-      return
-    }
-    const blob = await res.blob()
-    const a = document.createElement('a')
-    const url = URL.createObjectURL(blob)
-    a.href = url
-    a.download = row.filePath?.split('/').pop() || 'report.pdf'
-    a.click()
-    URL.revokeObjectURL(url)
   } catch (e) {
     proxy.$modal.msgError('下载失败')
+    return
+  }
+  if (!res.ok) {
+    proxy.$modal.msgError('下载失败或无下载权限')
+    return
+  }
+  const contentType = res.headers.get('content-type') || ''
+  if (contentType.includes('application/json')) {
+    const errBody = await res.json().catch(() => null)
+    // PDF 物理文件缺失：询问是否按相同条件重新生成并下载
+    if (!regenerating && isFileMissingError(errBody) && checkPermi(['apms:report:generate'])) {
+      proxy.$modal.confirm(
+        '该报告的 PDF 文件已不存在（可能已被清理）。是否立即重新生成？将按相同条件刷新本报告的数据快照与 PDF（覆盖原记录，不会新增报告），生成后自动下载。'
+      ).then(() => regenerateAndDownload(row)).catch(() => {})
+      return
+    }
+    proxy.$modal.msgError(errBody?.msg || '下载失败')
+    return
+  }
+  const blob = await res.blob()
+  const a = document.createElement('a')
+  const url = URL.createObjectURL(blob)
+  a.href = url
+  a.download = row.filePath?.split('/').pop() || 'report.pdf'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+/** 覆盖式重新生成原报告（ID 不变）→ 自动下载新 PDF → 刷新列表与详情 */
+async function regenerateAndDownload(row) {
+  try {
+    const r = await regenerateReport(row.id)
+    const fresh = r.data
+    proxy.$modal.msgSuccess('已重新生成，开始下载')
+    getList()
+    loadStats()
+    // 详情面板若正停留在该报告上，原地刷新（ID 不变）
+    if (current.value?.id === row.id) {
+      getReport(row.id).then(d => {
+        current.value = d.data
+        loadPdfPreview(d.data)
+      }).catch(() => {})
+    }
+    if (fresh?.id) await handleDownload(fresh, true)
+  } catch (e) {
+    // request 拦截器已统一弹错误提示，这里吞掉避免控制台未处理 rejection
   }
 }
 
@@ -525,6 +635,24 @@ loadStats()
 }
 
 /* JSON 快照 */
+.rp-snapshot-toggle { flex: none; font-size: 12px; }
+
+/* PDF 在线预览 */
+.rp-pdf-frame {
+  width: 100%;
+  height: 70vh;
+  min-height: 480px;
+  border: 1px solid $rk-line;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+.rp-pdf-state {
+  display: flex; align-items: center; justify-content: center;
+  height: 200px;
+  border: 1px dashed $rk-line; border-radius: 12px;
+  font-size: 13px; color: $rk-text-3;
+}
+
 .rp-section-title {
   display: flex; align-items: center; gap: 8px;
   font-size: 13px; font-weight: 700; color: $rk-text-1;

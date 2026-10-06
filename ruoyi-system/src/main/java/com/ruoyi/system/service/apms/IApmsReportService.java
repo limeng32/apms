@@ -13,5 +13,11 @@ public interface IApmsReportService {
      */
     ApmsReport generate(String reportType, Long athleteId, Long deptId, Long taskId);
 
+    /**
+     * 按原报告相同参数覆盖式重新生成（ID 不变）—
+     * 刷新快照/PDF/生成人/生成时间，并清理旧 PDF 物理文件
+     */
+    ApmsReport regenerate(Long id);
+
     int delete(Long id);
 }

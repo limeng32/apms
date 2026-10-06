@@ -9,6 +9,10 @@ export function getReport(id) {
 export function generateReport(data) {
   return request({ url: '/apms/report/generate', method: 'post', params: data })
 }
+// 覆盖式重新生成（ID 不变，刷新快照与 PDF）
+export function regenerateReport(id) {
+  return request({ url: '/apms/report/regenerate/' + id, method: 'post' })
+}
 export function delReport(id) {
   return request({ url: '/apms/report/' + id, method: 'delete' })
 }

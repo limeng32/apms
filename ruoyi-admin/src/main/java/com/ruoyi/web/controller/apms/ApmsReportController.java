@@ -62,6 +62,13 @@ public class ApmsReportController extends BaseController {
         return AjaxResult.success(r);
     }
 
+    /** 覆盖式重新生成：ID 不变，刷新快照与 PDF，自动清理旧物理文件 */
+    @PreAuthorize("@ss.hasPermi('apms:report:generate')")
+    @PostMapping("/regenerate/{id}")
+    public AjaxResult regenerate(@PathVariable Long id) {
+        return AjaxResult.success(reportService.regenerate(id));
+    }
+
     @PreAuthorize("@ss.hasPermi('apms:report:download')")
     @GetMapping("/download/{id}")
     public void download(@PathVariable Long id, HttpServletResponse response) {
@@ -74,8 +81,17 @@ public class ApmsReportController extends BaseController {
 
         try (FileInputStream fis = new FileInputStream(file);
              OutputStream os = response.getOutputStream()) {
-            String fileName = (r.getAthleteName() != null ? r.getAthleteName() + "_" : "")
-                + r.getReportType() + ".pdf";
+            String typeCn = switch (String.valueOf(r.getReportType())) {
+                case "INDIVIDUAL" -> "个人综合报告";
+                case "TASK"       -> "测试任务报告";
+                case "TEAM"       -> "队伍汇总报告";
+                default           -> "运动员表现报告";
+            };
+            String subject = r.getAthleteName() != null ? r.getAthleteName()
+                    : r.getTaskName() != null ? r.getTaskName()
+                    : r.getDeptName();
+            String fileName = (subject != null ? subject + "_" : "")
+                + typeCn + ".pdf";
             response.setContentType("application/pdf");
             response.setHeader("Content-Disposition", "attachment; filename="
                 + URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20"));

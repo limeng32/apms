@@ -51,7 +51,7 @@
                 AND ${params.dataScope}
             </if>
         </where>
-        ORDER BY r.generate_time DESC, r.id DESC
+        ORDER BY r.id DESC
     </select>
 
     <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsReport" useGeneratedKeys="true" keyProperty="id">
@@ -63,7 +63,11 @@
 
     <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsReport">
         UPDATE apms_report
-        SET file_path=#{filePath}, content_snapshot=#{contentSnapshot}
+        SET template_version=#{templateVersion},
+            file_path=#{filePath},
+            content_snapshot=#{contentSnapshot},
+            generate_by=#{generateBy},
+            generate_time=#{generateTime}
         WHERE id=#{id}
     </update>
 
