@@ -40,6 +40,12 @@ router.beforeEach(async (to, from) => {
     return { path: '/index', replace: true }
   }
   if (getToken()) {
+    // 首页 /index 即数据驾驶舱组件：
+    // super 已无驾驶舱菜单项（登录落地即首页），不设高亮；
+    // 其余角色高亮 APMS 分组下的数据驾驶舱菜单。
+    if (to.path === '/index' && !useUserStore().roles.includes('super')) {
+      to.meta.activeMenu = '/apms/dashboard'
+    }
     to.meta.title && useSettingsStore().setTitle(to.meta.title)
     const isLock = useLockStore().isLock
     if (to.path === '/login') {

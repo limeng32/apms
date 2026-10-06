@@ -1,9 +1,9 @@
 <template>
-  <div class="app-container">
+  <div class="app-container" :class="{ 'is-embedded': embedded }">
     <div class="rk-dash-page rk-page tt-page">
 
       <!-- ===== 页头 ===== -->
-      <div class="rk-header">
+      <div class="rk-header" v-if="!embedded">
         <div>
           <h1 class="rk-title">测试任务</h1>
           <p class="rk-subtitle">
@@ -475,6 +475,9 @@
 </template>
 
 <script setup name="ApmsTestTask">
+
+// 嵌入模式：由合并页（dispatch/growth/comboDispatch）堆叠使用
+defineProps({ embedded: { type: Boolean, default: false } })
 import { listTestTask, getTestTask, addTestTask, updateTestTask, delTestTask,
          updateMemberStatus, listTaskItem, addTaskItem, updateTaskItem, delTaskItem,
          listTaskMember, enrollMember, batchEnroll, removeMember } from '@/api/apms/testTask'
@@ -960,4 +963,16 @@ loadStats()
 .tt-dept-popper .el-select-dropdown__item.is-disabled {
   cursor: pointer !important;
 }
+
+/* ===== 嵌入模式：供合并页堆叠（隐藏页头、归零满铺外壳） ===== */
+.app-container.is-embedded {
+  padding: 0;
+  :deep(.rk-dash-page) {
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    background: transparent;
+  }
+}
+
 </style>

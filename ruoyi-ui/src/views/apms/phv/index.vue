@@ -1,9 +1,9 @@
 <template>
-  <div class="app-container">
+  <div class="app-container" :class="{ 'is-embedded': embedded }">
     <div class="rk-dash-page rk-page pm-page">
 
       <!-- ===== 页头 ===== -->
-      <div class="rk-header">
+      <div class="rk-header" v-if="!embedded">
         <div>
           <h1 class="rk-title">PHV 成熟度</h1>
           <p class="rk-subtitle">{{ summary.total }} 条记录 · {{ summary.athletes }} 名队员 · Mirwald 模型预测</p>
@@ -371,6 +371,9 @@
 </template>
 
 <script setup name="ApmsPhv">
+
+// 嵌入模式：由合并页（dispatch/growth/comboDispatch）堆叠使用
+defineProps({ embedded: { type: Boolean, default: false } })
 import { list as listPhv, calculate, calculateDirect, delPhv, adultHeightDerivation } from '@/api/apms/phv'
 import { listAthlete } from '@/api/apms/athlete'
 import { listByAthlete as listMeasuresByAthlete } from '@/api/apms/bodyMeasure'
@@ -736,4 +739,16 @@ loadList()
 }
 .mf-note { font-size: 12px; color: #94a3b8; line-height: 1.7; }
 .mf-old-saved { color: #b45309; }
+
+/* ===== 嵌入模式：供合并页堆叠（隐藏页头、归零满铺外壳） ===== */
+.app-container.is-embedded {
+  padding: 0;
+  :deep(.rk-dash-page) {
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    background: transparent;
+  }
+}
+
 </style>

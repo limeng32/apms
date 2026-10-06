@@ -824,12 +824,13 @@ getList()
 
 /* 全宽页面铺满 canvas 底色：
    侧栏 fixed（宽 200）+ 固定头部在文档流之外，负 margin 仅用于底色外扩，
-   左/上 padding 必须补偿 20px，否则 hero 内容会钻到侧栏/头部下面 */
+   左右对称 40px 内边距，避免内容贴住视口右缘导致按钮被裁切 */
 .rm-page {
   min-height: calc(100vh - 84px);
   margin: -20px;
-  padding: 40px 16px 36px 40px;
+  padding: 32px 40px 36px;
   background: $rk-canvas;
+  overflow-x: hidden;
 }
 
 .form-tip {

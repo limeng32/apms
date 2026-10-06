@@ -1,9 +1,9 @@
 <template>
-  <div class="app-container">
+  <div class="app-container" :class="{ 'is-embedded': embedded }">
     <div class="rk-dash-page rk-page ind-page">
 
       <!-- ===== 页头 ===== -->
-      <div class="rk-header">
+      <div class="rk-header" v-if="!embedded">
         <div>
           <h1 class="rk-title">指标库</h1>
           <p class="rk-subtitle">
@@ -417,6 +417,9 @@
 </template>
 
 <script setup name="ApmsIndicator">
+
+// 嵌入模式：由合并页（dispatch/growth/comboDispatch）堆叠使用
+defineProps({ embedded: { type: Boolean, default: false } })
 import {
   listIndicator, getIndicator, addIndicator, updateIndicator, delIndicator,
   addRef, updateRef, delRef,
@@ -961,4 +964,16 @@ loadStats()
 /* 评级码下拉选项：左编码右中文释义 */
 .ind-opt-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 .ind-opt-name { float: right; font-size: 12px; color: #94A3B8; margin-left: 16px; }
+
+/* ===== 嵌入模式：供合并页堆叠（隐藏页头、归零满铺外壳） ===== */
+.app-container.is-embedded {
+  padding: 0;
+  :deep(.rk-dash-page) {
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    background: transparent;
+  }
+}
+
 </style>

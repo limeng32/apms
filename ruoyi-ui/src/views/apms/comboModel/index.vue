@@ -1,9 +1,9 @@
 <template>
-  <div class="app-container">
+  <div class="app-container" :class="{ 'is-embedded': embedded }">
     <div class="rk-dash-page rk-page cm-page">
 
       <!-- ===== 页头 ===== -->
-      <div class="rk-header">
+      <div class="rk-header" v-if="!embedded">
         <div>
           <h1 class="rk-title">组合模型库</h1>
           <p class="rk-subtitle">
@@ -323,6 +323,9 @@
 </template>
 
 <script setup name="ApmsComboModel">
+
+// 嵌入模式：由合并页（dispatch/growth/comboDispatch）堆叠使用
+defineProps({ embedded: { type: Boolean, default: false } })
 import {
   listComboModel, getComboModel, addComboModel, updateComboModel, delComboModel,
   addComponent, updateComponent, delComponent
@@ -654,4 +657,16 @@ loadStats()
   padding: 30px 10px;
   border: 1px dashed $rk-line; border-radius: 12px;
 }
+
+/* ===== 嵌入模式：供合并页堆叠（隐藏页头、归零满铺外壳） ===== */
+.app-container.is-embedded {
+  padding: 0;
+  :deep(.rk-dash-page) {
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    background: transparent;
+  }
+}
+
 </style>

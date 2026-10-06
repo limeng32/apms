@@ -1,9 +1,9 @@
 <template>
-  <div class="app-container">
+  <div class="app-container" :class="{ 'is-embedded': embedded }">
     <div class="rk-dash-page rk-page tr-page">
 
       <!-- ===== 页头 ===== -->
-      <div class="rk-header">
+      <div class="rk-header" v-if="!embedded">
         <div>
           <h1 class="rk-title">测试结果</h1>
           <p class="rk-subtitle">
@@ -288,6 +288,9 @@
 </template>
 
 <script setup name="ApmsTestResult">
+
+// 嵌入模式：由合并页（dispatch/growth/comboDispatch）堆叠使用
+defineProps({ embedded: { type: Boolean, default: false } })
 import { listTestResult, getTestResult, listByTaskMember, listFreeGroup, selectAttempt } from '@/api/apms/testResult'
 import { listTestTask } from '@/api/apms/testTask'
 import { listAthlete } from '@/api/apms/athlete'
@@ -574,4 +577,16 @@ loadStats()
 @media (max-width: 1280px) {
   .tr-rep-item { grid-template-columns: 120px 90px minmax(0, 1fr); }
 }
+
+/* ===== 嵌入模式：供合并页堆叠（隐藏页头、归零满铺外壳） ===== */
+.app-container.is-embedded {
+  padding: 0;
+  :deep(.rk-dash-page) {
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    background: transparent;
+  }
+}
+
 </style>

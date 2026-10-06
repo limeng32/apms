@@ -74,17 +74,16 @@ export const constantRoutes = [
     hidden: true
   },
   {
-    // 业务首页：原根记录 path:'' + redirect:'/index' 拆分而来——
-    // 根路径 / 已让给品牌展示页记录，业务域访问 / 由 permission 守卫改投到这里，
-    // 最终 URL 与面包屑/affix 行为与原先完全一致。
+    // 业务首页：根路径 / 已让给品牌展示页记录，业务域访问 / 由 permission 守卫改投到这里。
+    // 首页即「数据驾驶舱」（与侧边栏数据驾驶舱为同一组件；高亮按角色在守卫中设置）。
     path: '/index',
     component: Layout,
     children: [
       {
         path: '',
-        component: () => import('@/views/index'),
+        component: () => import('@/views/apms/dashboard/index.vue'),
         name: 'Index',
-        meta: { title: '首页', icon: 'dashboard', affix: true }
+        meta: { title: '数据驾驶舱', icon: 'dashboard', affix: true }
       }
     ]
   },
