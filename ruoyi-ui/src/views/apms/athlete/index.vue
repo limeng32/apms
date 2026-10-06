@@ -3,7 +3,7 @@
     <!-- ===== 页头（对齐 demo /athletes） ===== -->
     <div class="rp-header">
       <div>
-        <h1 class="rp-title">运动员花名册</h1>
+        <h1 class="rp-title">花名册</h1>
         <p class="rp-subtitle">{{ total }} 名在训运动员 · 13–18 岁</p>
       </div>
       <div class="rp-header-actions">

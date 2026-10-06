@@ -20,9 +20,9 @@ export default {
   navType: 1,
 
   /**
-   * 是否显示 tagsView
+   * 是否显示 tagsView（全站统一关闭，不允许用户修改）
    */
-  tagsView: true,
+  tagsView: false,
 
   /**
    * 持久化标签页

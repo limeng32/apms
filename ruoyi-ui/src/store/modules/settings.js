@@ -9,7 +9,7 @@ localStorage.removeItem('vueuse-color-scheme')
 const isDark = useDark({ initialValue: 'light', storageKey: null })
 isDark.value = false
 
-const { sideTheme, showSettings, navType, tagsView, tagsViewPersist, tagsIcon, tagsViewStyle, fixedHeader, sidebarLogo, dynamicTitle, footerVisible, footerContent } = defaultSettings
+const { sideTheme, showSettings, tagsViewPersist, tagsIcon, tagsViewStyle, fixedHeader, sidebarLogo, dynamicTitle, footerVisible, footerContent } = defaultSettings
 
 const storageSetting = JSON.parse(localStorage.getItem('layout-setting')) || ''
 
@@ -21,8 +21,9 @@ const useSettingsStore = defineStore(
       theme: storageSetting.theme || '#2c8a57',
       sideTheme: storageSetting.sideTheme || sideTheme,
       showSettings: showSettings,
-      navType: storageSetting.navType === undefined ? navType : storageSetting.navType,
-      tagsView: storageSetting.tagsView === undefined ? tagsView : storageSetting.tagsView,
+      // 全站统一布局（对所有用户固定）：菜单导航=左侧菜单、页签=关闭，忽略任何本地缓存
+      navType: 1,
+      tagsView: false,
       tagsViewPersist: storageSetting.tagsViewPersist === undefined ? tagsViewPersist : storageSetting.tagsViewPersist,
       tagsIcon: storageSetting.tagsIcon === undefined ? tagsIcon : storageSetting.tagsIcon,
       tagsViewStyle: storageSetting.tagsViewStyle === undefined ? tagsViewStyle : storageSetting.tagsViewStyle,

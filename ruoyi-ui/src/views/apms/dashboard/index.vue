@@ -5,7 +5,7 @@
       <!-- 页头 -->
       <div class="rk-header">
         <div>
-          <h1 class="rk-title">数据总览驾驶舱</h1>
+          <h1 class="rk-title">数据驾驶舱</h1>
           <p class="rk-subtitle">组合评分 · PHV 发育 · 测试任务全队汇总</p>
         </div>
         <div class="rk-header-actions">

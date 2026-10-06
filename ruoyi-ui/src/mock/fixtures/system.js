@@ -44,7 +44,7 @@ export const apmsRouters = [
     alwaysShow: true,
     meta: { icon: 'star', link: null, noCache: false, title: 'APMS 系统' },
     children: [
-      { name: 'Dashboard', path: 'dashboard', hidden: false, component: 'apms/dashboard/index', meta: { icon: 'dashboard', link: null, noCache: false, title: '总览看板' } },
+      { name: 'Dashboard', path: 'dashboard', hidden: false, component: 'apms/dashboard/index', meta: { icon: 'dashboard', link: null, noCache: false, title: '数据驾驶舱' } },
       { name: 'Athlete', path: 'athlete', hidden: false, component: 'apms/athlete/index', meta: { icon: 'user', link: null, noCache: false, title: '花名册' } },
       { name: 'Indicator', path: 'indicator', hidden: false, component: 'apms/indicator/index', meta: { icon: 'list', link: null, noCache: false, title: '指标库' } },
       { name: 'TestModel', path: 'testModel', hidden: false, component: 'apms/testModel/index', meta: { icon: 'build', link: null, noCache: false, title: '测试模型库' } },
@@ -56,7 +56,7 @@ export const apmsRouters = [
       { name: 'RtpWarning', path: 'rtpWarning', hidden: false, component: 'apms/rtpWarning/index', meta: { icon: 'bell', link: null, noCache: false, title: 'RTP 风险预警' } },
       { name: 'ComboModel', path: 'comboModel', hidden: false, component: 'apms/comboModel/index', meta: { icon: 'component', link: null, noCache: false, title: '组合模型' } },
       { name: 'ComboScore', path: 'comboScore', hidden: false, component: 'apms/comboScore/index', meta: { icon: 'validCode', link: null, noCache: false, title: '组合体能评分' } },
-      { name: 'Medical', path: 'medical', hidden: false, component: 'apms/medical/index', meta: { icon: 'documentation', link: null, noCache: false, title: '医疗记录' } },
+      { name: 'Medical', path: 'medical', hidden: false, component: 'apms/medical/index', meta: { icon: 'documentation', link: null, noCache: false, title: '医疗康复' } },
       { name: 'Report', path: 'report', hidden: false, component: 'apms/report/index', meta: { icon: 'form', link: null, noCache: false, title: '报告中心' } }
     ]
   }

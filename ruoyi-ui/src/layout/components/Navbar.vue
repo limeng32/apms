@@ -50,7 +50,7 @@
             <router-link to="/user/profile">
               <el-dropdown-item>个人中心</el-dropdown-item>
             </router-link>
-            <el-dropdown-item command="setLayout" v-if="settingsStore.showSettings && !userStore.portalMode">
+            <el-dropdown-item command="setLayout" v-if="isAdmin && settingsStore.showSettings && !userStore.portalMode">
                 <span>布局设置</span>
             </el-dropdown-item>
             <el-dropdown-item command="lockScreen" v-if="!userStore.portalMode">
@@ -91,6 +91,8 @@ const appStore = useAppStore()
 const userStore = useUserStore()
 const lockStore = useLockStore()
 const settingsStore = useSettingsStore()
+// 仅平台超级管理员（admin）可见布局设置；布局本身对所有用户已统一固定
+const isAdmin = computed(() => userStore.roles.includes('admin'))
 const loginThemeStore = useLoginThemeStore()
 const brandName = computed(() => loginThemeStore.config.brand.name || import.meta.env.VITE_APP_TITLE)
 // Portal 品牌Logo：与侧栏Logo同源（首页设计器配置），支持图片/内置盾牌/图标

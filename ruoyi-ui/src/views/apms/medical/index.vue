@@ -5,9 +5,9 @@
       <!-- ===== 页头 ===== -->
       <div class="rk-header">
         <div>
-          <h1 class="rk-title">医疗档案</h1>
+          <h1 class="rk-title">医疗康复</h1>
           <p class="rk-subtitle">
-            {{ stats.total }} 条记录 · {{ stats.athletes }} 名队员 · {{ stats.files }} 份附件 · 伤病台账与影像归档
+            {{ stats.total }} 条康复记录 · {{ stats.athletes }} 名队员 · {{ stats.files }} 份附件 · 伤病台账与影像归档
           </p>
         </div>
         <div class="rk-header-actions">
@@ -65,7 +65,7 @@
         <!-- 左：记录台账（服务端分页） -->
         <div class="rk-table-card">
           <div class="rk-card-head">
-            <h3 class="rk-card-title">医疗记录</h3>
+            <h3 class="rk-card-title">医疗康复</h3>
             <span class="rk-card-sub">共 {{ total }} 条 · 点击行打开详情</span>
           </div>
           <div class="rk-card-body flush">
@@ -118,7 +118,7 @@
                 </tbody>
               </table>
               <div v-if="!loading && recordList.length === 0" class="rk-empty">
-                <p class="rk-empty-title">暂无医疗记录</p>
+                <p class="rk-empty-title">暂无医疗康复记录</p>
                 <p class="rk-empty-desc">点击右上角「新增记录」建立第一条台账</p>
               </div>
             </div>
@@ -394,7 +394,7 @@ function bannerStyle(t) {
 // ========= KPI 统计（只读全量一次，不新增后端接口） =========
 const stats = reactive({ total: 0, injury: 0, athletes: 0, files: 0 })
 const kpiCards = computed(() => [
-  { label: '医疗记录总数', value: stats.total, unit: '条', accent: '#8B5CF6', chip: '按 DataScope 隔离', chipTone: 'tone-info' },
+  { label: '医疗康复总数', value: stats.total, unit: '条', accent: '#8B5CF6', chip: '按 DataScope 隔离', chipTone: 'tone-info' },
   { label: '损伤记录', value: stats.injury, unit: '条', accent: '#DC2626', chip: '队医重点关注', chipTone: 'tone-risk' },
   { label: '涉及队员', value: stats.athletes, unit: '人', accent: '#06B6D4', chip: '人均 ' + (stats.athletes ? (stats.total / stats.athletes).toFixed(1) : '0') + ' 条', chipTone: '' },
   { label: '附件归档', value: stats.files, unit: '份', accent: '#2563EB', chip: '仅授权可下载', chipTone: 'tone-info' }
@@ -555,12 +555,12 @@ watch(() => form.recordType, (t) => {
 const uploadHeaders = computed(() => ({ Authorization: 'Bearer ' + getToken() }))
 
 function handleAdd() {
-  dialogTitle.value = '新增医疗记录'
+  dialogTitle.value = '新增医疗康复'
   Object.assign(form, { id: null, athleteId: null, recordType: 'injury', bodySite: null, recordDate: null, institution: '', title: '', remark: '', fileList: [], files: [] })
   showDialog.value = true
 }
 function handleEdit(row) {
-  dialogTitle.value = '编辑医疗记录'
+  dialogTitle.value = '编辑医疗康复'
   // 编辑在抽屉上层弹窗进行；修复原页缺陷：list 不回传 files，必须先 getById 回填附件
   getMedical(row.id).then(res => {
     const detail = res.data || row
@@ -660,7 +660,7 @@ function handleDeleteFile(f) {
 }
 
 function handleDelete(row) {
-  proxy.$modal.confirm('确认删除该医疗记录？附件一并删除。').then(() => {
+  proxy.$modal.confirm('确认删除该条医疗康复记录？附件一并删除。').then(() => {
     delMedical(row.id).then(() => {
       proxy.$modal.msgSuccess('删除成功')
       getList(); loadStats(); loadSiteStats()

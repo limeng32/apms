@@ -2,21 +2,22 @@
   <el-drawer v-model="showSettings" :withHeader="false" :lock-scroll="false" direction="rtl" size="300px">
     <div class="setting-drawer-title">
       <h3 class="drawer-title">菜单导航设置</h3>
+      <span class="drawer-lock-hint">系统统一：左侧菜单</span>
     </div>
-    <div class="nav-wrap">
-      <el-tooltip content="左侧菜单" placement="bottom">
-        <div class="item left" @click="handleNavType(1)" :class="{ activeItem: navType == 1 }">
+    <div class="nav-wrap is-locked">
+      <el-tooltip content="左侧菜单（系统统一配置）" placement="bottom">
+        <div class="item left" :class="{ activeItem: navType == 1 }">
           <b></b><b></b>
         </div>
       </el-tooltip>
 
-      <el-tooltip content="混合菜单" placement="bottom">
-        <div class="item mix" @click="handleNavType(2)" :class="{ activeItem: navType == 2 }">
+      <el-tooltip content="混合菜单（已由系统统一锁定）" placement="bottom">
+        <div class="item mix" :class="{ activeItem: navType == 2 }">
           <b></b><b></b>
         </div>
       </el-tooltip>
-      <el-tooltip content="顶部菜单" placement="bottom">
-        <div class="item top" @click="handleNavType(3)" :class="{ activeItem: navType == 3 }">
+      <el-tooltip content="顶部菜单（已由系统统一锁定）" placement="bottom">
+        <div class="item top" :class="{ activeItem: navType == 3 }">
           <b></b><b></b>
         </div>
       </el-tooltip>
@@ -57,9 +58,9 @@
     <h3 class="drawer-title">系统布局配置</h3>
 
     <div class="drawer-item">
-      <span>开启页签</span>
+      <span>开启页签<i class="drawer-lock-hint">（系统统一关闭）</i></span>
       <span class="comp-style">
-        <el-switch v-model="settingsStore.tagsView" class="drawer-switch" />
+        <el-switch v-model="settingsStore.tagsView" disabled class="drawer-switch" />
       </span>
     </div>
 
@@ -239,6 +240,20 @@ defineExpose({
   .drawer-title {
     font-size: 14px;
   }
+
+  .drawer-lock-hint {
+    margin-left: 8px;
+    font-size: 12px;
+    font-weight: normal;
+    color: var(--el-text-color-secondary, #909399);
+  }
+}
+
+.drawer-lock-hint {
+  margin-left: 6px;
+  font-style: normal;
+  font-size: 12px;
+  color: var(--el-text-color-secondary, #909399);
 }
 
 .setting-drawer-block-checbox {
@@ -292,6 +307,20 @@ defineExpose({
   align-items: center;
   margin-top: 10px;
   margin-bottom: 20px;
+
+  // 系统统一锁定：不可点击切换
+  &.is-locked {
+    pointer-events: none;
+
+    .item {
+      cursor: not-allowed;
+      opacity: .55;
+
+      &.activeItem {
+        opacity: 1;
+      }
+    }
+  }
 
   .activeItem {
     border: 2px solid var(--el-color-primary) !important;
