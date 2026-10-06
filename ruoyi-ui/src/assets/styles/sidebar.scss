@@ -103,6 +103,48 @@
       }
     }
 
+    // ===== demo 风格：一级分组标题弱化为静态「分区标签」（仅展开态）=====
+    // 根菜单（非内联 ul、非折叠态）下的直接子分组：小号、次要灰色、
+    // 无图标、无折叠箭头、不可点击、行高紧凑；不影响三级分组与图标轨弹层
+    .el-menu:not(.el-menu--inline):not(.el-menu--collapse) {
+      > div > .el-menu-item {
+        height: 40px !important;
+        line-height: 40px !important;
+      }
+      > div > .el-sub-menu > .el-sub-menu__title {
+        height: 26px !important;
+        min-height: 26px !important;
+        line-height: 26px !important;
+        margin: 8px 0 2px;
+        padding-left: 22px !important;
+        font-size: 12px !important;
+        font-weight: 500;
+        letter-spacing: 2px;
+        color: var(--sidebar-text) !important;
+        opacity: .45;
+        pointer-events: none;
+        background: transparent !important;
+
+        // 隐藏分组图标、折叠箭头与 hover 蒙层
+        > .el-icon,
+        > .svg-icon {
+          display: none !important;
+        }
+        .el-sub-menu__icon-arrow {
+          display: none !important;
+        }
+        &::before {
+          display: none !important;
+        }
+      }
+    }
+
+    // 叶子菜单项收紧行距（demo 更紧凑）
+    .el-menu:not(.el-menu--collapse) .el-sub-menu .el-menu-item {
+      height: 38px !important;
+      line-height: 38px !important;
+    }
+
     // ===== 二级及更深菜单图标（demo 风格：15px 线性小图标，currentColor 跟随文字/激活态）=====
     .sub-menu-icon {
       flex: none;
