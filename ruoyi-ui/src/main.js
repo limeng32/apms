@@ -2,7 +2,7 @@ import { createApp } from 'vue'
 
 import Cookies from 'js-cookie'
 
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElDialog } from 'element-plus'
 import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 import locale from 'element-plus/es/locale/lang/zh-cn'
@@ -80,5 +80,10 @@ app.use(ElementPlus, {
   // 支持 large、default、small
   size: Cookies.get(cookieName('size')) || 'default'
 })
+
+// 全局模态框默认禁止 ESC 关闭，防止录入表单被误触关闭丢失内容；
+// 个别弹窗确需 ESC 关闭时，可在组件上显式 :close-on-press-escape="true" 覆盖。
+// Drawer 复用 dialogProps 描述符对象，改 Dialog 默认值即同时覆盖 el-dialog 与 el-drawer。
+ElDialog.props.closeOnPressEscape.default = false
 
 app.mount('#app')
