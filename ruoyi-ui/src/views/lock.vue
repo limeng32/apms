@@ -9,7 +9,7 @@
         </div>
 
         <div class="avatar-wrap">
-          <img :src="userStore.avatar" class="lock-avatar" @error="onAvatarError" />
+          <span class="lock-avatar lock-avatar-initial">{{ avatarInitial }}</span>
           <div class="lock-badge"><el-icon><Lock /></el-icon></div>
         </div>
         <div class="lock-username">{{ userStore.nickName }}</div>
@@ -48,7 +48,6 @@ import useLockStore from '@/store/modules/lock'
 import useLoginThemeStore from '@/store/modules/loginTheme'
 import LoginRenderer from './login/LoginRenderer.vue'
 import { unlockScreen } from '@/api/login'
-import defAva from '@/assets/images/profile.jpg'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -75,9 +74,11 @@ const passwordInput = ref(null)
 
 let timer = null
 
-const onAvatarError = (e) => {
-  e.target.src = defAva
-}
+// 与顶部导航一致：昵称首字代替头像
+const avatarInitial = computed(() => {
+  const name = (userStore.nickName || '').trim()
+  return name ? name.charAt(0).toUpperCase() : 'U'
+})
 
 const startClock = () => {
   const update = () => {
@@ -175,8 +176,18 @@ onBeforeUnmount(() => {
   height: 72px;
   border-radius: 50%;
   border: 2px solid var(--login-border);
-  object-fit: cover;
   display: block;
+}
+/* 名称首字徽章（替代头像图片），底色取登录主色，与右下锁标同一色系 */
+.lock-avatar-initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--login-btn-bg);
+  color: #fff;
+  font-size: 30px;
+  font-weight: 700;
+  user-select: none;
 }
 .lock-badge {
   position: absolute;

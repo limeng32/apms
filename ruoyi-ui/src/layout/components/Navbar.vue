@@ -26,23 +26,18 @@
 
     <div class="right-menu">
       <template v-if="appStore.device !== 'mobile' && !userStore.portalMode">
-        <header-search id="header-search" class="right-menu-item" />
-
         <screenfull id="screenfull" class="right-menu-item hover-effect" />
-
-        <el-tooltip content="布局大小" effect="dark" placement="bottom">
-          <size-select id="size-select" class="right-menu-item hover-effect" />
-        </el-tooltip>
 
         <el-tooltip content="消息通知" effect="dark" placement="bottom">
           <header-notice id="header-notice" class="right-menu-item hover-effect" />
         </el-tooltip>
       </template>
 
-      <el-dropdown @command="handleCommand" class="avatar-container right-menu-item hover-effect" trigger="hover">
+      <el-dropdown @command="handleCommand" class="avatar-container" trigger="hover">
         <div class="avatar-wrapper">
-          <img :src="userStore.avatar" class="user-avatar" />
-          <span class="user-nickname"> {{ userStore.nickName }} </span>
+          <span class="user-initial">{{ avatarInitial }}</span>
+          <span class="user-nickname">{{ userStore.nickName }}</span>
+          <el-icon class="user-caret"><ArrowDown /></el-icon>
           <span v-if="isDemoMode()" class="demo-tag">演示</span>
         </div>
         <template #dropdown>
@@ -68,14 +63,13 @@
 
 <script setup>
 import { ElMessageBox } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
 import Breadcrumb from '@/components/Breadcrumb'
 import TopNav from './TopNav'
 import TopBar from './TopBar'
 import Logo from './Sidebar/Logo'
 import Hamburger from '@/components/Hamburger'
 import Screenfull from '@/components/Screenfull'
-import SizeSelect from '@/components/SizeSelect'
-import HeaderSearch from '@/components/HeaderSearch'
 import useAppStore from '@/store/modules/app'
 import useUserStore from '@/store/modules/user'
 import useLockStore from '@/store/modules/lock'
@@ -95,6 +89,11 @@ const settingsStore = useSettingsStore()
 const isAdmin = computed(() => userStore.roles.includes('admin'))
 const loginThemeStore = useLoginThemeStore()
 const brandName = computed(() => loginThemeStore.config.brand.name || import.meta.env.VITE_APP_TITLE)
+// 仿 demo：用昵称首字代替头像图片（中文名取首字，英文名取首字母）
+const avatarInitial = computed(() => {
+  const name = (userStore.nickName || '').trim()
+  return name ? name.charAt(0).toUpperCase() : 'U'
+})
 // Portal 品牌Logo：与侧栏Logo同源（首页设计器配置），支持图片/内置盾牌/图标
 const portalLogo = computed(() => loginThemeStore.config.brand.logo || {})
 const portalLogoImg = computed(() =>
@@ -258,35 +257,55 @@ function lockScreen() {
       }
     }
 
+    // demo 风格：品牌色圆底「名称首字」+ 昵称 + 下拉箭头，整体胶囊描边
     .avatar-container {
-      margin-right: 0px;
-      padding-right: 0px;
+      margin-right: 12px;
+      line-height: normal;
 
       .avatar-wrapper {
-        margin-top: 10px;
-        right: 8px;
-        position: relative;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 36px;
+        padding: 0 12px 0 4px;
+        border-radius: 999px;
+        border: 1px solid color-mix(in srgb, var(--current-color) 35%, transparent);
+        background: color-mix(in srgb, var(--current-color) 8%, transparent);
+        cursor: pointer;
+        white-space: nowrap;
+        transition: background-color 0.2s;
 
-        .user-avatar {
-          cursor: pointer;
-          width: 30px;
-          height: 30px;
-          margin-right: 8px;
-          border-radius: 50%;
+        &:hover {
+          background: color-mix(in srgb, var(--current-color) 16%, transparent);
         }
 
-        .user-nickname{
-          position: relative;
-          left: 0px;
-          bottom: 10px;
-          font-size: 14px;
-          font-weight: bold;
+        .user-initial {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 28px;
+          height: 28px;
+          flex: none;
+          border-radius: 50%;
+          background: var(--current-color);
+          color: #fff;
+          font-size: 13px;
+          font-weight: 700;
+        }
+
+        .user-nickname {
+          font-size: 13px;
+          font-weight: 500;
+          color: var(--navbar-text);
+        }
+
+        .user-caret {
+          font-size: 12px;
+          color: var(--navbar-text);
+          opacity: .55;
         }
 
         .demo-tag {
-          position: relative;
-          bottom: 10px;
-          margin-left: 6px;
           padding: 1px 7px;
           border-radius: 999px;
           font-size: 11px;
@@ -295,14 +314,6 @@ function lockScreen() {
           color: #b45309;
           background: #fde68a;
           border: 1px solid #f59e0b;
-        }
-
-        i {
-          cursor: pointer;
-          position: absolute;
-          right: -20px;
-          top: 25px;
-          font-size: 12px;
         }
       }
     }
