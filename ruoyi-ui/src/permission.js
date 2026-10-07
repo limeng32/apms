@@ -34,18 +34,12 @@ router.beforeEach(async (to, from) => {
     return { path: '/', replace: true }
   }
   // 业务域（aoti/IP/localhost）：根路径 / 的 matcher 被展示页 alias 占用，
-  // 这里改投 /index，行为与原根记录 redirect:'/index' 完全等价。
+  // 这里改投 /index；/index 在下方按角色统一重定向到真实菜单落点。
   if (to.path === '/' && to.meta && to.meta.showcaseRoot) {
     NProgress.done()
     return { path: '/index', replace: true }
   }
   if (getToken()) {
-    // 首页 /index 即数据驾驶舱组件：
-    // super 已无驾驶舱菜单项（登录落地即首页），不设高亮；
-    // 其余角色高亮 APMS 分组下的数据驾驶舱菜单。
-    if (to.path === '/index' && !useUserStore().roles.includes('super')) {
-      to.meta.activeMenu = '/apms/dashboard'
-    }
     to.meta.title && useSettingsStore().setTitle(to.meta.title)
     const isLock = useLockStore().isLock
     if (to.path === '/login') {
@@ -84,13 +78,23 @@ router.beforeEach(async (to, from) => {
         return { path: '/' }
       }
     }
-    // Portal模式：隐藏侧栏，未注册路由一律回落地页；标准模式确保侧栏显示
     const userStore = useUserStore()
+    // 统一首页落点：/ 与旧 /index 均重定向到角色对应的真实菜单路由，
+    // 侧边栏不再保留与业务菜单重复的静态「数据驾驶舱」入口。
+    if (to.path === '/' || to.path === '/index')
+    {
+      const landing = userStore.portalMode
+        ? (userStore.homePath || '/apms/dashboard')
+        : (userStore.roles.includes('super') ? '/overview/cockpit' : '/apms/dashboard')
+      NProgress.done()
+      return { path: landing, replace: true }
+    }
+    // Portal模式：隐藏侧栏，未注册路由一律回落地页；标准模式确保侧栏显示
     if (userStore.portalMode)
     {
       useAppStore().toggleSideBarHide(true)
       const accessiblePaths = router.getRoutes().map(route => route.path)
-      if (!accessiblePaths.includes(to.path) || to.path === '/' || to.path === '/index')
+      if (!accessiblePaths.includes(to.path))
       {
         NProgress.done()
         return { path: userStore.homePath, replace: true }

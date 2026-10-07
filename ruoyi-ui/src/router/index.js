@@ -74,16 +74,19 @@ export const constantRoutes = [
     hidden: true
   },
   {
-    // 业务首页：根路径 / 已让给品牌展示页记录，业务域访问 / 由 permission 守卫改投到这里。
-    // 首页即「数据驾驶舱」（与侧边栏数据驾驶舱为同一组件；高亮按角色在守卫中设置）。
+    // 业务首页（保留渲染与旧链接兼容；侧边栏入口已由各角色真实菜单承接，故 hidden）。
+    // 访问 / 或 /index 时由 permission 守卫按角色重定向：
+    //   super → /overview/cockpit（总览-数据驾驶舱），其余标准角色 → /apms/dashboard，
+    //   门户专岗 → 各自 homePath。
     path: '/index',
     component: Layout,
+    hidden: true,
     children: [
       {
         path: '',
         component: () => import('@/views/apms/dashboard/index.vue'),
         name: 'Index',
-        meta: { title: '数据驾驶舱', icon: 'dashboard', affix: true }
+        meta: { title: '数据驾驶舱', icon: 'layout-dashboard' }
       }
     ]
   },

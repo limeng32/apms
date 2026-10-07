@@ -186,6 +186,9 @@ function lockScreen() {
   overflow: hidden;
   position: relative;
   background: var(--navbar-bg);
+  // demo 风格毛玻璃：半透明表面 + 背景模糊，滚动内容从顶部栏下方透出
+  backdrop-filter: var(--header-backdrop);
+  -webkit-backdrop-filter: var(--header-backdrop);
   box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
   display: flex;
   align-items: center;

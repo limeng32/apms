@@ -71,8 +71,13 @@ $--color-info: #909399;
   --sidebar-bg: #{$menuBg};
   --sidebar-text: #{$menuText};
   --menu-hover: #{$menuHover};
-  
-  --navbar-bg: #ffffff;
+
+  /* 顶部栏毛玻璃（demo 风格 bg-white/85 + backdrop-blur）；fixedHeader 下页面内容从其下方滚过 */
+  --header-surface: rgba(255, 255, 255, 0.85);
+  --header-backdrop: blur(8px);
+  --navbar-bg: var(--header-surface);
+  --tags-bg: var(--header-surface);
+  --chrome-strip-bg: var(--header-surface);
   --navbar-text: #303133;
   
   /* splitpanes default-theme 变量 */
@@ -101,13 +106,15 @@ html.dark {
   --menu-hover: #2d2d2d;
   --menu-active-text: #{$menuActiveText};
 
-  /* 顶部导航栏 */
-  --navbar-bg: #141414;
+  /* 顶部导航栏（毛玻璃深色表面） */
+  --header-surface: rgba(20, 20, 20, 0.72);
+  --header-backdrop: blur(8px);
+  --navbar-bg: var(--header-surface);
   --navbar-text: #ffffff;
   --navbar-hover: #141414;
 
   /* 标签栏 */
-  --tags-bg: #141414;
+  --tags-bg: var(--header-surface);
   --tags-item-bg: #1d1e1f;
   --tags-item-border: #303030;
   --tags-item-text: #d0d0d0;
@@ -134,6 +141,9 @@ html.dark {
 
   /* splitpanes default-theme 暗黑模式变量 */
   --splitpanes-default-bg: #141414;
+
+  /* chrome 风格标签栏底色同样使用毛玻璃表面 */
+  --chrome-strip-bg: var(--header-surface);
 
   /* 侧边栏菜单覆盖 */
   .sidebar-container {
@@ -205,7 +215,7 @@ html.dark {
   }
   .tags-view-container {
     &.tags-view-container--chrome {
-      --chrome-strip-bg: var(--el-bg-color);
+      --chrome-strip-bg: var(--header-surface);
       --chrome-strip-border: var(--el-border-color);
       --chrome-tab-active-bg: var(--el-bg-color-overlay);
       --chrome-tab-active-bg: color-mix(in srgb, var(--el-color-primary) 22%, var(--el-bg-color-overlay) 78%);

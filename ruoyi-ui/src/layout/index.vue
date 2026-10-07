@@ -100,7 +100,8 @@ function setLayout() {
   position: fixed;
   top: 0;
   right: 0;
-  z-index: 9;
+  // 毛玻璃头部需浮于滚动内容之上（页面内 sticky/弹出层一般 <100），仍低于侧栏(1001)与弹层(2000+)
+  z-index: 100;
   width: calc(100% - #{vars.$base-sidebar-width});
   transition: width 0.28s;
 }

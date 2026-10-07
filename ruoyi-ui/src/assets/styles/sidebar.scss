@@ -116,7 +116,8 @@
         min-height: 26px !important;
         line-height: 26px !important;
         margin: 8px 0 2px;
-        padding-left: 22px !important;
+        // 与二级菜单项图标起点（inline padding-left:30px）左对齐
+        padding-left: 30px !important;
         font-size: 12px !important;
         font-weight: 500;
         letter-spacing: 2px;
@@ -171,14 +172,17 @@
     .el-sub-menu.is-active > .el-sub-menu__title .sub-menu-dot {
       opacity: 1;
     }
-    // EP 默认缩进 20 + level*20（二级 40/三级 60）；加图标后收紧，文字不被挤出
-    .el-menu--inline > .el-menu-item,
-    .el-menu--inline > .el-sub-menu > .el-sub-menu__title {
+    // EP 默认缩进 20 + level*20（二级 40/三级 60）；加图标后收紧，文字不被挤出。
+    // 注意：SidebarItem 会给子项包一层 div.nest-menu（ul > div.nest-menu > a > li），
+    // 直接子选择器匹配不到，必须用后代选择器。
+    .el-menu .el-menu--inline .el-menu-item,
+    .el-menu .el-menu--inline .el-sub-menu > .el-sub-menu__title {
       padding-left: 30px !important;
     }
-    .el-menu--inline .el-menu--inline > .el-menu-item,
-    .el-menu--inline .el-menu--inline > .el-sub-menu > .el-sub-menu__title {
-      padding-left: 46px !important;
+    // 三级再缩进一级（图标 15 + margin 8 ≈ 23px，与上级文字起点对齐）
+    .el-menu .el-menu--inline .el-menu--inline .el-menu-item,
+    .el-menu .el-menu--inline .el-menu--inline .el-sub-menu > .el-sub-menu__title {
+      padding-left: 53px !important;
     }
 
     & .theme-dark .nest-menu .el-sub-menu>.el-sub-menu__title,

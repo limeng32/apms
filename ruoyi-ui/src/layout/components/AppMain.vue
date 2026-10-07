@@ -47,16 +47,16 @@ function addIframe() {
 .fixed-header + .app-main {
   overflow-y: auto;
   scrollbar-gutter: auto;
-  height: calc(100vh - 50px);
+  // 不用 margin-top 推开头部：改为等高 padding-top 且容器占满视口，
+  // 使滚动内容能滑入头部区域、从半透明毛玻璃头部下方透出（demo 同款效果）
+  height: 100vh;
   min-height: 0px;
+  margin-top: 0;
+  padding-top: 50px;
 }
 
 .app-main:has(.copyright) {
   padding-bottom: 36px;
-}
-
-.fixed-header + .app-main {
-  margin-top: 50px;
 }
 
 .hasTagsView {
@@ -66,8 +66,9 @@ function addIframe() {
   }
 
   .fixed-header + .app-main {
-    margin-top: 84px;
-    height: calc(100vh - 84px);
+    /* 84 = navbar + tags-view = 50 + 34；border-box 下内容可视高度与原先一致 */
+    padding-top: 84px;
+    height: 100vh;
     min-height: 0px;
   }
 }
@@ -92,15 +93,15 @@ function addIframe() {
     .fixed-header + .app-main {
       padding-bottom: max(17px, calc(constant(safe-area-inset-bottom) + 10px));
       padding-bottom: max(17px, calc(env(safe-area-inset-bottom) + 10px));
-      height: calc(100svh - 50px);
-      height: calc(100dvh - 50px);
+      height: 100svh;
+      height: 100dvh;
     }
 
     .hasTagsView .fixed-header + .app-main {
       padding-bottom: max(17px, calc(constant(safe-area-inset-bottom) + 10px));
       padding-bottom: max(17px, calc(env(safe-area-inset-bottom) + 10px));
-      height: calc(100svh - 84px);
-      height: calc(100dvh - 84px);
+      height: 100svh;
+      height: 100dvh;
     }
   }
 }

@@ -376,6 +376,9 @@ $tags-bar-height: 34px;
   height: $tags-bar-height;
   width: 100%;
   background: var(--tags-bg, #fff);
+  // 与 Navbar 连续的 demo 风格毛玻璃表面
+  backdrop-filter: var(--header-backdrop);
+  -webkit-backdrop-filter: var(--header-backdrop);
   border-bottom: 1px solid var(--tags-item-border, #d8dce5);
   display: flex;
   align-items: center;
