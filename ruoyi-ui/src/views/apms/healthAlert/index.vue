@@ -14,11 +14,17 @@
         </div>
       </div>
 
-      <!-- 上：RTP 状态管理 -->
-      <RtpStatusPanel ref="statusPanelRef" class="ha-block" />
+      <!-- 上：RTP 状态管理（功能导语沿用原独立页说明） -->
+      <div class="ha-block">
+        <p class="ha-block-intro">红黄绿参训状态看板 · 拖拽更新 · 评估时间线留痕</p>
+        <RtpStatusPanel ref="statusPanelRef" />
+      </div>
 
-      <!-- 下：RTP 风险预警（采纳建议后同步刷新上方状态） -->
-      <RtpWarningPanel class="ha-block" @accepted="reloadStatus" />
+      <!-- 下：RTP 风险预警（采纳建议后同步刷新上方状态；功能导语沿用原独立页说明） -->
+      <div class="ha-block">
+        <p class="ha-block-intro">规则引擎每日扫描 · 健康风险与流程待办分栏 · 处置全留痕</p>
+        <RtpWarningPanel @accepted="reloadStatus" />
+      </div>
     </div>
     </read-only-block>
   </div>
@@ -43,5 +49,12 @@ function reloadStatus() {
   margin-bottom: 22px;
 
   &:last-child { margin-bottom: 0; }
+}
+/* 面板功能导语（原独立页副标题，合并后保留在白卡上方） */
+.ha-block-intro {
+  margin: 0 0 10px 2px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: $rk-text-3;
 }
 </style>

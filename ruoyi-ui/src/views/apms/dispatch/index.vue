@@ -15,17 +15,14 @@
       </div>
 
       <section class="ha-block">
-        <h2 class="ha-block-title">指标库</h2>
         <IndicatorPage embedded />
       </section>
 
       <section class="ha-block">
-        <h2 class="ha-block-title">测试任务</h2>
         <TestTaskPage embedded />
       </section>
 
       <section class="ha-block">
-        <h2 class="ha-block-title">测试结果</h2>
         <TestResultPage embedded />
       </section>
     </div>

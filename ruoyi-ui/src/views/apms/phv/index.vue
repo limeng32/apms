@@ -2,8 +2,8 @@
   <div class="app-container" :class="{ 'is-embedded': embedded }">
     <div class="rk-dash-page rk-page pm-page">
 
-      <!-- ===== 页头 ===== -->
-      <div class="rk-header" v-if="!embedded">
+      <!-- ===== 页头（合并页内也保留：统计信息 + 新增 PHV 计算入口） ===== -->
+      <div class="rk-header">
         <div>
           <h1 class="rk-title">PHV 成熟度</h1>
           <p class="rk-subtitle">{{ summary.total }} 条记录 · {{ summary.athletes }} 名队员 · Mirwald 模型预测</p>

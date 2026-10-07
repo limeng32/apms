@@ -2,8 +2,8 @@
   <div class="app-container" :class="{ 'is-embedded': embedded }">
     <div class="rk-dash-page rk-page tr-page">
 
-      <!-- ===== 页头 ===== -->
-      <div class="rk-header" v-if="!embedded">
+      <!-- ===== 页头（合并页内也保留：统计信息 + 手动录入/设备接入口） ===== -->
+      <div class="rk-header">
         <div>
           <h1 class="rk-title">测试结果</h1>
           <p class="rk-subtitle">

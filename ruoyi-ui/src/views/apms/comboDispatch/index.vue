@@ -15,12 +15,10 @@
       </div>
 
       <section class="ha-block">
-        <h2 class="ha-block-title">测试模型库</h2>
         <TestModelPage embedded />
       </section>
 
       <section class="ha-block">
-        <h2 class="ha-block-title">组合模型库</h2>
         <ComboModelPage embedded />
       </section>
     </div>

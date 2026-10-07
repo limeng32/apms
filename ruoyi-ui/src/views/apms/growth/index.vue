@@ -15,12 +15,10 @@
       </div>
 
       <section class="ha-block">
-        <h2 class="ha-block-title">体态测量</h2>
         <BodyMeasurePage embedded />
       </section>
 
       <section class="ha-block">
-        <h2 class="ha-block-title">PHV 成熟度</h2>
         <PhvPage embedded />
       </section>
     </div>

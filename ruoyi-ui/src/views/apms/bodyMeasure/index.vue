@@ -2,8 +2,8 @@
   <div class="app-container" :class="{ 'is-embedded': embedded }">
     <div class="rk-dash-page rk-page pm-page">
 
-      <!-- ===== 页头 ===== -->
-      <div class="rk-header" v-if="!embedded">
+      <!-- ===== 页头（合并页内也保留：统计信息 + 测量周期/新增测量入口） ===== -->
+      <div class="rk-header">
         <div>
           <h1 class="rk-title">体态测量</h1>
           <p class="rk-subtitle">{{ summary.total }} 条测量记录 · {{ summary.athletes }} 名队员 · 周期测量与趋势追踪</p>
