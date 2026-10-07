@@ -462,10 +462,29 @@ const showSnapshotDialog = ref(false)
 const snapshotData = ref(null)
 const currentSnapshotRow = ref(null)
 
+// 解析 ref_snapshot，并清洗旧版后端写入的脏值：
+// 旧版 ComboScoreCalculator 用 StringBuilder.append((String)null) 拼接 JSON，
+// 指标主数据缺失时会落字面量 "indicatorCode":"null"（而非空串），页面直接显示 null。
+function parseSnapshot(raw) {
+  if (!raw) return null
+  try {
+    const data = JSON.parse(raw)
+    if (Array.isArray(data.components)) {
+      data.components.forEach(c => {
+        if (c.indicatorCode === 'null' || c.indicatorCode == null) c.indicatorCode = ''
+        if (c.indicatorName === 'null' || c.indicatorName == null) c.indicatorName = ''
+      })
+    }
+    return data
+  } catch (e) {
+    return null
+  }
+}
+
 function showSnapshot(row) {
   currentSnapshotRow.value = row
   if (row.refSnapshot) {
-    try { snapshotData.value = JSON.parse(row.refSnapshot) } catch (e) { snapshotData.value = null }
+    snapshotData.value = parseSnapshot(row.refSnapshot)
     showSnapshotDialog.value = true
     return
   }
@@ -473,11 +492,7 @@ function showSnapshot(row) {
   getById(row.id).then(res => {
     const r = res.data || res
     currentSnapshotRow.value = r
-    if (r.refSnapshot) {
-      try { snapshotData.value = JSON.parse(r.refSnapshot) } catch (e) { snapshotData.value = null }
-    } else {
-      snapshotData.value = null
-    }
+    snapshotData.value = parseSnapshot(r.refSnapshot)
     showSnapshotDialog.value = true
   })
 }

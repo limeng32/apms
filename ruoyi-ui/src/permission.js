@@ -81,11 +81,13 @@ router.beforeEach(async (to, from) => {
     const userStore = useUserStore()
     // 统一首页落点：/ 与旧 /index 均重定向到角色对应的真实菜单路由，
     // 侧边栏不再保留与业务菜单重复的静态「数据驾驶舱」入口。
+    // 标准角色（super/admin/business_admin）统一进入「总览 > 数据驾驶舱」；
+    // 门户专岗进入各自 homePath。
     if (to.path === '/' || to.path === '/index')
     {
       const landing = userStore.portalMode
         ? (userStore.homePath || '/apms/dashboard')
-        : (userStore.roles.includes('super') ? '/overview/cockpit' : '/apms/dashboard')
+        : '/overview/cockpit'
       NProgress.done()
       return { path: landing, replace: true }
     }
