@@ -1,5 +1,6 @@
 <template>
   <div class="app-container">
+    <read-only-block :perms="['apms:report:generate', 'apms:report:remove']">
     <div class="rk-dash-page rk-page rp-page">
 
       <!-- ===== 页头 ===== -->
@@ -260,6 +261,7 @@
         </template>
       </el-dialog>
     </div>
+    </read-only-block>
   </div>
 </template>
 
@@ -272,6 +274,7 @@ import { getToken, isDemoMode } from '@/utils/auth'
 import { checkPermi } from '@/utils/permission'
 import { Plus, RefreshLeft, ArrowLeft, ArrowRight, Download, Document } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
+import ReadOnlyBlock from '@/components/ReadOnlyBlock/index.vue'
 
 const { proxy } = getCurrentInstance()
 

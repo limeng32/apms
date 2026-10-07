@@ -1,5 +1,7 @@
 <template>
   <div class="app-container">
+    <!-- 整页只读遮罩：测试域（测试模型/组合模型）写权限归 tester，其他角色全页只读 -->
+    <read-only-block :perms="['apms:testModel:edit', 'apms:comboModel:edit']">
     <div class="rk-dash-page rk-page combo-dispatch-page">
 
       <!-- ===== 页头 ===== -->
@@ -22,12 +24,14 @@
         <ComboModelPage embedded />
       </section>
     </div>
+    </read-only-block>
   </div>
 </template>
 
 <script setup name="ApmsComboDispatch">
 import TestModelPage from '@/views/apms/testModel/index.vue'
 import ComboModelPage from '@/views/apms/comboModel/index.vue'
+import ReadOnlyBlock from '@/components/ReadOnlyBlock/index.vue'
 </script>
 
 <style lang="scss" scoped>

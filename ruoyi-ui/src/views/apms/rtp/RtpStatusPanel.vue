@@ -198,7 +198,7 @@
         </div>
 
         <!-- 快捷操作 -->
-        <div class="rt-quick" v-hasPermi="['apms:athlete:edit']">
+        <div class="rt-quick" v-hasPermi="['apms:rtp:edit']">
           <button v-if="currentAthlete.status !== 'g'" type="button"
                   class="rk-btn rk-btn-sm rt-qg" @click="quickSet('g')">标记 正常参训</button>
           <button v-if="currentAthlete.status !== 'y'" type="button"
@@ -237,7 +237,7 @@
         <div v-else class="rt-tl-empty">暂无变更记录</div>
 
         <!-- 清除状态 -->
-        <div class="rt-drawer-foot" v-if="currentAthlete.status" v-hasPermi="['apms:athlete:edit']">
+        <div class="rt-drawer-foot" v-if="currentAthlete.status" v-hasPermi="['apms:rtp:clear']">
           <button type="button" class="rk-btn rk-btn-sm rk-btn-danger" @click="handleClear(currentAthlete)">
             清除状态（回到未评估）
           </button>
@@ -258,7 +258,9 @@ import { ageAvatarColor } from '@/utils/athleteAvatar'
 
 const { proxy } = getCurrentInstance()
 
-const canEdit = checkPermi(['apms:athlete:edit'])
+// 后端 updateStatus 要求 apms:rtp:edit（此前误写为 apms:athlete:edit，
+// 导致仅被授予健康写权限的 medic 无法拖拽/快捷标记）
+const canEdit = checkPermi(['apms:rtp:edit'])
 
 // ========= 字典 =========
 const COLUMNS = [

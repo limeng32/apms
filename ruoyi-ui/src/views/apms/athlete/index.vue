@@ -1,5 +1,6 @@
 <template>
   <div class="app-container roster-page">
+    <read-only-block :perms="['apms:athlete:edit', 'apms:athlete:add', 'apms:athlete:remove']">
     <!-- ===== 页头（对齐 demo /athletes） ===== -->
     <div class="rp-header">
       <div>
@@ -402,6 +403,7 @@
         >确认执行晋升（{{ promotion.plan?.promoteCount || 0 }} 人）</el-button>
       </template>
     </el-dialog>
+    </read-only-block>
   </div>
 </template>
 
@@ -410,6 +412,7 @@ import { listAthlete, rtpSummaryAthlete, getAthlete, addAthlete, updateAthlete, 
          previewPromotion, executePromotion } from '@/api/apms/athlete'
 import { listDept } from '@/api/system/dept'
 import GenderBadge from '@/components/GenderBadge/index.vue'
+import ReadOnlyBlock from '@/components/ReadOnlyBlock/index.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
 import { useDict } from '@/utils/dict'
 import { Plus, Search, RefreshLeft, MoreFilled, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'

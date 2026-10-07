@@ -1,5 +1,6 @@
 <template>
   <div class="app-container">
+    <read-only-block :perms="['apms:comboScore:calculate', 'apms:comboScore:remove']">
     <div class="rk-dash-page rk-page cs-page">
 
       <!-- ===== 页头 ===== -->
@@ -333,6 +334,7 @@
         </template>
       </el-dialog>
     </div>
+    </read-only-block>
   </div>
 </template>
 
@@ -342,6 +344,7 @@ import { listComboModel } from '@/api/apms/comboModel'
 import { listTestTask, listTaskMember } from '@/api/apms/testTask'
 import { RefreshLeft, Cpu } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
+import ReadOnlyBlock from '@/components/ReadOnlyBlock/index.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
 
 const { proxy } = getCurrentInstance()

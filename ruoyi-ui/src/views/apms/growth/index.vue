@@ -1,5 +1,7 @@
 <template>
   <div class="app-container">
+    <!-- 整页只读遮罩：运动员域（体态/PHV）写权限归 coach，其他角色全页只读 -->
+    <read-only-block :perms="['apms:body:edit', 'apms:phv:edit']">
     <div class="rk-dash-page rk-page growth-page">
 
       <!-- ===== 页头 ===== -->
@@ -22,12 +24,14 @@
         <PhvPage embedded />
       </section>
     </div>
+    </read-only-block>
   </div>
 </template>
 
 <script setup name="ApmsGrowth">
 import BodyMeasurePage from '@/views/apms/bodyMeasure/index.vue'
 import PhvPage from '@/views/apms/phv/index.vue'
+import ReadOnlyBlock from '@/components/ReadOnlyBlock/index.vue'
 </script>
 
 <style lang="scss" scoped>

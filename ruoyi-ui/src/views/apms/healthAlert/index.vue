@@ -1,5 +1,7 @@
 <template>
   <div class="app-container">
+    <!-- 整页只读遮罩：健康域（RTP 状态/风险处置）写权限归 medic，其他角色全页只读 -->
+    <read-only-block :perms="['apms:rtp:edit', 'apms:rtpRisk:handle']">
     <div class="rk-dash-page rk-page ha-page">
 
       <!-- ===== 页头 ===== -->
@@ -18,12 +20,14 @@
       <!-- 下：RTP 风险预警（采纳建议后同步刷新上方状态） -->
       <RtpWarningPanel class="ha-block" @accepted="reloadStatus" />
     </div>
+    </read-only-block>
   </div>
 </template>
 
 <script setup name="ApmsHealthAlert">
 import RtpStatusPanel from '@/views/apms/rtp/RtpStatusPanel.vue'
 import RtpWarningPanel from '@/views/apms/rtpWarning/RtpWarningPanel.vue'
+import ReadOnlyBlock from '@/components/ReadOnlyBlock/index.vue'
 
 const statusPanelRef = ref(null)
 function reloadStatus() {

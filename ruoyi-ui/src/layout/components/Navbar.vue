@@ -1,31 +1,15 @@
 <template>
   <div class="navbar" :class="'nav' + settingsStore.navType">
-    <hamburger v-if="!userStore.portalMode" id="hamburger-container" :is-active="appStore.sidebar.opened" class="hamburger-container" @toggleClick="toggleSideBar" />
-    <breadcrumb v-if="settingsStore.navType == 1 && !userStore.portalMode" id="breadcrumb-container" class="breadcrumb-container" />
-    <top-nav v-if="settingsStore.navType == 2 && !userStore.portalMode" id="topmenu-container" class="topmenu-container" />
-    <template v-if="settingsStore.navType == 3 && !userStore.portalMode">
+    <hamburger id="hamburger-container" :is-active="appStore.sidebar.opened" class="hamburger-container" @toggleClick="toggleSideBar" />
+    <breadcrumb v-if="settingsStore.navType == 1" id="breadcrumb-container" class="breadcrumb-container" />
+    <top-nav v-if="settingsStore.navType == 2" id="topmenu-container" class="topmenu-container" />
+    <template v-if="settingsStore.navType == 3">
       <logo v-show="settingsStore.sidebarLogo" :collapse="false"></logo>
       <top-bar id="topbar-container" class="topbar-container" />
     </template>
 
-    <!-- Portal模式：品牌Logo + 品牌名 -->
-    <div v-if="userStore.portalMode" class="portal-brand">
-      <img v-if="portalLogoImg" :src="portalLogoImg" class="portal-logo" alt="brand logo" />
-      <svg v-else-if="portalBuiltin === 'shield'" viewBox="0 0 40 46" fill="none" class="portal-logo">
-        <path d="M20 1.5L37 7v13c0 12-7.5 19-17 24C10.5 39 3 32 3 20V7l17-5.5z"
-          fill="#2c5a4b" stroke="#7fc7ad" stroke-width="1.4"/>
-        <circle cx="20" cy="20" r="8" fill="none" stroke="#d8efe4" stroke-width="1.3"/>
-        <path d="M20 12l4 3-1.5 5h-5L16 15l4-3z" fill="#d8efe4"/>
-        <path d="M14.5 29c1.6-2.2 3.4-3.3 5.5-3.3s3.9 1.1 5.5 3.3" stroke="#d8efe4" stroke-width="1.3" fill="none"/>
-      </svg>
-      <el-icon v-else class="portal-logo portal-logo-ep">
-        <component :is="portalBuiltin" />
-      </el-icon>
-      <span class="portal-brand-name">{{ brandName }}</span>
-    </div>
-
     <div class="right-menu">
-      <template v-if="appStore.device !== 'mobile' && !userStore.portalMode">
+      <template v-if="appStore.device !== 'mobile'">
         <screenfull id="screenfull" class="right-menu-item hover-effect" />
 
         <el-tooltip content="消息通知" effect="dark" placement="bottom">
@@ -48,7 +32,7 @@
             <el-dropdown-item command="setLayout" v-if="isAdmin && settingsStore.showSettings && !userStore.portalMode">
                 <span>布局设置</span>
             </el-dropdown-item>
-            <el-dropdown-item command="lockScreen" v-if="!userStore.portalMode">
+            <el-dropdown-item command="lockScreen">
                 <span>锁定屏幕</span>
             </el-dropdown-item>
             <el-dropdown-item divided command="logout">
@@ -74,9 +58,7 @@ import useAppStore from '@/store/modules/app'
 import useUserStore from '@/store/modules/user'
 import useLockStore from '@/store/modules/lock'
 import useSettingsStore from '@/store/modules/settings'
-import useLoginThemeStore from '@/store/modules/loginTheme'
 import HeaderNotice from './HeaderNotice'
-import { mediaUrl, BUILTIN_LOGO_VALUES } from '@/views/login/login.utils'
 import { isDemoMode } from '@/utils/auth'
 
 const route = useRoute()
@@ -87,19 +69,11 @@ const lockStore = useLockStore()
 const settingsStore = useSettingsStore()
 // 仅平台超级管理员（admin）可见布局设置；布局本身对所有用户已统一固定
 const isAdmin = computed(() => userStore.roles.includes('admin'))
-const loginThemeStore = useLoginThemeStore()
-const brandName = computed(() => loginThemeStore.config.brand.name || import.meta.env.VITE_APP_TITLE)
 // 仿 demo：用昵称首字代替头像图片（中文名取首字，英文名取首字母）
 const avatarInitial = computed(() => {
   const name = (userStore.nickName || '').trim()
   return name ? name.charAt(0).toUpperCase() : 'U'
 })
-// Portal 品牌Logo：与侧栏Logo同源（首页设计器配置），支持图片/内置盾牌/图标
-const portalLogo = computed(() => loginThemeStore.config.brand.logo || {})
-const portalLogoImg = computed(() =>
-  portalLogo.value.type === 'image' && portalLogo.value.value ? mediaUrl(portalLogo.value.value) : '')
-const portalBuiltin = computed(() =>
-  BUILTIN_LOGO_VALUES.includes(portalLogo.value.value) ? portalLogo.value.value : 'shield')
 
 function toggleSideBar() {
   appStore.toggleSideBar()
@@ -149,34 +123,6 @@ function lockScreen() {
 .navbar.nav3 {
   .hamburger-container {
     display: none !important;
-  }
-}
-
-.portal-brand {
-  display: flex;
-  align-items: center;
-  margin-left: 12px;
-  min-width: 0;
-
-  .portal-logo {
-    height: 28px;
-    width: auto;
-    flex: none;
-    margin-right: 8px;
-  }
-
-  .portal-logo-ep {
-    height: auto;
-    font-size: 26px;
-  }
-
-  .portal-brand-name {
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--el-text-color-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 }
 

@@ -1,5 +1,7 @@
 <template>
   <div class="app-container">
+    <!-- 整页只读遮罩：测试域（指标/任务/成绩）写权限归 tester，其他角色全页只读 -->
+    <read-only-block :perms="['apms:indicator:edit', 'apms:testTask:edit', 'apms:testResult:edit']">
     <div class="rk-dash-page rk-page dispatch-page">
 
       <!-- ===== 页头 ===== -->
@@ -27,6 +29,7 @@
         <TestResultPage embedded />
       </section>
     </div>
+    </read-only-block>
   </div>
 </template>
 
@@ -34,6 +37,7 @@
 import IndicatorPage from '@/views/apms/indicator/index.vue'
 import TestTaskPage from '@/views/apms/testTask/index.vue'
 import TestResultPage from '@/views/apms/testResult/index.vue'
+import ReadOnlyBlock from '@/components/ReadOnlyBlock/index.vue'
 </script>
 
 <style lang="scss" scoped>

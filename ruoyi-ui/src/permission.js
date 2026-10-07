@@ -91,20 +91,17 @@ router.beforeEach(async (to, from) => {
       NProgress.done()
       return { path: landing, replace: true }
     }
-    // Portal模式：隐藏侧栏，未注册路由一律回落地页；标准模式确保侧栏显示
+    // 门户专岗与标准角色统一显示侧边栏（门户仅写权限按角色隔离，菜单仍为分组树）；
+    // 门户角色访问未注册路由时回各自落地页
+    useAppStore().toggleSideBarHide(false)
     if (userStore.portalMode)
     {
-      useAppStore().toggleSideBarHide(true)
       const accessiblePaths = router.getRoutes().map(route => route.path)
       if (!accessiblePaths.includes(to.path))
       {
         NProgress.done()
         return { path: userStore.homePath, replace: true }
       }
-    }
-    else
-    {
-      useAppStore().toggleSideBarHide(false)
     }
     return true
   } else {

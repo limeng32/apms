@@ -1,5 +1,6 @@
 <template>
   <div class="app-container">
+    <read-only-block :perms="['apms:medicalRecord:edit', 'apms:medicalRecord:add']">
     <div class="rk-dash-page rk-page md-page">
 
       <!-- ===== 页头 ===== -->
@@ -345,6 +346,7 @@
         </template>
       </el-dialog>
     </div>
+    </read-only-block>
   </div>
 </template>
 
@@ -355,6 +357,7 @@ import { getToken, isDemoMode } from '@/utils/auth'
 import { Plus, RefreshLeft, ArrowLeft, ArrowRight, Lock, UploadFilled, Close, Edit } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import BodyMap from './components/BodyMap.vue'
+import ReadOnlyBlock from '@/components/ReadOnlyBlock/index.vue'
 import { BODY_SITE_GROUPS, siteLabel } from './bodySites'
 
 const { proxy } = getCurrentInstance()
