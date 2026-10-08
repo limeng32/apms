@@ -101,6 +101,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
  			<if test="leader != null and leader != ''">leader,</if>
  			<if test="phone != null and phone != ''">phone,</if>
  			<if test="email != null and email != ''">email,</if>
+ 			<if test="deptType != null and deptType != ''">dept_type,</if>
  			<if test="status != null">status,</if>
  			<if test="createBy != null and createBy != ''">create_by,</if>
  			create_time
@@ -113,6 +114,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
  			<if test="leader != null and leader != ''">#{leader},</if>
  			<if test="phone != null and phone != ''">#{phone},</if>
  			<if test="email != null and email != ''">#{email},</if>
+ 			<if test="deptType != null and deptType != ''">#{deptType},</if>
  			<if test="status != null">#{status},</if>
  			<if test="createBy != null and createBy != ''">#{createBy},</if>
  			sysdate()
@@ -129,6 +131,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
  			<if test="leader != null">leader = #{leader},</if>
  			<if test="phone != null">phone = #{phone},</if>
  			<if test="email != null">email = #{email},</if>
+ 			<if test="deptType != null and deptType != ''">dept_type = #{deptType},</if>
  			<if test="status != null and status != ''">status = #{status},</if>
  			<if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
  			update_time = sysdate()

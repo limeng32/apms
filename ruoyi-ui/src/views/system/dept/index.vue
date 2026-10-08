@@ -59,6 +59,11 @@
             </div>
           </template>
         </el-table-column>
+        <el-table-column label="类型" width="105">
+          <template #default="scope">
+            <span class="dm-type-chip" :class="'dm-type-' + scope.row.deptType">{{ deptTypeLabel(scope.row.deptType) }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="排序" width="120">
           <template #default="scope">
             <el-input-number v-model="scope.row.orderNum" controls-position="right" :min="0" class="dm-order-input" />
@@ -122,12 +127,25 @@
                 value-key="deptId"
                 placeholder="选择上级部门"
                 check-strictly
+                @change="onParentChange"
               />
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item label="部门名称" prop="deptName">
               <el-input v-model="form.deptName" placeholder="请输入部门名称" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="部门类型" prop="deptType">
+              <el-select v-model="form.deptType" placeholder="请选择类型" style="width: 100%">
+                <el-option
+                  v-for="d in deptTypeOptions"
+                  :key="d.value"
+                  :label="d.label"
+                  :value="d.value"
+                />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -178,7 +196,7 @@ import { listDept, getDept, delDept, addDept, updateDept, updateDeptSort, listDe
 import { Plus, RefreshLeft, Check, Sort } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
-const { sys_normal_disable } = useDict("sys_normal_disable")
+const { sys_normal_disable, apms_dept_type } = useDict("sys_normal_disable", "apms_dept_type")
 
 // 嵌入角色权限管理合并页 Tab 时传 true，去除独立页全宽外扩样式
 const props = defineProps({ embedded: { type: Boolean, default: false } })
@@ -202,6 +220,7 @@ const data = reactive({
   rules: {
     parentId: [{ required: true, message: "上级部门不能为空", trigger: "blur" }],
     deptName: [{ required: true, message: "部门名称不能为空", trigger: "blur" }],
+    deptType: [{ required: true, message: "请选择部门类型", trigger: "change" }],
     orderNum: [{ required: true, message: "显示排序不能为空", trigger: "blur" }],
     email: [{ type: "email", message: "请输入正确的邮箱地址", trigger: ["blur", "change"] }],
     phone: [{ pattern: /^1[3|4|5|6|7|8|9][0-9]\d{8}$/, message: "请输入正确的手机号码", trigger: "blur" }]
@@ -255,6 +274,42 @@ const parentDeptOptions = computed(() =>
   props.embedded ? pickAllowedRoots(deptOptions.value) : deptOptions.value
 )
 
+/* ===== 部门类型（apms_dept_type）与层级联动 =====
+   机构(10) → 队伍(20) → 训练/科研/恢复小组(30/40/50)。
+   父级类型决定本节点允许选择的类型，保证在部门管理里建的
+   「队伍」就是运动员主属队伍下拉（dept_type=20）的来源 */
+function flattenTree(list, acc = []) {
+  ;(list || []).forEach(n => {
+    acc.push(n)
+    if (n.children && n.children.length) flattenTree(n.children, acc)
+  })
+  return acc
+}
+const deptNodeMap = computed(() => {
+  const map = new Map()
+  flattenTree(deptOptions.value).forEach(n => map.set(n.deptId, n))
+  return map
+})
+function allowedChildTypes(parentType) {
+  if (!props.embedded && (parentType == null || parentType === '')) return ['10']
+  if (parentType === '10') return ['20']
+  // parentType 为 20/30/40/50 或嵌入态兜底：只能建小组
+  return ['30', '40', '50']
+}
+const deptTypeOptions = computed(() => {
+  const parent = deptNodeMap.value.get(form.value.parentId)
+  const allow = allowedChildTypes(parent ? String(parent.deptType) : null)
+  return (apms_dept_type.value || []).filter(d => allow.includes(d.value))
+})
+function onParentChange(pid) {
+  const parent = deptNodeMap.value.get(pid)
+  const allow = allowedChildTypes(parent ? String(parent.deptType) : null)
+  if (!allow.includes(form.value.deptType)) form.value.deptType = allow[0]
+}
+function deptTypeLabel(t) {
+  return ((apms_dept_type.value || []).find(d => d.value === String(t)) || {}).label || '—'
+}
+
 /* 表格可见行（平铺数据上处理，兼容搜索时后端只返回匹配行的情况）：
    super 不需要看到「根公司」与其直接下级（APMS 总部）这两级，
    从 APMS 总部的下级（队伍/小组）开始展示；
@@ -302,6 +357,7 @@ function reset() {
     deptId: undefined,
     parentId: undefined,
     deptName: undefined,
+    deptType: undefined,
     orderNum: 0,
     leader: undefined,
     phone: undefined,
@@ -340,6 +396,9 @@ function handleAdd(row) {
       const allowed = pickAllowedRoots(deptOptions.value)
       if (allowed[0]) form.value.parentId = allowed[0].deptId
     }
+    // 按上级类型给默认部门类型（机构→队伍，队伍→训练小组）
+    const parent = deptNodeMap.value.get(form.value.parentId)
+    form.value.deptType = allowedChildTypes(parent ? String(parent.deptType) : null)[0]
   })
   if (row != undefined) {
     form.value.parentId = row.deptId
@@ -538,6 +597,22 @@ getList()
   font-weight: 600;
   color: $rk-text-1;
 }
+
+/* 部门类型 chip */
+.dm-type-chip {
+  display: inline-block;
+  padding: 1px 8px;
+  font-size: 12px;
+  line-height: 18px;
+  border-radius: 999px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.dm-type-20 { color: $rk-brand-600; background: $rk-brand-50; border-color: #bfdbfe; }
+.dm-type-30 { color: $rk-ok; background: #e8f7ee; border-color: #b7e4c7; }
+.dm-type-40 { color: #7c3aed; background: #f3e8ff; border-color: #d8b4fe; }
+.dm-type-50 { color: $rk-warn; background: #fef3e0; border-color: #f5d9a8; }
+.dm-type-10 { color: $rk-text-2; background: $rk-canvas; border-color: $rk-line; }
 
 /* 行操作 */
 .dm-row-actions {

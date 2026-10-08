@@ -93,12 +93,72 @@ public class SysDeptController extends BaseController
                 return error("新增部门失败：仅支持在「APMS 总部」及其下级部门下新增");
             }
         }
+        // 类型层级约束：机构(10)→队伍(20)→训练/科研/恢复小组(30/40/50)
+        AjaxResult typeCheck = validateDeptTypeHierarchy(dept);
+        if (typeCheck != null)
+        {
+            return typeCheck;
+        }
         if (!deptService.checkDeptNameUnique(dept))
         {
             return error("新增部门'" + dept.getDeptName() + "'失败，部门名称已存在");
         }
         dept.setCreateBy(getUsername());
         return toAjax(deptService.insertDept(dept));
+    }
+
+    /**
+     * 校验部门类型与上级部门的层级关系（机构-队伍-小组）。
+     * @return null=通过；否则为包含错误信息的 AjaxResult
+     */
+    private AjaxResult validateDeptTypeHierarchy(SysDept dept)
+    {
+        String type = dept.getDeptType();
+        if (StringUtils.isEmpty(type))
+        {
+            return error("请选择部门类型（队伍/训练小组/科研小组/恢复小组）");
+        }
+        // 顶级机构只能由平台管理员创建
+        if ("10".equals(type))
+        {
+            if (!SecurityUtils.isAdmin())
+            {
+                return error("仅平台管理员可创建机构");
+            }
+            return null;
+        }
+        Long parentId = dept.getParentId();
+        if (parentId == null || parentId == 0L)
+        {
+            return error("队伍或小组必须挂在上级部门下");
+        }
+        SysDept parent = deptService.selectDeptById(parentId);
+        if (parent == null)
+        {
+            return error("上级部门不存在");
+        }
+        String parentType = parent.getDeptType();
+        if ("20".equals(type))
+        {
+            // 队伍只能挂在机构下
+            if (!"10".equals(parentType))
+            {
+                return error("队伍（梯队）只能建在机构（APMS 总部）下");
+            }
+        }
+        else if ("30".equals(type) || "40".equals(type) || "50".equals(type))
+        {
+            // 小组只能挂在队伍（梯队）下
+            if (!"20".equals(parentType))
+            {
+                return error("小组只能建在队伍（梯队）下");
+            }
+        }
+        else
+        {
+            return error("未知的部门类型：" + type);
+        }
+        return null;
     }
 
     /**
@@ -122,6 +182,15 @@ public class SysDeptController extends BaseController
         else if (StringUtils.equals(UserConstants.DEPT_DISABLE, dept.getStatus()) && deptService.selectNormalChildrenDeptById(deptId) > 0)
         {
             return error("该部门包含未停用的子部门！");
+        }
+        // 类型层级约束（传了部门类型才校验，兼容历史无类型数据）
+        if (StringUtils.isNotEmpty(dept.getDeptType()))
+        {
+            AjaxResult typeCheck = validateDeptTypeHierarchy(dept);
+            if (typeCheck != null)
+            {
+                return typeCheck;
+            }
         }
         dept.setUpdateBy(getUsername());
         return toAjax(deptService.updateDept(dept));
