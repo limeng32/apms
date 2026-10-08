@@ -79,20 +79,15 @@ router.beforeEach(async (to, from) => {
       }
     }
     const userStore = useUserStore()
-    // 统一首页落点：/ 与旧 /index 均重定向到角色对应的真实菜单路由，
-    // 侧边栏不再保留与业务菜单重复的静态「数据驾驶舱」入口。
-    // 标准角色（super/admin/business_admin）统一进入「总览 > 数据驾驶舱」；
-    // 门户专岗进入各自 homePath。
+    // 统一首页落点：/ 与 /index 一律重定向到「总览 > 数据驾驶舱」，
+    // 所有角色（含门户专岗）登录后落地页一致；侧边栏不再保留与业务菜单重复的静态入口。
     if (to.path === '/' || to.path === '/index')
     {
-      const landing = userStore.portalMode
-        ? (userStore.homePath || '/apms/dashboard')
-        : '/overview/cockpit'
       NProgress.done()
-      return { path: landing, replace: true }
+      return { path: '/overview/cockpit', replace: true }
     }
     // 门户专岗与标准角色统一显示侧边栏（门户仅写权限按角色隔离，菜单仍为分组树）；
-    // 门户角色访问未注册路由时回各自落地页。
+    // 门户角色访问未注册路由时回 homePath（已统一配置为数据驾驶舱）。
     // 注意：不能用 router.getRoutes() 的 path 与 to.path 做字符串比对——
     // 带参数的静态路由（如 /apms/athlete/detail/:athleteId(\\d+)）在表中是模式串，
     // 与真实路径永不相等，会把教练查看运动员详情这类合法访问误踢回落地页。

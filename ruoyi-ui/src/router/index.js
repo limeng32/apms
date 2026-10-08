@@ -75,9 +75,8 @@ export const constantRoutes = [
   },
   {
     // 业务首页（保留渲染与旧链接兼容；侧边栏入口已由各角色真实菜单承接，故 hidden）。
-    // 访问 / 或 /index 时由 permission 守卫按角色重定向：
-    //   super → /overview/cockpit（总览-数据驾驶舱），其余标准角色 → /apms/dashboard，
-    //   门户专岗 → 各自 homePath。
+    // 访问 / 或 /index 时由 permission 守卫统一重定向到 /overview/cockpit
+    // （总览-数据驾驶舱），所有角色登录后落地页一致。
     path: '/index',
     component: Layout,
     hidden: true,
