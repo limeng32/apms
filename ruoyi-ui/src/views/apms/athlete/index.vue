@@ -699,8 +699,13 @@ function handleDelete(row) {
 }
 
 /* ===== 详情（整行点击） ===== */
+// 带 from=当前实际路由：同一名单页在 2200 树(/apms/athlete) 与 2400 树(/athletes/roster)
+// 下复用，详情页据此返回当前角色真正可访问的花名册，避免硬编码导致 404
 function handleDetail(row) {
-  proxy.$router.push('/apms/athlete/detail/' + row.athleteId)
+  proxy.$router.push({
+    path: '/apms/athlete/detail/' + row.athleteId,
+    query: { from: proxy.$route.fullPath }
+  })
 }
 
 // 初始化

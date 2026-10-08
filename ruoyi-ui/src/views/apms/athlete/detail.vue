@@ -342,6 +342,49 @@
       </div>
     </div>
 
+    <!-- ===== Tab 5: 组合评分（教练查看入口；计算/删除由测量员在测试组操作） ===== -->
+    <div v-show="activeTab === 'score'" class="rk-tab-panel">
+      <div class="rk-card">
+        <div class="rk-table-scroll">
+          <table class="rk-table">
+            <thead>
+              <tr>
+                <th>组合模型</th>
+                <th class="text-center">综合分</th>
+                <th class="text-center">评级</th>
+                <th class="text-center">算法版本</th>
+                <th>计算时间</th>
+                <th class="text-center">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, i) in comboScores" :key="row.id" class="rk-row" :class="{ 'is-zebra': i % 2 === 1 }">
+                <td>{{ row.comboModelName || ('Model #' + row.comboModelId) }}</td>
+                <td class="text-center rk-mono" :class="scoreTone(row.comboScore)">
+                  {{ row.comboScore != null ? Number(row.comboScore).toFixed(3) : '—' }}
+                </td>
+                <td class="text-center">{{ scoreGradeLabel(row.comboScore) }}</td>
+                <td class="text-center">{{ row.algoVersion || '—' }}</td>
+                <td class="rk-mono">{{ formatDT(row.calculatedAt) }}</td>
+                <td class="text-center">
+                  <button type="button" class="rk-btn rk-btn-primary rk-btn-sm" @click="showScoreReport(row)">查看快照</button>
+                </td>
+              </tr>
+              <tr v-if="comboScores.length === 0">
+                <td colspan="6">
+                  <div class="rk-empty">
+                    <p class="rk-empty-title">暂无组合体能评分</p>
+                    <p class="rk-empty-desc">评分由测量员在「测试 → 组合测试调度」中批量计算</p>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <ComboScoreReport v-model="showScoreDialog" :row="currentScoreRow" />
+    </div>
+
     <!-- ========== 加入小组对话框 ========== -->
     <el-dialog title="加入小组" v-model="showJoinDialog" width="420px">
       <el-form :model="joinForm" label-width="80px">
@@ -431,9 +474,11 @@ import * as bodyMeasureApi from '@/api/apms/bodyMeasure'
 import * as rtpApi from '@/api/apms/rtp'
 import { latestByAthlete as latestRtpRisk } from '@/api/apms/rtpRisk'
 import * as phvApi from '@/api/apms/phv'
+import * as comboScoreApi from '@/api/apms/comboScore'
 import { listDept } from '@/api/system/dept'
 import BodyTrendChart from '@/components/BodyTrendChart/index.vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
+import ComboScoreReport from '@/views/apms/comboScore/ComboScoreReport.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
 import { useDict } from '@/utils/dict'
 import { ArrowDown, ArrowLeft, Minus, Plus, Delete, Edit, RefreshLeft, DataLine, InfoFilled, CircleCheck, Warning, CircleClose } from '@element-plus/icons-vue'
@@ -452,7 +497,8 @@ const tabs = [
   { key: 'group', label: '小组归属' },
   { key: 'body', label: '体态测量' },
   { key: 'rtp', label: 'RTP 参训状态' },
-  { key: 'phv', label: 'PHV 生长发育' }
+  { key: 'phv', label: 'PHV 生长发育' },
+  { key: 'score', label: '组合评分' }
 ]
 
 // 主数据
@@ -464,9 +510,33 @@ const rtpStatus = ref(null)
 const rtpLogs = ref([])
 const rtpRiskAdvice = ref(null)
 const phvRecords = ref([])
+const comboScores = ref([])
 
 const latestPhv = computed(() => phvRecords.value.length > 0 ? phvRecords.value[0] : null)
 const latestBody = computed(() => bodyMeasures.value[0] || {})
+
+// ===== 组合评分 Tab：只读查看（评级口径与报告弹窗一致） =====
+const showScoreDialog = ref(false)
+const currentScoreRow = ref(null)
+function showScoreReport(row) {
+  currentScoreRow.value = row
+  showScoreDialog.value = true
+}
+function scoreTone(v) {
+  if (v == null) return ''
+  if (v > 0.5) return 'score-tone-high'
+  if (v < -0.5) return 'score-tone-low'
+  return 'score-tone-mid'
+}
+function scoreGradeLabel(v) {
+  if (v == null) return '—'
+  if (v >= 1.0) return '🏆 优秀'
+  if (v >= 0.3) return '👍 良好'
+  if (v > -0.3) return '✅ 正常'
+  if (v > -1.0) return '⚠️ 需关注'
+  return '❌ 较差'
+}
+function formatDT(t) { return t ? String(t).substring(0, 16) : '—' }
 
 // 字典辅助（useDict 返回项字段为 label/value/elTagType）
 const positionOptions = computed(() => apms_position.value || [])
@@ -565,8 +635,11 @@ async function loadAll() {
     const rtpLogPromise = rtpApi.getLog(athleteId.value).then(r => { rtpLogs.value = r.data || [] })
     const phvPromise = phvApi.listByAthlete(athleteId.value).then(r => { phvRecords.value = r.data || [] })
     const rtpRiskPromise = latestRtpRisk(athleteId.value).then(r => { rtpRiskAdvice.value = r.data || null }).catch(() => {})
+    // 组合评分：无 apms:comboScore:list 权限的角色（不应出现）会 403，静默处理不阻塞详情
+    const scorePromise = comboScoreApi.list({ athleteId: athleteId.value, pageSize: 100 })
+      .then(r => { comboScores.value = r.data || r.rows || [] }).catch(() => { comboScores.value = [] })
 
-    await Promise.all([athletePromise, groupPromise, bodyPromise, rtpStatusPromise, rtpLogPromise, phvPromise, rtpRiskPromise])
+    await Promise.all([athletePromise, groupPromise, bodyPromise, rtpStatusPromise, rtpLogPromise, phvPromise, rtpRiskPromise, scorePromise])
   } catch (e) {
     console.error('load detail failed', e)
     proxy.$modal.msgError('加载详情失败')
@@ -658,8 +731,28 @@ function handleDeletePhv(row) {
   }).then(() => { loadAll(); proxy.$modal.msgSuccess('已删除') }).catch(() => {})
 }
 
+// ===== 返回花名册 =====
+// 同一运动员名单页在不同菜单树下路径不同（旧 2200 树 /apms/athlete，
+// 新 2400 树 /athletes/roster），不能硬编码，否则无权角色会 404。
+// 顺序：列表入口携带的 from → 浏览器历史上一页 → 路由表实时解析 → 首页兜底。
+function isKnownPath(p) {
+  if (!p || typeof p !== 'string' || p.charAt(0) !== '/') return false
+  // 命中 404 catch-all（/:pathMatch(.*)*）视为不可达
+  return router.resolve(p).matched.some(r => !r.path.includes(':pathMatch'))
+}
 function goBack() {
-  proxy.$router.push('/apms/athlete')
+  const from = Array.isArray(route.query.from) ? route.query.from[0] : route.query.from
+  if (from && !from.startsWith(route.path) && isKnownPath(from)) {
+    router.push(from)
+    return
+  }
+  // 站内历史上一页（列表点进来的常规路径；刷新后 state.back 为 null 会走兜底）
+  if (window.history.state && window.history.state.back) {
+    router.back()
+    return
+  }
+  const rosterPath = ['/athletes/roster', '/apms/athlete'].find(isKnownPath)
+  router.push(rosterPath || '/index')
 }
 
 // 初始化
@@ -715,6 +808,11 @@ loadAll()
 .ad-num-ok { color: $rk-ok; }
 .ad-num-warn { color: $rk-warn; }
 .ad-violet { color: #8b5cf6; }
+
+/* 组合评分 Tab：综合分数值色（口径与 comboScore 列表一致） */
+.score-tone-high { color: #2c8a57; font-weight: 700; }
+.score-tone-low { color: #c14747; font-weight: 700; }
+.score-tone-mid { color: $rk-text-2; }
 
 /* 下拉钮内箭头 */
 .ad-caret { margin-left: 2px; font-size: 12px; }

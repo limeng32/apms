@@ -1,7 +1,7 @@
 <template>
   <div class="app-container">
-    <!-- 整页只读遮罩：测试域（测试模型/组合模型）写权限归 tester，其他角色全页只读 -->
-    <read-only-block :perms="['apms:testModel:edit', 'apms:comboModel:edit']">
+    <!-- 整页只读遮罩：测试域（测试模型/组合模型/组合评分）写权限归 tester，其他角色全页只读 -->
+    <read-only-block :perms="['apms:testModel:edit', 'apms:comboModel:edit', 'apms:comboScore:calculate']">
     <div class="rk-dash-page rk-page combo-dispatch-page">
 
       <!-- ===== 页头 ===== -->
@@ -21,6 +21,10 @@
       <section class="ha-block">
         <ComboModelPage embedded />
       </section>
+
+      <section class="ha-block">
+        <ComboScorePage embedded />
+      </section>
     </div>
     </read-only-block>
   </div>
@@ -29,6 +33,7 @@
 <script setup name="ApmsComboDispatch">
 import TestModelPage from '@/views/apms/testModel/index.vue'
 import ComboModelPage from '@/views/apms/comboModel/index.vue'
+import ComboScorePage from '@/views/apms/comboScore/index.vue'
 import ReadOnlyBlock from '@/components/ReadOnlyBlock/index.vue'
 </script>
 
