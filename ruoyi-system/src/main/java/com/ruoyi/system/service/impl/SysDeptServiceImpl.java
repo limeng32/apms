@@ -19,6 +19,8 @@ import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.common.utils.spring.SpringUtils;
 import com.ruoyi.system.mapper.SysDeptMapper;
 import com.ruoyi.system.mapper.SysRoleMapper;
+import com.ruoyi.system.mapper.apms.ApmsAthleteGroupMapper;
+import com.ruoyi.system.mapper.apms.ApmsAthleteMapper;
 import com.ruoyi.system.service.ISysDeptService;
 
 /**
@@ -34,6 +36,12 @@ public class SysDeptServiceImpl implements ISysDeptService
 
     @Autowired
     private SysRoleMapper roleMapper;
+
+    @Autowired
+    private ApmsAthleteMapper athleteMapper;
+
+    @Autowired
+    private ApmsAthleteGroupMapper athleteGroupMapper;
 
     /**
      * 查询部门管理数据
@@ -162,6 +170,17 @@ public class SysDeptServiceImpl implements ISysDeptService
     {
         int result = deptMapper.checkDeptExistUser(deptId);
         return result > 0;
+    }
+
+    /**
+     * 查询部门下是否存在在队运动员或当前在组成员
+     * （队伍看 apms_athlete.primary_team_id，小组看 apms_athlete_group 归属）
+     */
+    @Override
+    public boolean checkDeptExistAthlete(Long deptId)
+    {
+        return athleteMapper.countActiveByPrimaryTeamId(deptId) > 0
+                || athleteGroupMapper.countActiveByDeptId(deptId) > 0;
     }
 
     /**
@@ -309,13 +328,29 @@ public class SysDeptServiceImpl implements ISysDeptService
 
     /**
      * 删除部门管理信息
-     * 
+     *
+     * 硬性前置校验放在 Service 删除入口，任何 Controller/调用方都无法绕过：
+     * 有下级部门 / 有系统用户（教练等）/ 有在队运动员或在组成员 时一律拒绝删除。
+     *
      * @param deptId 部门ID
      * @return 结果
      */
     @Override
     public int deleteDeptById(Long deptId)
     {
+        if (deptMapper.hasChildByDeptId(deptId) > 0)
+        {
+            throw new ServiceException("存在下级部门，不允许删除");
+        }
+        if (deptMapper.checkDeptExistUser(deptId) > 0)
+        {
+            throw new ServiceException("部门下存在用户（教练/工作人员），不允许删除");
+        }
+        if (athleteMapper.countActiveByPrimaryTeamId(deptId) > 0
+                || athleteGroupMapper.countActiveByDeptId(deptId) > 0)
+        {
+            throw new ServiceException("部门下存在在队运动员或在组成员，不允许删除，请先调整人员归属");
+        }
         return deptMapper.deleteDeptById(deptId);
     }
 

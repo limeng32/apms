@@ -1,5 +1,5 @@
 <template>
-  <div class="app-container dm-page">
+  <div class="app-container dm-page" :class="{ 'is-embedded': embedded }">
     <!-- ===== 页头（花名册风格） ===== -->
     <div class="rk-header">
       <div>
@@ -47,6 +47,7 @@
         :data="deptList"
         row-key="deptId"
         :default-expand-all="isExpandAll"
+        :indent="0"
         :tree-props="{ children: 'children', hasChildren: 'hasChildren' }"
         class="dm-tree-table"
       >
@@ -80,7 +81,15 @@
           <template #default="scope">
             <div class="rk-actions dm-row-actions">
               <button type="button" class="rk-link" @click="handleUpdate(scope.row)" v-hasPermi="['system:dept:edit']">修改</button>
-              <button type="button" class="rk-link" @click="handleAdd(scope.row)" v-hasPermi="['system:dept:add']">新增下级</button>
+              <!-- 嵌入角色权限页（super）时只允许在既有非根部门下新增下级，
+                   即只能建在 APMS 总部及其子树内，不能挂到根公司下 -->
+              <button
+                v-if="!embedded || scope.row.parentId != 0"
+                type="button"
+                class="rk-link"
+                @click="handleAdd(scope.row)"
+                v-hasPermi="['system:dept:add']"
+              >新增下级</button>
               <button
                 v-if="scope.row.parentId != 0"
                 type="button"
@@ -108,7 +117,7 @@
             <el-form-item label="上级部门" prop="parentId">
               <el-tree-select
                 v-model="form.parentId"
-                :data="deptOptions"
+                :data="embedded ? parentDeptOptions : deptOptions"
                 :props="{ value: 'deptId', label: 'deptName', children: 'children' }"
                 value-key="deptId"
                 placeholder="选择上级部门"
@@ -171,6 +180,9 @@ import { Plus, RefreshLeft, Check, Sort } from '@element-plus/icons-vue'
 const { proxy } = getCurrentInstance()
 const { sys_normal_disable } = useDict("sys_normal_disable")
 
+// 嵌入角色权限管理合并页 Tab 时传 true，去除独立页全宽外扩样式
+const props = defineProps({ embedded: { type: Boolean, default: false } })
+
 const deptList = ref([])
 const open = ref(false)
 const loading = ref(true)
@@ -223,11 +235,46 @@ const totalDepts = computed(() => {
   return n
 })
 
+/* 上级部门可选项：嵌入（super）场景去掉根公司这一层，
+   以根节点的全部直接子节点作为可选树根（APMS 总部及平级单位，
+   其各自 children 子树完整保留）。
+   注意 deptOptions 是树不是平铺列表，不能直接 filter 顶层数组，
+   否则会连同挂在根节点 children 里的 APMS 总部一起丢掉变成「无数据」 */
+function pickAllowedRoots(tree) {
+  const out = []
+  ;(tree || []).forEach(node => {
+    if (node.parentId === 0 || node.parentId == null) {
+      if (Array.isArray(node.children) && node.children.length) out.push(...node.children)
+    } else {
+      out.push(node)
+    }
+  })
+  return out
+}
+const parentDeptOptions = computed(() =>
+  props.embedded ? pickAllowedRoots(deptOptions.value) : deptOptions.value
+)
+
+/* 表格可见行（平铺数据上处理，兼容搜索时后端只返回匹配行的情况）：
+   super 不需要看到「根公司」与其直接下级（APMS 总部）这两级，
+   从 APMS 总部的下级（队伍/小组）开始展示；
+   搜索结果中父级缺席时，匹配到的队伍会自然成为树根 */
+function embeddedVisibleRows(rows) {
+  const rootIds = new Set(
+    rows.filter(r => r.parentId === 0 || r.parentId == null).map(r => r.deptId)
+  )
+  const level2Ids = new Set(
+    rows.filter(r => rootIds.has(r.parentId)).map(r => r.deptId)
+  )
+  return rows.filter(r => !rootIds.has(r.deptId) && !level2Ids.has(r.deptId))
+}
+
 /** 查询部门列表 */
 function getList() {
   loading.value = true
   listDept(queryParams.value).then(response => {
-    deptList.value = proxy.handleTree(response.data, "deptId")
+    const rows = props.embedded ? embeddedVisibleRows(response.data || []) : (response.data || [])
+    deptList.value = proxy.handleTree(rows, "deptId")
     recordOriginalOrders(deptList.value)
     loading.value = false
   })
@@ -278,9 +325,21 @@ function resetQuery() {
 
 /** 新增按钮操作 */
 function handleAdd(row) {
+  // 嵌入（super）场景不允许把部门挂到根公司下（与 APMS 总部平级）：
+  // 行内入口若来自根行则拦截；顶部按钮放开，弹窗的上级选项已排除根公司，
+  // 并默认选中 APMS 总部
+  if (props.embedded && row != null && row.parentId === 0) {
+    proxy.$modal.msgWarning('仅支持在 APMS 总部及其下级部门下新增')
+    return
+  }
   reset()
   listDept().then(response => {
     deptOptions.value = proxy.handleTree(response.data, "deptId")
+    // 顶部按钮：默认挂到 APMS 总部（可选树的第一个节点）
+    if (props.embedded && row == null) {
+      const allowed = pickAllowedRoots(deptOptions.value)
+      if (allowed[0]) form.value.parentId = allowed[0].deptId
+    }
   })
   if (row != undefined) {
     form.value.parentId = row.deptId
@@ -394,6 +453,23 @@ getList()
   background: $rk-canvas;
 }
 
+/* 嵌入「角色权限管理」合并页 Tab 时：去掉全宽外扩与独立页面留白，
+   由父页 Tab 面板统一控制布局；Tab 名即模块标题，隐藏本页自带大标题/计数，
+   仅保留右侧操作按钮行（保存排序/展开折叠/新增部门） */
+.dm-page.is-embedded {
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+
+  .rk-header {
+    /* 与角色权限 Tab 的 .rm-sub-header 间距/左缘保持一致（对齐 Tab 标签文字） */
+    margin: 18px 0 14px;
+    padding-left: 16px;
+    > div:first-child { display: none; }
+  }
+}
+
 /* ===== el-table 树表收敛为花名册视觉 ===== */
 .dm-tree-table {
   --el-table-border-color: #{$rk-line};
@@ -423,6 +499,15 @@ getList()
   }
   :deep(.el-table__indent) {
     display: inline-flex;
+  }
+  /* 树层级缩进：el-table 会给行打 el-table__row--level-N，
+     直接按层级类给首列 cell 加左 padding（基础 14px + 每层 24px），
+     展开箭头/占位符随内容一起缩进。:indent 已置 0，避免双重缩进。
+     部门层级浅，预置 4 级足够 */
+  @for $i from 1 through 4 {
+    :deep(tr.el-table__row--level-#{$i}) td.el-table__cell:first-child .cell {
+      padding-left: #{14 + $i * 24}px;
+    }
   }
 }
 

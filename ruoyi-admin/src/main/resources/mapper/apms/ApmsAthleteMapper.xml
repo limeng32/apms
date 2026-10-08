@@ -163,6 +163,14 @@
         </foreach>
     </update>
 
+    <!-- 删除部门前校验：该部门下在队（status='0'）运动员数量；
+         离队(status='1')为历史人员，不阻塞部门删除 -->
+    <select id="countActiveByPrimaryTeamId" parameterType="Long" resultType="int">
+        SELECT COUNT(1) FROM apms_athlete
+         WHERE primary_team_id = #{deptId}
+           AND status = '0'
+    </select>
+
     <!-- 校验同队球衣号码唯一性 -->
     <select id="checkJerseyNoUnique" resultMap="ApmsAthleteResult">
         <include refid="selectApmsAthleteVo"/>

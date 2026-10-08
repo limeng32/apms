@@ -55,6 +55,14 @@
         ORDER BY g.join_date DESC
     </select>
 
+    <!-- 删除部门前校验：该小组当前在组成员数量 -->
+    <select id="countActiveByDeptId" parameterType="Long" resultType="int">
+        SELECT COUNT(1) FROM apms_athlete_group g
+         WHERE g.dept_id = #{deptId}
+           AND g.leave_date IS NULL
+           AND g.status = '0'
+    </select>
+
     <!-- 新增 -->
     <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsAthleteGroup" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO apms_athlete_group (

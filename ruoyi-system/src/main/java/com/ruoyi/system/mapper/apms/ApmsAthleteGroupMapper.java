@@ -21,6 +21,9 @@ public interface ApmsAthleteGroupMapper {
     /** 按小组查询所有成员（当前在组） */
     List<ApmsAthleteGroup> selectActiveByDeptId(Long deptId);
 
+    /** 统计小组当前在组成员数量（leave_date IS NULL 且 status=0；删除部门前校验） */
+    int countActiveByDeptId(Long deptId);
+
     /** 新增归属记录 */
     int insert(ApmsAthleteGroup group);
 

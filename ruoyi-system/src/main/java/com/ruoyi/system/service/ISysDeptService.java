@@ -84,6 +84,14 @@ public interface ISysDeptService
     public boolean checkDeptExistUser(Long deptId);
 
     /**
+     * 查询部门下是否存在在队运动员
+     *
+     * @param deptId 部门ID
+     * @return 结果 true 存在 false 不存在
+     */
+    public boolean checkDeptExistAthlete(Long deptId);
+
+    /**
      * 校验部门名称是否唯一
      * 
      * @param dept 部门信息

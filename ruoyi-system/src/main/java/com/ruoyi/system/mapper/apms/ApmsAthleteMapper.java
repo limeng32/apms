@@ -43,4 +43,7 @@ public interface ApmsAthleteMapper {
     int updatePrimaryTeam(@Param("athleteId") Long athleteId,
                           @Param("teamId") Long teamId,
                           @Param("updateBy") String updateBy);
+
+    /** 统计某部门下在队（status='0'）运动员数量（删除部门前的人员占用校验） */
+    int countActiveByPrimaryTeamId(Long deptId);
 }

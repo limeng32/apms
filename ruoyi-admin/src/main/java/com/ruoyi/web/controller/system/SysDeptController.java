@@ -20,6 +20,7 @@ import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.domain.entity.SysDept;
 import com.ruoyi.common.enums.BusinessType;
+import com.ruoyi.common.utils.SecurityUtils;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.system.service.ISysDeptService;
 
@@ -77,6 +78,21 @@ public class SysDeptController extends BaseController
     @PostMapping
     public AjaxResult add(@Validated @RequestBody SysDept dept)
     {
+        // 仅平台管理员可建顶级/根公司下部门；其他角色（如 super）只能在
+        // 二级部门（APMS 总部）及其子树下新增，防止绕过前端直接调接口
+        if (!SecurityUtils.isAdmin())
+        {
+            Long parentId = dept.getParentId();
+            if (parentId == null || parentId == 0L)
+            {
+                return error("新增部门失败：不支持创建顶级部门，请在「APMS 总部」下新增下级");
+            }
+            SysDept parent = deptService.selectDeptById(parentId);
+            if (parent == null || parent.getParentId() == null || parent.getParentId() == 0L)
+            {
+                return error("新增部门失败：仅支持在「APMS 总部」及其下级部门下新增");
+            }
+        }
         if (!deptService.checkDeptNameUnique(dept))
         {
             return error("新增部门'" + dept.getDeptName() + "'失败，部门名称已存在");
@@ -140,6 +156,10 @@ public class SysDeptController extends BaseController
         if (deptService.checkDeptExistUser(deptId))
         {
             return warn("部门存在用户,不允许删除");
+        }
+        if (deptService.checkDeptExistAthlete(deptId))
+        {
+            return warn("该部门下存在在队运动员或在组成员,不允许删除,请先调整人员归属");
         }
         deptService.checkDeptDataScope(deptId);
         return toAjax(deptService.deleteDeptById(deptId));
