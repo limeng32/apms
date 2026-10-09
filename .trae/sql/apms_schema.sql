@@ -64,7 +64,7 @@ CREATE TABLE apms_athlete (
     gender          char(1)      NOT NULL                 COMMENT '性别（0男 1女）',
     birthday        date         DEFAULT NULL             COMMENT '出生日期',
     phone           varchar(20)  DEFAULT NULL             COMMENT '联系电话',
-    primary_team_id bigint       NOT NULL                 COMMENT '所属主队伍（sys_dept，dept_type=20）',
+    primary_team_id bigint       DEFAULT NULL             COMMENT '所属主队伍（sys_dept，dept_type=20）；离队/退役后为 NULL',
     jersey_no       varchar(8)   DEFAULT NULL             COMMENT '球衣号码',
     position        varchar(20)  DEFAULT NULL             COMMENT '位置（前锋/中前卫/守门员等）',
     status          char(1)      DEFAULT '0'              COMMENT '状态（0正常 1离队 2退役）',

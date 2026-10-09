@@ -278,7 +278,12 @@
         <el-row>
           <el-col :span="12">
             <el-form-item label="主属队伍" prop="primaryTeamId">
-              <el-select v-model="form.primaryTeamId" placeholder="请选择队伍" style="width: 100%">
+              <el-select
+                v-model="form.primaryTeamId"
+                :placeholder="form.status === '0' ? '请选择队伍' : '离队/退役后无所属队伍'"
+                :disabled="form.status !== '0'"
+                style="width: 100%"
+              >
                 <el-option v-for="t in teamOptions" :key="t.deptId" :label="t.deptName" :value="t.deptId"/>
               </el-select>
             </el-form-item>
@@ -295,7 +300,7 @@
           <el-input v-model="form.phone" placeholder="可选" maxlength="20"/>
         </el-form-item>
         <el-form-item label="状态" prop="status" v-if="form.athleteId">
-          <el-radio-group v-model="form.status">
+          <el-radio-group v-model="form.status" @change="onStatusChange">
             <el-radio v-for="d in statusOptions" :key="d.value" :value="d.value">{{ d.label }}</el-radio>
           </el-radio-group>
         </el-form-item>
@@ -464,7 +469,17 @@ const data = reactive({
   rules: {
     name: [{ required: true, message: '姓名不能为空', trigger: 'blur' }],
     gender: [{ required: true, message: '请选择性别', trigger: 'change' }],
-    primaryTeamId: [{ required: true, message: '请选择主属队伍', trigger: 'change' }]
+    primaryTeamId: [{
+      // 仅在队状态要求选择主属队伍；离队/退役与队伍无归属关系
+      validator: (rule, value, callback) => {
+        if (form.value.status === '0' && (value === '' || value == null)) {
+          callback(new Error('请选择主属队伍'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'change'
+    }]
   }
 })
 const { queryParams, form, rules } = toRefs(data)
@@ -649,6 +664,11 @@ function handleUpdate(row) {
     title.value = '编辑运动员档案'
   })
 }
+/* 状态切换：离队/退役后与队伍无归属，清空主属队伍；后端保存时会同步关闭在组记录 */
+function onStatusChange(val) {
+  if (val !== '0') form.value.primaryTeamId = undefined
+}
+
 function submitForm() {
   proxy.$refs['athleteRef'].validate(valid => {
     if (!valid) return

@@ -173,8 +173,9 @@ public class SysDeptServiceImpl implements ISysDeptService
     }
 
     /**
-     * 查询部门下是否存在在队运动员或当前在组成员
-     * （队伍看 apms_athlete.primary_team_id，小组看 apms_athlete_group 归属）
+     * 查询部门下是否存在人员：
+     * 在队运动员（status=0；离队/退役已在状态变更时解除 primary_team_id）
+     * 或当前在组（apms_athlete_group，已离组历史不阻塞）的小组成员
      */
     @Override
     public boolean checkDeptExistAthlete(Long deptId)

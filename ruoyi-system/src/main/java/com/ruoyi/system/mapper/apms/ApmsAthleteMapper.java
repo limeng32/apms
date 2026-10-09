@@ -44,6 +44,9 @@ public interface ApmsAthleteMapper {
                           @Param("teamId") Long teamId,
                           @Param("updateBy") String updateBy);
 
-    /** 统计某部门下在队（status='0'）运动员数量（删除部门前的人员占用校验） */
+    /** 统计某部门下当前在队（status='0'）运动员数量（删除部门前的人员占用校验） */
     int countActiveByPrimaryTeamId(Long deptId);
+
+    /** 编辑保存时置为离队/退役并解除队伍归属 */
+    int leaveTeamByAthleteId(@Param("athleteId") Long athleteId, @Param("status") String status);
 }

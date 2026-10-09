@@ -153,18 +153,25 @@
         WHERE athlete_id = #{athleteId}
     </update>
 
-    <!-- 逻辑删除：改为离队状态 -->
+    <!-- 逻辑删除：改为离队状态，并解除与原队伍的归属（primary_team_id 置空） -->
     <update id="deleteApmsAthleteByAthleteIds" parameterType="Long">
         UPDATE apms_athlete
-        SET status = '1', update_time = sysdate()
+        SET status = '1', primary_team_id = NULL, update_time = sysdate()
         WHERE athlete_id IN
         <foreach collection="array" item="athleteId" open="(" separator="," close=")">
             #{athleteId}
         </foreach>
     </update>
 
-    <!-- 删除部门前校验：该部门下在队（status='0'）运动员数量；
-         离队(status='1')为历史人员，不阻塞部门删除 -->
+    <!-- 编辑保存时置为离队/退役：解除队伍归属（小组归属由 Service 同步关闭） -->
+    <update id="leaveTeamByAthleteId">
+        UPDATE apms_athlete
+        SET status = #{status}, primary_team_id = NULL, update_time = sysdate()
+        WHERE athlete_id = #{athleteId}
+    </update>
+
+    <!-- 删除部门前校验：该部门下当前在队（status='0'）运动员数量。
+         离队(1)/退役(2)在状态变更时已解除 primary_team_id 归属，不计入 -->
     <select id="countActiveByPrimaryTeamId" parameterType="Long" resultType="int">
         SELECT COUNT(1) FROM apms_athlete
          WHERE primary_team_id = #{deptId}
