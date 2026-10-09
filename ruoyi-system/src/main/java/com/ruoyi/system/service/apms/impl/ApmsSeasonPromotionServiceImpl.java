@@ -8,10 +8,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -136,24 +134,15 @@ public class ApmsSeasonPromotionServiceImpl implements IApmsSeasonPromotionServi
             plan.getConfigErrors().add("未识别到任何 U 档梯队（部门名需含 U+数字，如 U16 梯队）");
         }
 
-        // 2. 拉取全部在训运动员（含挂在非 U 档/失效部门的队员，需单列提示）+ 各队球衣号集合
-        Set<Long> teamIds = new HashSet<>();
+        // 2. 拉取全部在训运动员（含挂在非 U 档/失效部门的队员，需单列提示），统计各梯队人数
         Map<Long, SysDept> teamIndex = new HashMap<>();
-        bracketByParent.values().forEach(map -> map.values().forEach(d -> {
-            teamIds.add(d.getDeptId());
-            teamIndex.put(d.getDeptId(), d);
-        }));
+        bracketByParent.values().forEach(map -> map.values().forEach(d -> teamIndex.put(d.getDeptId(), d)));
         List<ApmsAthlete> athletes = athleteMapper.selectAllActiveAthletes();
 
-        Map<Long, Set<String>> jerseyByTeam = new HashMap<>();
         Map<Long, Integer> memberCount = new HashMap<>();
         for (ApmsAthlete a : athletes) {
-            if (!teamIndex.containsKey(a.getPrimaryTeamId())) {
-                continue;
-            }
-            memberCount.merge(a.getPrimaryTeamId(), 1, Integer::sum);
-            if (a.getJerseyNo() != null && !a.getJerseyNo().trim().isEmpty()) {
-                jerseyByTeam.computeIfAbsent(a.getPrimaryTeamId(), k -> new HashSet<>()).add(a.getJerseyNo().trim());
+            if (teamIndex.containsKey(a.getPrimaryTeamId())) {
+                memberCount.merge(a.getPrimaryTeamId(), 1, Integer::sum);
             }
         }
         bracketByParent.forEach((parentId, map) -> map.forEach((bracket, dept) ->
@@ -168,7 +157,6 @@ public class ApmsSeasonPromotionServiceImpl implements IApmsSeasonPromotionServi
             item.setName(a.getName());
             item.setGender(a.getGender());
             item.setBirthday(a.getBirthday());
-            item.setJerseyNo(a.getJerseyNo());
             item.setFromTeamId(a.getPrimaryTeamId());
             item.setFromTeamName(a.getTeamName());
 
@@ -227,12 +215,6 @@ public class ApmsSeasonPromotionServiceImpl implements IApmsSeasonPromotionServi
                         item.setToBracket(targetBracket);
                         item.setReason(String.format("cut-off 日 %d 岁，超出 U%d，晋升至 U%s", age, fromBracket,
                                 targetBracket == null ? "?" : targetBracket.toString()));
-                        if (a.getJerseyNo() != null && !a.getJerseyNo().trim().isEmpty()) {
-                            Set<String> targetJerseys = jerseyByTeam.get(target.getDeptId());
-                            if (targetJerseys != null && targetJerseys.contains(a.getJerseyNo().trim())) {
-                                item.setJerseyConflict(true);
-                            }
-                        }
                         promote++;
                     }
                 }

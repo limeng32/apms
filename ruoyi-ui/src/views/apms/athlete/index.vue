@@ -30,7 +30,7 @@
       </div>
     </div>
 
-    <!-- ===== 筛选条（卡片化：年龄组 chips / 位置 / 队伍 / 性别 / RTP chips / 搜索 / 重置） ===== -->
+    <!-- ===== 筛选条（卡片化：年龄组 chips / 队伍 / 性别 / RTP chips / 搜索 / 重置） ===== -->
     <div class="rp-filter">
       <div class="rpf-group">
         <span class="rpf-label">年龄段</span>
@@ -45,16 +45,6 @@
       </div>
 
       <span class="rpf-divider"></span>
-
-      <label class="rpf-field">
-        <span class="rpf-label">位置</span>
-        <select v-model="filters.position" class="rp-select">
-          <option value="">全部</option>
-          <option v-for="d in positionOptions" :key="d.value" :value="d.value">
-            {{ d.value }} {{ d.label }}
-          </option>
-        </select>
-      </label>
 
       <label class="rpf-field">
         <span class="rpf-label">队伍</span>
@@ -115,7 +105,7 @@
               <th class="col-check"></th>
               <th class="text-left">运动员</th>
               <th class="text-left">年龄段</th>
-              <th class="text-left">位置</th>
+              <th class="text-left">所属小组</th>
               <th class="text-right">身高 / 体重</th>
               <th class="text-right">体脂率</th>
               <th class="text-left">RTP 状态</th>
@@ -163,9 +153,9 @@
                 <span v-else class="rp-dash">—</span>
               </td>
               <td>
-                <span v-if="row.position" class="rp-pos-chip mono">
-                  {{ positionText(row.position) }}
-                </span>
+                <div v-if="groupNames(row).length" class="rp-group-cell">
+                  <span v-for="g in groupNames(row)" :key="g" class="rp-group-chip">{{ g }}</span>
+                </div>
                 <span v-else class="rp-dash">—</span>
               </td>
               <td class="text-right">
@@ -255,13 +245,6 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="球衣号" prop="jerseyNo">
-              <el-input v-model="form.jerseyNo" placeholder="如 10" maxlength="8"/>
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-row>
-          <el-col :span="12">
             <el-form-item label="性别" prop="gender">
               <el-radio-group v-model="form.gender">
                 <el-radio value="M">男</el-radio>
@@ -269,6 +252,8 @@
               </el-radio-group>
             </el-form-item>
           </el-col>
+        </el-row>
+        <el-row>
           <el-col :span="12">
             <el-form-item label="出生日期" prop="birthday">
               <el-date-picker v-model="form.birthday" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width: 100%"/>
@@ -285,13 +270,6 @@
                 style="width: 100%"
               >
                 <el-option v-for="t in teamOptions" :key="t.deptId" :label="t.deptName" :value="t.deptId"/>
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="场上位置" prop="position">
-              <el-select v-model="form.position" placeholder="请选择位置" clearable style="width: 100%">
-                <el-option v-for="d in positionOptions" :key="d.value" :label="d.label" :value="d.value"/>
               </el-select>
             </el-form-item>
           </el-col>
@@ -390,9 +368,6 @@
           <el-table-column prop="reason" label="说明" min-width="200" show-overflow-tooltip>
             <template #default="{ row }">
               <span>{{ row.reason }}</span>
-              <el-tooltip v-if="row.jerseyConflict" content="晋升后球衣号与目标队现有成员重复，请赛后调整" placement="top">
-                <el-tag type="warning" size="small" style="margin-left:6px">球衣号冲突</el-tag>
-              </el-tooltip>
             </template>
           </el-table-column>
         </el-table>
@@ -431,7 +406,7 @@ import { useDict } from '@/utils/dict'
 import { Plus, Search, RefreshLeft, MoreFilled, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
-const { apms_position, apms_athlete_status } = useDict('apms_position', 'apms_athlete_status')
+const { apms_athlete_status } = useDict('apms_athlete_status')
 
 /* ===== demo 花名册视觉常量（与 demo tailwind token 对齐） ===== */
 // 年龄段内部值为纯数字（与后端 ageGroups 参数一致），展示时统一拼「岁」，避免与 U16 梯队混淆
@@ -459,14 +434,12 @@ const teamOptions = ref([])
 const openMenuId = ref(null)
 const rtpCounts = reactive({ g: 0, y: 0, r: 0 })
 
-const positionOptions = computed(() => apms_position.value || [])
 const statusOptions = computed(() => apms_athlete_status.value || [])
 
 const filters = reactive({
   name: '',
   primaryTeamId: '',
   gender: '',
-  position: '',
   rtpStatus: '',
   groups: []
 })
@@ -524,13 +497,10 @@ function ageBadgeStyle(row) {
 function rtpMeta(row) {
   return RTP_META[row.rtpStatus] || { tone: 'gray', label: '未评估' }
 }
-// 位置展示：标准字典码显示「MF · 中场」；兼容存量数据里直接存中文标签的情况
-function positionText(val) {
-  const byCode = positionOptions.value.find(d => d.value === val)
-  if (byCode) return byCode.value + ' · ' + byCode.label
-  const byLabel = positionOptions.value.find(d => d.label === val)
-  if (byLabel) return byLabel.value + ' · ' + byLabel.label
-  return val
+// 当前在组小组：后端按顿号聚合成 currentGroups，拆成数组渲染多个 chip
+function groupNames(row) {
+  if (!row.currentGroups) return []
+  return String(row.currentGroups).split('、').map(s => s.trim()).filter(Boolean)
 }
 function fmtMetric(v) {
   if (v == null || v === '') return '—'
@@ -546,7 +516,6 @@ function buildParams() {
     name: filters.name.trim() || undefined,
     primaryTeamId: filters.primaryTeamId || undefined,
     gender: filters.gender || undefined,
-    position: filters.position || undefined,
     rtpStatus: filters.rtpStatus || undefined,
     ageGroups: filters.groups
   }
@@ -610,7 +579,6 @@ function resetFilters() {
   filters.name = ''
   filters.primaryTeamId = ''
   filters.gender = ''
-  filters.position = ''
   filters.rtpStatus = ''
   filters.groups = []
 }
@@ -708,8 +676,6 @@ function reset() {
     birthday: undefined,
     phone: undefined,
     primaryTeamId: undefined,
-    jerseyNo: undefined,
-    position: undefined,
     status: '0'
   }
   proxy.resetForm('athleteRef')
@@ -794,12 +760,10 @@ function handleExecutePromotion() {
   const n = promotion.plan.promoteCount
   const overage = promotion.plan.stayOverAgeCount
   const invalid = promotion.plan.invalidTeamCount
-  const conflict = promotion.plan.items.filter(i => i.action === 'PROMOTE' && i.jerseyConflict).length
   let msg = '确认按 cut-off ' + promotion.plan.cutoffDate + ' 晋升 ' + n + ' 名队员？'
   msg += '\n仅调整队员所属梯队，历史成绩与评级不变。'
   if (overage) msg += '\n另有 ' + overage + ' 名超龄队员因无更高档梯队留队。'
   if (invalid) msg += '\n另有 ' + invalid + ' 名队员所属部门非 U 档梯队/已失效，本次不动。'
-  if (conflict) msg += '\n注意：' + conflict + ' 人晋升后存在球衣号冲突（仅预警）。'
   proxy.$modal.confirm(msg).then(() => {
     promotion.executing = true
     return executePromotion({ cutoffDate: promotion.cutoffDate || null })
@@ -1132,16 +1096,24 @@ $risk: #dc2626;
   border-radius: 999px;
 }
 
-/* 位置 chip */
-.rp-pos-chip {
+/* 所属小组 chip（可多个，换行展示） */
+.rp-group-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.rp-group-chip {
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
   font-size: 12px;
   font-weight: 500;
-  color: $text-2;
-  background: $canvas;
-  border-radius: 8px;
+  line-height: 18px;
+  color: $brand-600;
+  background: $brand-50;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  white-space: nowrap;
 }
 
 .num {

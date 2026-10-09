@@ -308,15 +308,13 @@ public class ApmsReportServiceImpl implements IApmsReportService {
 
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("athleteId", a.getAthleteId());
-            row.put("jerseyNo", a.getJerseyNo());
             row.put("name", a.getName());
             row.put("gender", gender);
-            row.put("position", a.getPosition());
             row.put("rtpStatus", st);
             rosterRows.add(row);
         }
         rosterRows.sort(Comparator.comparing(
-                (Map<String, Object> m) -> m.get("jerseyNo") == null ? "9999" : String.valueOf(m.get("jerseyNo"))));
+                (Map<String, Object> m) -> String.valueOf(m.get("athleteId"))));
 
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("deptName", dept.getDeptName());
@@ -610,16 +608,14 @@ public class ApmsReportServiceImpl implements IApmsReportService {
         Object roster = snap.get("roster");
         if (roster instanceof List<?> list && !list.isEmpty()) {
             doc.add(h2(sectionTitle(secNo, "队员花名册"), h2Font));
-            PdfPTable t = new PdfPTable(5);
+            PdfPTable t = new PdfPTable(3);
             t.setWidthPercentage(100);
-            t.setWidths(new float[]{1.2f, 2.4f, 1.2f, 2f, 2.4f});
-            for (String h : new String[]{"球衣号", "姓名", "性别", "位置", "参训状态"}) t.addCell(cell(h, labelFont));
+            t.setWidths(new float[]{3f, 1.2f, 2.6f});
+            for (String h : new String[]{"姓名", "性别", "参训状态"}) t.addCell(cell(h, labelFont));
             for (Object obj : list) {
                 Map<String, Object> m = (Map<String, Object>) obj;
-                t.addCell(cell(objText(m.get("jerseyNo")), bodyFont));
                 t.addCell(cell(objText(m.get("name")), bodyFont));
                 t.addCell(cell(genderText((String) m.get("gender")), bodyFont));
-                t.addCell(cell(positionText((String) m.get("position")), bodyFont));
                 t.addCell(cell(rtpStatusText((String) m.get("rtpStatus")), bodyFont));
             }
             doc.add(t);
@@ -787,18 +783,6 @@ public class ApmsReportServiceImpl implements IApmsReportService {
             case "partial"   -> "部分完成";
             case "completed" -> "已完成";
             default          -> s;
-        };
-    }
-
-    /** 场上位置（字典 apms_position：GK/DF/MF/FW） */
-    private String positionText(String p) {
-        if (p == null || p.isEmpty()) return "—";
-        return switch (p) {
-            case "GK" -> "门将";
-            case "DF" -> "后卫";
-            case "MF" -> "中场";
-            case "FW" -> "前锋";
-            default   -> p;
         };
     }
 

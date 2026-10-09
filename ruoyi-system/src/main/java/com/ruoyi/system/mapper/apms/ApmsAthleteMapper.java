@@ -30,16 +30,13 @@ public interface ApmsAthleteMapper {
     /** 删除（逻辑删除：改 status） */
     int deleteApmsAthleteByAthleteIds(Long[] athleteIds);
 
-    /** 校验球衣号码唯一性（同队内） */
-    ApmsAthlete checkJerseyNoUnique(Long teamId, String jerseyNo, Long excludeAthleteId);
-
     /** 全量有效部门（赛季晋升：用于按名称识别 U 档梯队） */
     List<SysDept> selectAllValidDepts();
 
     /** 全量在训（status='0'）运动员（赛季晋升：含挂在非 U 档/失效部门的队员） */
     List<ApmsAthlete> selectAllActiveAthletes();
 
-    /** 赛季晋升专用：仅更新主队伍（不走球衣号唯一校验） */
+    /** 赛季晋升专用：仅更新主队伍 */
     int updatePrimaryTeam(@Param("athleteId") Long athleteId,
                           @Param("teamId") Long teamId,
                           @Param("updateBy") String updateBy);

@@ -34,10 +34,19 @@ function effectiveAge(row) {
   return null
 }
 
-/** 读取时装饰：按 birthday 回填实时年龄（蓝本行已有 age，同值覆盖无副作用） */
+/** 读取时装饰：回填实时年龄 + 当前在组小组名（顿号聚合，与后端 GROUP_CONCAT 同口径） */
+function currentGroupsOf(athleteId) {
+  return getDb().athleteGroups
+    .filter(g => String(g.athleteId) === String(athleteId)
+      && String(g.status) === '0' && !g.leaveDate)
+    .sort((a, b) => String(a.deptId).localeCompare(String(b.deptId)) || a.id - b.id)
+    .map(g => g.deptName)
+    .filter(Boolean)
+    .join('、')
+}
 function decorate(row) {
   if (!row) return row
-  return { ...row, age: effectiveAge(row) }
+  return { ...row, age: effectiveAge(row), currentGroups: currentGroupsOf(row.athleteId) || null }
 }
 
 // 与后端列表同口径：年龄段 13~18 = age+1 收敛（纯数字，展示层再拼「岁」）
@@ -71,8 +80,6 @@ function filterAthletes(query, { includeRtpStatus = true } = {}) {
       && String(r.primaryTeamId ?? '') !== String(query.primaryTeamId)) return false
     if (query.gender !== undefined && query.gender !== ''
       && String(r.gender ?? '') !== String(query.gender)) return false
-    if (query.position !== undefined && query.position !== ''
-      && String(r.position ?? '') !== String(query.position)) return false
     if (includeRtpStatus && query.rtpStatus !== undefined && query.rtpStatus !== ''
       && String(r.rtpStatus ?? '') !== String(query.rtpStatus)) return false
     if (groups.length) {
@@ -144,7 +151,7 @@ function buildPromotionPlan(ctx) {
   db.athletes.filter(a => String(a.status) === '0').forEach(a => {
     const item = {
       athleteId: a.athleteId, name: a.name, gender: a.gender, birthday: a.birthday,
-      jerseyNo: a.jerseyNo, fromTeamId: a.primaryTeamId, fromTeamName: a.teamName
+      fromTeamId: a.primaryTeamId, fromTeamName: a.teamName
     }
     const idx = teamIndex.get(Number(a.primaryTeamId))
     if (!idx) {
@@ -242,18 +249,6 @@ export const athleteHandlers = [
     }
     if (counts.none > 0) data.push({ cnt: counts.none })
     return listData(data)
-  }),
-
-  route('get', '/apms/athlete/check_jersey_no', (ctx) => {
-    const { jerseyNo, primaryTeamId, athleteId } = ctx.query
-    const dup = getDb().athletes.find(a =>
-      String(a.jerseyNo) === String(jerseyNo)
-      && String(a.primaryTeamId) === String(primaryTeamId)
-      && String(a.athleteId) !== String(athleteId)
-    )
-    return dup
-      ? { code: 601, msg: `球衣号 ${jerseyNo} 在该队伍已存在` }
-      : ok()
   }),
 
   route('get', '/apms/athlete/list', (ctx) => {

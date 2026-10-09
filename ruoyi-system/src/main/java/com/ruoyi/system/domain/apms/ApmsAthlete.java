@@ -73,6 +73,9 @@ public class ApmsAthlete extends BaseEntity {
     /** 最近一次体态测量-体脂率 %（关联查询，非数据库字段） */
     private BigDecimal bodyFatRate;
 
+    /** 当前在组小组名称（关联聚合，顿号分隔，可能多个；无在组记录为 null，非数据库字段） */
+    private String currentGroups;
+
     /** 年龄组筛选（U13~U18 去掉 U 的整数列表，如 [13,15]；仅查询入参） */
     private List<Integer> ageGroups;
 
@@ -114,6 +117,8 @@ public class ApmsAthlete extends BaseEntity {
     public void setWeight(BigDecimal weight) { this.weight = weight; }
     public BigDecimal getBodyFatRate() { return bodyFatRate; }
     public void setBodyFatRate(BigDecimal bodyFatRate) { this.bodyFatRate = bodyFatRate; }
+    public String getCurrentGroups() { return currentGroups; }
+    public void setCurrentGroups(String currentGroups) { this.currentGroups = currentGroups; }
     public List<Integer> getAgeGroups() { return ageGroups; }
     public void setAgeGroups(List<Integer> ageGroups) { this.ageGroups = ageGroups; }
 }

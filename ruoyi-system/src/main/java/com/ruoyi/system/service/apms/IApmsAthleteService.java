@@ -27,7 +27,4 @@ public interface IApmsAthleteService {
 
     /** 逻辑删除（改 status=1） */
     int deleteApmsAthleteByAthleteIds(Long[] athleteIds);
-
-    /** 校验球衣号码同队唯一性 */
-    boolean checkJerseyNoUnique(ApmsAthlete apmsAthlete);
 }

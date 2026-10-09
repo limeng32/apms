@@ -26,7 +26,6 @@ public class ApmsPromotionItem {
     private Date birthday;
     /** cut-off 日当天的周岁 */
     private Integer ageAtCutoff;
-    private String jerseyNo;
 
     private Long fromTeamId;
     private String fromTeamName;
@@ -41,9 +40,6 @@ public class ApmsPromotionItem {
     private String action;
     private String reason;
 
-    /** 晋升后球衣号与目标队现有成员冲突预警（不拦截） */
-    private boolean jerseyConflict;
-
     public Long getAthleteId() { return athleteId; }
     public void setAthleteId(Long athleteId) { this.athleteId = athleteId; }
     public String getName() { return name; }
@@ -54,8 +50,6 @@ public class ApmsPromotionItem {
     public void setBirthday(Date birthday) { this.birthday = birthday; }
     public Integer getAgeAtCutoff() { return ageAtCutoff; }
     public void setAgeAtCutoff(Integer ageAtCutoff) { this.ageAtCutoff = ageAtCutoff; }
-    public String getJerseyNo() { return jerseyNo; }
-    public void setJerseyNo(String jerseyNo) { this.jerseyNo = jerseyNo; }
     public Long getFromTeamId() { return fromTeamId; }
     public void setFromTeamId(Long fromTeamId) { this.fromTeamId = fromTeamId; }
     public String getFromTeamName() { return fromTeamName; }
@@ -72,6 +66,4 @@ public class ApmsPromotionItem {
     public void setAction(String action) { this.action = action; }
     public String getReason() { return reason; }
     public void setReason(String reason) { this.reason = reason; }
-    public boolean isJerseyConflict() { return jerseyConflict; }
-    public void setJerseyConflict(boolean jerseyConflict) { this.jerseyConflict = jerseyConflict; }
 }

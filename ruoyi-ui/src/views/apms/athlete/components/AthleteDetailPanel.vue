@@ -15,7 +15,6 @@
           </span>
           <span class="rk-status-badge" :class="'tone-' + athleteStatusTone">{{ statusLabel(athlete.status) }}</span>
           <GenderBadge :gender="athlete.gender" :size="20"/>
-          <span v-if="athlete.position" class="rk-soft-chip">{{ positionLabel(athlete.position) }}</span>
         </div>
         <div class="rk-profile-meta">
           <span>{{ athlete.teamName || '未分配队伍' }}</span>
@@ -493,7 +492,7 @@ const emit = defineEmits(['back', 'changed'])
 
 const { proxy } = getCurrentInstance()
 const router = useRouter()
-const { apms_position, apms_athlete_status } = useDict('apms_position', 'apms_athlete_status')
+const { apms_athlete_status } = useDict('apms_athlete_status')
 
 const loading = ref(true)
 const activeTab = ref('group')
@@ -544,9 +543,7 @@ function scoreGradeLabel(v) {
 function formatDT(t) { return t ? String(t).substring(0, 16) : '—' }
 
 // 字典辅助（useDict 返回项字段为 label/value/elTagType）
-const positionOptions = computed(() => apms_position.value || [])
 const statusOptions = computed(() => apms_athlete_status.value || [])
-function positionLabel(val) { return (positionOptions.value.find(d => d.value === val) || {}).label || val }
 function statusLabel(val) { return (statusOptions.value.find(d => d.value === val) || {}).label || (val || '—') }
 
 /* 字典 elTagType → rk 徽章色调 */

@@ -26,6 +26,7 @@
         <result property="height"        column="height"/>
         <result property="weight"        column="weight"/>
         <result property="bodyFatRate"   column="body_fat_rate"/>
+        <result property="currentGroups" column="current_groups"/>
     </resultMap>
 
     <sql id="selectApmsAthleteVo">
@@ -40,7 +41,14 @@
                 ELSE TIMESTAMPDIFF(YEAR, a.birthday, CURDATE())
             END AS age,
             r.status AS rtp_status,
-            bm.height, bm.weight, bm.body_fat_rate
+            bm.height, bm.weight, bm.body_fat_rate,
+            <!-- 当前在组小组名（可能多个，训练/科研/恢复小组；顿号分隔，无在组记录为 NULL） -->
+            (SELECT GROUP_CONCAT(gd.dept_name ORDER BY gd.dept_type, g.id SEPARATOR '、')
+               FROM apms_athlete_group g
+               JOIN sys_dept gd ON gd.dept_id = g.dept_id
+              WHERE g.athlete_id = a.athlete_id
+                AND g.leave_date IS NULL
+                AND g.status = '0') AS current_groups
         FROM apms_athlete a
         LEFT JOIN sys_dept d ON a.primary_team_id = d.dept_id
         <!-- 当前 RTP 状态（一运动员一记录；无记录=未评估） -->
@@ -65,12 +73,6 @@
         </if>
         <if test="primaryTeamId != null">
             AND a.primary_team_id = #{primaryTeamId}
-        </if>
-        <if test="jerseyNo != null and jerseyNo != ''">
-            AND a.jersey_no = #{jerseyNo}
-        </if>
-        <if test="position != null and position != ''">
-            AND a.position = #{position}
         </if>
         <if test="status != null and status != ''">
             AND a.status = #{status}
@@ -176,16 +178,6 @@
         SELECT COUNT(1) FROM apms_athlete
          WHERE primary_team_id = #{deptId}
            AND status = '0'
-    </select>
-
-    <!-- 校验同队球衣号码唯一性 -->
-    <select id="checkJerseyNoUnique" resultMap="ApmsAthleteResult">
-        <include refid="selectApmsAthleteVo"/>
-        WHERE a.primary_team_id = #{teamId}
-          AND a.jersey_no = #{jerseyNo}
-          AND a.athlete_id != #{excludeAthleteId}
-          AND a.status != '2'
-        LIMIT 1
     </select>
 
     <!-- 赛季晋升：全量有效部门（不走数据权限，保证梯队链完整） -->

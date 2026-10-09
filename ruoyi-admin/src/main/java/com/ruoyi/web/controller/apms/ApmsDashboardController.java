@@ -148,7 +148,6 @@ public class ApmsDashboardController extends BaseController {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("athleteId", r.getAthleteId());
             row.put("athleteName", a != null ? a.getName() : "—");
-            row.put("jerseyNo", a != null ? a.getJerseyNo() : null);
             row.put("position", a != null ? a.getPosition() : null);
             row.put("status", "yellow".equals(s) || "y".equals(s) || "1".equals(s) ? "yellow" : "red");
             rtpAttention.add(row);
@@ -161,7 +160,6 @@ public class ApmsDashboardController extends BaseController {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("athleteId", a.getAthleteId());
             row.put("athleteName", a.getName());
-            row.put("jerseyNo", a.getJerseyNo());
             row.put("position", a.getPosition());
             row.put("status", "none");
             rtpAttention.add(row);

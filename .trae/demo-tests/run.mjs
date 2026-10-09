@@ -400,7 +400,7 @@ test('H0', '蓝本数据已入库（15 队员/5 指标/7 任务/4 组合成分/1
   assert(db().athletes.some(a => a.athleteId === 1001 && a.name === '张志远'), '蓝本队员存在')
 })
 
-test('H1', '花名册：分页/模糊/队别/位置/年龄组筛选 + rtpSummary + 球衣号查重', async () => {
+test('H1', '花名册：分页/模糊/队别/年龄组筛选 + 当前小组聚合 + rtpSummary', async () => {
   reset()
   const all = call('get', '/apms/athlete/list', { pageNum: '1', pageSize: '10' })
   expect200(all, 'athlete list'); assertEq(all.total, 15); assertEq(all.rows.length, 10)
@@ -410,8 +410,9 @@ test('H1', '花名册：分页/模糊/队别/位置/年龄组筛选 + rtpSummary
   assert(byName.rows.every(r => r.name.includes('张')), '模糊筛选')
   const u18 = call('get', '/apms/athlete/list', { primaryTeamId: '201' })
   assert(u18.rows.length >= 1 && u18.rows.every(r => String(r.primaryTeamId) === '201'), '队别筛选')
-  const fw = call('get', '/apms/athlete/list', { position: 'MF' })
-  assert(fw.rows.every(r => r.position === 'MF'), '位置筛选')
+  // 列表行带当前在组小组名（1001 当前在 203 速度专项组；205 力量组已离组不计入）
+  const a1001 = call('get', '/apms/athlete/list', { pageSize: '50' }).rows.find(r => r.athleteId === 1001)
+  assert(a1001 && a1001.currentGroups === '速度专项组', '当前在组小组聚合（已离组不计）：' + (a1001 && a1001.currentGroups))
   const ageGrp = call('get', '/apms/athlete/list', { ageGroups: ['17'] })
   assert(ageGrp.rows.every(r => Number(r.age) + 1 === 17), '年龄组多选（age+1 口径）')
   // 真实 tansParams 把数组序列化为 ageGroups[0]=17&ageGroups[1]=18，必须端到端还原
@@ -432,15 +433,11 @@ test('H1', '花名册：分页/模糊/队别/位置/年龄组筛选 + rtpSummary
   const summary = call('get', '/apms/athlete/rtpSummary')
   const summed = summary.data.reduce((s, x) => s + x.cnt, 0)
   assertEq(summed, 15, 'rtpSummary 覆盖全部在队队员（含未评估无 status 项）')
-  const dup = call('get', '/apms/athlete/check_jersey_no', { jerseyNo: '10', primaryTeamId: '201' })
-  assertEq(dup.code, 601, '同队同号应判重')
-  const okUnique = call('get', '/apms/athlete/check_jersey_no', { jerseyNo: '77', primaryTeamId: '201' })
-  assertEq(okUnique.code, 200)
 })
 
 test('H2', '花名册 CRUD 内存生效：增（负 ID）→ 改 → 逻辑删 → reset 还原', async () => {
   reset()
-  const add = call('post', '/apms/athlete', {}, { name: '测试小将', gender: 'M', primaryTeamId: 201, jerseyNo: 77, birthday: '2010-06-01' })
+  const add = call('post', '/apms/athlete', {}, { name: '测试小将', gender: 'M', primaryTeamId: 201, birthday: '2010-06-01' })
   expect200(add, 'add athlete')
   assertEq(db().athletes.length, 16)
   const created = db().athletes[0]
@@ -457,8 +454,8 @@ test('H2', '花名册 CRUD 内存生效：增（负 ID）→ 改 → 逻辑删 �
   const grpFilter = call('get', '/apms/athlete/list', { pageSize: '50', ageGroups: ['17'] })
   assert(grpFilter.rows.some(r => r.athleteId === created.athleteId), '新队员可被 U17 年龄组筛中')
   const detail2 = detailNew
-  const upd = call('put', '/apms/athlete', {}, { athleteId: created.athleteId, position: 'GK' })
-  expect200(upd); assertEq(db().athletes[0].position, 'GK')
+  const upd = call('put', '/apms/athlete', {}, { athleteId: created.athleteId, phone: '13900000000' })
+  expect200(upd); assertEq(db().athletes[0].phone, '13900000000')
   // 编辑出生日期后年龄/年龄段必须按新生日重算（蓝本 1001：2009-03-15 原 17 岁/U18）
   const editBd = call('put', '/apms/athlete', {}, { athleteId: 1001, birthday: '2012-09-01' })
   expect200(editBd)

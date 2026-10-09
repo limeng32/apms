@@ -30,7 +30,6 @@
     <resultMap id="RtpAttentionMap" type="com.ruoyi.system.domain.apms.dto.RtpAttentionVO">
         <result property="athleteId"       column="athlete_id"/>
         <result property="athleteName"     column="athlete_name"/>
-        <result property="jerseyNo"        column="jersey_no"/>
         <result property="position"       column="position"/>
         <result property="status"         column="status"/>
         <result property="reason"         column="reason"/>
@@ -82,7 +81,6 @@
         SELECT
             r.athlete_id      AS athlete_id,
             a.name            AS athlete_name,
-            a.jersey_no       AS jersey_no,
             a.position        AS position,
             r.status          AS status,
             r.reason          AS reason,

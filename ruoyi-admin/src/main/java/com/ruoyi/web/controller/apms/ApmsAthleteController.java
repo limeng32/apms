@@ -96,15 +96,6 @@ public class ApmsAthleteController extends BaseController {
     }
 
     /**
-     * 校验球衣号码同队唯一性
-     */
-    @PreAuthorize("@ss.hasPermi('apms:athlete:query')")
-    @GetMapping("/check_jersey_no")
-    public AjaxResult checkJerseyNo(ApmsAthlete apmsAthlete) {
-        return AjaxResult.success(athleteService.checkJerseyNoUnique(apmsAthlete));
-    }
-
-    /**
      * 赛季晋升：预览名单（不落库）
      */
     @PreAuthorize("@ss.hasPermi('apms:athlete:list')")

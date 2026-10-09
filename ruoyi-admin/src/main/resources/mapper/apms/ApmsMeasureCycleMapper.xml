@@ -103,7 +103,7 @@
         LEFT JOIN apms_athlete a ON m.athlete_id = a.athlete_id
         LEFT JOIN sys_dept d ON a.primary_team_id = d.dept_id
         WHERE m.cycle_id = #{cycleId}
-        ORDER BY d.dept_name, a.jersey_no, a.athlete_id
+        ORDER BY d.dept_name, a.athlete_id
     </select>
 
     <select id="selectByCycleAndAthlete" resultMap="MeasureResult">

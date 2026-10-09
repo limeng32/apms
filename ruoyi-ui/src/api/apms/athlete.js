@@ -52,15 +52,6 @@ export function delAthlete(athleteIds) {
   })
 }
 
-// 校验球衣号码同队唯一性
-export function checkJerseyNoUnique(query) {
-  return request({
-    url: '/apms/athlete/check_jersey_no',
-    method: 'get',
-    params: query
-  })
-}
-
 // 赛季晋升：预览名单（不落库）
 export function previewPromotion(data) {
   return request({

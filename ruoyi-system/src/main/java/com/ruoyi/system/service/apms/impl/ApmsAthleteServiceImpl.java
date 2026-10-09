@@ -51,10 +51,6 @@ public class ApmsAthleteServiceImpl implements IApmsAthleteService {
         if (isActiveStatus(apmsAthlete.getStatus())) {
             validateActiveTeam(apmsAthlete.getPrimaryTeamId());
         }
-        // 校验球衣号码同队唯一
-        if (!checkJerseyNoUnique(apmsAthlete)) {
-            throw new ServiceException(String.format("球衣号码 %s 在该队伍已存在", apmsAthlete.getJerseyNo()));
-        }
         return athleteMapper.insertApmsAthlete(apmsAthlete);
     }
 
@@ -63,7 +59,6 @@ public class ApmsAthleteServiceImpl implements IApmsAthleteService {
     public int updateApmsAthlete(ApmsAthlete apmsAthlete) {
         boolean leaving = "1".equals(apmsAthlete.getStatus()) || "2".equals(apmsAthlete.getStatus());
         if (leaving) {
-            // 离队/退役无需校验球衣号（队伍归属即将解除）
             int rows = athleteMapper.updateApmsAthlete(apmsAthlete);
             // 主队伍置空 + 关闭全部在组小组，须与主表更新同一事务
             detachFromTeams(apmsAthlete.getAthleteId(), apmsAthlete.getStatus());
@@ -71,9 +66,6 @@ public class ApmsAthleteServiceImpl implements IApmsAthleteService {
         }
         // 在队（status=0/空）：必须挂靠有效队伍，防止直调 API 造出 status=0 但无队伍的幽灵队员
         validateActiveTeam(apmsAthlete.getPrimaryTeamId());
-        if (!checkJerseyNoUnique(apmsAthlete)) {
-            throw new ServiceException(String.format("球衣号码 %s 在该队伍已存在", apmsAthlete.getJerseyNo()));
-        }
         return athleteMapper.updateApmsAthlete(apmsAthlete);
     }
 
@@ -121,17 +113,5 @@ public class ApmsAthleteServiceImpl implements IApmsAthleteService {
         if ("1".equals(dept.getStatus())) {
             throw new ServiceException("所选主属队伍已停用，请先启用或更换队伍");
         }
-    }
-
-    @Override
-    public boolean checkJerseyNoUnique(ApmsAthlete apmsAthlete) {
-        if (apmsAthlete.getJerseyNo() == null || apmsAthlete.getJerseyNo().isEmpty()) {
-            return true; // 球衣号非必填，空值不做唯一性校验
-        }
-        ApmsAthlete existing = athleteMapper.checkJerseyNoUnique(
-                apmsAthlete.getPrimaryTeamId(),
-                apmsAthlete.getJerseyNo(),
-                apmsAthlete.getAthleteId() == null ? -1L : apmsAthlete.getAthleteId());
-        return existing == null;
     }
 }

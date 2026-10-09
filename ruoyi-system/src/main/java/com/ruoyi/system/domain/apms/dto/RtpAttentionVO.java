@@ -13,7 +13,6 @@ public class RtpAttentionVO implements Serializable {
 
     private Long athleteId;
     private String athleteName;
-    private String jerseyNo;
     private String position;
     private String status;
     private String reason;
@@ -24,8 +23,6 @@ public class RtpAttentionVO implements Serializable {
     public void setAthleteId(Long athleteId) { this.athleteId = athleteId; }
     public String getAthleteName() { return athleteName; }
     public void setAthleteName(String athleteName) { this.athleteName = athleteName; }
-    public String getJerseyNo() { return jerseyNo; }
-    public void setJerseyNo(String jerseyNo) { this.jerseyNo = jerseyNo; }
     public String getPosition() { return position; }
     public void setPosition(String position) { this.position = position; }
     public String getStatus() { return status; }
