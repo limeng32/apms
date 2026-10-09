@@ -1,37 +1,79 @@
 <template>
-  <div class="app-container">
-    <div class="rk-dash-page rk-page">
+  <div class="app-container" :class="{ 'is-bigscreen': bigScreen }">
+    <div class="rk-dash-page rk-page db-page">
+
+      <!-- 大屏模式球场线纹理 -->
+      <div v-if="bigScreen" class="db-pitch" aria-hidden="true"></div>
 
       <!-- 页头 -->
-      <div class="rk-header">
+      <div class="rk-header db-header">
         <div>
-          <h1 class="rk-title">数据驾驶舱</h1>
-          <p class="rk-subtitle">组合评分 · PHV 发育 · 测试任务全队汇总</p>
+          <h1 class="rk-title">{{ bigScreen ? '数据指挥屏' : '数据驾驶舱' }}</h1>
+          <p class="rk-subtitle">
+            {{ bigScreen ? '青训中心 · 运动表现数据大屏' : '任务进度 · 参训风险 · 伤病与发育监控 · 组合评分分析' }}
+          </p>
         </div>
-        <div class="rk-header-actions">
-          <span class="db-scope-hint">DataScope 数据权限已隔离</span>
+        <div class="rk-header-actions db-header-actions">
+          <span v-if="bigScreen" class="db-clock rk-mono">{{ clock }}</span>
+          <button type="button" class="db-big-btn" :class="{ 'is-on': bigScreen }" @click="toggleBig">
+            <el-icon><Monitor v-if="!bigScreen" /><Sunny v-else /></el-icon>
+            {{ bigScreen ? '退出大屏' : '大屏模式' }}
+          </button>
         </div>
       </div>
 
-      <!-- KPI 卡带 -->
-      <div class="rk-kpi-grid">
-        <div class="rk-kpi-card" v-for="k in kpiCards" :key="k.label">
+      <!-- ===== 门面 KPI ×5（count-up） ===== -->
+      <div class="db-kpi-row">
+        <div class="rk-kpi-card db-kpi" v-for="(k, i) in kpiCards" :key="k.label"
+             :style="{ animationDelay: i * 70 + 'ms' }">
           <span class="rk-kpi-accent" :style="{ background: k.accent }"></span>
           <div class="rk-kpi-label">{{ k.label }}</div>
-          <div class="rk-kpi-value">{{ k.value }}<span class="rk-kpi-unit" v-if="k.unit">{{ k.unit }}</span></div>
+          <div class="rk-kpi-value">{{ k.display }}<span class="rk-kpi-unit" v-if="k.unit">{{ k.unit }}</span></div>
           <span class="rk-kpi-chip" :class="k.chipTone">{{ k.chip }}</span>
         </div>
       </div>
 
-      <!-- 队伍分布 -->
-      <div class="rk-chips-bar" v-if="teamDistKeys.length">
-        <span class="rk-chips-bar-label">队伍分布</span>
-        <span class="rk-soft-chip" v-for="k in teamDistKeys" :key="k">
-          {{ k }} · {{ teamDistribution[k] }} 人
-        </span>
+      <!-- ===== 门面行2：风险分布 + 本周任务 ===== -->
+      <div class="db-row">
+        <div class="db-col-5">
+          <DashRtpDonut :dist="rtpDistribution" :big="bigScreen" :enter-delay="40"/>
+        </div>
+        <div class="db-col-7">
+          <DashTaskProgress :block="activeTasks" :big="bigScreen" :enter-delay="110"/>
+        </div>
       </div>
 
-      <!-- 图表区 2×2 -->
+      <!-- ===== 门面行3：伤病 + PHV + 健康预警 ===== -->
+      <div class="db-row">
+        <div class="db-col-4">
+          <DashInjurySummary :data="injurySummary" :big="bigScreen" :enter-delay="180"/>
+        </div>
+        <div class="db-col-4">
+          <DashPhvBands :block="phvBands" :big="bigScreen" :enter-delay="250"/>
+        </div>
+        <div class="db-col-4">
+          <DashHealthAlert :data="healthAlerts" :big="bigScreen" :enter-delay="320"/>
+        </div>
+      </div>
+
+      <!-- ===== 详细分析（可折叠；大屏态默认收起） ===== -->
+      <div class="db-detail-bar">
+        <button type="button" class="db-detail-toggle" @click="showDetail = !showDetail">
+          <el-icon class="db-toggle-ic" :class="{ 'is-open': showDetail }"><ArrowDown /></el-icon>
+          详细分析（组合评分 / PHV 散点 / 指标雷达 / 任务完成率）
+        </button>
+      </div>
+
+      <div v-show="showDetail" class="db-detail">
+        <!-- 队伍分布 -->
+        <div class="rk-chips-bar" v-if="teamDistKeys.length">
+          <span class="rk-chips-bar-label">队伍分布</span>
+          <span class="rk-soft-chip" v-for="k in teamDistKeys" :key="k">
+            {{ k }} · {{ teamDistribution[k] }} 人
+          </span>
+        </div>
+
+        <!-- 图表区 2×2 -->
       <div class="rk-chart-grid">
 
         <!-- 组合分排名 -->
@@ -139,6 +181,7 @@
           </table>
         </div>
       </div>
+      </div>
     </div>
   </div>
 </template>
@@ -147,6 +190,52 @@
 import { getOverview } from '@/api/apms/dashboard'
 import * as echarts from 'echarts'
 import { onBeforeUnmount } from 'vue'
+import { Monitor, Sunny, ArrowDown } from '@element-plus/icons-vue'
+import DashRtpDonut from './components/DashRtpDonut.vue'
+import DashTaskProgress from './components/DashTaskProgress.vue'
+import DashInjurySummary from './components/DashInjurySummary.vue'
+import DashPhvBands from './components/DashPhvBands.vue'
+import DashHealthAlert from './components/DashHealthAlert.vue'
+import { useCountUp } from './components/useCountUp'
+
+/* ===== 大屏模式（localStorage 记忆）+ 实时时钟 ===== */
+const bigScreen = ref(localStorage.getItem('apms-dash-bigscreen') === '1')
+const showDetail = ref(!bigScreen.value)
+const clock = ref('')
+let clockTimer = null
+function fmtClock(d) {
+  const p = (n) => String(n).padStart(2, '0')
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+function startClock() {
+  clock.value = fmtClock(new Date())
+  clockTimer = setInterval(() => { clock.value = fmtClock(new Date()) }, 1000)
+}
+function stopClock() {
+  if (clockTimer) { clearInterval(clockTimer); clockTimer = null }
+}
+function toggleBig() {
+  bigScreen.value = !bigScreen.value
+  localStorage.setItem('apms-dash-bigscreen', bigScreen.value ? '1' : '0')
+  if (bigScreen.value) {
+    showDetail.value = false
+    startClock()
+  } else {
+    showDetail.value = true
+    stopClock()
+    // 详情区由隐藏变可见后，下一帧让所有图表按新尺寸重绘
+    nextTick(() => setTimeout(handleResize, 60))
+  }
+}
+if (bigScreen.value) startClock()
+onBeforeUnmount(stopClock)
+
+/* ===== 门面区数据 ===== */
+const rtpDistribution = ref({ green: 0, yellow: 0, red: 0, none: 0, total: 0, byTeam: [] })
+const activeTasks = ref({ list: [], avgProgress: 0 })
+const injurySummary = ref({ active: 0, newThisMonth: 0, recovered: 0, sites: [], recent: [] })
+const phvBands = ref({ bands: [], windowCount: 0, total: 0 })
+const healthAlerts = ref({ total: 0, warning: 0, attention: 0, infoHealth: 0, list: [] })
 
 const rankingRef = ref(null)
 const phvRef = ref(null)
@@ -199,21 +288,25 @@ const radarOptions = computed(function () {
   })
 })
 
-// KPI 卡配置
+// KPI 卡（门面前 5 指标；数字 count-up）
+const kpiAthletesText = useCountUp(computed(() => Number(rtpDistribution.value.total || 0)))
+const kpiTaskPctText = useCountUp(computed(() => Number(activeTasks.value.avgProgress || 0)))
+const kpiInjuryText = useCountUp(computed(() => Number(injurySummary.value.active || 0)))
+const kpiRedText = useCountUp(computed(() => Number(healthAlerts.value.warning || 0)))
+const kpiAmberText = useCountUp(computed(() => Number(healthAlerts.value.attention || 0)))
+
 const kpiCards = computed(function () {
   return [
-    { label: '覆盖队员数', value: summary.totalAthletes || 0, unit: '人', accent: C.brand,
-      chip: (summary.totalComboScores || 0) + ' 人有组合评分', chipTone: 'tone-info' },
-    { label: '队伍数', value: teamDistKeys.value.length, unit: '支', accent: C.cyan,
-      chip: '按 DataScope 隔离', chipTone: '' },
-    { label: '平均组合分', value: Number(summary.avgComboScore || 0).toFixed(3), accent: C.indigo,
-      chip: 'sigma 归一化', chipTone: '' },
-    { label: '高表现（≥0.5）', value: summary.highPerformer || 0, unit: '人', accent: C.ok,
-      chip: '领先组', chipTone: 'tone-ok' },
-    { label: '需关注（≤-0.5）', value: summary.needAttention || 0, unit: '人', accent: C.risk,
-      chip: '短板组', chipTone: 'tone-risk' },
-    { label: 'PHV 记录', value: summary.phvRecords || 0, unit: '次', accent: C.violet,
-      chip: 'Mirwald v2014.1', chipTone: '' }
+    { label: '在训运动员', value: rtpDistribution.value.total || 0, display: kpiAthletesText.value, unit: '人',
+      accent: C.brand, chip: '含未评估 ' + (rtpDistribution.value.none || 0) + ' 人', chipTone: 'tone-info' },
+    { label: '本周任务完成率', value: activeTasks.value.avgProgress || 0, display: kpiTaskPctText.value, unit: '%',
+      accent: C.cyan, chip: '活跃任务 ' + (activeTasks.value.list?.length || 0) + ' 项', chipTone: '' },
+    { label: '活跃伤病', value: injurySummary.value.active || 0, display: kpiInjuryText.value, unit: '例',
+      accent: C.warn, chip: '本月新发 ' + (injurySummary.value.newThisMonth || 0) + ' 例', chipTone: 'tone-warn' },
+    { label: '建议停训（红）', value: healthAlerts.value.warning || 0, display: kpiRedText.value, unit: '人',
+      accent: C.risk, chip: healthAlerts.value.warning ? '需立即处置' : '暂无红警', chipTone: 'tone-risk' },
+    { label: '建议限制（黄）', value: healthAlerts.value.attention || 0, display: kpiAmberText.value, unit: '人',
+      accent: '#D97706', chip: '当日 ACTIVE 预警', chipTone: 'tone-warn' }
   ]
 })
 
@@ -229,11 +322,19 @@ function loadData() {
     Object.keys(teamDistribution).forEach(function (k) { delete teamDistribution[k] })
     Object.assign(teamDistribution, d.teamDistribution || {})
 
+    // 门面区 5 个数据块
+    rtpDistribution.value = d.rtpDistribution || rtpDistribution.value
+    activeTasks.value = d.activeTasks || activeTasks.value
+    injurySummary.value = d.injurySummary || injurySummary.value
+    phvBands.value = d.phvBands || phvBands.value
+    healthAlerts.value = d.healthAlerts || healthAlerts.value
+
     // 默认雷达选第一个
     if (indicatorRadar.value.length && radarAthleteId.value == null) {
       radarAthleteId.value = indicatorRadar.value[0].athleteId
     }
 
+    // 大屏态详情区隐藏：图表仍初始化（ResizeObserver 在展开时自动 resize）
     nextTick(function () { initCharts() })
   })
 }
@@ -438,15 +539,125 @@ loadData()
 <style lang="scss" scoped>
 @use "@/assets/styles/roster-kit.scss" as *;
 
-.db-scope-hint {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 10px;
-  font-size: 12px;
-  color: $rk-text-3;
+/* ===== 门面区栅格 ===== */
+.db-page { position: relative; transition: background-color .3s ease; }
+.db-page > * { position: relative; z-index: 1; }
+.db-pitch {
+  position: absolute; inset: 0; z-index: 0;
+  pointer-events: none;
+  opacity: .05;
+  background-image: url('/pitch-lines.svg');
+  background-size: 480px;
+}
+
+.db-header-actions { gap: 12px; }
+.db-clock {
+  font-size: 20px; font-weight: 600;
+  color: #22d3ee;
+  text-shadow: 0 0 16px rgba(34, 211, 238, .45);
+  letter-spacing: 1px;
+}
+.db-big-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 14px;
+  font-size: 12px; font-weight: 600;
+  color: $rk-text-2;
   background: #fff;
   border: 1px solid $rk-line;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: all .15s ease;
+  &:hover { background: #f8fafc; }
+  &.is-on {
+    color: #22d3ee;
+    border-color: rgba(34, 211, 238, .45);
+    background: rgba(34, 211, 238, .08);
+    box-shadow: 0 0 18px rgba(34, 211, 238, .18);
+  }
+}
+
+.db-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.db-kpi {
+  opacity: 0;
+  animation: db-fade-up .5s ease-out forwards;
+}
+@keyframes db-fade-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.db-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  margin-bottom: 14px;
+}
+@media (min-width: 1280px) {
+  .db-kpi-row { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .db-row { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  .db-col-5 { grid-column: span 5; }
+  .db-col-7 { grid-column: span 7; }
+  .db-col-4 { grid-column: span 4; }
+}
+@media (min-width: 768px) and (max-width: 1279px) {
+  .db-kpi-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* 详细分析折叠条 */
+.db-detail-bar {
+  position: relative; z-index: 1;
+  display: flex;
+  margin: 2px 0 14px;
+}
+.db-detail-toggle {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 14px;
+  font-size: 13px; font-weight: 600;
+  color: $rk-brand-600;
+  background: $rk-brand-50;
+  border: 1px solid rgba(37, 99, 235, .15);
   border-radius: 999px;
+  cursor: pointer;
+  &:hover { background: rgba(37, 99, 235, .1); }
+}
+.db-toggle-ic { transition: transform .25s ease; }
+.db-toggle-ic.is-open { transform: rotate(180deg); }
+.db-detail { animation: db-fade-up .35s ease-out; }
+
+/* ===== 大屏深色模式 ===== */
+.app-container.is-bigscreen { background: #0a1120; }
+.db-page.is-bigscreen {
+  background: #0a1120;
+  .rk-title { color: #fff; }
+  .rk-subtitle { color: rgba(255, 255, 255, .5); }
+}
+.is-bigscreen .rk-kpi-card {
+  background: #111b31;
+  border-color: rgba(148, 163, 191, .18);
+  box-shadow: 0 0 22px rgba(37, 99, 235, .07);
+}
+.is-bigscreen .rk-kpi-label { color: rgba(255, 255, 255, .55); }
+.is-bigscreen .rk-kpi-value { color: #fff; }
+.is-bigscreen .db-big-btn {
+  background: rgba(255, 255, 255, .05);
+  border-color: rgba(148, 163, 191, .3);
+  color: rgba(255, 255, 255, .75);
+  &:hover { background: rgba(255, 255, 255, .09); }
+}
+.is-bigscreen .db-detail-toggle {
+  color: #22d3ee;
+  background: rgba(34, 211, 238, .08);
+  border-color: rgba(34, 211, 238, .25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-kpi, .db-detail { animation: none; opacity: 1; }
+  .db-page { transition: none; }
 }
 
 .db-select {
