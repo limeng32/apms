@@ -35,13 +35,18 @@ for (const file of readdirSync(API_DIR).filter(f => f.endsWith('.js')).sort()) {
   let m
   while ((m = callRe.exec(code))) {
     const block = m[0]
-    const urlM = block.match(/url:\s*([^\n,}]+)/)
+    // 截到逗号或 request 块结束：允许 }（模板串含 ${...}），但不能跨行；
+    // 非贪婪保证 `'/x/' + id` 这类拼接表达式被完整捕获，不会只截到第一段引号串
+    const urlM = block.match(/url:\s*([^\n,]+?)\s*(?:,|\}\))/)
     if (!urlM) continue
     let expr = urlM[1].trim()
-    // 'literal' 或 'literal/' + id（+ '/latest'）
+    // 'literal'、`literal/${id}/...` 模板字面量，或 'literal/' + id（+ '/latest'）
     let path
     if (/^'[^']*'$/.test(expr)) {
       path = expr.slice(1, -1)
+    } else if (expr.startsWith('`') && expr.endsWith('`')) {
+      // 模板字面量：${...} 参数段统一记为 :p
+      path = expr.slice(1, -1).replace(/\$\{[^}]*\}/g, ':p')
     } else {
       const parts = expr.split('+').map(p => p.trim())
       path = parts.map(p => {

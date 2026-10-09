@@ -20,9 +20,15 @@ public interface IApmsAthleteGroupService {
     /** 按小组查询当前在组成员 */
     List<ApmsAthleteGroup> selectActiveByDeptId(Long deptId);
 
-    /** 加入小组（自动关闭之前在组记录） */
+    /**
+     * 加入小组（多组并存：不影响该运动员的其他在组记录）。
+     * Service 层校验：运动员存在且在队、目标为有效训练/科研/恢复小组、未重复加入。
+     */
     int joinGroup(Long athleteId, Long deptId, Date joinDate);
 
-    /** 离开小组 */
-    int leaveGroup(Long athleteId, Date leaveDate);
+    /**
+     * 离开指定小组（多组并存：仅关闭 athlete+deptId 这一条在组记录）。
+     * @param deptId 要离开的小组ID，必填
+     */
+    int leaveGroup(Long athleteId, Long deptId, Date leaveDate);
 }

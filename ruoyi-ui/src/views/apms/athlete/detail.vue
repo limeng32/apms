@@ -87,19 +87,17 @@
     <!-- ===== Tab 1: 小组归属 ===== -->
     <div v-show="activeTab === 'group'" class="rk-tab-panel">
       <div class="rk-toolbar">
-        <button class="rk-btn rk-btn-primary rk-btn-sm" @click="showJoinDialog = true" v-hasPermi="['apms:athlete:edit']">
+        <button class="rk-btn rk-btn-primary rk-btn-sm" @click="openJoinDialog" v-hasPermi="['apms:athlete:edit']">
           <el-icon><Plus/></el-icon>加入新小组
         </button>
-        <button v-if="currentGroup" class="rk-btn rk-btn-danger rk-btn-sm" @click="handleLeave" v-hasPermi="['apms:athlete:edit']">
-          <el-icon><Minus/></el-icon>离开当前小组
-        </button>
+        <span class="rk-toolbar-hint">一名队员可同时编入多个训练/科研/恢复小组</span>
       </div>
       <div class="rk-card">
         <div class="rk-table-scroll">
           <table class="rk-table">
             <thead>
               <tr>
-                <th>小组</th><th>类型</th><th>加入日期</th><th>离开日期</th><th>状态</th><th>操作人</th>
+                <th>小组</th><th>类型</th><th>加入日期</th><th>离开日期</th><th>状态</th><th>操作人</th><th class="text-right">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -117,6 +115,16 @@
                   </span>
                 </td>
                 <td class="rk-text-3">{{ row.createBy || '—' }}</td>
+                <td class="text-right">
+                  <button
+                    v-if="row.status === '0' && !row.leaveDate"
+                    type="button"
+                    class="rk-link ad-link-danger"
+                    @click="handleLeave(row)"
+                    v-hasPermi="['apms:athlete:edit']"
+                  >离组</button>
+                  <span v-else class="rk-dash">—</span>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -389,8 +397,8 @@
     <el-dialog title="加入小组" v-model="showJoinDialog" width="420px">
       <el-form :model="joinForm" label-width="80px">
         <el-form-item label="目标小组">
-          <el-select v-model="joinForm.deptId" placeholder="请选择" style="width: 100%">
-            <el-option v-for="d in groupDeptOptions" :key="d.deptId" :label="d.deptName" :value="d.deptId"/>
+          <el-select v-model="joinForm.deptId" :placeholder="availableGroupOptions.length ? '请选择' : '已加入全部可用小组'" style="width: 100%">
+            <el-option v-for="d in availableGroupOptions" :key="d.deptId" :label="d.deptName" :value="d.deptId"/>
           </el-select>
         </el-form-item>
         <el-form-item label="加入日期">
@@ -481,7 +489,7 @@ import GenderBadge from '@/components/GenderBadge/index.vue'
 import ComboScoreReport from '@/views/apms/comboScore/ComboScoreReport.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
 import { useDict } from '@/utils/dict'
-import { ArrowDown, ArrowLeft, Minus, Plus, Delete, Edit, RefreshLeft, DataLine, InfoFilled, CircleCheck, Warning, CircleClose } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowLeft, Plus, Delete, Edit, RefreshLeft, DataLine, InfoFilled, CircleCheck, Warning, CircleClose } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
 const route = useRoute()
@@ -504,7 +512,6 @@ const tabs = [
 // 主数据
 const athlete = ref({})
 const groupHistory = ref([])
-const currentGroup = ref(null)
 const bodyMeasures = ref([])
 const rtpStatus = ref(null)
 const rtpLogs = ref([])
@@ -555,12 +562,21 @@ function toneByListClass(val) {
 const athleteStatusTone = computed(() => toneByListClass(athlete.value.status))
 
 
-// 小组 dept 选项（dept_type 30/40/50）
+// 全部小组 dept 选项（dept_type 30/40/50）
 const groupDeptOptions = ref([])
 async function loadGroupDeptOptions() {
   const res = await listDept({ status: '0' })
   groupDeptOptions.value = (res.data || []).filter(d => ['30', '40', '50', 30, 40, 50].includes(d.deptType))
 }
+// 加入对话框只展示尚未在组的小组（多组并存，同组不可重复加入）
+const availableGroupOptions = computed(() => {
+  const joinedIds = new Set(
+    groupHistory.value
+      .filter(g => g.status === '0' && !g.leaveDate)
+      .map(g => String(g.deptId))
+  )
+  return groupDeptOptions.value.filter(d => !joinedIds.has(String(d.deptId)))
+})
 
 // 头像：全站统一，按年龄组取色
 const nameChar = computed(() => (athlete.value.name || '?').charAt(0))
@@ -628,7 +644,6 @@ async function loadAll() {
     const athletePromise = getAthlete(athleteId.value).then(r => { athlete.value = r.data || {} })
     const groupPromise = athleteGroupApi.listByAthlete(athleteId.value).then(r => {
       groupHistory.value = r.data || []
-      currentGroup.value = groupHistory.value.find(g => g.status === '0' && g.leaveDate == null) || null
     })
     const bodyPromise = bodyMeasureApi.listByAthlete(athleteId.value).then(r => { bodyMeasures.value = r.data || [] })
     const rtpStatusPromise = rtpApi.getStatus(athleteId.value).then(r => { rtpStatus.value = r.data || null })
@@ -648,9 +663,14 @@ async function loadAll() {
   }
 }
 
-// ===== 小组 =====
+// ===== 小组（多组并存：加入新组不影响其他组，离组按行指定具体小组） =====
 const showJoinDialog = ref(false)
 const joinForm = reactive({ deptId: null, joinDate: new Date().toISOString().slice(0, 10) })
+function openJoinDialog() {
+  joinForm.deptId = null
+  joinForm.joinDate = new Date().toISOString().slice(0, 10)
+  showJoinDialog.value = true
+}
 function submitJoin() {
   if (!joinForm.deptId) return proxy.$modal.msgWarning('请选择目标小组')
   athleteGroupApi.joinGroup({ athleteId: athleteId.value, deptId: joinForm.deptId, joinDate: joinForm.joinDate }).then(() => {
@@ -659,9 +679,9 @@ function submitJoin() {
     loadAll()
   })
 }
-function handleLeave() {
-  proxy.$modal.confirm('确认让 ' + athlete.value.name + ' 离开当前小组？').then(() => {
-    return athleteGroupApi.leaveGroup(athleteId.value, { leaveDate: new Date().toISOString().slice(0, 10) })
+function handleLeave(row) {
+  proxy.$modal.confirm('确认让 ' + athlete.value.name + ' 离开「' + (row.deptName || ('小组#' + row.deptId)) + '」？不影响其在其他小组的在组关系。').then(() => {
+    return athleteGroupApi.leaveGroup(athleteId.value, { deptId: row.deptId, leaveDate: new Date().toISOString().slice(0, 10) })
   }).then(() => { loadAll(); proxy.$modal.msgSuccess('已离开') }).catch(() => {})
 }
 
@@ -768,6 +788,8 @@ loadAll()
 .ad-cell-strong { font-weight: 600; color: $rk-text-1; }
 .rk-text-2 { color: $rk-text-2; }
 .rk-text-3 { color: $rk-text-3; }
+.ad-link-danger { color: $rk-risk; &:hover { color: #b91c1c; } }
+.rk-toolbar-hint { font-size: 12px; color: $rk-text-3; }
 
 /* 小组类型 chip */
 .dt-chip {

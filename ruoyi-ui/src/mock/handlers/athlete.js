@@ -209,6 +209,23 @@ export const athleteHandlers = [
         row.teamName = p.toTeamName
         stampUpdate(row)
       }
+      // 晋升脱离旧队：关闭挂在原队伍子树下的在组小组，离组日期取 cut-off 日
+      // （与后端 closeCurrentByTeamSubTree 同口径：deptId=旧队 或 ancestors 含旧队）
+      if (p.fromTeamId != null) {
+        db.athleteGroups.forEach(g => {
+          if (String(g.athleteId) !== String(p.athleteId)
+              || String(g.status) !== '0' || g.leaveDate) return
+          const d = db.depts.find(x => String(x.deptId) === String(g.deptId))
+          const inOldSubTree = d && (
+            String(d.deptId) === String(p.fromTeamId)
+            || String(d.ancestors || '').split(',').includes(String(p.fromTeamId)))
+          if (inOldSubTree) {
+            g.status = '1'
+            g.leaveDate = plan.cutoffDate
+            stampUpdate(g)
+          }
+        })
+      }
     })
     return detail({ ...plan, batchNo })
   }),
@@ -304,51 +321,52 @@ export const athleteGroupHandlers = [
   route('post', '/apms/athlete-group/join', (ctx) => {
     const db = getDb()
     const b = ctx.body || {}
-    // 同队已有在组记录则幂等返回
+    if (b.athleteId == null) return { code: 601, msg: '运动员ID不能为空' }
+    if (b.deptId == null) return { code: 601, msg: '请选择目标小组' }
+    const athlete = db.athletes.find(a => String(a.athleteId) === String(b.athleteId))
+    if (!athlete) return { code: 601, msg: '运动员不存在' }
+    if (String(athlete.status) !== '0') return { code: 601, msg: '运动员已离队或退役，不能加入小组' }
+    const dept = db.depts.find(d => String(d.deptId) === String(b.deptId))
+    if (!dept || String(dept.delFlag) === '2') return { code: 601, msg: '目标小组不存在或已删除' }
+    if (!['30', '40', '50'].includes(String(dept.deptType))) {
+      return { code: 601, msg: '只能加入训练小组、科研小组或恢复小组' }
+    }
+    // 多组并存：同一小组不可重复加入，但不影响其他在组记录
     const exists = db.athleteGroups.find(g =>
       String(g.athleteId) === String(b.athleteId)
       && String(g.deptId) === String(b.deptId)
       && String(g.status) === '0')
-    if (exists) return ok('已在该小组')
-    // 转组：先关闭该队员其它在组关系（一人仅一个当前归属）
-    const today = b.joinDate || new Date().toISOString().slice(0, 10)
-    db.athleteGroups.forEach(g => {
-      if (String(g.athleteId) === String(b.athleteId) && String(g.status) === '0') {
-        g.status = '1'
-        g.leaveDate = today
-        stampUpdate(g)
-      }
-    })
-    const dept = db.depts.find(d => String(d.deptId) === String(b.deptId))
-    const athlete = db.athletes.find(a => String(a.athleteId) === String(b.athleteId))
+    if (exists) return { code: 601, msg: '该运动员已在此小组中，无需重复加入' }
+    const typeNameMap = { '30': '训练小组', '40': '科研小组', '50': '恢复小组' }
     const row = {
       id: nextId(),
       athleteId: Number(b.athleteId),
       deptId: Number(b.deptId),
       deptName: dept?.deptName || null,
-      deptTypeName: dept?.deptType === '20' ? '梯队' : '训练小组',
-      joinDate: today,
+      deptTypeName: typeNameMap[String(dept.deptType)] || '其他',
+      joinDate: b.joinDate || new Date().toISOString().slice(0, 10),
       leaveDate: null,
       status: '0',
       remark: b.remark ?? null
     }
     stampCreate(row)
     db.athleteGroups.push(row)
-    if (athlete && dept) {
-      athlete.primaryTeamId = dept.deptId
-      athlete.teamName = dept.deptName
-    }
+    // 注意：加入小组不改变运动员 primaryTeamId（主属队伍与小组是两层归属）
     return ok('加入成功')
   }),
 
   route('post', '/apms/athlete-group/leave/:athleteId', (ctx) => {
+    const deptId = ctx.body?.deptId
+    if (deptId == null) return { code: 601, msg: '请选择要离开的小组' }
+    // 多组并存：仅关闭 athlete+dept 这一条在组记录
     const current = getDb().athleteGroups.find(g =>
-      String(g.athleteId) === ctx.params.athleteId && String(g.status) === '0')
-    if (current) {
-      current.status = '1'
-      current.leaveDate = ctx.body?.leaveDate || new Date().toISOString().slice(0, 10)
-      stampUpdate(current)
-    }
+      String(g.athleteId) === ctx.params.athleteId
+      && String(g.deptId) === String(deptId)
+      && String(g.status) === '0')
+    if (!current) return { code: 601, msg: '该运动员当前不在此小组中，可能已离组' }
+    current.status = '1'
+    current.leaveDate = ctx.body?.leaveDate || new Date().toISOString().slice(0, 10)
+    stampUpdate(current)
     return ok('已离开')
   }),
 

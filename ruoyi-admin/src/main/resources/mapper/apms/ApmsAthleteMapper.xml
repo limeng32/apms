@@ -99,7 +99,7 @@
         <where>
             <include refid="rosterFilters"/>
         </where>
-        ORDER BY a.primary_team_id ASC, a.jersey_no ASC
+        ORDER BY a.athlete_id ASC
     </select>
 
     <!-- RTP 人数汇总（与列表同一套过滤；未评估运动员 status 为 NULL） -->

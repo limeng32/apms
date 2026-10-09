@@ -26,6 +26,7 @@ import com.ruoyi.system.domain.apms.ApmsAthletePromotionLog;
 import com.ruoyi.system.domain.apms.ApmsPromotionItem;
 import com.ruoyi.system.domain.apms.ApmsPromotionPlan;
 import com.ruoyi.system.domain.apms.ApmsPromotionRequest;
+import com.ruoyi.system.mapper.apms.ApmsAthleteGroupMapper;
 import com.ruoyi.system.mapper.apms.ApmsAthleteMapper;
 import com.ruoyi.system.mapper.apms.ApmsAthletePromotionLogMapper;
 import com.ruoyi.system.service.apms.IApmsSeasonPromotionService;
@@ -48,6 +49,9 @@ public class ApmsSeasonPromotionServiceImpl implements IApmsSeasonPromotionServi
 
     @Autowired
     private ApmsAthletePromotionLogMapper logMapper;
+
+    @Autowired
+    private ApmsAthleteGroupMapper groupMapper;
 
     @Override
     public ApmsPromotionPlan preview(ApmsPromotionRequest request) {
@@ -83,6 +87,11 @@ public class ApmsSeasonPromotionServiceImpl implements IApmsSeasonPromotionServi
             if (updated == 0) {
                 // 并发/状态变化保护：队员已离队则中止整批，事务回滚
                 throw new ServiceException("队员 " + item.getName() + " 当前不在训状态，本次晋升已全部回滚，请重新预览后执行");
+            }
+            // 小组挂在队伍子树下：晋升即脱离旧队，关闭其在旧队子树下的全部在组小组，
+            // 离组日期统一取 cut-off 日；到新队伍后由教练重新编组（同事务，失败整批回滚）
+            if (item.getFromTeamId() != null) {
+                groupMapper.closeCurrentByTeamSubTree(item.getAthleteId(), item.getFromTeamId(), cutoffDate);
             }
             ApmsAthletePromotionLog log = new ApmsAthletePromotionLog();
             log.setBatchNo(batchNo);

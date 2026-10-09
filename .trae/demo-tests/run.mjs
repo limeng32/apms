@@ -797,7 +797,8 @@ test('H6f', '结构化采集配置：算法注册表可枚举；RSA 绑定算法
 test('H7', '体态测量：data 数组列表/最新/upsert 幂等', async () => {
   reset()
   const list = call('get', '/apms/body-measure/list', {})
-  expect200(list); assert(Array.isArray(list.data) && list.data.length === 10, '列表返回 data 数组')
+  // 蓝本 10 条 + 测量周期并入的记录（fixtures 注释「id 接 11+」），至少 10 条
+  expect200(list); assert(Array.isArray(list.data) && list.data.length >= 10, '列表返回 data 数组')
   const latest = call('get', '/apms/body-measure/athlete/1001/latest')
   expect200(latest); assert(latest.data && String(latest.data.athleteId) === '1001')
   const n0 = db().bodyMeasures.length
@@ -938,21 +939,31 @@ test('H12', '报告：类型筛选/生成回填任务冗余/删除', async () =>
   assertEq(db().reports.length, n0)
 })
 
-test('H13', '归属：在组/历史/加入幂等/离开', async () => {
+test('H13', '归属：多组并存/加入校验/按组离开互不影响', async () => {
   reset()
+  // 蓝本：1001 当前在 203（速度专项组），205（力量组）已离组
   const hist = call('get', '/apms/athlete-group/athlete/1001')
   expect200(hist); assert(hist.data.length >= 1)
   const cur = call('get', '/apms/athlete-group/athlete/1001/current')
-  expect200(cur)
-  const deptId = cur.data ? 202 : 201
-  const j1 = call('post', '/apms/athlete-group/join', {}, { athleteId: 1001, deptId, joinDate: '2026-09-28' })
-  expect200(j1)
-  const j2 = call('post', '/apms/athlete-group/join', {}, { athleteId: 1001, deptId, joinDate: '2026-09-28' })
-  expect200(j2, '重复加入幂等返回 200')
-  const nowCur = call('get', '/apms/athlete-group/athlete/1001/current').data
-  assertEq(nowCur.deptId, deptId)
-  expect200(call('post', '/apms/athlete-group/leave/1001', {}, { leaveDate: '2026-09-29' }))
-  assertEq(call('get', '/apms/athlete-group/athlete/1001/current').data, null)
+  expect200(cur); assertEq(cur.data.deptId, 203, '当前在速度专项组')
+  const activeDepts = () => call('get', '/apms/athlete-group/athlete/1001').data
+    .filter(g => String(g.status) === '0' && !g.leaveDate).map(g => Number(g.deptId))
+
+  // 多组并存：加入 204（康复组）不影响其在 203 的记录
+  expect200(call('post', '/apms/athlete-group/join', {}, { athleteId: 1001, deptId: 204, joinDate: '2026-09-28' }))
+  const joined = activeDepts().sort((a, b) => a - b)
+  assertEq(joined.join(','), '203,204', '加入新组后同时在两个组')
+  // 同组重复加入：业务拒绝（601），不是幂等成功
+  assertEq(call('post', '/apms/athlete-group/join', {}, { athleteId: 1001, deptId: 204 }).code, 601, '重复加入拒绝')
+  // 目标必须是 30/40/50 小组：201 是 U18 队伍（deptType=20）
+  assertEq(call('post', '/apms/athlete-group/join', {}, { athleteId: 1001, deptId: 201 }).code, 601, '队伍不能当小组加入')
+  // 离组必须指定 deptId
+  assertEq(call('post', '/apms/athlete-group/leave/1001', {}, { leaveDate: '2026-09-29' }).code, 601, '缺 deptId 拒绝')
+  // 只离开 204：203 仍在组（多组互不影响）
+  expect200(call('post', '/apms/athlete-group/leave/1001', {}, { deptId: 204, leaveDate: '2026-09-29' }))
+  assertEq(activeDepts().join(','), '203', '离开康复组后速度组仍在')
+  // 已离组再离一次：拒绝
+  assertEq(call('post', '/apms/athlete-group/leave/1001', {}, { deptId: 204 }).code, 601, '重复离组拒绝')
 })
 
 test('H14', '总览看板：形状与内存聚合正确', async () => {

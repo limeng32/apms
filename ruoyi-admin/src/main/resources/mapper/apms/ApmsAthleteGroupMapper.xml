@@ -46,6 +46,16 @@
         LIMIT 1
     </select>
 
+    <!-- 按运动员+小组查询当前在组记录（多组并存；加入前防重复） -->
+    <select id="selectCurrentByAthleteAndDept" resultMap="ApmsAthleteGroupResult">
+        <include refid="selectApmsAthleteGroupVo"/>
+        WHERE g.athlete_id = #{athleteId}
+          AND g.dept_id = #{deptId}
+          AND g.leave_date IS NULL
+          AND g.status = '0'
+        LIMIT 1
+    </select>
+
     <!-- 按小组查询所有当前在组成员 -->
     <select id="selectActiveByDeptId" parameterType="Long" resultMap="ApmsAthleteGroupResult">
         <include refid="selectApmsAthleteGroupVo"/>
@@ -89,13 +99,35 @@
         WHERE id = #{id}
     </update>
 
-    <!-- 关闭运动员所有当前在组记录 -->
+    <!-- 关闭运动员所有当前在组记录（离队/退役用） -->
     <update id="closeAllCurrentByAthleteId">
         UPDATE apms_athlete_group
         SET leave_date = #{leaveDate}, status = '1'
         WHERE athlete_id = #{athleteId}
           AND leave_date IS NULL
           AND status = '0'
+    </update>
+
+    <!-- 离开指定小组：只关 athlete+dept 这一条在组记录（多组并存） -->
+    <update id="closeCurrentByAthleteAndDept">
+        UPDATE apms_athlete_group
+        SET leave_date = #{leaveDate}, status = '1'
+        WHERE athlete_id = #{athleteId}
+          AND dept_id = #{deptId}
+          AND leave_date IS NULL
+          AND status = '0'
+    </update>
+
+    <!-- 赛季晋升：关闭运动员挂在原队伍子树下的全部在组小组
+         dept_id=teamId 或 ancestors 含 teamId 均属旧队子树（队伍自身 dept_type=20 不会有在组记录，含等号仅为兜底） -->
+    <update id="closeCurrentByTeamSubTree">
+        UPDATE apms_athlete_group g
+        JOIN sys_dept d ON g.dept_id = d.dept_id
+        SET g.leave_date = #{leaveDate}, g.status = '1'
+        WHERE g.athlete_id = #{athleteId}
+          AND g.leave_date IS NULL
+          AND g.status = '0'
+          AND (d.dept_id = #{teamId} OR FIND_IN_SET(#{teamId}, d.ancestors))
     </update>
 
 </mapper>

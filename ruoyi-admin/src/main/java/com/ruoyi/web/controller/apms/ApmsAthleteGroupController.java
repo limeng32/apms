@@ -64,12 +64,13 @@ public class ApmsAthleteGroupController extends BaseController {
     }
 
     /**
-     * 离开小组
-     * Body: { leaveDate }
+     * 离开指定小组（多组并存，必须指定 deptId）
+     * Body: { deptId, leaveDate }
      */
     @PreAuthorize("@ss.hasPermi('apms:athlete:edit')")
     @PostMapping("/leave/{athleteId}")
     public AjaxResult leaveGroup(@PathVariable Long athleteId, @RequestBody(required = false) ApmsAthleteGroup body) {
-        return toAjax(groupService.leaveGroup(athleteId, body != null ? body.getLeaveDate() : null));
+        Long deptId = body != null ? body.getDeptId() : null;
+        return toAjax(groupService.leaveGroup(athleteId, deptId, body != null ? body.getLeaveDate() : null));
     }
 }

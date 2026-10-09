@@ -53,6 +53,24 @@ export const reportHandlers = [
     return ok(`${TYPE_NAME[q.reportType] || '报告'}生成成功`)
   }),
 
+  // /regenerate/:id 覆盖式重新生成：ID 不变，刷新快照与生成时间（演示环境无真实 PDF，下载由视图层拦截）
+  route('post', '/apms/report/regenerate/:id', (ctx) => {
+    const row = getDb().reports.find(r => String(r.id) === ctx.params.id)
+    if (!row) return { code: 601, msg: '报告不存在' }
+    const ts = now()
+    row.contentSnapshot = JSON.stringify({
+      note: '演示报告：静态样本环境重新生成，无真实文件。',
+      regenerated: true,
+      comboScores: getDb().comboScores.length,
+      results: getDb().testResults.length
+    })
+    row.filePath = null
+    row.generateTime = ts
+    row.updateBy = 'super'
+    row.updateTime = ts
+    return detail(row)
+  }),
+
   route('get', '/apms/report/list', (ctx) => {
     const q = ctx.query
     const specs = [
