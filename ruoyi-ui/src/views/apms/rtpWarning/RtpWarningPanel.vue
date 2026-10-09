@@ -144,7 +144,7 @@
     </div>
 
     <!-- ========== 因子详情抽屉 ========== -->
-    <el-drawer v-model="drawer" size="500px" :with-header="false" class="rw-drawer-wrap">
+    <el-drawer v-model="drawer" size="500px" :with-header="false" class="rw-drawer-wrap" :style="drawerPanelStyle">
       <div class="rw-drawer" v-if="current">
         <div class="rw-drawer-head">
           <div class="rw-drawer-title">
@@ -272,10 +272,13 @@ import { checkPermi } from '@/utils/permission'
 import { Close, RefreshLeft, Aim, Clock } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
+import { useDrawerOffset } from '@/utils/drawerOffset'
 
 const emit = defineEmits(['accepted'])
 
 const { proxy } = getCurrentInstance()
+
+const { drawerPanelStyle } = useDrawerOffset()
 
 const checkRtpEdit = checkPermi(['apms:rtpRisk:handle']) && checkPermi(['apms:rtp:edit'])
 
@@ -601,7 +604,6 @@ loadStat()
 .rw-chip-green { background: #e8f7ee; color: #16A34A; border-color: #b7e4c7; }
 
 /* ===== 抽屉 ===== */
-.rw-drawer-wrap :deep(.el-drawer__body) { padding: 0; }
 .rw-drawer { display: flex; flex-direction: column; height: 100%; padding: 18px 20px 20px; overflow-y: auto; }
 .rw-drawer-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;

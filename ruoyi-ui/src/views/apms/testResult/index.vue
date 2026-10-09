@@ -69,11 +69,8 @@
         </div>
       </div>
 
-      <!-- ===== 主从双栏 ===== -->
-      <div class="rk-split-grid" style="--rk-split-l: 13.5fr; --rk-split-r: 10.5fr;">
-
-        <!-- 左：结果列表（服务端分页） -->
-        <div class="rk-table-card">
+      <!-- ===== 结果台账（点击行右侧抽屉查看详情） ===== -->
+      <div class="rk-table-card">
           <div class="rk-card-head">
             <h3 class="rk-card-title">测试结果</h3>
             <span class="rk-card-sub">共 {{ total }} 条 · 点击行查看详情</span>
@@ -153,9 +150,23 @@
           </div>
         </div>
 
-        <!-- 右：结果详情 -->
-        <div class="rk-card tr-detail-card">
-          <template v-if="current">
+      <!-- ===== 结果详情抽屉（点击左表行打开） ===== -->
+      <el-drawer v-model="detailDrawerVisible" :size="drawerSize" :with-header="false"
+                 destroy-on-close class="tr-drawer-wrap" :style="drawerPanelStyle">
+        <div class="tr-drawer" v-if="current">
+          <div class="tr-drawer-head">
+            <div class="tr-drawer-id">
+              <div class="tr-drawer-title">结果详情</div>
+              <div class="tr-drawer-sub">
+                {{ current.athleteName }} · <span class="rk-mono">{{ current.indicatorCode || current.modelCode }} #{{ current.id }}</span>
+              </div>
+            </div>
+            <button type="button" class="tr-drawer-close" @click="detailDrawerVisible = false">
+              <el-icon><Close /></el-icon>
+            </button>
+          </div>
+
+          <div class="tr-drawer-body" v-loading="detailLoading">
             <div class="tr-detail-banner">
               <span class="rk-soft-chip tr-type-lg" :class="current.itemType === 'INDICATOR' ? 'is-indicator' : 'is-model'">
                 {{ current.itemType === 'INDICATOR' ? '指标' : '模型' }}
@@ -179,7 +190,7 @@
               </div>
             </div>
 
-            <div class="rk-card-body tr-detail-body" v-loading="detailLoading">
+            <div class="tr-detail-content">
 
               <!-- Attempt 历史 -->
               <template v-if="attempts.length">
@@ -268,16 +279,9 @@
               </div>
               <div v-else class="tr-mini-empty">无 REP 评价（模型或缺少参照系）</div>
             </div>
-          </template>
-
-          <div v-else class="tr-detail-empty">
-            <div class="rk-empty">
-              <p class="rk-empty-title">选择左侧结果查看详情</p>
-              <p class="rk-empty-desc">尝试历史、测试值与 REP 评价将在此展示</p>
-            </div>
           </div>
         </div>
-      </div>
+      </el-drawer>
 
       <!-- 手动录入成绩 -->
       <result-entry-dialog ref="entryDialogRef" @success="handleImportSuccess"/>
@@ -298,9 +302,12 @@ import ResultEntryDialog from '@/components/ResultEntryDialog/index.vue'
 import DeviceAccessDialog from '@/components/DeviceAccessDialog/index.vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import { checkPermi } from '@/utils/permission'
-import { EditPen, Connection, RefreshLeft, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
+import { EditPen, Connection, RefreshLeft, ArrowLeft, ArrowRight, Close } from '@element-plus/icons-vue'
+import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
 
 const { proxy } = getCurrentInstance()
+const { drawerPanelStyle } = useDrawerOffset()
+const { drawerSize } = useDrawerSize('720px')
 
 const PAGE_SIZE = 10
 
@@ -389,7 +396,8 @@ const athleteOptions = ref([])
 listTestTask({ pageNum: 1, pageSize: 200 }).then(r => { taskOptions.value = r.rows || [] })
 listAthlete({ pageNum: 1, pageSize: 300 }).then(r => { athleteOptions.value = r.rows || [] })
 
-// ========= 主从 =========
+// ========= 主从（右侧抽屉） =========
+const detailDrawerVisible = ref(false)
 const current = ref(null)
 const attempts = ref([])
 const detailLoading = ref(false)
@@ -397,6 +405,7 @@ const selectingId = ref(null)  // 手动选为最佳的锁
 
 function handleRowClick(row) {
   current.value = row
+  detailDrawerVisible.value = true
   loadDetail(row.id)
 }
 function loadDetail(id) {
@@ -481,14 +490,46 @@ loadStats()
 :deep(.rk-soft-chip.is-indicator) { background: $rk-brand-50; color: $rk-brand-600; }
 :deep(.rk-soft-chip.is-model) { background: #e8f7ee; color: $rk-ok; }
 
-/* 右详情 */
-.tr-detail-card { overflow: hidden; }
-.tr-detail-empty { padding: 80px 20px; }
+/* 详情抽屉（teleport 到 body，头部固定、内容独立滚动） */
+.tr-drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: $rk-canvas;
+  overflow: hidden;
+}
+.tr-drawer-head {
+  flex: none;
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; padding: 16px 20px;
+  background: #fff; border-bottom: 1px solid $rk-line;
+}
+.tr-drawer-title { font-size: 16px; font-weight: 700; color: $rk-text-1; line-height: 22px; }
+.tr-drawer-sub {
+  margin-top: 2px; font-size: 12px; color: $rk-text-3;
+  .rk-mono { color: $rk-brand-600; }
+}
+.tr-drawer-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; flex: none;
+  color: $rk-text-3; background: none; border: none; border-radius: 8px;
+  cursor: pointer; font-size: 16px;
+  &:hover { background: $rk-canvas; color: $rk-text-1; }
+}
+.tr-drawer-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 16px 20px 28px;
+}
+@media (max-width: 768px) {
+  .tr-drawer-body { padding: 14px 14px 24px; }
+}
 .tr-detail-banner {
   display: flex; align-items: center; gap: 14px;
-  padding: 16px 18px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
   background: linear-gradient(180deg, #f4f7ff, #fff 85%);
-  border-bottom: 1px solid $rk-line;
+  border: 1px solid $rk-line;
+  border-radius: 12px;
 }
 .tr-type-lg { font-size: 12px; padding: 3px 10px; }
 .tr-banner-title {
@@ -501,8 +542,6 @@ loadStats()
   &.higher { background: #e8f7ee; color: $rk-ok; }
   &.lower { background: #fef3e0; color: $rk-warn; }
 }
-.tr-detail-body { padding-top: 16px; }
-
 .tr-section-title {
   display: flex; align-items: center; gap: 8px;
   margin: 18px 0 10px;
@@ -589,4 +628,11 @@ loadStats()
   }
 }
 
+</style>
+
+<!-- 全局：el-drawer 面板 teleport 到 body，scoped 选择器无法可靠命中其内部 -->
+<style lang="scss">
+.el-drawer.tr-drawer-wrap .el-drawer__body {
+  padding: 0;
+}
 </style>

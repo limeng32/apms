@@ -52,11 +52,8 @@
         </div>
       </div>
 
-      <!-- ===== 主从双栏 ===== -->
-      <div class="rk-split-grid" style="--rk-split-l: 13.2fr; --rk-split-r: 10.8fr;">
-
-        <!-- 左：任务列表（服务端分页） -->
-        <div class="rk-table-card">
+      <!-- ===== 任务台账（点击行右侧抽屉查看详情） ===== -->
+      <div class="rk-table-card">
           <div class="rk-card-head">
             <h3 class="rk-card-title">测试任务</h3>
             <span class="rk-card-sub">共 {{ total }} 个 · 点击行查看详情</span>
@@ -135,9 +132,23 @@
           </div>
         </div>
 
-        <!-- 右：任务详情 -->
-        <div class="rk-card tt-detail-card">
-          <template v-if="currentTask">
+      <!-- ===== 任务详情抽屉（点击左表行打开） ===== -->
+      <el-drawer v-model="detailDrawerVisible" :size="drawerSize" :with-header="false"
+                 destroy-on-close class="tt-drawer-wrap" :style="drawerPanelStyle">
+        <div class="tt-drawer" v-if="currentTask">
+          <div class="tt-drawer-head">
+            <div class="tt-drawer-id">
+              <div class="tt-drawer-title">任务详情</div>
+              <div class="tt-drawer-sub">
+                {{ currentTask.taskName }} <span class="rk-mono">#{{ currentTask.id }}</span>
+              </div>
+            </div>
+            <button type="button" class="tt-drawer-close" @click="detailDrawerVisible = false">
+              <el-icon><Close /></el-icon>
+            </button>
+          </div>
+
+          <div class="tt-drawer-body" v-loading="detailLoading">
             <div class="tt-detail-banner" :class="'banner-' + (currentTask.status || 'pending')">
               <div class="tt-banner-top">
                 <span class="rk-status-badge" :class="statusTone(currentTask.status)">{{ statusLabel(currentTask.status) }}</span>
@@ -151,7 +162,7 @@
               </div>
             </div>
 
-            <div class="rk-card-body" v-loading="detailLoading">
+            <div class="tt-detail-content">
 
               <!-- 5 格摘要 -->
               <div class="tt-summary">
@@ -300,16 +311,9 @@
                 <div v-else class="tt-inner-empty">暂无参测队员 — 点击上方按钮登记</div>
               </div>
             </div>
-          </template>
-
-          <div v-else class="tt-detail-empty">
-            <div class="rk-empty">
-              <p class="rk-empty-title">选择左侧任务查看详情</p>
-              <p class="rk-empty-desc">测试项配置、参测队员与完成进度将在此展示</p>
-            </div>
           </div>
         </div>
-      </div>
+      </el-drawer>
 
       <!-- ========== 任务 新增/编辑 Dialog（原逻辑保留） ========== -->
       <el-dialog :title="dialogTitle" v-model="showTaskDialog" width="520px">
@@ -484,11 +488,14 @@ import { listTestTask, getTestTask, addTestTask, updateTestTask, delTestTask,
 import { listDept } from '@/api/system/dept'
 import { listUser } from '@/api/system/user'
 import request from '@/utils/request'
-import { Plus, Delete, RefreshLeft, Refresh, ArrowLeft, ArrowRight, User } from '@element-plus/icons-vue'
+import { Plus, Delete, RefreshLeft, Refresh, ArrowLeft, ArrowRight, User, Close } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import ResultEntryDialog from '@/components/ResultEntryDialog/index.vue'
+import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
 
 const { proxy } = getCurrentInstance()
+const { drawerPanelStyle } = useDrawerOffset()
+const { drawerSize } = useDrawerSize('780px')
 
 const PAGE_SIZE = 10
 
@@ -571,7 +578,8 @@ const kpiCards = computed(() => [
   { label: '平均完成率', value: stats.avgProgress, unit: '%', accent: '#16A34A', chip: '按任务进度均值', chipTone: 'tone-ok' }
 ])
 
-// ========= 主从 =========
+// ========= 主从（右侧抽屉） =========
+const detailDrawerVisible = ref(false)
 const currentTask = ref(null)
 const detail = reactive({ items: [], members: [] })
 const detailLoading = ref(false)
@@ -580,6 +588,7 @@ const activeTab = ref('items')
 function handleRowClick(row) {
   currentTask.value = row
   activeTab.value = 'items'
+  detailDrawerVisible.value = true
   loadDetail(row.id)
 }
 function loadDetail(id) {
@@ -678,6 +687,7 @@ function handleDelete(row) {
       proxy.$modal.msgSuccess('删除成功'); getList(); loadStats()
       ids.value = []; multiple.value = true
       if (currentTask.value && (Array.isArray(selIds) ? selIds.includes(currentTask.value.id) : selIds === currentTask.value.id)) {
+        detailDrawerVisible.value = false
         currentTask.value = null; detail.items = []; detail.members = []
       }
     }).catch(() => {})
@@ -863,12 +873,44 @@ loadStats()
 :deep(.rk-soft-chip.is-indicator) { background: $rk-brand-50; color: $rk-brand-600; }
 :deep(.rk-soft-chip.is-model) { background: #e8f7ee; color: $rk-ok; }
 
-/* 右详情 */
-.tt-detail-card { overflow: hidden; }
-.tt-detail-empty { padding: 80px 20px; }
+/* 详情抽屉（teleport 到 body，头部固定、内容独立滚动） */
+.tt-drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: $rk-canvas;
+  overflow: hidden;
+}
+.tt-drawer-head {
+  flex: none;
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; padding: 16px 20px;
+  background: #fff; border-bottom: 1px solid $rk-line;
+}
+.tt-drawer-title { font-size: 16px; font-weight: 700; color: $rk-text-1; line-height: 22px; }
+.tt-drawer-sub {
+  margin-top: 2px; font-size: 12px; color: $rk-text-3;
+  .rk-mono { color: $rk-brand-600; }
+}
+.tt-drawer-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; flex: none;
+  color: $rk-text-3; background: none; border: none; border-radius: 8px;
+  cursor: pointer; font-size: 16px;
+  &:hover { background: $rk-canvas; color: $rk-text-1; }
+}
+.tt-drawer-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 16px 20px 28px;
+}
+@media (max-width: 768px) {
+  .tt-drawer-body { padding: 14px 14px 24px; }
+}
 .tt-detail-banner {
-  padding: 16px 18px 15px;
-  border-bottom: 1px solid $rk-line;
+  padding: 14px 16px 13px;
+  margin-bottom: 4px;
+  border: 1px solid $rk-line;
+  border-radius: 12px;
   background: linear-gradient(180deg, #f4f7ff, #fff 88%);
   &.banner-completed { background: linear-gradient(180deg, #effaf2, #fff 88%); }
   &.banner-pending { background: linear-gradient(180deg, #f8fafc, #fff 88%); }
@@ -962,6 +1004,11 @@ loadStats()
 .tt-dept-popper .el-select-dropdown__item,
 .tt-dept-popper .el-select-dropdown__item.is-disabled {
   cursor: pointer !important;
+}
+
+/* el-drawer 面板 teleport 到 body，scoped 选择器无法可靠命中其内部 */
+.el-drawer.tt-drawer-wrap .el-drawer__body {
+  padding: 0;
 }
 
 /* ===== 嵌入模式：供合并页堆叠（隐藏页头、归零满铺外壳） ===== */

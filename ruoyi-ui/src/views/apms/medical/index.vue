@@ -184,7 +184,7 @@
       </div>
 
       <!-- ========== 医疗记录详情抽屉 ========== -->
-      <el-drawer v-model="drawerVisible" size="500px" :with-header="false" class="md-drawer-wrap">
+      <el-drawer v-model="drawerVisible" size="500px" :with-header="false" class="md-drawer-wrap" :style="drawerPanelStyle">
         <div class="md-drawer" v-if="current">
           <div class="md-drawer-head">
             <span class="md-drawer-avatar" :style="{ background: typeColor(current.recordType) }">
@@ -356,11 +356,14 @@ import { listAthlete } from '@/api/apms/athlete'
 import { getToken, isDemoMode } from '@/utils/auth'
 import { Plus, RefreshLeft, ArrowLeft, ArrowRight, Lock, UploadFilled, Close, Edit } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
+import { useDrawerOffset } from '@/utils/drawerOffset'
 import BodyMap from './components/BodyMap.vue'
 import ReadOnlyBlock from '@/components/ReadOnlyBlock/index.vue'
 import { BODY_SITE_GROUPS, siteLabel } from './bodySites'
 
 const { proxy } = getCurrentInstance()
+
+const { drawerPanelStyle } = useDrawerOffset()
 
 const PAGE_SIZE = 10
 
@@ -963,7 +966,6 @@ loadSiteStats()
 }
 
 /* ===== 医疗详情抽屉 ===== */
-.md-drawer-wrap :deep(.el-drawer__body) { padding: 0; }
 .md-drawer {
   display: flex;
   flex-direction: column;
@@ -1068,5 +1070,12 @@ loadSiteStats()
   font-size: 12.5px;
   color: $rk-text-2;
   b { color: $rk-brand-700; }
+}
+</style>
+
+<!-- 全局：el-drawer 面板 teleport 到 body，scoped 选择器无法可靠命中其内部 -->
+<style lang="scss">
+.el-drawer.md-drawer-wrap .el-drawer__body {
+  padding: 0;
 }
 </style>

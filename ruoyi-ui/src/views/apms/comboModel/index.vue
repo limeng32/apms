@@ -31,11 +31,8 @@
         </div>
       </div>
 
-      <!-- ===== 主从双栏 ===== -->
-      <div class="rk-split-grid" style="--rk-split-l: 13fr; --rk-split-r: 11fr;">
-
-        <!-- 左：组合模型列表（服务端分页） -->
-        <div class="rk-table-card">
+      <!-- ===== 组合模型台账（点击行右侧抽屉查看组成项） ===== -->
+      <div class="rk-table-card">
           <div class="rk-card-head">
             <h3 class="rk-card-title">组合模型库</h3>
             <span class="rk-card-sub">共 {{ total }} 个 · 点击行查看组成项</span>
@@ -117,22 +114,28 @@
           </div>
         </div>
 
-        <!-- 右：组成项 & 权重 -->
-        <div class="rk-card cm-detail-card">
-          <div class="rk-card-head">
-            <h3 class="rk-card-title">组成项 &amp; 权重</h3>
-            <span v-if="currentCombo" class="rk-card-sub">
-              当前：{{ currentCombo.testModelName }}（<span class="rk-mono">{{ currentCombo.testModelCode }}</span>）
-            </span>
-            <span v-else class="rk-card-sub">← 点击左侧组合模型查看</span>
-            <div class="rk-card-actions" v-if="currentCombo">
+      <!-- ===== 组成项 & 权重 抽屉（点击左表行打开） ===== -->
+      <el-drawer v-model="detailDrawerVisible" :size="drawerSize" :with-header="false"
+                 destroy-on-close class="cm-drawer-wrap" :style="drawerPanelStyle">
+        <div class="cm-drawer" v-if="currentCombo">
+          <div class="cm-drawer-head">
+            <div class="cm-drawer-id">
+              <div class="cm-drawer-title">组成项 &amp; 权重</div>
+              <div class="cm-drawer-sub">
+                {{ currentCombo.testModelName }}（<span class="rk-mono">{{ currentCombo.testModelCode }}</span>）
+              </div>
+            </div>
+            <div class="cm-drawer-tools">
               <button type="button" class="rk-btn rk-btn-sm rk-btn-primary" @click="openComponentDialog">
                 <el-icon><Plus /></el-icon>新增组成项
+              </button>
+              <button type="button" class="cm-drawer-close" @click="detailDrawerVisible = false">
+                <el-icon><Close /></el-icon>
               </button>
             </div>
           </div>
 
-          <template v-if="currentCombo">
+          <div class="cm-drawer-body" v-loading="detailLoading">
             <div class="cm-banner">
               <div class="cm-banner-title">
                 <span class="rk-soft-chip" :class="normChipClass(currentCombo.normalizationMethod)">
@@ -148,7 +151,7 @@
               </div>
             </div>
 
-            <div class="rk-card-body cm-detail-body" v-loading="detailLoading">
+            <div class="cm-detail-content">
               <!-- 公式卡片 -->
               <div v-if="currentCombo.formula" class="cm-formula">
                 <div class="cm-formula-label">📐 计算公式</div>
@@ -225,16 +228,9 @@
                 </div>
               </div>
             </div>
-          </template>
-
-          <div v-else class="cm-detail-empty">
-            <div class="rk-empty">
-              <p class="rk-empty-title">选择左侧组合模型查看组成项</p>
-              <p class="rk-empty-desc">指标方向、权重与计算公式将在此展示</p>
-            </div>
           </div>
         </div>
-      </div>
+      </el-drawer>
 
       <!-- ========== 组合模型 新增/编辑 Dialog（原逻辑保留） ========== -->
       <el-dialog :title="dialogTitle" v-model="showComboDialog" width="500px">
@@ -332,9 +328,12 @@ import {
 } from '@/api/apms/comboModel'
 import { listIndicator } from '@/api/apms/indicator'
 import { listTestModel } from '@/api/apms/testModel'
-import { Plus, Delete, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
+import { Plus, Delete, ArrowLeft, ArrowRight, Close } from '@element-plus/icons-vue'
+import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
 
 const { proxy } = getCurrentInstance()
+const { drawerPanelStyle } = useDrawerOffset()
+const { drawerSize } = useDrawerSize('760px')
 
 const PAGE_SIZE = 10
 
@@ -414,13 +413,15 @@ const kpiCards = computed(() => [
   { label: '平均组成项', value: stats.total ? (stats.comps / stats.total).toFixed(1) : '0', unit: '项/模型', accent: '#8B5CF6', chip: '权重之和应为 1.00', chipTone: '' }
 ])
 
-// ========= 主从 =========
+// ========= 主从（右侧抽屉） =========
+const detailDrawerVisible = ref(false)
 const currentCombo = ref(null)
 const detail = reactive({ components: [] })
 const detailLoading = ref(false)
 
 function handleRowClick(row) {
   currentCombo.value = row
+  detailDrawerVisible.value = true
   loadDetail(row.id)
 }
 function loadDetail(id) {
@@ -505,6 +506,7 @@ function handleDelete(row) {
       getList()
       loadStats()
       if (currentCombo.value && (Array.isArray(selIds) ? selIds.includes(currentCombo.value.id) : selIds === currentCombo.value.id)) {
+        detailDrawerVisible.value = false
         currentCombo.value = null; detail.components = []
       }
     }).catch(() => {})
@@ -589,13 +591,46 @@ loadStats()
 :deep(.rk-soft-chip.cm-ref) { background: #f1f5f9; color: $rk-text-3; }
 :deep(.rk-soft-chip.cm-dir-override) { background: #fdf1d6; color: #9a6b13; }
 
-/* 右详情 */
-.cm-detail-card { overflow: hidden; }
-.cm-detail-empty { padding: 80px 20px; }
+/* 详情抽屉（teleport 到 body，头部固定、内容独立滚动） */
+.cm-drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: $rk-canvas;
+  overflow: hidden;
+}
+.cm-drawer-head {
+  flex: none;
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; padding: 16px 20px;
+  background: #fff; border-bottom: 1px solid $rk-line;
+}
+.cm-drawer-title { font-size: 16px; font-weight: 700; color: $rk-text-1; line-height: 22px; }
+.cm-drawer-sub {
+  margin-top: 2px; font-size: 12px; color: $rk-text-3;
+  .rk-mono { color: $rk-brand-600; }
+}
+.cm-drawer-tools { display: flex; align-items: center; gap: 10px; flex: none; }
+.cm-drawer-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  color: $rk-text-3; background: none; border: none; border-radius: 8px;
+  cursor: pointer; font-size: 16px;
+  &:hover { background: $rk-canvas; color: $rk-text-1; }
+}
+.cm-drawer-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 16px 20px 28px;
+}
+@media (max-width: 768px) {
+  .cm-drawer-body { padding: 14px 14px 24px; }
+}
 .cm-banner {
-  padding: 14px 18px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
   background: linear-gradient(180deg, #f4f7ff, #fff 85%);
-  border-bottom: 1px solid $rk-line;
+  border: 1px solid $rk-line;
+  border-radius: 12px;
 }
 .cm-banner-title {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
@@ -607,8 +642,6 @@ loadStats()
   margin-top: 7px; font-size: 12px; color: $rk-text-3;
   b { color: $rk-text-2; font-weight: 700; }
 }
-.cm-detail-body { padding-top: 14px; }
-
 /* 公式卡 */
 .cm-formula {
   background: linear-gradient(135deg, #f4f8ff, #f6faf7);
@@ -669,4 +702,11 @@ loadStats()
   }
 }
 
+</style>
+
+<!-- 全局：el-drawer 面板 teleport 到 body，scoped 选择器无法可靠命中其内部 -->
+<style lang="scss">
+.el-drawer.cm-drawer-wrap .el-drawer__body {
+  padding: 0;
+}
 </style>

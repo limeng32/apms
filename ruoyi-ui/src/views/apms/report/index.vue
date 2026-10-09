@@ -45,11 +45,8 @@
         </div>
       </div>
 
-      <!-- ===== 主从双栏 ===== -->
-      <div class="rk-split-grid" style="--rk-split-l: 13fr; --rk-split-r: 11fr;">
-
-        <!-- 左：报告列表（服务端分页） -->
-        <div class="rk-table-card">
+      <!-- ===== 报告台账（点击行右侧抽屉预览 PDF / 快照） ===== -->
+      <div class="rk-table-card">
           <div class="rk-card-head">
             <h3 class="rk-card-title">PDF 报告</h3>
             <span class="rk-card-sub">共 {{ total }} 份 · 点击行查看快照详情</span>
@@ -131,17 +128,24 @@
           </div>
         </div>
 
-        <!-- 右：报告详情 -->
-        <div class="rk-card rp-detail-card">
-          <div class="rk-card-head">
-            <h3 class="rk-card-title">报告详情</h3>
-            <span v-if="current" class="rk-card-sub">
-              {{ typeLabel(current.reportType) }} · {{ formatDateTime(current.generateTime) }}
-            </span>
-            <span v-else class="rk-card-sub">← 点击左侧报告查看</span>
+      <!-- ===== 报告详情抽屉（点击左表行打开，PDF / 数据快照） ===== -->
+      <el-drawer v-model="detailDrawerVisible" :size="drawerSize" :with-header="false"
+                 destroy-on-close class="rp-drawer-wrap" :style="drawerPanelStyle"
+                 @close="handleDetailClose">
+        <div class="rp-drawer" v-if="current">
+          <div class="rp-drawer-head">
+            <div class="rp-drawer-id">
+              <div class="rp-drawer-title">报告详情</div>
+              <div class="rp-drawer-sub">
+                {{ typeLabel(current.reportType) }} · <span class="rk-mono">{{ formatDateTime(current.generateTime) }}</span>
+              </div>
+            </div>
+            <button type="button" class="rp-drawer-close" @click="detailDrawerVisible = false">
+              <el-icon><Close /></el-icon>
+            </button>
           </div>
 
-          <template v-if="current">
+          <div class="rp-drawer-body" v-loading="detailLoading">
             <!-- 类型 banner -->
             <div class="rp-banner" :class="bannerClass(current.reportType)">
               <div class="rp-banner-id rk-mono">#{{ current.id }}</div>
@@ -165,7 +169,7 @@
               </div>
             </div>
 
-            <div class="rk-card-body rp-detail-body" v-loading="detailLoading">
+            <div class="rp-detail-content">
               <!-- 文件状态 -->
               <div class="rp-file">
                 <el-icon class="rp-file-icon"><Document /></el-icon>
@@ -218,16 +222,9 @@
                 </div>
               </div>
             </div>
-          </template>
-
-          <div v-else class="rp-detail-empty">
-            <div class="rk-empty">
-              <p class="rk-empty-title">选择左侧报告查看详情</p>
-              <p class="rk-empty-desc">报告头信息、PDF 文件状态与生成时的数据快照将在此展示</p>
-            </div>
           </div>
         </div>
-      </div>
+      </el-drawer>
 
       <!-- ========== 生成 Dialog（原逻辑保留） ========== -->
       <el-dialog title="生成新报告" v-model="showGenDialog" width="520px">
@@ -272,11 +269,14 @@ import { listAthlete } from '@/api/apms/athlete'
 import { listDept } from '@/api/system/dept'
 import { getToken, isDemoMode } from '@/utils/auth'
 import { checkPermi } from '@/utils/permission'
-import { Plus, RefreshLeft, ArrowLeft, ArrowRight, Download, Document } from '@element-plus/icons-vue'
+import { Plus, RefreshLeft, ArrowLeft, ArrowRight, Download, Document, Close } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import ReadOnlyBlock from '@/components/ReadOnlyBlock/index.vue'
+import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
 
 const { proxy } = getCurrentInstance()
+const { drawerPanelStyle } = useDrawerOffset()
+const { drawerSize } = useDrawerSize('880px')
 
 const PAGE_SIZE = 10
 
@@ -373,7 +373,8 @@ listAthlete({ pageNum: 1, pageSize: 300 }).then(r => { athleteOpts.value = r.row
 listTestTask({ pageNum: 1, pageSize: 200 }).then(r => { taskOpts.value = r.rows || [] })
 listDept({ pageNum: 1, pageSize: 500 }).then(r => { deptOpts.value = r.data || [] })
 
-// ========= 主从 =========
+// ========= 主从（右侧抽屉） =========
+const detailDrawerVisible = ref(false)
 const current = ref(null)
 const detailLoading = ref(false)
 
@@ -421,6 +422,7 @@ async function loadPdfPreview(row) {
 
 function handleRowClick(row) {
   current.value = row
+  detailDrawerVisible.value = true
   detailLoading.value = true
   showSnapshot.value = false
   revokePreview()
@@ -429,6 +431,13 @@ function handleRowClick(row) {
     current.value = r.data
     loadPdfPreview(r.data)
   }).finally(() => { detailLoading.value = false })
+}
+
+/** 抽屉关闭：销毁 iframe 同时回收 blob URL，重置选中态 */
+function handleDetailClose() {
+  revokePreview()
+  showSnapshot.value = false
+  current.value = null
 }
 
 onBeforeUnmount(() => revokePreview())
@@ -547,7 +556,7 @@ function handleDelete(row) {
   proxy.$modal.confirm('确认删除该报告？PDF 文件一并清理。').then(() => delReport(row.id))
     .then(() => {
       proxy.$modal.msgSuccess('已删除')
-      if (current.value?.id === row.id) current.value = null
+      if (current.value?.id === row.id) detailDrawerVisible.value = false  // @close 中回收预览并清空 current
       getList()
       loadStats()
     }).catch(() => {})
@@ -597,13 +606,45 @@ loadStats()
 :deep(.rk-soft-chip.rp-file-ready) { background: #e8f7ee; color: $rk-ok; margin-left: auto; }
 :deep(.rk-soft-chip.rp-file-missing) { background: #f1f5f9; color: $rk-text-3; margin-left: auto; }
 
-/* 右详情 */
-.rp-detail-card { overflow: hidden; }
-.rp-detail-empty { padding: 80px 20px; }
+/* 详情抽屉（teleport 到 body，头部固定、内容独立滚动） */
+.rp-drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: $rk-canvas;
+  overflow: hidden;
+}
+.rp-drawer-head {
+  flex: none;
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; padding: 16px 20px;
+  background: #fff; border-bottom: 1px solid $rk-line;
+}
+.rp-drawer-title { font-size: 16px; font-weight: 700; color: $rk-text-1; line-height: 22px; }
+.rp-drawer-sub {
+  margin-top: 2px; font-size: 12px; color: $rk-text-3;
+  .rk-mono { color: $rk-brand-600; }
+}
+.rp-drawer-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; flex: none;
+  color: $rk-text-3; background: none; border: none; border-radius: 8px;
+  cursor: pointer; font-size: 16px;
+  &:hover { background: $rk-canvas; color: $rk-text-1; }
+}
+.rp-drawer-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 16px 20px 28px;
+}
+@media (max-width: 768px) {
+  .rp-drawer-body { padding: 14px 14px 24px; }
+}
 
 .rp-banner {
-  padding: 14px 18px;
-  border-bottom: 1px solid $rk-line;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  border: 1px solid $rk-line;
+  border-radius: 12px;
   &.is-individual { background: linear-gradient(180deg, #eef4ff, #fff 85%); }
   &.is-task { background: linear-gradient(180deg, #eefaf1, #fff 85%); }
   &.is-team { background: linear-gradient(180deg, #fdf5e7, #fff 85%); }
@@ -621,8 +662,6 @@ loadStats()
   margin-top: 5px; font-size: 11px; color: $rk-text-3;
   b { color: $rk-text-2; font-weight: 600; }
 }
-
-.rp-detail-body { padding-top: 14px; }
 
 /* 文件状态 */
 .rp-file {
@@ -685,5 +724,12 @@ loadStats()
 .rp-no-file {
   margin-top: 14px; padding: 24px 10px;
   border: 1px dashed $rk-line; border-radius: 12px;
+}
+</style>
+
+<!-- 全局：el-drawer 面板 teleport 到 body，scoped 选择器无法可靠命中其内部 -->
+<style lang="scss">
+.el-drawer.rp-drawer-wrap .el-drawer__body {
+  padding: 0;
 }
 </style>

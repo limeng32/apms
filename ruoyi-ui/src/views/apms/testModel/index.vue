@@ -59,11 +59,8 @@
         </div>
       </div>
 
-      <!-- ===== 主从双栏 ===== -->
-      <div class="rk-split-grid" style="--rk-split-l: 13fr; --rk-split-r: 11fr;">
-
-        <!-- 左：模型列表（服务端分页） -->
-        <div class="rk-table-card">
+      <!-- ===== 模型台账（点击行右侧抽屉查看字段定义） ===== -->
+      <div class="rk-table-card">
           <div class="rk-card-head">
             <h3 class="rk-card-title">测试模型库</h3>
             <span class="rk-card-sub">共 {{ total }} 个 · 点击行查看字段定义</span>
@@ -146,22 +143,28 @@
           </div>
         </div>
 
-        <!-- 右：字段定义 & 规程 -->
-        <div class="rk-card tm-detail-card">
-          <div class="rk-card-head">
-            <h3 class="rk-card-title">字段定义 &amp; 规程</h3>
-            <span v-if="currentModel" class="rk-card-sub">
-              当前：{{ currentModel.name }}（<span class="rk-mono">{{ currentModel.code }}</span>）
-            </span>
-            <span v-else class="rk-card-sub">← 点击左侧模型查看</span>
-            <div class="rk-card-actions" v-if="currentModel">
+      <!-- ===== 字段定义 & 规程 抽屉（点击左表行打开） ===== -->
+      <el-drawer v-model="detailDrawerVisible" :size="drawerSize" :with-header="false"
+                 destroy-on-close class="tm-drawer-wrap" :style="drawerPanelStyle">
+        <div class="tm-drawer" v-if="currentModel">
+          <div class="tm-drawer-head">
+            <div class="tm-drawer-id">
+              <div class="tm-drawer-title">字段定义 &amp; 规程</div>
+              <div class="tm-drawer-sub">
+                {{ currentModel.name }}（<span class="rk-mono">{{ currentModel.code }}</span>）
+              </div>
+            </div>
+            <div class="tm-drawer-tools">
               <button type="button" class="rk-btn rk-btn-sm rk-btn-primary" @click="openFieldDialog()">
                 <el-icon><Plus /></el-icon>新增字段
+              </button>
+              <button type="button" class="tm-drawer-close" @click="detailDrawerVisible = false">
+                <el-icon><Close /></el-icon>
               </button>
             </div>
           </div>
 
-          <template v-if="currentModel">
+          <div class="tm-drawer-body" v-loading="detailLoading">
             <div class="tm-banner">
               <div class="tm-banner-title">
                 <span class="rk-soft-chip" :class="categoryChipClass(currentModel.category)">{{ currentModel.category }}</span>
@@ -179,7 +182,7 @@
               </div>
             </div>
 
-            <div class="rk-card-body tm-detail-body" v-loading="detailLoading">
+            <div class="tm-detail-content">
               <!-- 规程 -->
               <div v-if="currentModel.protocol" class="tm-protocol">
                 <div class="tm-protocol-label">📋 测试规程</div>
@@ -241,16 +244,9 @@
                 </div>
               </div>
             </div>
-          </template>
-
-          <div v-else class="tm-detail-empty">
-            <div class="rk-empty">
-              <p class="rk-empty-title">选择左侧模型查看字段定义</p>
-              <p class="rk-empty-desc">测试规程、字段 Key、类型与必填约束将在此展示</p>
-            </div>
           </div>
         </div>
-      </div>
+      </el-drawer>
 
       <!-- ========== 模型 新增/编辑 Dialog（原逻辑保留） ========== -->
       <el-dialog :title="dialogTitle" v-model="showModelDialog" width="560px">
@@ -388,9 +384,12 @@ import {
   listTestModel, getTestModel, addTestModel, updateTestModel, delTestModel,
   addField, updateField, delField, listAlgorithms
 } from '@/api/apms/testModel'
-import { Plus, Delete, RefreshLeft, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
+import { Plus, Delete, RefreshLeft, ArrowLeft, ArrowRight, Close } from '@element-plus/icons-vue'
+import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
 
 const { proxy } = getCurrentInstance()
+const { drawerPanelStyle } = useDrawerOffset()
+const { drawerSize } = useDrawerSize('820px')
 
 const PAGE_SIZE = 10
 
@@ -496,7 +495,8 @@ function handleStatusChange(row) {
   })
 }
 
-// ========= 主从 =========
+// ========= 主从（右侧抽屉） =========
+const detailDrawerVisible = ref(false)
 const currentModel = ref(null)
 const detail = reactive({ fields: [] })
 const detailLoading = ref(false)
@@ -504,6 +504,7 @@ const requiredCount = computed(() => detail.fields.filter(f => f.isRequired === 
 
 function handleRowClick(row) {
   currentModel.value = row
+  detailDrawerVisible.value = true
   loadDetail(row.id)
 }
 
@@ -567,6 +568,7 @@ function handleDelete(row) {
       getList()
       loadStats()
       if (currentModel.value && (Array.isArray(selIds) ? selIds.includes(currentModel.value.id) : selIds === currentModel.value.id)) {
+        detailDrawerVisible.value = false
         currentModel.value = null; detail.fields = []
       }
     }).catch(() => {})
@@ -657,13 +659,46 @@ loadAlgorithms()
 :deep(.rk-soft-chip.tm-type-number) { background: #e8f7ee; color: $rk-ok; }
 :deep(.rk-soft-chip.tm-type-text) { background: #f1f5f9; color: $rk-text-3; }
 
-/* 右详情 */
-.tm-detail-card { overflow: hidden; }
-.tm-detail-empty { padding: 80px 20px; }
+/* 详情抽屉（teleport 到 body，头部固定、内容独立滚动） */
+.tm-drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: $rk-canvas;
+  overflow: hidden;
+}
+.tm-drawer-head {
+  flex: none;
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; padding: 16px 20px;
+  background: #fff; border-bottom: 1px solid $rk-line;
+}
+.tm-drawer-title { font-size: 16px; font-weight: 700; color: $rk-text-1; line-height: 22px; }
+.tm-drawer-sub {
+  margin-top: 2px; font-size: 12px; color: $rk-text-3;
+  .rk-mono { color: $rk-brand-600; }
+}
+.tm-drawer-tools { display: flex; align-items: center; gap: 10px; flex: none; }
+.tm-drawer-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  color: $rk-text-3; background: none; border: none; border-radius: 8px;
+  cursor: pointer; font-size: 16px;
+  &:hover { background: $rk-canvas; color: $rk-text-1; }
+}
+.tm-drawer-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 16px 20px 28px;
+}
+@media (max-width: 768px) {
+  .tm-drawer-body { padding: 14px 14px 24px; }
+}
 .tm-banner {
-  padding: 14px 18px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
   background: linear-gradient(180deg, #f4f7ff, #fff 85%);
-  border-bottom: 1px solid $rk-line;
+  border: 1px solid $rk-line;
+  border-radius: 12px;
 }
 .tm-banner-title {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
@@ -675,8 +710,6 @@ loadAlgorithms()
   margin-top: 7px; font-size: 12px; color: $rk-text-3;
   b { color: $rk-text-2; font-weight: 700; }
 }
-.tm-detail-body { padding-top: 14px; }
-
 /* 规程 */
 .tm-protocol {
   background: #f8fafc; border: 1px solid $rk-line; border-radius: 12px;
@@ -729,4 +762,11 @@ loadAlgorithms()
   }
 }
 
+</style>
+
+<!-- 全局：el-drawer 面板 teleport 到 body，scoped 选择器无法可靠命中其内部 -->
+<style lang="scss">
+.el-drawer.tm-drawer-wrap .el-drawer__body {
+  padding: 0;
+}
 </style>

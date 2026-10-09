@@ -68,11 +68,8 @@
         </div>
       </div>
 
-      <!-- ===== 主从双栏 ===== -->
-      <div class="rk-split-grid" style="--rk-split-l: 13fr; --rk-split-r: 11fr;">
-
-        <!-- 左：指标列表（服务端分页） -->
-        <div class="rk-table-card">
+      <!-- ===== 指标台账（点击行右侧抽屉查看参考范围） ===== -->
+      <div class="rk-table-card">
           <div class="rk-card-head">
             <h3 class="rk-card-title">指标库</h3>
             <span class="rk-card-sub">共 {{ total }} 项 · 点击行查看参考范围</span>
@@ -158,22 +155,28 @@
           </div>
         </div>
 
-        <!-- 右：参考范围 & 三级判定 -->
-        <div class="rk-card ind-detail-card">
-          <div class="rk-card-head">
-            <h3 class="rk-card-title">参考范围 &amp; 三级判定</h3>
-            <span v-if="currentIndicator" class="rk-card-sub">
-              当前：{{ currentIndicator.name }}（<span class="rk-mono">{{ currentIndicator.code }}</span>）
-            </span>
-            <span v-else class="rk-card-sub">← 点击左侧指标查看</span>
-            <div class="rk-card-actions" v-if="currentIndicator">
+      <!-- ===== 参考范围 & 三级判定 抽屉（点击左表行打开） ===== -->
+      <el-drawer v-model="detailDrawerVisible" :size="drawerSize" :with-header="false"
+                 destroy-on-close class="ind-drawer-wrap" :style="drawerPanelStyle">
+        <div class="ind-drawer" v-if="currentIndicator">
+          <div class="ind-drawer-head">
+            <div class="ind-drawer-id">
+              <div class="ind-drawer-title">参考范围 &amp; 三级判定</div>
+              <div class="ind-drawer-sub">
+                {{ currentIndicator.name }}（<span class="rk-mono">{{ currentIndicator.code }}</span>）
+              </div>
+            </div>
+            <div class="ind-drawer-tools">
               <button type="button" class="rk-btn rk-btn-sm rk-btn-primary" @click="openRefDialog()">
                 <el-icon><Plus /></el-icon>新增参考范围
+              </button>
+              <button type="button" class="ind-drawer-close" @click="detailDrawerVisible = false">
+                <el-icon><Close /></el-icon>
               </button>
             </div>
           </div>
 
-          <template v-if="currentIndicator">
+          <div class="ind-drawer-body" v-loading="detailLoading">
             <div class="ind-banner">
               <div class="ind-banner-title">
                 <span class="rk-soft-chip" :class="categoryChipClass(currentIndicator.category)">{{ currentIndicator.category }}</span>
@@ -193,15 +196,14 @@
               </div>
             </div>
 
-            <div class="rk-card-body ind-detail-body" v-loading="detailLoading">
-              <div v-if="!detailLoading && detail.refs.length === 0" class="ind-ref-empty">
-                <div class="rk-empty">
-                  <p class="rk-empty-title">该指标暂无参考范围</p>
-                  <p class="rk-empty-desc">点击右上角「新增参考范围」配置性别 / 年龄组口径与三级判定</p>
-                </div>
+            <div v-if="!detailLoading && detail.refs.length === 0" class="ind-ref-empty">
+              <div class="rk-empty">
+                <p class="rk-empty-title">该指标暂无参考范围</p>
+                <p class="rk-empty-desc">点击右上角「新增参考范围」配置性别 / 年龄组口径与三级判定</p>
               </div>
+            </div>
 
-              <div v-for="ref in detail.refs" :key="ref.id" class="ind-ref-card" :class="'is-' + (ref.gender || 'U')">
+            <div v-for="ref in detail.refs" :key="ref.id" class="ind-ref-card" :class="'is-' + (ref.gender || 'U')">
                 <div class="ind-ref-head">
                   <div class="ind-ref-id">
                     <span class="ind-gender" :class="ref.gender === 'M' ? 'is-m' : ref.gender === 'F' ? 'is-f' : 'is-u'">
@@ -293,18 +295,10 @@
                   <button type="button" class="rk-btn rk-btn-sm" @click="bulkAddLevels(ref)">一键三档模板</button>
                   <span class="ind-add-hint">先建空档位（−∞~+∞），再在列表中点「编辑」填写上下限</span>
                 </div>
-              </div>
-            </div>
-          </template>
-
-          <div v-else class="ind-detail-empty">
-            <div class="rk-empty">
-              <p class="rk-empty-title">选择左侧指标查看参考范围</p>
-              <p class="rk-empty-desc">参考范围、三级判定档与区间校验将在此展示</p>
             </div>
           </div>
         </div>
-      </div>
+      </el-drawer>
 
       <!-- ========== 指标 新增/编辑 Dialog（原逻辑保留） ========== -->
       <el-dialog :title="dialogTitle" v-model="showIndicatorDialog" width="520px">
@@ -425,9 +419,12 @@ import {
   addRef, updateRef, delRef,
   addLevel, updateLevel, delLevel
 } from '@/api/apms/indicator'
-import { Plus, Delete, RefreshLeft, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
+import { Plus, Delete, RefreshLeft, ArrowLeft, ArrowRight, Close } from '@element-plus/icons-vue'
+import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
 
 const { proxy } = getCurrentInstance()
+const { drawerPanelStyle } = useDrawerOffset()
+const { drawerSize } = useDrawerSize('760px')
 
 const PAGE_SIZE = 10
 
@@ -538,13 +535,15 @@ function handleStatusChange(row) {
   })
 }
 
-// ============ 主面板交互 ============
+// ============ 主面板交互（右侧抽屉） ============
+const detailDrawerVisible = ref(false)
 const currentIndicator = ref(null)
 const detail = reactive({ refs: [] })
 const detailLoading = ref(false)
 
 function handleRowClick(row) {
   currentIndicator.value = row
+  detailDrawerVisible.value = true
   loadDetail(row.id)
 }
 
@@ -601,6 +600,7 @@ function handleDelete(row) {
     getList()
     loadStats()
     if (currentIndicator.value && (Array.isArray(selIds) ? selIds.includes(currentIndicator.value.id) : selIds === currentIndicator.value.id)) {
+      detailDrawerVisible.value = false
       currentIndicator.value = null
       detail.refs = []
     }
@@ -881,13 +881,43 @@ loadStats()
 :deep(.rk-soft-chip.is-lv-risk) { background: #fcebeb; color: $rk-risk; }
 :deep(.rk-soft-chip.is-lv-info) { background: #f1f5f9; color: $rk-text-3; }
 
-/* 右详情 */
-.ind-detail-card { overflow: hidden; }
-.ind-detail-empty { padding: 80px 20px; }
+/* 详情抽屉（teleport 到 body，头部固定、内容独立滚动） */
+.ind-drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: $rk-canvas;
+  overflow: hidden;
+}
+.ind-drawer-head {
+  flex: none;
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; padding: 16px 20px;
+  background: #fff; border-bottom: 1px solid $rk-line;
+}
+.ind-drawer-title { font-size: 16px; font-weight: 700; color: $rk-text-1; line-height: 22px; }
+.ind-drawer-sub {
+  margin-top: 2px; font-size: 12px; color: $rk-text-3;
+  .rk-mono { color: $rk-brand-600; }
+}
+.ind-drawer-tools { display: flex; align-items: center; gap: 10px; flex: none; }
+.ind-drawer-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  color: $rk-text-3; background: none; border: none; border-radius: 8px;
+  cursor: pointer; font-size: 16px;
+  &:hover { background: $rk-canvas; color: $rk-text-1; }
+}
+.ind-drawer-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 16px 20px 28px;
+}
 .ind-banner {
-  padding: 14px 18px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
   background: linear-gradient(180deg, #f4f7ff, #fff 85%);
-  border-bottom: 1px solid $rk-line;
+  border: 1px solid $rk-line;
+  border-radius: 12px;
 }
 .ind-banner-title {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
@@ -899,8 +929,6 @@ loadStats()
   margin-top: 7px; font-size: 12px; color: $rk-text-3;
   b { color: $rk-text-2; font-weight: 600; }
 }
-.ind-detail-body { padding-top: 14px; }
-
 .ind-ref-empty {
   padding: 30px 10px;
   border: 1px dashed $rk-line; border-radius: 12px;
@@ -965,6 +993,10 @@ loadStats()
 .ind-opt-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 .ind-opt-name { float: right; font-size: 12px; color: #94A3B8; margin-left: 16px; }
 
+@media (max-width: 768px) {
+  .ind-drawer-body { padding: 14px 14px 24px; }
+}
+
 /* ===== 嵌入模式：供合并页堆叠（隐藏页头、归零满铺外壳） ===== */
 .app-container.is-embedded {
   padding: 0;
@@ -976,4 +1008,11 @@ loadStats()
   }
 }
 
+</style>
+
+<!-- 全局：el-drawer 面板 teleport 到 body，scoped 选择器无法可靠命中其内部 -->
+<style lang="scss">
+.el-drawer.ind-drawer-wrap .el-drawer__body {
+  padding: 0;
+}
 </style>
