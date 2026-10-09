@@ -408,6 +408,13 @@
         >确认执行晋升（{{ promotion.plan?.promoteCount || 0 }} 人）</el-button>
       </template>
     </el-dialog>
+
+    <!-- ========== 运动员详情抽屉（整行点击/查看档案，不切换路由） ========== -->
+    <AthleteDetailDrawer
+      v-model="detailOpen"
+      :athlete-id="detailAthleteId"
+      @changed="handleDetailChanged"
+    />
     </read-only-block>
   </div>
 </template>
@@ -417,6 +424,7 @@ import { listAthlete, rtpSummaryAthlete, getAthlete, addAthlete, updateAthlete, 
          previewPromotion, executePromotion } from '@/api/apms/athlete'
 import { listDept } from '@/api/system/dept'
 import GenderBadge from '@/components/GenderBadge/index.vue'
+import AthleteDetailDrawer from './components/AthleteDetailDrawer.vue'
 import ReadOnlyBlock from '@/components/ReadOnlyBlock/index.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
 import { useDict } from '@/utils/dict'
@@ -718,14 +726,17 @@ function handleDelete(row) {
   }).catch(() => {})
 }
 
-/* ===== 详情（整行点击） ===== */
-// 带 from=当前实际路由：同一名单页在 2200 树(/apms/athlete) 与 2400 树(/athletes/roster)
-// 下复用，详情页据此返回当前角色真正可访问的花名册，避免硬编码导致 404
+/* ===== 详情（整行点击）：右侧抽屉，不切换 location ===== */
+const detailOpen = ref(false)
+const detailAthleteId = ref(null)
 function handleDetail(row) {
-  proxy.$router.push({
-    path: '/apms/athlete/detail/' + row.athleteId,
-    query: { from: proxy.$route.fullPath }
-  })
+  detailAthleteId.value = row.athleteId
+  detailOpen.value = true
+}
+// 抽屉内数据变更（RTP/体态/小组等）后同步列表行徽章与统计
+function handleDetailChanged() {
+  getList()
+  getSummary()
 }
 
 // 初始化
