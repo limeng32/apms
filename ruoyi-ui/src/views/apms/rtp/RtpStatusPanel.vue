@@ -77,7 +77,7 @@
 
         <div v-else class="rk-kanban-body">
           <div
-            v-for="row in columnList(col.key)"
+            v-for="row in pagedColumnList(col.key)"
             :key="row.athleteId"
             class="rk-kanban-card"
             :class="{ 'is-dragging': dragId === row.athleteId, 'is-readonly': !canEdit }"
@@ -113,6 +113,15 @@
             </div>
           </div>
           <div v-if="!loading && columnList(col.key).length === 0" class="rk-kanban-empty">暂无队员</div>
+          <!-- 展开卡片态：该列超过 10 人时列内独立分页（收起胶囊墙不裁切、显示全部） -->
+          <RkPager
+            v-if="!loading && columnList(col.key).length > PAGE_SIZE"
+            mini
+            :page="columnPage[col.key]"
+            :total="columnList(col.key).length"
+            :page-size="PAGE_SIZE"
+            @update:page="columnPage[col.key] = $event"
+          />
         </div>
       </section>
     </div>
@@ -254,6 +263,7 @@ import { listDept } from '@/api/system/dept'
 import { checkPermi } from '@/utils/permission'
 import { Close, RefreshLeft, CircleCheck, Warning, CircleClose, QuestionFilled, ArrowRight } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
+import RkPager from '@/components/RkPager/index.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
 
 const { proxy } = getCurrentInstance()
@@ -357,7 +367,8 @@ function loadAll() {
 // 供外部（如风险预警采纳后）刷新本面板
 defineExpose({ reload: loadAll })
 
-// ========= 筛选（按队名匹配） =========
+// ========= 筛选（按队名匹配）；每列独立分页（仅展开卡片态分页，收起胶囊墙显示全部） =========
+const PAGE_SIZE = 10
 const filteredList = computed(() => {
   const kw = (filters.keyword || '').trim().toLowerCase()
   let deptName = null
@@ -371,9 +382,29 @@ const filteredList = computed(() => {
   })
 })
 
+// 该列（筛选后）全部成员：收起胶囊墙与列头计数用
 function columnList(key) {
   return filteredList.value.filter(r => (r.status || 'na') === key)
 }
+// 每列各自的页码
+const columnPage = reactive({ r: 1, y: 1, g: 1, na: 1 })
+// 展开卡片态：每页 10 人
+function pagedColumnList(key) {
+  const all = columnList(key)
+  const p = columnPage[key] || 1
+  return all.slice((p - 1) * PAGE_SIZE, p * PAGE_SIZE)
+}
+// 筛选变化时所有列回到第 1 页
+watch(() => [filters.keyword, filters.deptId], () => {
+  Object.keys(columnPage).forEach(k => { columnPage[k] = 1 })
+})
+// 状态变更导致某列人数减少时收敛该列页码
+watch(filteredList, () => {
+  Object.keys(columnPage).forEach(k => {
+    const maxPage = Math.max(1, Math.ceil(columnList(k).length / PAGE_SIZE))
+    if (columnPage[k] > maxPage) columnPage[k] = maxPage
+  })
+}, { flush: 'post' })
 function resetFilter() { filters.deptId = null; filters.keyword = '' }
 
 // ========= 拖拽（弹确认后落库；清除走 clearStatus，其余走 updateStatus） =========

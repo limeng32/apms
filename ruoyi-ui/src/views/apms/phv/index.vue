@@ -60,8 +60,8 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(row, idx) in filteredData" :key="row.id" class="rk-row" :class="{ 'is-zebra': idx % 2 === 1 }">
-                <td class="text-center rk-mono rk-dash">{{ idx + 1 }}</td>
+              <tr v-for="(row, idx) in pagedData" :key="row.id" class="rk-row" :class="{ 'is-zebra': idx % 2 === 1 }">
+                <td class="text-center rk-mono rk-dash">{{ (page - 1) * PAGE_SIZE + idx + 1 }}</td>
                 <td>
                   <div class="rk-person">
                     <span class="rk-avatar pm-avatar" :style="{ background: avatarColor(row) }">
@@ -122,6 +122,7 @@
             <p class="rk-empty-desc">{{ filters.keyword ? '请调整筛选条件后重试' : '点击右上角「新增 PHV 计算」生成第一条记录' }}</p>
           </div>
         </div>
+        <RkPager v-if="!loading && filteredData.length > PAGE_SIZE" v-model:page="page" :total="filteredData.length" :page-size="PAGE_SIZE" unit="条"/>
       </div>
 
       <!-- ========= PHV 计算弹窗 ========= -->
@@ -379,6 +380,7 @@ import { listAthlete } from '@/api/apms/athlete'
 import { listByAthlete as listMeasuresByAthlete } from '@/api/apms/bodyMeasure'
 import { MagicStick, RefreshLeft } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
+import RkPager from '@/components/RkPager/index.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
 
 const { proxy } = getCurrentInstance()
@@ -531,12 +533,22 @@ const kpiCards = computed(() => {
   ]
 })
 
-/* ===== 列表加载 + 前端姓名筛选（原页口径：全量返回后本地过滤） ===== */
+/* ===== 列表加载 + 前端姓名筛选（全量返回后本地过滤），固定每页 10 条本地分页 ===== */
+const PAGE_SIZE = 10
+const page = ref(1)
 const filteredData = computed(() => {
   const kw = filters.keyword.trim()
   if (!kw) return rawData.value
   return rawData.value.filter(r => (r.athleteName || '').includes(kw))
 })
+// 关键词筛选变化时回到第 1 页；删除等导致条数减少时防止页码越界
+watch(() => filters.keyword, () => { page.value = 1 })
+watch(filteredData, (list) => {
+  const maxPage = Math.max(1, Math.ceil(list.length / PAGE_SIZE))
+  if (page.value > maxPage) page.value = maxPage
+})
+const pagedData = computed(() =>
+  filteredData.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE))
 
 function loadList() {
   loading.value = true

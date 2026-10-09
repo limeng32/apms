@@ -211,28 +211,14 @@
         </div>
       </div>
 
-      <!-- ===== 分页（服务端分页，外观对齐 demo） ===== -->
-      <div class="rp-pager">
-        <span class="rp-pager-info">
-          共 <b class="mono">{{ total }}</b> 人 · 每页 <span class="mono">{{ pageSize }}</span> 条
-        </span>
-        <div class="rp-pager-btns">
-          <button type="button" class="rp-page-btn" :disabled="queryParams.pageNum <= 1" @click="goPage(queryParams.pageNum - 1)">
-            <el-icon><ArrowLeft /></el-icon>
-          </button>
-          <button
-            v-for="p in pageNumbers"
-            :key="p"
-            type="button"
-            class="rp-page-btn mono"
-            :class="{ 'is-active': p === queryParams.pageNum }"
-            @click="goPage(p)"
-          >{{ p }}</button>
-          <button type="button" class="rp-page-btn" :disabled="queryParams.pageNum >= totalPages" @click="goPage(queryParams.pageNum + 1)">
-            <el-icon><ArrowRight /></el-icon>
-          </button>
-        </div>
-      </div>
+      <!-- ===== 分页（服务端分页，每页固定 10 条） ===== -->
+      <RkPager
+        :page="queryParams.pageNum"
+        :total="total"
+        :page-size="pageSize"
+        unit="人"
+        @update:page="goPage"
+      />
     </div>
 
     <!-- 新增/修改对话框（沿用原有表单） -->
@@ -400,10 +386,11 @@ import { listAthlete, rtpSummaryAthlete, getAthlete, addAthlete, updateAthlete, 
 import { listDept } from '@/api/system/dept'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import AthleteDetailDrawer from './components/AthleteDetailDrawer.vue'
+import RkPager from '@/components/RkPager/index.vue'
 import ReadOnlyBlock from '@/components/ReadOnlyBlock/index.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
 import { useDict } from '@/utils/dict'
-import { Plus, Search, RefreshLeft, MoreFilled, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
+import { Plus, Search, RefreshLeft, MoreFilled } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
 const { apms_athlete_status } = useDict('apms_athlete_status')
@@ -429,7 +416,7 @@ const open = ref(false)
 const title = ref('')
 const ids = ref([])
 const total = ref(0)
-const pageSize = 12
+const pageSize = 10
 const teamOptions = ref([])
 const openMenuId = ref(null)
 const rtpCounts = reactive({ g: 0, y: 0, r: 0 })
@@ -466,20 +453,6 @@ const data = reactive({
 const { queryParams, form, rules } = toRefs(data)
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
-
-/** 分页页码窗口（总数多时只显示当前页附近的页码） */
-const pageNumbers = computed(() => {
-  const pages = totalPages.value
-  const cur = queryParams.value.pageNum
-  if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1)
-  const start = Math.max(2, Math.min(pages - 4, cur - 2))
-  const nums = [1]
-  if (start > 2) nums.push('…')
-  for (let p = start; p < start + 4 && p < pages; p++) nums.push(p)
-  if (start + 3 < pages - 1) nums.push('…')
-  nums.push(pages)
-  return nums
-})
 
 /* ===== 展示辅助 ===== */
 // 年龄段推导：与后端 SQL 同口径（age+1 收敛到 13~18），返回纯数字
@@ -1240,48 +1213,6 @@ $risk: #dc2626;
   margin: 6px 0 0;
   font-size: 13px;
   color: $text-3;
-}
-
-/* 分页 */
-.rp-pager {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  border-top: 1px solid $line;
-}
-.rp-pager-info {
-  font-size: 12px;
-  color: $text-3;
-  b { color: $text-2; font-weight: 500; }
-}
-.rp-pager-btns {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.rp-page-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 28px;
-  height: 28px;
-  padding: 0 6px;
-  font-size: 12px;
-  color: $text-2;
-  background: #fff;
-  border: 1px solid $line;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: background .15s, color .15s;
-  &:hover:not(:disabled):not(.is-active) { background: $canvas; }
-  &:disabled { opacity: .4; cursor: not-allowed; }
-  &.is-active {
-    color: #fff;
-    font-weight: 600;
-    background: $brand-600;
-    border-color: $brand-600;
-  }
 }
 
 /* 窄屏：右侧搜索区换行占整行 */

@@ -66,8 +66,8 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(row, idx) in tableData" :key="row.id" class="rk-row" :class="{ 'is-zebra': idx % 2 === 1 }">
-                  <td class="text-center rk-mono cs-idx">{{ idx + 1 }}</td>
+                <tr v-for="(row, idx) in pagedData" :key="row.id" class="rk-row" :class="{ 'is-zebra': idx % 2 === 1 }">
+                  <td class="text-center rk-mono cs-idx">{{ (page - 1) * PAGE_SIZE + idx + 1 }}</td>
                   <td>
                     <div class="rk-person">
                       <span class="cs-avatar" :style="{ background: avatarColor(row) }">{{ (row.athleteName || '?').charAt(0) }}</span>
@@ -111,6 +111,7 @@
               </tbody>
             </table>
           </div>
+          <RkPager v-if="!loading && tableData.length > PAGE_SIZE" v-model:page="page" :total="tableData.length" :page-size="PAGE_SIZE" unit="条"/>
         </div>
       </div>
 
@@ -184,6 +185,7 @@ import { listComboModel } from '@/api/apms/comboModel'
 import { listTestTask, listTaskMember } from '@/api/apms/testTask'
 import { RefreshLeft, Cpu } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
+import RkPager from '@/components/RkPager/index.vue'
 import ComboScoreReport from './ComboScoreReport.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
 
@@ -228,6 +230,17 @@ const tableData = computed(() => {
   }
   return arr
 })
+
+// 固定每页 10 条本地分页（tableData 仍为过滤+排序全量，供 KPI 统计）
+const PAGE_SIZE = 10
+const page = ref(1)
+watch(() => [filters.keyword, sortDir.value], () => { page.value = 1 })
+watch(tableData, (list) => {
+  const maxPage = Math.max(1, Math.ceil(list.length / PAGE_SIZE))
+  if (page.value > maxPage) page.value = maxPage
+})
+const pagedData = computed(() =>
+  tableData.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE))
 const summary = computed(() => {
   const arr = tableData.value
   const scores = arr.map(r => Number(r.comboScore)).filter(v => !isNaN(v))
