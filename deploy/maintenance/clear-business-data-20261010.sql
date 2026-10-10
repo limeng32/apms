@@ -5,28 +5,28 @@
 --
 -- ★★★ 危险操作，必须由人工在维护窗口手动执行，绝不接入 patches/ 自动补丁链 ★★★
 --
--- 【执行前必做】
---   1. 全库备份（以下二选一，建议在服务器上以 root 用 /etc/apms/env.conf 的库账号）：
---        mkdir -p /opt/apms/backup/manual-clear-20261010
---        mysqldump -h<DB_HOST> -P<DB_PORT> -u<DB_USER> -p \
---          --single-transaction --no-tablespaces --triggers --routines --events \
---          --databases <DB_NAME> | gzip > \
---          /opt/apms/backup/manual-clear-20261010/apms-before-clear.sql.gz
---        gzip -t 上一步文件，确认非空且完整
---   2. 停后端，避免清理过程中有写入：
---        systemctl stop apms-backend
---   3. 执行本脚本，必须带确认变量，否则脚本立即语法错误中止（变量与脚本须在
---      同一连接，推荐管道方式；DB 连接参数取自 /etc/apms/env.conf）：
---        ( echo "SET @CONFIRM_CLEAR := 'YES-CLEAR-PROD-20261010';"; \
---          cat /opt/apms/clear-business-data-20261010.sql ) \
---          | mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" -p"${DB_PASS}" "${DB_NAME}"
---      交互式等价：mysql ... 进入后
---        SET @CONFIRM_CLEAR := 'YES-CLEAR-PROD-20261010';
---        source /opt/apms/clear-business-data-20261010.sql
---      注意：脚本内含 DATABASE()='apms' 二次确认，若生产库名不是 apms 请先删除该段。
---   4. 启动后端：systemctl start apms-backend
---   5. Redis 业务缓存：重跑一次 bash deploy/build.sh 发版会按版本选择性清缓存
---      （保留 login_tokens 登录态）；若不发版，可手动清理见文件末尾说明。
+-- 【唯一执行方式】配套同目录 clear-business-data-20261010.sh（在生产服务器以 root 运行）
+--   该包装器已固化以下顺序与校验，请勿手工逐条执行本 SQL：
+--     ① 停后端（杜绝备份后仍有写入、导致恢复丢数据）
+--     ② 全库逻辑备份 + 三重校验（dump 退出码 / gzip -t / 解压体积 ≥10KB），失败即中止
+--     ③ 非交互 batch 管道执行本 SQL（带确认变量）
+--     ④ 人工核对脚本打印的清理前/后行数
+--     ⑤ 启后端
+--
+--   执行（脚本内部用 set -o pipefail + mysql 无 --force，遇任何 SQL 错误立即停止）：
+--        bash clear-business-data-20261010.sh --yes-i-want-to-clear-prod
+--
+--   【执行方式红线】
+--     ✗ 禁止在 mysql 交互客户端里 source 本文件：交互模式下 source 遇 SQL 错误会
+--       继续执行后续语句，直接绕过下面的防误删闸门（guard 报错后 TRUNCATE 仍会跑）。
+--     ✗ 禁止给 mysql 加 --force（-f）：效果同上，错误后不中断。
+--     ✓ 只允许包装器使用的非交互 batch/管道方式（mysql 读 stdin，默认遇错即停）。
+--
+--   本 SQL 自身的防误删闸门：必须在同一连接先 SET @CONFIRM_CLEAR，且 DATABASE()=apms，
+--   否则第 0 步的 PREPARE 立即语法错误中止；配合非交互模式，错误后不会再执行任何语句。
+--
+-- 【执行后】Redis 业务缓存：重跑一次 bash deploy/build.sh 会按版本选择性清缓存
+--   （保留 login_tokens 登录态）；若不发版，可手动清理，见文件末尾。
 --
 -- 【保留不动】
 --   账号/组织：sys_user, sys_role, sys_menu, sys_role_menu, sys_dept,
