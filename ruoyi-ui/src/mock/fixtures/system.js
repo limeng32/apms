@@ -15,7 +15,7 @@ export const getInfoBody = {
     userId: -1,
     userName: 'super',
     nickName: '体验账号（super）',
-    avatar: '',                    // 空串 → getInfo action 回退本地 defAva，不产生 HTTP
+    avatar: '',                    // 前端已移除头像展示与设置，字段保留仅为对齐后端 getInfo 结构
     sex: '0',
     status: '0'
   },

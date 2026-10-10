@@ -13,25 +13,12 @@
           <div class="lock-badge"><el-icon><Lock /></el-icon></div>
         </div>
         <div class="lock-username">{{ userStore.nickName }}</div>
-        <div class="lock-hint">系统已锁定，请输入密码解锁</div>
+        <div class="lock-hint">系统已锁定，点击解锁返回</div>
 
-        <div class="input-wrap" :class="{ shake: isShaking }">
-          <input
-            ref="passwordInput"
-            v-model="password"
-            type="password"
-            placeholder="请输入登录密码"
-            class="lock-input"
-            autocomplete="off"
-            @keydown.enter="handleUnlock"
-          />
-          <button class="unlock-btn" :disabled="loading" @click="handleUnlock">
-            <el-icon v-if="!loading"><ArrowRight /></el-icon>
-            <el-icon v-else class="is-loading-spin"><Loading /></el-icon>
-          </button>
-        </div>
-
-        <div v-if="errorMsg" class="error-msg">{{ errorMsg }}</div>
+        <button class="unlock-btn" @click="handleUnlock">
+          <el-icon><Unlock /></el-icon>
+          <span>解 锁</span>
+        </button>
 
         <div class="lock-footer">
           <a href="javascript:;" @click="goLogin">退出重新登录</a>
@@ -42,12 +29,11 @@
 </template>
 
 <script setup>
-import { Lock, ArrowRight, Loading } from '@element-plus/icons-vue'
+import { Lock, Unlock } from '@element-plus/icons-vue'
 import useUserStore from '@/store/modules/user'
 import useLockStore from '@/store/modules/lock'
 import useLoginThemeStore from '@/store/modules/loginTheme'
 import LoginRenderer from './login/LoginRenderer.vue'
-import { unlockScreen } from '@/api/login'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -64,13 +50,8 @@ const lockConfig = computed(() => ({
   }
 }))
 
-const password = ref('')
-const loading = ref(false)
-const errorMsg = ref('')
-const isShaking = ref(false)
 const currentTime = ref('')
 const currentDate = ref('')
-const passwordInput = ref(null)
 
 let timer = null
 
@@ -92,32 +73,11 @@ const startClock = () => {
   timer = setInterval(update, 1000)
 }
 
-const handleUnlock = async () => {
-  if (!password.value) {
-    showError('请输入密码')
-    return
-  }
-  loading.value = true
-  errorMsg.value = ''
-  try {
-    await unlockScreen(password.value)
-    const lockPath = lockStore.lockPath
-    lockStore.unlockScreen()
-    router.replace(lockPath)
-  } catch (err) {
-    const msg = err.message || err.toString()
-    showError(msg)
-    password.value = ''
-    nextTick(() => passwordInput.value?.focus())
-  } finally {
-    loading.value = false
-  }
-}
-
-const showError = (msg) => {
-  errorMsg.value = msg
-  isShaking.value = true
-  setTimeout(() => { isShaking.value = false }, 600)
+// 免鉴权解锁：锁屏仅作占位，点击即回到锁定前页面，不做任何密码校验
+const handleUnlock = () => {
+  const lockPath = lockStore.lockPath
+  lockStore.unlockScreen()
+  router.replace(lockPath)
 }
 
 const goLogin = () => {
@@ -131,7 +91,6 @@ onMounted(() => {
   // 复用登录页同一份配置（背景/配色/字体/logo），失败静默由 LoginRenderer 默认值兜底
   loginThemeStore.loadConfig()
   startClock()
-  nextTick(() => passwordInput.value?.focus())
 })
 
 onBeforeUnmount(() => {
@@ -218,75 +177,26 @@ onBeforeUnmount(() => {
   margin: 6px 0 20px;
 }
 
-/* 密码输入 + 解锁按钮（一体化控件，规格对齐登录输入框 46px / 圆角） */
-.input-wrap {
-  display: flex;
-  align-items: center;
-  height: 46px;
-  border: 1px solid var(--login-border);
-  border-radius: var(--login-radius);
-  overflow: hidden;
-  transition: border-color 0.2s;
-}
-.input-wrap:focus-within {
-  border-color: var(--login-input-focus);
-}
-.input-wrap.shake {
-  animation: shake 0.5s ease;
-}
-.lock-input {
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-  border: none;
-  outline: none;
-  padding: 0 12px 0 14px;
-  font-size: 14px;
-  color: var(--login-text-1);
-  background: transparent;
-}
-.lock-input::placeholder {
-  color: var(--login-text-2);
-}
+/* 一键解锁按钮（规格对齐登录按钮 46px / 圆角） */
 .unlock-btn {
-  flex: none;
-  align-self: stretch;
-  width: 52px;
+  width: 100%;
+  height: 46px;
+  margin-top: 4px;
   border: none;
+  border-radius: var(--login-radius);
   background: var(--login-btn-bg);
   color: #fff;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 17px;
+  gap: 6px;
+  font-size: 15px;
+  letter-spacing: 4px;
   transition: background 0.2s;
 }
-.unlock-btn:hover:not(:disabled) {
+.unlock-btn:hover {
   background: var(--login-btn-hover);
-}
-.unlock-btn:disabled {
-  opacity: 0.85;
-  cursor: default;
-}
-.is-loading-spin {
-  animation: uc-spin 1s linear infinite;
-}
-@keyframes uc-spin {
-  to { transform: rotate(360deg); }
-}
-
-/* 错误提示 */
-.error-msg {
-  margin-top: 14px;
-  color: #f56c6c;
-  font-size: 13px;
-  text-align: center;
-  animation: fadeIn 0.3s ease;
-}
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
 }
 
 /* 底部退出登录 */
@@ -301,13 +211,5 @@ onBeforeUnmount(() => {
 }
 .lock-footer a:hover {
   color: var(--login-link);
-}
-
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-8px); }
-  40% { transform: translateX(8px); }
-  60% { transform: translateX(-6px); }
-  80% { transform: translateX(6px); }
 }
 </style>

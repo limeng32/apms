@@ -100,16 +100,6 @@ export function updateUserPwd(oldPassword, newPassword) {
   })
 }
 
-// 用户头像上传
-export function uploadAvatar(data) {
-  return request({
-    url: '/system/user/profile/avatar',
-    method: 'post',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    data: data
-  })
-}
-
 // 查询授权角色
 export function getAuthRole(userId) {
   return request({

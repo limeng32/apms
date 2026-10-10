@@ -67,8 +67,5 @@ export const frameworkHandlers = [
     },
     roleGroup: '业务管理员',
     postGroup: ''
-  })),
-
-  // 锁屏解锁（演示态不校验密码，直接放行）
-  route('post', '/unlockscreen', () => ok())
+  }))
 ]

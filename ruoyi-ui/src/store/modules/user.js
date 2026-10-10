@@ -3,9 +3,7 @@ import cache from '@/plugins/cache'
 import { ElMessageBox, } from 'element-plus'
 import { login, logout, getInfo } from '@/api/login'
 import { getToken, setToken, removeToken, isDemoMode, clearDemoSession } from '@/utils/auth'
-import { isHttp, isEmpty } from "@/utils/validate"
 import useLockStore from '@/store/modules/lock'
-import defAva from '@/assets/images/profile.jpg'
 
 const useUserStore = defineStore(
   'user',
@@ -15,7 +13,6 @@ const useUserStore = defineStore(
       id: '',
       name: '',
       nickName: '',
-      avatar: '',
       roles: [],
       permissions: [],
       portalMode: false,
@@ -44,10 +41,6 @@ const useUserStore = defineStore(
         return new Promise((resolve, reject) => {
           getInfo().then(res => {
             const user = res.user
-            let avatar = user.avatar || ""
-            if (!isHttp(avatar)) {
-              avatar = (isEmpty(avatar)) ? defAva : import.meta.env.VITE_APP_BASE_API + avatar
-            }
             if (res.roles && res.roles.length > 0) { // 验证返回的roles是否是一个非空数组
               this.roles = res.roles
               this.permissions = res.permissions
@@ -57,7 +50,6 @@ const useUserStore = defineStore(
             this.id = user.userId
             this.name = user.userName
             this.nickName = user.nickName
-            this.avatar = avatar
             this.portalMode = res.portalMode === true
             this.homePath = res.homePath || ''
             cache.session.set('pwrChrtype', res.pwdChrtype)
