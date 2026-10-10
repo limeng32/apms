@@ -60,14 +60,24 @@ BACKUP_FILE=""   # 成功后填充，供失败分支提示回滚路径
 
 start_backend() {
     log "启动 ${SERVICE}..."
-    systemctl start "${SERVICE}" 2>/dev/null || { err "systemctl start ${SERVICE} 失败，请人工检查"; return 1; }
+    systemctl start "${SERVICE}" 2>/dev/null || {
+        err "systemctl start ${SERVICE} 失败，请人工检查"
+        return 1
+    }
+
     local i code
     for i in $(seq 1 45); do
         code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${MGMT_PORT}/health" 2>/dev/null || echo "000")
-        [ "${code}" = "200" ] && { log "  ✅ 后端已就绪（health=200）"; return 0; }
+        if [ "${code}" = "200" ]; then
+            log "  ✅ 后端已就绪（health=200）"
+            return 0
+        fi
         sleep 2
     done
-    warn "  后端已发出启动指令但 90s 内未探活到 ${MGMT_PORT}/health，请人工确认"
+
+    # 探活失败必须返回非 0：warn 是 echo 返回 0，会把启动失败误判成整体成功
+    err "后端启动后 90s 内未通过健康检查（${MGMT_PORT}/health）"
+    return 1
 }
 
 echo ""
@@ -124,8 +134,10 @@ if [ "${BACKUP_OK}" -ne 1 ]; then
     grep -v -F 'Using a password on the command line interface can be insecure' "${DUMP_ERR}" 2>/dev/null | tail -5 | sed 's/^/    mysqldump: /' || true
     rm -f "${DB_TMP}"
     err "备份未通过校验（dump 状态/gzip 完整性/解压体积≥10KB 三重关卡之一失败）"
-    err "为安全起见未执行任何清库。现重新拉起后端恢复服务。"
-    start_backend || true
+    err "为安全起见未执行任何清库。现尝试重新拉起后端恢复服务。"
+    if ! start_backend; then
+        err "且后端未能在 90s 内恢复，请立即人工介入：systemctl start ${SERVICE}"
+    fi
     exit 1
 fi
 mv "${DB_TMP}" "${DB_BACKUP}"
@@ -147,7 +159,14 @@ log "  ✅ 清库 SQL 全部执行完成（请向上滚动核对「清理前/后
 
 # ===== 4. 启动后端并探活 =====
 log "Step 4/4 启动后端..."
-start_backend || true
+# 启动/探活失败必须让脚本失败退出，但不回滚数据库：清库已成功，回滚反而扩大问题
+if ! start_backend; then
+    err "业务数据已成功清理且备份完整，但后端恢复失败。"
+    err "备份（可保留，勿删）：${BACKUP_FILE}"
+    err "请人工排查：systemctl status ${SERVICE}；journalctl -u ${SERVICE} -n 80 --no-pager"
+    err "数据库清理结果有效，修复应用后重新启动即可：systemctl start ${SERVICE}"
+    exit 1
+fi
 
 echo ""
 log "=========================================="
