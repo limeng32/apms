@@ -16,6 +16,7 @@
 #   (1) Maven clean package -DskipTests（注入 apms.version）
 #   (2) Vue vite build
 #   (3) ssh + scp 上传产物到远程 /opt/apms/upload/
+#       （含 gitignore 目录里的 TLS 证书 .trae/CA/aoti/，私钥不入库）
 #   (4) ssh 远程执行 deploy.sh
 # ============================================================
 set -euo pipefail
@@ -158,7 +159,48 @@ for f in apms-nginx.conf apms-backend.service; do
     fi
 done
 
-# 3d. 上传 patches（增量）
+# 3d. 上传 TLS 证书与私钥（多域名，列表驱动）
+# 安全约束：证书目录在 .gitignore 内（.trae/CA/），私钥只经 scp 直传，绝不入库。
+# 每行格式：证书域名|本地 fullchain 路径|本地私钥路径
+#   - pem/key 都在：必须传成功，否则中止（防止续签后新配置引用了服务器上不存在的证书）
+#   - pem/key 都缺：仅告警跳过，服务器已有证书时常规发版不受影响；新机器首装会在远端
+#     deploy.sh 的 nginx -t 处明确失败
+#   - 只缺一个：残缺状态直接中止，杜绝半套证书上线
+# 续签流程：替换本地 pem/key → 正常跑 build.sh，远端自动校验 modulus 并安装 reload。
+# 新增域名：在数组里加一行，并在 apms-nginx.conf 增加引用该证书的 server 块。
+SSL_CERT_SPECS=(
+    "aoti.apms.top|${PROJECT_ROOT}/.trae/CA/aoti/aoti.apms.top.pem|${PROJECT_ROOT}/.trae/CA/aoti/aoti.apms.top.key"
+    "www.apms.top|${PROJECT_ROOT}/.trae/CA/www/www.apms.top.pem|${PROJECT_ROOT}/.trae/CA/www/www.apms.top.key"
+)
+for spec in "${SSL_CERT_SPECS[@]}"; do
+    SSL_DOMAIN="${spec%%|*}"
+    REST="${spec#*|}"
+    SSL_LOCAL_PEM="${REST%%|*}"
+    SSL_LOCAL_KEY="${REST#*|}"
+    SSL_REMOTE_DIR="${REMOTE_DIR}/upload/ssl/${SSL_DOMAIN}"
+
+    if [ ! -f "${SSL_LOCAL_PEM}" ] && [ ! -f "${SSL_LOCAL_KEY}" ]; then
+        warn "  本地无 TLS 证书 ${SSL_DOMAIN}（${SSL_LOCAL_PEM}），跳过：依赖服务器现有证书；换新机器首装前必须先备齐"
+        continue
+    fi
+    [ -f "${SSL_LOCAL_PEM}" ] || err "${SSL_DOMAIN} 只有私钥没有 fullchain（${SSL_LOCAL_PEM}），拒绝半套证书上线"
+    [ -f "${SSL_LOCAL_KEY}" ] || err "${SSL_DOMAIN} 只有 fullchain 没有私钥（${SSL_LOCAL_KEY}），拒绝半套证书上线"
+
+    log "  上传 TLS 证书 ${SSL_DOMAIN}..."
+    ssh "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p '${SSL_REMOTE_DIR}'"
+    scp "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "${SSL_LOCAL_PEM}" \
+        "${REMOTE_USER}@${REMOTE_HOST}:${SSL_REMOTE_DIR}/fullchain.pem" >/dev/null 2>&1 \
+        || err "TLS 证书 ${SSL_DOMAIN}（fullchain）上传失败，已中止发布"
+    scp "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "${SSL_LOCAL_KEY}" \
+        "${REMOTE_USER}@${REMOTE_HOST}:${SSL_REMOTE_DIR}/privkey.pem" >/dev/null 2>&1 \
+        || err "TLS 私钥 ${SSL_DOMAIN}（privkey）上传失败，已中止发布"
+    # 私钥暂存落地即收权，不等待远端 deploy
+    ssh "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "${REMOTE_USER}@${REMOTE_HOST}" \
+        "chmod 644 '${SSL_REMOTE_DIR}/fullchain.pem' && chmod 600 '${SSL_REMOTE_DIR}/privkey.pem'"
+    log "  ${SSL_DOMAIN} 证书暂存完成（远端 deploy.sh 安装到 /etc/nginx/ssl/${SSL_DOMAIN}/）"
+done
+
+# 3e. 上传 patches（增量）
 # 生产安全：patches 上传失败必须中止，防止"漏传 SQL patch 却照常发布"导致库结构落后于代码
 if [ -d "${PROJECT_ROOT}/patches" ] && [ "$(ls -A "${PROJECT_ROOT}/patches/"*.sql 2>/dev/null | wc -l)" -gt 0 ]; then
     RSYNC_SSH="ssh"

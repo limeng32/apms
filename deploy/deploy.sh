@@ -363,6 +363,23 @@ STARTSH
         rollback "健康检查超时 (MGMT_PORT=${MGMT_PORT})"
         exit 1
     fi
+
+    # 业务端口门禁（30s）：management 独立端口（actuator 子上下文）可能早于业务
+    # Tomcat 连接器就绪。只确认 10081 就放行，nginx 会立刻接到 connect refused（502），
+    # 真实事故 2026-10-10：health 已 200、业务端口晚数秒，外网验证误判回滚。
+    APP_PORT_READY=0
+    for i in $(seq 1 15); do
+        if (exec 3<>/dev/tcp/127.0.0.1/"${APP_PORT}") 2>/dev/null; then
+            APP_PORT_READY=1
+            exec 3>&- 3<&-
+            log "  ✅ 业务端口 ${APP_PORT} 已接受连接 (第 ${i} 次轮询)"
+            break
+        fi
+        sleep 2
+    done
+    if [ "${APP_PORT_READY}" -ne 1 ]; then
+        warn "  ⚠️ 业务端口 ${APP_PORT} 30s 内未接受连接（mgmt 已就绪），继续由外网验证重试判定"
+    fi
     echo ""
 }
 
@@ -635,12 +652,75 @@ spring.data.redis.password: "${REDIS_PASS}"
 EOF
 log "  ✅ ${CONFIGDIR}/application.yml"
 
-# ===== Step 5: Nginx =====
+# ===== Step 5: Nginx + TLS 证书 =====
 log "Step 5: 部署 Nginx..."
+NGINX_CONF_TARGET="/etc/nginx/conf.d/apms.conf"
+SSL_STAGE_ROOT="${UPLOAD}/ssl"
+SSL_TARGET_ROOT="/etc/nginx/ssl"
+
+# 5a. 安装 TLS 证书（多域名，遍历暂存目录 upload/ssl/<域名>/）
+# 每个暂存子目录名 = 证书主域名，目录内必须含 fullchain.pem + privkey.pem。
+# build.sh 从 gitignore 的 .trae/CA/ 上传；暂存区为空则保留服务器现有证书（常规发版）。
+SSL_STAGE_FOUND=0
+if [ -d "${SSL_STAGE_ROOT}" ]; then
+    for stage_dir in "${SSL_STAGE_ROOT}"/*/; do
+        [ -d "${stage_dir}" ] || continue
+        SSL_DOMAIN="$(basename "${stage_dir}")"
+        STAGE_CERT="${stage_dir}fullchain.pem"
+        STAGE_KEY="${stage_dir}privkey.pem"
+        SSL_TARGET="${SSL_TARGET_ROOT}/${SSL_DOMAIN}"
+        [ -f "${STAGE_CERT}" ] || err "${SSL_DOMAIN} 暂存目录缺少 fullchain.pem，终止部署"
+        [ -f "${STAGE_KEY}" ]  || err "${SSL_DOMAIN} 暂存目录缺少 privkey.pem，终止部署"
+        SSL_STAGE_FOUND=1
+
+        log "  安装 TLS 证书 ${SSL_DOMAIN} → ${SSL_TARGET}"
+        # 公私钥必须配对：modulus 不一致直接终止，绝不让 nginx 加载错配证书
+        CERT_MOD=$(openssl x509 -noout -modulus -in "${STAGE_CERT}" | md5sum | awk '{print $1}')
+        KEY_MOD=$(openssl rsa -noout -modulus -in "${STAGE_KEY}" 2>/dev/null | md5sum | awk '{print $1}')
+        [ -n "${CERT_MOD}" ] && [ "${CERT_MOD}" = "${KEY_MOD}" ] \
+            || err "${SSL_DOMAIN} 证书与私钥 modulus 不匹配（cert=${CERT_MOD:-空} key=${KEY_MOD:-空}），终止部署（未改动现网证书）"
+
+        # 到期预警（不阻断：30 天内到期提示续签，已过期更要提示）
+        CERT_END=$(openssl x509 -noout -enddate -in "${STAGE_CERT}" | cut -d= -f2)
+        if openssl x509 -checkend 2592000 -noout -in "${STAGE_CERT}" >/dev/null 2>&1; then
+            log "  ${SSL_DOMAIN} 证书有效期正常（到期：${CERT_END}）"
+        elif openssl x509 -checkend 0 -noout -in "${STAGE_CERT}" >/dev/null 2>&1; then
+            warn "  ⚠️ ${SSL_DOMAIN} 证书 30 天内到期（${CERT_END}），请尽快续签"
+        else
+            warn "  ⚠️ ${SSL_DOMAIN} 证书已过期（${CERT_END}），浏览器将告警，请立即续签"
+        fi
+
+        sudo mkdir -p "${SSL_TARGET}"
+        sudo chmod 700 "${SSL_TARGET}"
+        # 旧证书备份进本次备份目录（续签翻车可手工恢复）
+        if [ -f "${SSL_TARGET}/fullchain.pem" ]; then
+            sudo mkdir -p "${BKDIR}/nginx-ssl/${SSL_DOMAIN}"
+            sudo cp -a "${SSL_TARGET}/." "${BKDIR}/nginx-ssl/${SSL_DOMAIN}/" 2>/dev/null || true
+        fi
+        sudo cp -f "${STAGE_CERT}" "${SSL_TARGET}/fullchain.pem"
+        sudo cp -f "${STAGE_KEY}" "${SSL_TARGET}/privkey.pem"
+        sudo chmod 644 "${SSL_TARGET}/fullchain.pem"
+        sudo chmod 600 "${SSL_TARGET}/privkey.pem"
+        log "  ✅ ${SSL_DOMAIN} 证书已安装（旧证书备份：${BKDIR}/nginx-ssl/${SSL_DOMAIN}/）"
+    done
+fi
+[ "${SSL_STAGE_FOUND}" -eq 1 ] || info "  暂存区无 TLS 证书，保留服务器现有证书（${SSL_TARGET_ROOT}/）"
+
+# 5b. 更新 Nginx 配置：先备份现网配置，nginx -t 失败自动恢复，绝不断 80 端口服务
 if [ -f "${UPLOAD}/apms-nginx.conf" ]; then
-    sudo cp -f "${UPLOAD}/apms-nginx.conf" /etc/nginx/conf.d/apms.conf
-    sudo nginx -t && sudo systemctl reload nginx
-    log "  ✅ Nginx reloaded"
+    [ -f "${NGINX_CONF_TARGET}" ] && sudo cp -a "${NGINX_CONF_TARGET}" "${BKDIR}/apms.conf.old"
+    sudo cp -f "${UPLOAD}/apms-nginx.conf" "${NGINX_CONF_TARGET}"
+    if sudo nginx -t; then
+        sudo systemctl reload nginx
+        log "  ✅ Nginx reloaded"
+    else
+        if [ -f "${BKDIR}/apms.conf.old" ]; then
+            sudo cp -f "${BKDIR}/apms.conf.old" "${NGINX_CONF_TARGET}"
+            sudo nginx -t && sudo systemctl reload nginx || true
+            warn "  新配置 nginx -t 失败，已恢复旧配置并 reload（旧配置：${BKDIR}/apms.conf.old）"
+        fi
+        err "Nginx 配置校验失败，终止部署（现网配置已恢复原状）"
+    fi
 fi
 
 # ===== Step 6: 清 Redis 缓存（版本驱动）=====
@@ -673,21 +753,53 @@ fi
 do_start
 
 # ===== Step 8: 外网验证 =====
+# wait_http_200 <url>：外网探测轮询（8 次 × 3s，约 24s 窗口）。
+# 必须重试，不能单次判决：后端重启窗口内真实用户流量会让 nginx 对上游产生
+# connect refused 熔断（默认 fail_timeout=10s，熔断期内探测直接收到 502
+# "no live upstreams"，nginx 根本不会转发）——此时应用其实已就绪。
+# 真实事故 2026-10-10：16:20:31 应用 Started，16:20:33 单次探测 502，健康版本被误回滚。
+# stdout 输出最后一次 HTTP code；返回 0=曾拿到 200，1=始终未拿到。
+wait_http_200() {
+    local wait_url="${1}" wait_attempt wait_code="000"
+    for ((wait_attempt = 1; wait_attempt <= 8; wait_attempt++)); do
+        wait_code=$(curl -s -o /dev/null -w "%{http_code}" "${wait_url}" --max-time 5 2>/dev/null || echo "000")
+        [ "${wait_code}" = "200" ] && break
+        sleep 3
+    done
+    echo "${wait_code}"
+    [ "${wait_code}" = "200" ]
+}
+
 FAIL_EXTERNAL=0
 if command -v curl >/dev/null 2>&1 && [ -n "${PUBLIC_HOST}" ]; then
-    log "Step 8: 外网验证..."
-    PUBLIC_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://${PUBLIC_HOST}/" --max-time 10 2>/dev/null || echo "000")
+    log "Step 8: 外网验证（每个入口最多重试约 24s，容忍 nginx 上游熔断窗口）..."
+
+    PUBLIC_CODE=$(wait_http_200 "http://${PUBLIC_HOST}/") || true
     log "  http://${PUBLIC_HOST}/ → HTTP ${PUBLIC_CODE}"
     if [ "${PUBLIC_CODE}" != "200" ]; then
-        warn "  ⚠️  首页非 200 (HTTP ${PUBLIC_CODE})"
+        warn "  ⚠️  首页重试后仍非 200 (HTTP ${PUBLIC_CODE})"
         FAIL_EXTERNAL=1
     fi
-    API_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://${PUBLIC_HOST}/prod-api/captchaImage" --max-time 10 2>/dev/null || echo "000")
+    API_CODE=$(wait_http_200 "http://${PUBLIC_HOST}/prod-api/captchaImage") || true
     log "  http://${PUBLIC_HOST}/prod-api/captchaImage → HTTP ${API_CODE}"
     if [ "${API_CODE}" != "200" ]; then
-        warn "  ⚠️  API 非 200 (HTTP ${API_CODE})"
+        warn "  ⚠️  API 重试后仍非 200 (HTTP ${API_CODE})"
         FAIL_EXTERNAL=1
     fi
+fi
+
+# HTTPS 域名验证：逐套证书验证主域名。仅告警不回滚——DNS/云厂商发夹网络问题与本次产物无关
+if command -v curl >/dev/null 2>&1 && [ -d "${SSL_TARGET_ROOT}" ]; then
+    log "  HTTPS 验证..."
+    for cert_dir in "${SSL_TARGET_ROOT}"/*/; do
+        [ -d "${cert_dir}" ] || continue
+        SSL_VHOST="$(basename "${cert_dir}")"
+        HTTPS_CODE=$(wait_http_200 "https://${SSL_VHOST}/") || true
+        log "  https://${SSL_VHOST}/ → HTTP ${HTTPS_CODE}"
+        if [ "${HTTPS_CODE}" != "200" ]; then
+            warn "  ⚠️  https://${SSL_VHOST}/ 重试后仍非 200 (HTTP ${HTTPS_CODE})，检查证书/443 监听/DNS 解析"
+        fi
+    done
 fi
 
 if [ "${FAIL_EXTERNAL}" -eq 1 ]; then
@@ -702,6 +814,10 @@ info "  ✅ 部署完成 → ${TARGET_VERSION}"
 info "=========================================="
 echo ""
 info "  外网:    http://${PUBLIC_HOST}/"
+for cert_dir in /etc/nginx/ssl/*/; do
+    [ -d "${cert_dir}" ] || continue
+    info "  HTTPS:   https://$(basename "${cert_dir}")/"
+done
 info "  API:     http://localhost:${APP_PORT}/apms/version"
 info "  Health:  http://localhost:${MGMT_PORT}/health"
 info "  Profile: ${PROFILE}"
