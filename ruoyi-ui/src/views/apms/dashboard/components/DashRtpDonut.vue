@@ -1,9 +1,6 @@
 <template>
-  <DashCard title="参训风险分布（RTP）" subtitle="红黄绿三态 · 点击图例查看名单"
+  <DashCard title="参训风险分布（RTP）" subtitle="红黄绿三态 + 未评估"
             :big="big" :enter-delay="enterDelay" body-class="rtp-body">
-    <template #actions>
-      <button type="button" class="dbx-link" @click="go('/apms/rtpWarning')">红/黄名单<el-icon><ArrowRight /></el-icon></button>
-    </template>
 
     <div v-if="hasData" class="rtp-main">
       <!-- 左：donut -->
@@ -23,25 +20,21 @@
     <div v-else class="dbx-empty">暂无 RTP 评估数据</div>
 
     <div class="rtp-legend">
-      <button v-for="m in LEGEND_META" :key="m.key" type="button" class="rtp-lg-item"
-              @click="go(m.path)">
+      <span v-for="m in LEGEND_META" :key="m.key" class="rtp-lg-item">
         <span class="rtp-lg-dot" :style="{ background: m.color }"></span>
         {{ m.label }}
         <b class="rk-mono">{{ dist[m.key] || 0 }}</b>
-      </button>
+      </span>
     </div>
   </DashCard>
 </template>
 
 <script setup name="DashRtpDonut">
-import { ref, computed, watch, onBeforeUnmount, nextTick, getCurrentInstance } from 'vue'
+import { ref, computed, watch, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
-import { ArrowRight } from '@element-plus/icons-vue'
 import DashCard from './DashCard.vue'
 import { chartTheme, statusColor, tipRightPosition } from './dashTheme'
 import { useCountUp } from './useCountUp'
-
-const { proxy } = getCurrentInstance()
 
 const props = defineProps({
   dist: { type: Object, default: () => ({}) },
@@ -50,10 +43,10 @@ const props = defineProps({
 })
 
 const LEGEND_META = computed(() => [
-  { key: 'green', label: '可参训', color: statusColor('green', props.big), path: '/apms/rtp' },
-  { key: 'yellow', label: '限制参训', color: statusColor('amber', props.big), path: '/apms/rtpWarning' },
-  { key: 'red', label: '停训', color: statusColor('red', props.big), path: '/apms/rtpWarning' },
-  ...(props.dist.none > 0 ? [{ key: 'none', label: '未评估', color: statusColor('none', props.big), path: '/apms/rtp' }] : [])
+  { key: 'green', label: '可参训', color: statusColor('green', props.big) },
+  { key: 'yellow', label: '限制参训', color: statusColor('amber', props.big) },
+  { key: 'red', label: '停训', color: statusColor('red', props.big) },
+  ...(props.dist.none > 0 ? [{ key: 'none', label: '未评估', color: statusColor('none', props.big) }] : [])
 ])
 
 const hasData = computed(() => Number(props.dist.total || 0) > 0)
@@ -132,10 +125,6 @@ function playSweep(pieData) {
   sweepRaf = requestAnimationFrame(tick)
 }
 
-function go(path) {
-  proxy.$router.push(path).catch(() => {})
-}
-
 function renderDonut() {
   if (!donutRef.value) return
   cancelAnimationFrame(sweepRaf)
@@ -182,12 +171,6 @@ function renderDonut() {
             // 首帧整环为透明占位，扫描开始后逐帧替换
             .concat([makeGap(pieData.reduce((s, d) => s + (Number(d.value) || 0), 0))])
     }]
-  })
-  donutChart.on('click', (p) => {
-    const real = realByIndex[p.dataIndex]
-    if (!real) return
-    if (real.key === 'green' || real.key === 'none') go('/apms/rtp')
-    else go('/apms/rtpWarning')
   })
   // 扫描式入场：12 点位起顺时针逐扇区画出
   playSweep(pieData.map(d => ({ ...d, itemStyle: { color: statusColor(d.key, props.big) } })))
@@ -372,17 +355,10 @@ onBeforeUnmount(() => {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 2px 4px;
   font-size: 12px; color: var(--dbx-text);
-  background: none; border: none; cursor: pointer; border-radius: 6px;
+  border-radius: 6px;
   b { font-size: 12px; font-weight: 700; }
-  &:hover { background: var(--dbx-bg-soft); }
 }
 .rtp-lg-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.dbx-link {
-  display: inline-flex; align-items: center; gap: 3px;
-  font-size: 12px; color: var(--dbx-brand);
-  background: none; border: none; cursor: pointer;
-  .el-icon { font-size: 12px; }
-}
 .dbx-empty {
   height: 168px;
   display: flex; align-items: center; justify-content: center;

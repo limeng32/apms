@@ -1,11 +1,10 @@
 <template>
   <DashCard title="本周测试任务进度"
-            :subtitle="`活跃任务 ${rows.length} 项 · 平均完成率 ${block.avgProgress || 0}% · 点击查看`"
+            :subtitle="`活跃任务 ${rows.length} 项 · 平均完成率 ${block.avgProgress || 0}%`"
             :big="big" :enter-delay="enterDelay" body-class="tp-body">
     <div v-if="rows.length" class="tp-list">
-      <button v-for="(t, i) in rows" :key="t.taskId" type="button"
-              class="tp-row" :style="{ animationDelay: 120 + i * 70 + 'ms' }"
-              @click="goTask">
+      <div v-for="(t, i) in rows" :key="t.taskId"
+           class="tp-row" :style="{ animationDelay: 120 + i * 70 + 'ms' }">
         <div class="tp-main">
           <div class="tp-line1">
             <span class="tp-name">{{ t.taskName }}</span>
@@ -24,22 +23,15 @@
           <span class="tp-count rk-mono">{{ t.selectedCount || 0 }}/{{ t.athleteCount || 0 }}</span>
           <span class="tp-pct rk-mono" :class="'tone-' + tone(t.progress)">{{ t.progress }}%</span>
         </div>
-      </button>
+      </div>
     </div>
     <div v-else class="dbx-empty">当前时间窗内没有进行中的任务</div>
-
-    <div class="tp-foot">
-      <button type="button" class="dbx-link" @click="goTask">查看全部任务<el-icon><ArrowRight /></el-icon></button>
-    </div>
   </DashCard>
 </template>
 
 <script setup name="DashTaskProgress">
-import { ref, computed, watch, getCurrentInstance } from 'vue'
-import { ArrowRight } from '@element-plus/icons-vue'
+import { ref, computed, watch } from 'vue'
 import DashCard from './DashCard.vue'
-
-const { proxy } = getCurrentInstance()
 
 const props = defineProps({
   block: { type: Object, default: () => ({ list: [], avgProgress: 0 }) },
@@ -56,9 +48,6 @@ function kickPlay() {
 }
 watch(() => rows.value.length, (n) => { if (n > 0) kickPlay() }, { immediate: true })
 
-function goTask() {
-  proxy.$router.push('/apms/testTask').catch(() => {})
-}
 function fmtDate(d) { return d ? String(d).slice(5, 10) : '—' }
 function statusLabel(s) {
   return { pending: '未开始', in_progress: '进行中', completed: '已完成' }[s] || '进行中'
@@ -72,17 +61,16 @@ function tone(p) {
 </script>
 
 <style lang="scss" scoped>
-.tp-body { display: flex; flex-direction: column; padding-bottom: 0; }
+.tp-body { display: flex; flex-direction: column; }
 .tp-list { flex: 1; display: flex; flex-direction: column; gap: 2px; }
 .tp-row {
   display: flex; align-items: center; gap: 12px;
   width: 100%;
   padding: 8px 10px;
-  background: none; border: none; border-radius: 10px;
-  cursor: pointer; text-align: left;
+  border-radius: 10px;
+  text-align: left;
   opacity: 0;
   animation: tp-row-in 0.4s ease-out forwards;
-  &:hover { background: var(--dbx-bg-soft); }
 }
 @keyframes tp-row-in {
   from { opacity: 0; transform: translateX(-10px); }
@@ -136,19 +124,6 @@ function tone(p) {
 .tp-pct.tone-warn { color: #d97706; }
 .tp-pct.tone-risk { color: #dc2626; }
 
-.tp-foot {
-  flex: none;
-  display: flex; justify-content: flex-end;
-  margin: 6px -18px 0;
-  padding: 8px 18px;
-  border-top: 1px solid var(--dbx-line);
-}
-.dbx-link {
-  display: inline-flex; align-items: center; gap: 3px;
-  font-size: 12px; color: var(--dbx-brand);
-  background: none; border: none; cursor: pointer;
-  .el-icon { font-size: 12px; }
-}
 .dbx-empty {
   flex: 1; min-height: 160px;
   display: flex; align-items: center; justify-content: center;

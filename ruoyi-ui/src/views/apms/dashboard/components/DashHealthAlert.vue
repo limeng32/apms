@@ -1,9 +1,6 @@
 <template>
   <DashCard title="健康预警" subtitle="RTP 规则引擎 · 当日待处理 ACTIVE"
             :big="big" :enter-delay="enterDelay" body-class="ha-body">
-    <template #actions>
-      <button type="button" class="dbx-link" @click="goWarning">预警中心<el-icon><ArrowRight /></el-icon></button>
-    </template>
 
     <div class="ha-stats">
       <div class="ha-stat">
@@ -27,8 +24,7 @@
          :style="{ width: (play ? seg.pct : 0) + '%', transitionDelay: seg.delay + 'ms' }"></i>
     </div>
     <div v-if="rows.length" class="ha-list">
-      <button v-for="r in rows" :key="r.snapshotId" type="button" class="ha-row"
-              @click="goWarning">
+      <div v-for="r in rows" :key="r.snapshotId" class="ha-row">
         <span class="ha-pulse" :class="{ 'is-red-pulse': r.level === 'WARNING' }">
           <i class="ha-dot" :class="dotClass(r.level)"></i>
         </span>
@@ -39,19 +35,16 @@
         <span class="ha-score rk-mono" :class="dotClass(r.level)">
           {{ r.processOnly === '1' ? '—' : Number(r.riskScore).toFixed(1) }}
         </span>
-      </button>
+      </div>
     </div>
     <div v-else class="ha-empty">今日暂无待处理预警</div>
   </DashCard>
 </template>
 
 <script setup name="DashHealthAlert">
-import { ref, computed, onMounted, getCurrentInstance } from 'vue'
-import { ArrowRight } from '@element-plus/icons-vue'
+import { ref, computed, onMounted } from 'vue'
 import DashCard from './DashCard.vue'
 import { useCountUp } from './useCountUp'
-
-const { proxy } = getCurrentInstance()
 
 const props = defineProps({
   data: { type: Object, default: () => ({}) },
@@ -83,9 +76,6 @@ onMounted(() => {
   requestAnimationFrame(() => requestAnimationFrame(() => { play.value = true }))
 })
 
-function goWarning() {
-  proxy.$router.push('/apms/rtpWarning').catch(() => {})
-}
 function levelLabel(l) {
   return { WARNING: '建议停训', ATTENTION: '建议限制', INFO: '健康关注' }[l] || '预警'
 }
@@ -154,9 +144,8 @@ function dotClass(l) {
   display: flex; align-items: center; gap: 10px;
   width: 100%;
   padding: 7px 8px;
-  background: none; border: none; border-radius: 8px;
-  cursor: pointer; text-align: left;
-  &:hover { background: var(--dbx-bg-soft); }
+  border-radius: 8px;
+  text-align: left;
 }
 .ha-pulse { position: relative; flex: none; display: inline-flex; }
 .ha-pulse.is-red-pulse::before,
@@ -188,12 +177,6 @@ function dotClass(l) {
   flex: 1; min-height: 120px;
   display: flex; align-items: center; justify-content: center;
   font-size: 12px; color: var(--dbx-sub);
-}
-.dbx-link {
-  display: inline-flex; align-items: center; gap: 3px;
-  font-size: 12px; color: var(--dbx-brand);
-  background: none; border: none; cursor: pointer;
-  .el-icon { font-size: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ha-pulse.is-red-pulse::before,

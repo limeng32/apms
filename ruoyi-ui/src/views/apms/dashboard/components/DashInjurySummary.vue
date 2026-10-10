@@ -1,9 +1,6 @@
 <template>
   <DashCard title="伤病台账摘要" subtitle="近 12 个月 · 活跃/闭环同医疗康复口径"
             :big="big" :enter-delay="enterDelay" body-class="ij-body">
-    <template #actions>
-      <button type="button" class="dbx-link" @click="goMedical">医疗康复<el-icon><ArrowRight /></el-icon></button>
-    </template>
 
     <div class="ij-stats">
       <div class="ij-stat">
@@ -26,8 +23,7 @@
     </div>
 
     <div class="ij-recent">
-      <button v-for="r in recent" :key="r.athleteId + '-' + r.recordDate" type="button"
-              class="ij-rec-row" @click="goMedical">
+      <div v-for="r in recent" :key="r.athleteId + '-' + r.recordDate" class="ij-rec-row">
         <span class="ij-pulse"><i></i></span>
         <span class="ij-rec-text">
           <b>{{ r.athleteName || '#' + r.athleteId }}</b>
@@ -35,22 +31,19 @@
         </span>
         <span v-if="r.bodySite" class="rk-soft-chip ij-site-chip">{{ siteLabel(r.bodySite) }}</span>
         <span class="ij-date rk-mono">{{ fmtDate(r.recordDate) }}</span>
-      </button>
+      </div>
       <p v-if="!recent.length" class="ij-no-recent">暂无活跃伤病 🎉</p>
     </div>
   </DashCard>
 </template>
 
 <script setup name="DashInjurySummary">
-import { ref, computed, watch, onBeforeUnmount, nextTick, getCurrentInstance } from 'vue'
+import { ref, computed, watch, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
-import { ArrowRight } from '@element-plus/icons-vue'
 import DashCard from './DashCard.vue'
 import { chartTheme, GROW_ANIM_MS } from './dashTheme'
 import { useCountUp } from './useCountUp'
 import { siteLabel } from '@/views/apms/medical/bodySites'
-
-const { proxy } = getCurrentInstance()
 
 const props = defineProps({
   data: { type: Object, default: () => ({}) },
@@ -68,9 +61,6 @@ const siteRef = ref(null)
 let chart = null
 let ro = null
 
-function goMedical() {
-  proxy.$router.push('/apms/medical').catch(() => {})
-}
 function fmtDate(d) { return d ? String(d).slice(5, 10) : '' }
 function typeLabel(t) { return { injury: '损伤', surgery: '手术' }[t] || '医疗记录' }
 
@@ -177,9 +167,8 @@ onBeforeUnmount(() => {
   display: flex; align-items: center; gap: 8px;
   width: 100%;
   padding: 6px 8px;
-  background: none; border: none; border-radius: 8px;
-  cursor: pointer; text-align: left;
-  &:hover { background: var(--dbx-bg-soft); }
+  border-radius: 8px;
+  text-align: left;
 }
 .ij-rec-text {
   flex: 1; min-width: 0;
@@ -207,12 +196,6 @@ onBeforeUnmount(() => {
 @keyframes ij-ping {
   0% { transform: scale(1); opacity: 0.55; }
   75%, 100% { transform: scale(2.4); opacity: 0; }
-}
-.dbx-link {
-  display: inline-flex; align-items: center; gap: 3px;
-  font-size: 12px; color: var(--dbx-brand);
-  background: none; border: none; cursor: pointer;
-  .el-icon { font-size: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ij-pulse::before { animation: none; }

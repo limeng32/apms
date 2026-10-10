@@ -13,12 +13,10 @@
 </template>
 
 <script setup name="DashPhvBands">
-import { ref, computed, watch, onBeforeUnmount, nextTick, getCurrentInstance } from 'vue'
+import { ref, computed, watch, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import DashCard from './DashCard.vue'
 import { chartTheme, GROW_ANIM_MS } from './dashTheme'
-
-const { proxy } = getCurrentInstance()
 
 const props = defineProps({
   block: { type: Object, default: () => ({ bands: [], windowCount: 0, total: 0 }) },
@@ -88,7 +86,6 @@ function render() {
         animationDelay: (i) => i * 120
       }]
     })
-    chart.on('click', () => proxy.$router.push('/apms/growth').catch(() => {}))
     if (typeof ResizeObserver !== 'undefined') {
       if (!ro) ro = new ResizeObserver(() => chart?.resize())
       ro.observe(barRef.value)
