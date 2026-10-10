@@ -4,6 +4,11 @@
 import defaultConfig from './login.defaults'
 // 字体栈唯一事实源在 @/utils/theme（登录页与后台整体共用），这里转出供渲染层/设计器复用
 import { FONT_STACKS, APP_FONT_FAMILIES } from '@/utils/theme'
+// 内置静态资源走构建管线（src/assets）而非 public/：Vite 会按内容哈希命名，
+// 运营替换图片后文件名变化，浏览器强缓存也会自动拉新，无需 no-cache/手工刷新。
+import noscLogo from '@/assets/login/nosc-logo.png'
+import loginVisual from '@/assets/login/login-visual.png'
+import pitchLines from '@/assets/login/pitch-lines.svg'
 
 export { FONT_STACKS }
 
@@ -13,13 +18,13 @@ function isPlainObject(v) {
 
 /**
  * 内置 logo 库：shield 为定制内联 SVG（Render 中特殊处理），
- * nosc 为随包发布的位图（public/login-assets/，customImage=true），
+ * nosc 为随包位图（src/assets，构建后带内容哈希，customImage=true），
  * 其余均为已全局注册的 Element Plus 图标组件名。
- * 与后端 LOGO_BUILTINS 白名单保持一致。
+ * 与后端 LOGO_BUILTINS 白名单保持一致（后端只校验 value 枚举，不校验图片 URL）。
  */
 export const BUILTIN_LOGOS = [
   { value: 'shield', label: '盾牌（默认）', customSvg: true },
-  { value: 'nosc', label: '奥体中心', customImage: '/login-assets/nosc-logo.png' },
+  { value: 'nosc', label: '奥体中心', customImage: noscLogo },
   { value: 'Trophy', label: '奖杯' },
   { value: 'Medal', label: '奖牌' },
   { value: 'Star', label: '星星' },
@@ -48,19 +53,18 @@ export function isBitmapLogo(logo = {}) {
 }
 
 /**
- * 内置背景库：随包发布的静态资源（ruoyi-ui/public/login-assets/），
+ * 内置背景库：随包静态资源（src/assets/login，构建后带内容哈希），
  * 不经过 /profile/ 上传通道；value 为配置中保存的枚举 key。
- * 与后端 BACKGROUND_BUILTINS 白名单保持一致。
+ * 与后端 BACKGROUND_BUILTINS 白名单保持一致（后端只校验 value 枚举）。
  */
 export const BUILTIN_BACKGROUNDS = [
   {
     value: 'tech',
     label: '深色科技球场（默认）',
-    // 构建后位于站点根路径 /login-assets/ 下（vite public 目录原样拷贝）；
-    // 目录名不能用 /login/，否则会与前端路由 /login 同名，nginx try_files $uri/
-    // 命中真实目录且无 index.html 时直接 403，SPA 回退失效
-    image: '/login-assets/login-visual.png',
-    texture: '/login-assets/pitch-lines.svg'
+    // import 进来的是构建后带内容哈希的 URL（/assets/login-visual-[hash].png），
+    // 替换图片后哈希变化 → 文件名变化 → 浏览器缓存自动失效
+    image: loginVisual,
+    texture: pitchLines
   }
 ]
 export const BUILTIN_BACKGROUND_VALUES = BUILTIN_BACKGROUNDS.map((b) => b.value)

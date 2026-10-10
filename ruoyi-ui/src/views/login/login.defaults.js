@@ -23,7 +23,7 @@ export default {
     logo: { type: 'builtin', value: 'shield', width: 42, height: 48, offsetX: 0, offsetY: 0 },
     // 客户方 Logo（双 logo 方案：品牌区右上；enabled=false 时不显示，仅剩左上版权方 logo）
     // 结构与 logo 完全一致：内置矢量/位图 / 上传图 + 宽高 + 像素偏移，桌面/移动各自独立
-    // 默认 nosc（奥体中心，内置位图 1.69:1，随包发布于 /login-assets/）
+    // 默认 nosc（奥体中心，内置位图 1.69:1，src/assets 构建后带内容哈希）
     logoClient: { enabled: true, type: 'builtin', value: 'nosc', width: 96, height: 57, offsetX: 0, offsetY: 0 },
     // Logo 上下留白（px），按布局族各自独立：
     //   split  → 左右分栏：top=品牌区顶部间距；bottom=Logo 与 Hero 之间的最小间距
