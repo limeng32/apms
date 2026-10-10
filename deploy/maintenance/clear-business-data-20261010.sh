@@ -20,12 +20,15 @@ set -euo pipefail
 CONFIRM_FLAG="--yes-i-want-to-clear-prod"
 CONFIRM_SQL="YES-CLEAR-PROD-20261010"
 SERVICE="apms-backend"
+APP_PORT="${APP_PORT:-10080}"
 MGMT_PORT="${MGMT_PORT:-10081}"
 ENV_CONF="${ENV_CONF:-/etc/apms/env.conf}"
 BACKUP_ROOT="${BACKUP_ROOT:-/opt/apms/backup}"
-BACKUP_DIR="${BACKUP_ROOT}/manual-clear-20261010"
 SCRIPT_DIR="$(cd "$(dirname "${0}")" && pwd)"
 SQL_FILE="${SCRIPT_DIR}/clear-business-data-20261010.sql"
+# 每次执行使用唯一时间戳目录：误执行第二次也不会覆盖第一次清库前的回滚点
+RUN_TS="$(date '+%Y%m%d_%H%M%S')"
+BACKUP_DIR="${BACKUP_ROOT}/manual-clear-${RUN_TS}"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 log()  { echo -e "${GREEN}[CLEAR]${NC} $(date '+%H:%M:%S') ${*}"; }
@@ -73,9 +76,32 @@ warn "本操作不可撤销，仅可通过备份回滚。3 秒后开始（Ctrl-C
 sleep 3
 echo ""
 
-# ===== 1. 先停后端：确保备份之后不再有任何写入（否则恢复会丢失这段写入） =====
+# ===== 1. 先停后端并强制确认已停：确保备份之后不再有任何写入（否则恢复会丢失这段写入） =====
 log "Step 1/4 停止后端 ${SERVICE}..."
-systemctl stop "${SERVICE}" 2>/dev/null || warn "  systemctl stop 返回非 0（可能本就未运行），继续"
+systemctl stop "${SERVICE}" 2>/dev/null || true
+
+# 不能只靠 stop 返回值：若 Java 仍 active，后续会在应用可能写库的情况下备份/TRUNCATE。
+# 必须确认服务确已停止；仍 active 一律拒绝继续（此刻未备份未清库，线上状态原样，交人工处理）。
+if systemctl is-active --quiet "${SERVICE}"; then
+    err "${SERVICE} 仍处于 active，拒绝继续清库（避免在应用写库时备份/TRUNCATE）"
+    err "请人工排查：systemctl status ${SERVICE}；确认可停后重新执行本脚本"
+    exit 1
+fi
+log "  ✅ 后端已停止（is-active 非 active）"
+
+# 纵深确认：业务端口 ${APP_PORT} 不得仍在监听（防 systemd 单元未识别但 Java 还在跑）
+PORT_PID=""
+if command -v ss >/dev/null 2>&1; then
+    PORT_PID="$(ss -tlnpH "sport = :${APP_PORT}" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u | tr '\n' ' ' || true)"
+elif command -v lsof >/dev/null 2>&1; then
+    PORT_PID="$(lsof -tiTCP:"${APP_PORT}" -sTCP:LISTEN 2>/dev/null | sort -u | tr '\n' ' ' || true)"
+fi
+if [ -n "${PORT_PID// /}" ]; then
+    err "端口 ${APP_PORT} 仍被进程监听（PID=${PORT_PID}），疑似 Java 未真正停止，拒绝继续清库"
+    err "请人工确认并处理后重新执行本脚本"
+    exit 1
+fi
+log "  ✅ 业务端口 ${APP_PORT} 无监听"
 
 # ===== 2. 全库备份 + 三重校验（失败则重新拉起服务并中止，绝不带伤清库） =====
 log "Step 2/4 全库逻辑备份..."

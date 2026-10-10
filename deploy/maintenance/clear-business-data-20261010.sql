@@ -47,9 +47,10 @@
 -- 【物理文件】本脚本只清数据库，uploadPath 下医疗附件/PDF/头像保留不删。
 --   观察确认无问题后，另行备份清理，命令见文件末尾。
 --
--- 【回滚】
---   gunzip -c /opt/apms/backup/manual-clear-20261010/apms-before-clear.sql.gz \
---     | mysql -h... -u... -p <DB_NAME>
+-- 【回滚】备份目录按执行时间戳唯一（manual-clear-YYYYMMDD_HHMMSS，每次执行都不覆盖），
+--   回滚时用包装器结束日志中打印的那个文件，或取最新一份：
+--   BK=$(ls -dt /opt/apms/backup/manual-clear-* | head -1)/apms-before-clear.sql.gz
+--   gunzip -c "${BK}" | mysql -h... -u... -p <DB_NAME>
 -- ======================================================================
 
 SET NAMES utf8mb4;
@@ -185,9 +186,9 @@ SELECT '[DONE] 业务测试数据已清空，AUTO_INCREMENT 已重置为 1' AS r
 --   先 source /etc/apms/env.conf 获取 REDIS_HOST/REDIS_PORT/REDIS_PASS/REDIS_DB，
 --   参考 deploy.sh flush_redis_keep：SCAN 删除非 login_tokens: 的 key。
 --
--- 附：确认系统正常后，物理文件清理（务必先打包备份）：
+-- 附：确认系统正常后，物理文件清理（务必先打包到带时间戳的唯一目录，勿覆盖已有备份）：
 --   cd /opt/apms/backend/uploadPath
---   tar czf /opt/apms/backup/manual-clear-20261010/uploadPath.tgz .
+--   tar czf /opt/apms/backup/manual-files-$(date '+%Y%m%d_%H%M%S').tgz .
 --   # 核对业务子目录（以实际结构为准，勿盲删）：
 --   ls -la
 --   # 确认后按需删除医疗附件/报告/导出等业务目录；avatar 为账号头像建议保留：
