@@ -41,11 +41,9 @@ a.police-beian:hover {
   opacity: 0.75;
 }
 .police-beian-badge {
-  width: 14px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   flex: none;
   object-fit: contain;
-  /* 警徽素材自带留白，视觉上与文字基线对齐 */
-  transform: translateY(-1px);
 }
 </style>
