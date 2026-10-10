@@ -45,7 +45,7 @@ public class TokenService
     @Value("${token.secret}")
     private String secret;
 
-    // 令牌有效期（分钟；application.yml 配置，当前为 30 天）
+    // 令牌有效期（分钟；application.yml 配置，当前为 2 年）
     @Value("${token.expireTime}")
     private int expireTime;
 

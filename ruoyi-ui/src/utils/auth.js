@@ -6,9 +6,9 @@ const TokenKey = cookieName('Admin-Token')
 // 环境隔离改造前的旧名：仅在新名缺失时兜底读取一次，避免升级后本机各环境被迫重新登录
 const LegacyTokenKey = 'Admin-Token'
 
-// 与后端 token.expireTime 对齐：30 天持久 Cookie，
+// 与后端 token.expireTime 对齐：2 年（730 天）持久 Cookie，
 // 否则浏览器完全退出后会话 Cookie 丢失，即使后端会话仍有效也会被要求重新登录
-const TOKEN_COOKIE_DAYS = 30
+const TOKEN_COOKIE_DAYS = 730
 
 /* ============================================================================
  * 一键体验（演示模式）会话

@@ -120,10 +120,10 @@ token:
   header: Authorization
   # 令牌密钥
   secret: abcdefghijklmnopqrstuvwxyz
-  # 令牌有效期（分钟）：30 天 = 43200 分钟
-  # 会话实际存于 Redis（JWT 自身无 exp 声明）；最后 20 分钟内有请求会滑动续期到新的 30 天，
-  # 即「无人使用 30 天后才过期，持续使用不过期」
-  expireTime: 43200
+  # 令牌有效期（分钟）：2 年 = 730 天 = 1051200 分钟
+  # 会话实际存于 Redis（JWT 自身无 exp 声明）；最后 20 分钟内有请求会滑动续期到新的 2 年，
+  # 即「无人使用 2 年后才过期，持续使用不过期」
+  expireTime: 1051200
 
 # MyBatis配置
 mybatis:
