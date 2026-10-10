@@ -212,6 +212,29 @@
               <el-form-item label="显示表单区版权">
                 <el-switch v-model="localConfig.footer.showCopyright" />
               </el-form-item>
+
+              <div class="ld-section">公安备案</div>
+              <el-form-item label="显示公安备案标识">
+                <el-switch v-model="localConfig.footer.police.show" />
+              </el-form-item>
+              <el-form-item label="备案编号">
+                <el-input
+                  v-model="localConfig.footer.police.number"
+                  placeholder="如：京公网安备 11010802020425号"
+                  maxlength="60"
+                  :disabled="!localConfig.footer.police.show"
+                />
+              </el-form-item>
+              <el-form-item label="备案查询链接">
+                <el-input
+                  v-model="localConfig.footer.police.url"
+                  placeholder="https://beian.mps.gov.cn/ 备案详情地址"
+                  :disabled="!localConfig.footer.police.show"
+                />
+                <div class="ld-hint">
+                  填写公安联网备案信息详情页地址（http(s) 外链），点击警徽新标签打开；留空则仅展示标识不可点击
+                </div>
+              </el-form-item>
             </el-form>
           </el-tab-pane>
 

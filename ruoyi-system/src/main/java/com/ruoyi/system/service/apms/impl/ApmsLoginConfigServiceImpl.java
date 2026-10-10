@@ -280,6 +280,14 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
             richFooter(footer.get("brandText"), "footer.brandText");
             richFooter(footer.get("copyright"), "footer.copyright");
             bool(footer.get("showCopyright"), "footer.showCopyright");
+            // 公安联网备案：开关 + 备案号（最长 60）+ 公安备案查询外链（可空）
+            Map<String, Object> police = obj(footer.get("police"), "footer.police");
+            if (police != null)
+            {
+                bool(police.get("show"), "footer.police.show");
+                str(police.get("number"), "footer.police.number", 60);
+                httpUrl(police.get("url"), "footer.police.url");
+            }
         }
 
         Map<String, Object> colors = obj(root.get("colors"), "colors");
@@ -596,6 +604,27 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
             return;
         }
         throw new ServiceException(path + " 仅允许 http(s):// 链接或单斜杠开头的站内路径：" + u);
+    }
+
+    /**
+     * 仅允许 http(s) 绝对外链（公安备案等必须指向站外的地址），空值放行。
+     */
+    private void httpUrl(Object v, String path)
+    {
+        if (v == null)
+        {
+            return;
+        }
+        if (!(v instanceof String))
+        {
+            throw new ServiceException(path + " 必须是字符串");
+        }
+        String u = ((String) v).trim();
+        if (u.isEmpty() || HTTP_URL.matcher(u).matches())
+        {
+            return;
+        }
+        throw new ServiceException(path + " 仅允许 http(s):// 外链：" + u);
     }
 
     /**

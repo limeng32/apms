@@ -75,6 +75,10 @@
           <div class="lc-copyright" v-if="cfg.footer.showCopyright" data-anim :style="entranceOn ? { animationDelay: '0.5s' } : null">
             <FooterRichText :content="cfg.footer.copyright" :ctx="tplCtx" />
           </div>
+          <!-- 网安备案：居中卡片布局固定在卡片最下方（含 www 展示形态） -->
+          <div v-if="policeBeian.show" class="lc-police" data-anim :style="entranceOn ? { animationDelay: '0.5s' } : null">
+            <PoliceBeian :info="policeBeian" />
+          </div>
         </div>
       </div>
     </template>
@@ -141,6 +145,10 @@
 
           <div class="lc-copyright" v-if="cfg.footer.showCopyright" data-anim :style="entranceOn ? { animationDelay: '0.5s' } : null">
             <FooterRichText :content="cfg.footer.copyright" :ctx="tplCtx" />
+          </div>
+          <!-- 网安备案：全屏布局同居中布局，置于最下方（含 www 展示形态） -->
+          <div v-if="policeBeian.show" class="lc-police" data-anim :style="entranceOn ? { animationDelay: '0.5s' } : null">
+            <PoliceBeian :info="policeBeian" />
           </div>
         </div>
       </div>
@@ -225,11 +233,13 @@
         data-anim
         :style="entranceOn ? { animationDelay: (descDelay + 0.65) + 's' } : null"
       ><FooterRichText :content="cfg.footer.brandText" :ctx="tplCtx" />
-        <!-- 展示形态：原右下版权/ICP 上移到品牌区底部，与 brandText 堆叠 -->
+        <!-- 展示形态（www）：原右下版权/ICP 上移到品牌区底部，与 brandText 堆叠；
+             网安备案同样仅在展示形态下放此（常规 split 布局只在右下表单区显示） -->
         <div
           v-if="showcase && cfg.footer.showCopyright"
           class="lb-copyright-extra"
         ><FooterRichText :content="cfg.footer.copyright" :ctx="tplCtx" /></div>
+        <PoliceBeian v-if="showcase && policeBeian.show" :info="policeBeian" />
       </div>
     </aside>
 
@@ -260,6 +270,9 @@
         <div class="lf-copyright" v-if="cfg.footer.showCopyright">
           <FooterRichText :content="cfg.footer.copyright" :ctx="tplCtx" />
         </div>
+        <div v-if="policeBeian.show" class="lf-police">
+          <PoliceBeian :info="policeBeian" />
+        </div>
       </div>
     </main>
     </template>
@@ -276,6 +289,7 @@ import {
   BUILTIN_LOGO_VALUES
 } from './login.utils'
 import FooterRichText from './FooterRichText.vue'
+import PoliceBeian from './PoliceBeian.vue'
 import LoginTechBackground from './LoginTechBackground.vue'
 import LoginLogoSlot from './LoginLogoSlot.vue'
 
@@ -324,6 +338,17 @@ const isMobileDevice = computed(() =>
 // 始终与默认值合并，并按设备解析移动端覆盖，保证部分配置也能完整渲染
 const cfg = computed(() => resolveDeviceConfig(props.config, isMobileDevice.value))
 const cssVars = computed(() => toCssVars(cfg.value))
+
+// 公安备案：配置缺省时 mergeWithDefaults 已补 { show:false, number:'', url:'' }；
+// 仅当开关打开且填了备案号才渲染
+const policeBeian = computed(() => {
+  const p = cfg.value.footer?.police || {}
+  return {
+    show: !!p.show && !!String(p.number || '').trim(),
+    number: String(p.number || '').trim(),
+    url: String(p.url || '').trim()
+  }
+})
 
 // 布局模板：split（双栏，默认）/ centered（居中卡片，M3b）/ fullscreen（全屏背景，M3c）
 const isCentered = computed(() => cfg.value.layout.template === 'centered')
@@ -654,6 +679,13 @@ function onLogoPointerUp() {
     &:hover { text-decoration: underline; }
   }
 }
+/* 公安备案行：与版权同色、居中，版权隐藏时也保留上间距 */
+.lf-police {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--login-text-2);
+}
 
 /* ============ centered：居中卡片模板（M3b） ============ */
 .login-centered {
@@ -739,6 +771,13 @@ function onLogoPointerUp() {
     text-decoration: none;
     &:hover { text-decoration: underline; }
   }
+}
+/* 网安备案：居中/全屏布局卡片最下方，与版权同色居中；版权隐藏时保留自身间距 */
+.lc-police {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--login-brand-foot);
 }
 
 /* ============ fullscreen：整屏背景图 + 遮罩 + 浮层卡片（M3c） ============ */

@@ -71,7 +71,13 @@ export default {
   footer: {
     brandText: '© {year} {title} · 基于 RuoYi-Vue 3.9.2',
     copyright: '© {year} {title} · {footerContent}',
-    showCopyright: true
+    showCopyright: true,
+    // 公安联网备案（警徽图标 + 备案号，点击新开公安备案查询页）
+    police: {
+      show: false,
+      number: '',  // 例：京公网安备 11010802020425号
+      url: ''      // 例：https://beian.mps.gov.cn/#/query/webSearch?code=11010802020425
+    }
   },
   colors: {
     // 深色运动科技底（demo 同款 ink 色板：#0A1120/#0F172A/#111B31）
