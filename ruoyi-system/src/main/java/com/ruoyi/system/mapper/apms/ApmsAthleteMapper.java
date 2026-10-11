@@ -46,4 +46,9 @@ public interface ApmsAthleteMapper {
 
     /** 编辑保存时置为离队/退役并解除队伍归属 */
     int leaveTeamByAthleteId(@Param("athleteId") Long athleteId, @Param("status") String status);
+
+    /** 重入队：离队/退役人员恢复在队并重新挂靠主队伍 */
+    int rejoinAthleteTeam(@Param("athleteId") Long athleteId,
+                          @Param("teamId") Long teamId,
+                          @Param("updateBy") String updateBy);
 }

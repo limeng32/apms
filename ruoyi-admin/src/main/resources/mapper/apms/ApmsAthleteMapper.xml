@@ -10,6 +10,8 @@
         <result property="birthday"       column="birthday"/>
         <result property="phone"          column="phone"/>
         <result property="primaryTeamId"  column="primary_team_id"/>
+        <result property="lastTeamId"     column="last_team_id"/>
+        <result property="lastTeamName"   column="last_team_name"/>
         <result property="jerseyNo"        column="jersey_no"/>
         <result property="position"        column="position"/>
         <result property="status"         column="status"/>
@@ -32,10 +34,11 @@
     <sql id="selectApmsAthleteVo">
         SELECT
             a.athlete_id, a.user_id, a.name, a.gender, a.birthday, a.phone,
-            a.primary_team_id, a.jersey_no, a.position, a.status,
+            a.primary_team_id, a.last_team_id, a.jersey_no, a.position, a.status,
             a.predicted_adult_height, a.adult_height_algo, a.adult_height_calc_date,
             a.create_by, a.create_time, a.update_by, a.update_time,
             d.dept_name AS team_name,
+            ld.dept_name AS last_team_name,
             CASE
                 WHEN a.birthday IS NULL THEN NULL
                 ELSE TIMESTAMPDIFF(YEAR, a.birthday, CURDATE())
@@ -51,6 +54,8 @@
                 AND g.status = '0') AS current_groups
         FROM apms_athlete a
         LEFT JOIN sys_dept d ON a.primary_team_id = d.dept_id
+        <!-- 离队/退役前所属队伍（last_team_id 快照） -->
+        LEFT JOIN sys_dept ld ON a.last_team_id = ld.dept_id
         <!-- 当前 RTP 状态（一运动员一记录；无记录=未评估） -->
         LEFT JOIN apms_rtp_status r ON r.athlete_id = a.athlete_id
         <!-- 最近一次体态测量（按测量日期、id 倒序取首条） -->
@@ -62,20 +67,26 @@
         )
     </sql>
 
-    <!-- 花名册列表/汇总共用过滤条件（别名 a 必须存在，DataScope 也挂在 a 上） -->
+    <!-- 花名册列表/汇总共用过滤条件（别名 a 必须存在，DataScope 也挂在 a 上）。
+         rosterStatus 状态视图：active=在训(默认，0/空) left=离队(1) retired=退役(2) all=全部；
+         未显式传 rosterStatus 时，兼容旧调用方传入的 status 精确过滤，两者都没有则默认在训。 -->
     <sql id="rosterFilters">
-        a.status != '2'  <!-- 排除已退役 -->
+        <choose>
+            <when test="rosterStatus == 'all'"></when>
+            <when test="rosterStatus == 'left'">a.status = '1'</when>
+            <when test="rosterStatus == 'retired'">a.status = '2'</when>
+            <when test="status != null and status != ''">a.status = #{status}</when>
+            <otherwise>(a.status = '0' OR a.status IS NULL OR a.status = '')</otherwise>
+        </choose>
         <if test="name != null and name != ''">
             AND a.name LIKE CONCAT('%', #{name}, '%')
         </if>
         <if test="gender != null and gender != ''">
             AND a.gender = #{gender}
         </if>
+        <!-- 队伍筛选：在训按主队伍、离队/退役按离队前快照队伍，保证各状态视图队伍下拉都有效 -->
         <if test="primaryTeamId != null">
-            AND a.primary_team_id = #{primaryTeamId}
-        </if>
-        <if test="status != null and status != ''">
-            AND a.status = #{status}
+            AND COALESCE(a.primary_team_id, a.last_team_id) = #{primaryTeamId}
         </if>
         <if test="rtpStatus != null and rtpStatus != ''">
             AND r.status = #{rtpStatus}
@@ -155,21 +166,39 @@
         WHERE athlete_id = #{athleteId}
     </update>
 
-    <!-- 逻辑删除：改为离队状态，并解除与原队伍的归属（primary_team_id 置空） -->
+    <!-- 逻辑删除：改为离队状态，先把当前主队伍快照到 last_team_id（已存在则保留），
+         再解除归属 primary_team_id 置空 -->
     <update id="deleteApmsAthleteByAthleteIds" parameterType="Long">
         UPDATE apms_athlete
-        SET status = '1', primary_team_id = NULL, update_time = sysdate()
+        SET status = '1',
+            last_team_id = COALESCE(last_team_id, primary_team_id),
+            primary_team_id = NULL,
+            update_time = sysdate()
         WHERE athlete_id IN
         <foreach collection="array" item="athleteId" open="(" separator="," close=")">
             #{athleteId}
         </foreach>
     </update>
 
-    <!-- 编辑保存时置为离队/退役：解除队伍归属（小组归属由 Service 同步关闭） -->
+    <!-- 编辑保存时置为离队/退役：同样快照原队伍后解除主队伍归属（小组归属由 Service 同步关闭） -->
     <update id="leaveTeamByAthleteId">
         UPDATE apms_athlete
-        SET status = #{status}, primary_team_id = NULL, update_time = sysdate()
+        SET status = #{status},
+            last_team_id = COALESCE(last_team_id, primary_team_id),
+            primary_team_id = NULL,
+            update_time = sysdate()
         WHERE athlete_id = #{athleteId}
+    </update>
+
+    <!-- 重入队：恢复在队并重新挂靠主队伍（last_team_id 保留作历史，不影响在队口径） -->
+    <update id="rejoinAthleteTeam">
+        UPDATE apms_athlete
+        SET status = '0',
+            primary_team_id = #{teamId},
+            update_by = #{updateBy},
+            update_time = sysdate()
+        WHERE athlete_id = #{athleteId}
+          AND status IN ('1', '2')
     </update>
 
     <!-- 删除部门前校验：该部门下当前在队（status='0'）运动员数量。

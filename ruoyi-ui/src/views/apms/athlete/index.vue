@@ -5,17 +5,18 @@
     <div class="rp-header">
       <div>
         <h1 class="rp-title">花名册</h1>
-        <p class="rp-subtitle">{{ total }} 名在训运动员 · 13–18 岁</p>
+        <p class="rp-subtitle">{{ total }} {{ rosterTab.label }} · 13–18 岁</p>
       </div>
       <div class="rp-header-actions">
         <el-button
-          v-if="ids.length"
+          v-if="ids.length && rosterStatus === 'active'"
           plain
           class="rp-btn-danger"
           @click="handleDelete()"
           v-hasPermi="['apms:athlete:remove']"
         >已选 {{ ids.length }} 人 · 批量离队</el-button>
         <el-button
+          v-if="rosterStatus === 'active'"
           plain
           @click="openPromotionDialog"
           v-hasPermi="['apms:athlete:edit']"
@@ -30,9 +31,21 @@
       </div>
     </div>
 
+    <!-- ===== 状态视图 Tab：在训 / 离队 / 退役 / 全部 ===== -->
+    <div class="rp-roster-tabs">
+      <button
+        v-for="t in ROSTER_TABS"
+        :key="t.key"
+        type="button"
+        class="rp-roster-tab"
+        :class="{ 'is-active': rosterStatus === t.key }"
+        @click="switchRosterTab(t.key)"
+      >{{ t.label }}</button>
+    </div>
+
     <!-- ===== 筛选条（卡片化：年龄组 chips / 队伍 / 性别 / RTP chips / 搜索 / 重置） ===== -->
     <div class="rp-filter">
-      <div class="rpf-group">
+      <div v-if="rosterStatus === 'active'" class="rpf-group">
         <span class="rpf-label">年龄段</span>
         <button
           v-for="g in AGE_GROUPS"
@@ -44,7 +57,7 @@
         >{{ g }}岁</button>
       </div>
 
-      <span class="rpf-divider"></span>
+      <span v-if="rosterStatus === 'active'" class="rpf-divider"></span>
 
       <label class="rpf-field">
         <span class="rpf-label">队伍</span>
@@ -63,9 +76,9 @@
         </select>
       </label>
 
-      <span class="rpf-divider"></span>
+      <span v-if="rosterStatus === 'active'" class="rpf-divider"></span>
 
-      <div class="rpf-group">
+      <div v-if="rosterStatus === 'active'" class="rpf-group">
         <button
           v-for="c in STATUS_CHIPS"
           :key="c.key"
@@ -102,13 +115,14 @@
         <table class="rp-table">
           <thead>
             <tr>
-              <th class="col-check"></th>
+              <th v-if="rosterStatus === 'active'" class="col-check"></th>
               <th class="text-left">运动员</th>
               <th class="text-left">年龄段</th>
-              <th class="text-left">所属小组</th>
+              <th class="text-left">{{ rosterStatus === 'active' ? '所属小组' : '原队伍' }}</th>
               <th class="text-right">身高 / 体重</th>
               <th class="text-right">体脂率</th>
-              <th class="text-left">RTP 状态</th>
+              <th v-if="rosterStatus === 'active'" class="text-left">RTP 状态</th>
+              <th v-else class="text-left">状态</th>
               <th class="text-right">操作</th>
             </tr>
           </thead>
@@ -119,12 +133,12 @@
               class="rp-row"
               :class="{
                 'is-zebra': idx % 2 === 1,
-                'row-red': row.rtpStatus === 'r',
-                'row-amber': row.rtpStatus === 'y'
+                'row-red': rosterStatus === 'active' && row.rtpStatus === 'r',
+                'row-amber': rosterStatus === 'active' && row.rtpStatus === 'y'
               }"
               @click="handleDetail(row)"
             >
-              <td class="col-check" @click.stop>
+              <td v-if="rosterStatus === 'active'" class="col-check" @click.stop>
                 <input
                   type="checkbox"
                   class="rp-check"
@@ -140,7 +154,7 @@
                       {{ row.name }}
                       <GenderBadge :gender="row.gender" :size="15" class="rp-gender"/>
                     </p>
-                    <p class="rp-user-sub mono">{{ row.teamName || '未分队伍' }} · #{{ row.athleteId }}</p>
+                    <p class="rp-user-sub mono">{{ rosterTeamText(row) }} · #{{ row.athleteId }}</p>
                   </div>
                 </div>
               </td>
@@ -153,10 +167,14 @@
                 <span v-else class="rp-dash">—</span>
               </td>
               <td>
-                <div v-if="groupNames(row).length" class="rp-group-cell">
-                  <span v-for="g in groupNames(row)" :key="g" class="rp-group-chip">{{ g }}</span>
+                <!-- 在训：当前在组小组；离队/退役：离队前所属主队伍 -->
+                <div v-if="rosterStatus === 'active'">
+                  <div v-if="groupNames(row).length" class="rp-group-cell">
+                    <span v-for="g in groupNames(row)" :key="g" class="rp-group-chip">{{ g }}</span>
+                  </div>
+                  <span v-else class="rp-dash">—</span>
                 </div>
-                <span v-else class="rp-dash">—</span>
+                <span v-else class="rp-last-team">{{ row.lastTeamName || '未知队伍' }}</span>
               </td>
               <td class="text-right">
                 <span class="num">{{ fmtMetric(row.height) }}<span v-if="row.height!=null" class="rp-unit">cm</span>
@@ -169,13 +187,16 @@
                 <span v-else class="rp-dash">—</span>
               </td>
               <td>
-                <span class="rp-status-badge" :class="'tone-' + rtpMeta(row).tone">
+                <span v-if="rosterStatus === 'active'" class="rp-status-badge" :class="'tone-' + rtpMeta(row).tone">
                   <span class="rp-status-dot-wrap">
                     <span v-if="row.rtpStatus === 'r'" class="rp-status-ping"></span>
                     <span class="rp-status-dot"></span>
                   </span>
                   {{ rtpMeta(row).label }}
                 </span>
+                <el-tag v-else :type="row.status === '2' ? 'danger' : 'info'" size="small" effect="light">
+                  {{ row.status === '2' ? '退役' : '离队' }}
+                </el-tag>
               </td>
               <td>
                 <div class="rp-actions">
@@ -191,12 +212,30 @@
                         @click="onMenuEdit(row)"
                         v-hasPermi="['apms:athlete:edit']"
                       >编辑档案</button>
+                      <!-- 在训：队员离队 -->
                       <button
+                        v-if="rosterStatus === 'active'"
                         type="button"
                         class="rp-menu-item is-danger"
                         @click="onMenuLeave(row)"
                         v-hasPermi="['apms:athlete:remove']"
                       >队员离队</button>
+                      <!-- 离队：转退役 / 重入队 -->
+                      <template v-else>
+                        <button
+                          v-if="row.status === '1'"
+                          type="button"
+                          class="rp-menu-item"
+                          @click="handleRetire(row)"
+                          v-hasPermi="['apms:athlete:edit']"
+                        >设为退役</button>
+                        <button
+                          type="button"
+                          class="rp-menu-item is-primary"
+                          @click="openRejoin(row)"
+                          v-hasPermi="['apms:athlete:edit']"
+                        >重入队</button>
+                      </template>
                     </div>
                   </div>
                 </div>
@@ -273,6 +312,28 @@
         <div class="dialog-footer">
           <el-button type="primary" @click="submitForm">确 定</el-button>
           <el-button @click="cancel">取 消</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- ========== 重入队（离队/退役人员重新挂靠队伍） ========== -->
+    <el-dialog title="重入队" v-model="rejoin.open" width="420px" append-to-body>
+      <p class="rp-rejoin-tip">
+        将 <b>{{ rejoin.athleteName }}</b> 恢复为在队状态并挂靠主属队伍。
+        重入队后需在档案中手动加回训练/科研小组。
+      </p>
+      <el-select
+        v-model="rejoin.teamId"
+        placeholder="请选择重入队伍"
+        filterable
+        style="width: 100%"
+      >
+        <el-option v-for="t in teamOptions" :key="t.deptId" :label="t.deptName" :value="t.deptId"/>
+      </el-select>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button type="primary" :disabled="!rejoin.teamId" @click="submitRejoin">确 定</el-button>
+          <el-button @click="rejoin.open = false">取 消</el-button>
         </div>
       </template>
     </el-dialog>
@@ -382,7 +443,7 @@
 
 <script setup name="Athlete">
 import { listAthlete, rtpSummaryAthlete, getAthlete, addAthlete, updateAthlete, delAthlete,
-         previewPromotion, executePromotion } from '@/api/apms/athlete'
+         rejoinAthlete, previewPromotion, executePromotion } from '@/api/apms/athlete'
 import { listDept } from '@/api/system/dept'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import AthleteDetailDrawer from './components/AthleteDetailDrawer.vue'
@@ -409,6 +470,33 @@ const RTP_META = {
   y: { tone: 'amber', label: '限制参训' },
   r: { tone: 'red', label: '停训' }
 }
+// 花名册状态视图（与后端 rosterStatus 入参一致）
+const ROSTER_TABS = [
+  { key: 'active', label: '名在训运动员' },
+  { key: 'left', label: '名离队运动员' },
+  { key: 'retired', label: '名退役运动员' },
+  { key: 'all', label: '名运动员（全部状态）' }
+]
+const rosterStatus = ref('active')
+const rosterTab = computed(() => ROSTER_TABS.find(t => t.key === rosterStatus.value) || ROSTER_TABS[0])
+function switchRosterTab(key) {
+  if (rosterStatus.value === key) return
+  rosterStatus.value = key
+  ids.value = []
+  openMenuId.value = null
+  // 非在训视图 RTP 红黄绿 chip 无意义，清掉其筛选避免残留
+  if (key !== 'active') filters.rtpStatus = ''
+  queryParams.value.pageNum = 1
+  reload()
+}
+// 运动员行的队伍文案：在训显示当前主队伍，离队/退役显示原所属队伍
+function rosterTeamText(row) {
+  if (rosterStatus.value === 'active') return row.teamName || '未分队伍'
+  return (row.lastTeamName || '未知队伍') + '（原队伍）'
+}
+
+// 重入队弹窗状态
+const rejoin = reactive({ open: false, athleteId: null, athleteName: '', teamId: null })
 
 const athleteList = ref([])
 const loading = ref(true)
@@ -486,11 +574,14 @@ function fmtMetric(v) {
 function buildParams() {
   return {
     ...queryParams.value,
+    rosterStatus: rosterStatus.value,
     name: filters.name.trim() || undefined,
     primaryTeamId: filters.primaryTeamId || undefined,
     gender: filters.gender || undefined,
-    rtpStatus: filters.rtpStatus || undefined,
-    ageGroups: filters.groups
+    // RTP 状态筛选仅在在训视图有意义
+    rtpStatus: rosterStatus.value === 'active' ? (filters.rtpStatus || undefined) : undefined,
+    // 年龄段筛选仅在在训视图使用
+    ageGroups: rosterStatus.value === 'active' ? filters.groups : []
   }
 }
 
@@ -525,7 +616,8 @@ function reload() {
   ids.value = []
   openMenuId.value = null
   getList()
-  getSummary()
+  // RTP 红黄绿汇总只服务在训视图
+  if (rosterStatus.value === 'active') getSummary()
 }
 
 function countOf(key) {
@@ -662,6 +754,35 @@ function handleDelete(row) {
   }).then(() => {
     reload()
     proxy.$modal.msgSuccess('已设为离队')
+  }).catch(() => {})
+}
+
+/* ===== 离队 → 退役（不要求重新挂队伍；复用编辑接口，后端同步解除归属） ===== */
+function handleRetire(row) {
+  openMenuId.value = null
+  proxy.$modal.confirm('确认将 ' + row.name + ' 设为退役状态？').then(() => {
+    return updateAthlete({ athleteId: row.athleteId, status: '2' })
+  }).then(() => {
+    reload()
+    proxy.$modal.msgSuccess('已设为退役')
+  }).catch(() => {})
+}
+
+/* ===== 重入队（离队/退役 → 在队，需重新挂靠主队伍） ===== */
+function openRejoin(row) {
+  openMenuId.value = null
+  rejoin.athleteId = row.athleteId
+  rejoin.athleteName = row.name
+  // 默认带出离队前所属队伍，可改
+  rejoin.teamId = row.lastTeamId || null
+  rejoin.open = true
+}
+function submitRejoin() {
+  if (!rejoin.teamId) return
+  rejoinAthlete({ athleteId: rejoin.athleteId, primaryTeamId: rejoin.teamId }).then(() => {
+    proxy.$modal.msgSuccess('已重入队，可在「在训」花名册查看')
+    rejoin.open = false
+    reload()
   }).catch(() => {})
 }
 
@@ -829,6 +950,40 @@ $risk: #dc2626;
 }
 
 /* ===== 筛选条 ===== */
+/* 状态视图 Tab（在训/离队/退役/全部） */
+.rp-roster-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 14px 0 12px;
+  flex-wrap: wrap;
+}
+.rp-roster-tab {
+  border: 1px solid var(--el-border-color, #e2e8f0);
+  background: #fff;
+  color: #475569;
+  border-radius: 8px;
+  padding: 6px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all .15s ease;
+  &:hover { border-color: #2563eb; color: #2563eb; }
+  &.is-active {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: #fff;
+    font-weight: 600;
+  }
+}
+.rp-last-team { font-size: 12.5px; color: #64748b; }
+.rp-rejoin-tip {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.7;
+  b { color: #0f172a; }
+}
+.rp-menu-item.is-primary { color: #2563eb; font-weight: 600; }
+
 .rp-filter {
   display: flex;
   flex-wrap: wrap;

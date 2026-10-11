@@ -52,6 +52,15 @@ export function delAthlete(athleteIds) {
   })
 }
 
+// 重入队：离队/退役人员恢复在队并重新挂靠主队伍
+export function rejoinAthlete(data) {
+  return request({
+    url: '/apms/athlete/rejoin',
+    method: 'put',
+    data
+  })
+}
+
 // 赛季晋升：预览名单（不落库）
 export function previewPromotion(data) {
   return request({

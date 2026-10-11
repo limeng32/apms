@@ -27,4 +27,11 @@ public interface IApmsAthleteService {
 
     /** 逻辑删除（改 status=1） */
     int deleteApmsAthleteByAthleteIds(Long[] athleteIds);
+
+    /**
+     * 重入队：离队(1)/退役(2)人员恢复在队并重新挂靠指定主队伍。
+     * @param athleteId 运动员ID
+     * @param teamId    重新挂靠的主属队伍ID（dept_type=20 有效队伍）
+     */
+    int rejoinAthlete(Long athleteId, Long teamId);
 }

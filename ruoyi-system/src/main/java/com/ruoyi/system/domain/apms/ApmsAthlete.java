@@ -37,6 +37,9 @@ public class ApmsAthlete extends BaseEntity {
     /** 主属队伍ID（sys_dept.dept_id，必须是 dept_type=20 的队伍节点） */
     private Long primaryTeamId;
 
+    /** 离队/退役时所属主队伍快照（离队人员按原队伍筛选/展示；在队为 null） */
+    private Long lastTeamId;
+
     /** 球衣号码 */
     private String jerseyNo;
 
@@ -57,6 +60,15 @@ public class ApmsAthlete extends BaseEntity {
 
     /** 队伍名称（关联查询，非数据库字段） */
     private String teamName;
+
+    /** 离队/退役前所属队伍名称（关联 last_team_id，非数据库字段） */
+    private String lastTeamName;
+
+    /**
+     * 花名册状态视图（仅查询入参，非数据库字段）：
+     * active=在训(默认) left=离队 retired=退役 all=全部
+     */
+    private String rosterStatus;
 
     /** 年龄（计算字段，非数据库字段） */
     private Integer age;
@@ -93,6 +105,8 @@ public class ApmsAthlete extends BaseEntity {
     public void setPhone(String phone) { this.phone = phone; }
     public Long getPrimaryTeamId() { return primaryTeamId; }
     public void setPrimaryTeamId(Long primaryTeamId) { this.primaryTeamId = primaryTeamId; }
+    public Long getLastTeamId() { return lastTeamId; }
+    public void setLastTeamId(Long lastTeamId) { this.lastTeamId = lastTeamId; }
     public String getJerseyNo() { return jerseyNo; }
     public void setJerseyNo(String jerseyNo) { this.jerseyNo = jerseyNo; }
     public String getPosition() { return position; }
@@ -107,6 +121,10 @@ public class ApmsAthlete extends BaseEntity {
     public void setAdultHeightCalcDate(java.util.Date v) { this.adultHeightCalcDate = v; }
     public String getTeamName() { return teamName; }
     public void setTeamName(String teamName) { this.teamName = teamName; }
+    public String getLastTeamName() { return lastTeamName; }
+    public void setLastTeamName(String lastTeamName) { this.lastTeamName = lastTeamName; }
+    public String getRosterStatus() { return rosterStatus; }
+    public void setRosterStatus(String rosterStatus) { this.rosterStatus = rosterStatus; }
     public Integer getAge() { return age; }
     public void setAge(Integer age) { this.age = age; }
     public String getRtpStatus() { return rtpStatus; }

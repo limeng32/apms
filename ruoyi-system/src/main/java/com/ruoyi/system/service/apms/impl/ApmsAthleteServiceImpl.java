@@ -96,6 +96,27 @@ public class ApmsAthleteServiceImpl implements IApmsAthleteService {
     }
 
     /**
+     * 重入队：离队/退役人员恢复在队并重新挂靠主队伍。
+     * 仅恢复主队伍与状态，不自动重开历史小组（如需回训练/科研小组，重入队后手动加入）。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int rejoinAthlete(Long athleteId, Long teamId) {
+        ApmsAthlete athlete = athleteMapper.selectApmsAthleteByAthleteId(athleteId);
+        if (athlete == null) {
+            throw new ServiceException("运动员不存在或已删除");
+        }
+        String status = athlete.getStatus();
+        if (!"1".equals(status) && !"2".equals(status)) {
+            throw new ServiceException("该运动员当前为在队状态，无需重入队");
+        }
+        // 复用在队队伍硬校验：队伍存在、未删未停、dept_type=20
+        validateActiveTeam(teamId);
+        return athleteMapper.rejoinAthleteTeam(athleteId, teamId,
+                com.ruoyi.common.utils.SecurityUtils.getUsername());
+    }
+
+    /**
      * 在队运动员必须挂靠有效主属队伍（Service 层硬校验，前端可绕过，不能只靠页面规则）：
      * 队伍存在、未删除、未停用，且 dept_type=20（队伍层级，不能挂机构/小组）。
      */

@@ -96,6 +96,15 @@ public class ApmsAthleteController extends BaseController {
     }
 
     /**
+     * 重入队：离队/退役人员恢复在队并重新挂靠主队伍
+     */
+    @PreAuthorize("@ss.hasPermi('apms:athlete:edit')")
+    @PutMapping("/rejoin")
+    public AjaxResult rejoin(@RequestBody ApmsAthlete body) {
+        return toAjax(athleteService.rejoinAthlete(body.getAthleteId(), body.getPrimaryTeamId()));
+    }
+
+    /**
      * 赛季晋升：预览名单（不落库）
      */
     @PreAuthorize("@ss.hasPermi('apms:athlete:list')")
