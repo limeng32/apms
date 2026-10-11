@@ -3,8 +3,8 @@
     <!-- ===== 页头（花名册风格） ===== -->
     <div class="rk-header">
       <div>
-        <h1 class="rk-title">部门管理</h1>
-        <p class="rk-subtitle">{{ totalDepts }} 个部门</p>
+        <h1 class="rk-title">{{ embedded ? '部门管理' : '组织架构' }}</h1>
+        <p class="rk-subtitle">{{ embedded ? totalDepts + ' 个部门' : '队伍与训练小组维护 · ' + totalDepts + ' 个部门' }}</p>
       </div>
       <div class="rk-header-actions">
         <right-toolbar v-model:showSearch="showSearch" @queryTable="getList" class="dm-col-toolbar" />

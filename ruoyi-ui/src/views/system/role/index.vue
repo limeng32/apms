@@ -4,27 +4,12 @@
     <div class="rk-header">
       <div>
         <h1 class="rk-title">角色权限管理</h1>
-        <p class="rk-subtitle">角色权限分配 · 部门组织维护</p>
+        <p class="rk-subtitle">角色权限分配</p>
       </div>
     </div>
 
-    <!-- ===== 子模块 Tab：角色权限 / 部门管理 ===== -->
-    <div class="rk-tabs rm-tabs">
-      <button
-        class="rk-tab"
-        :class="{ 'is-active': activeTab === 'role' }"
-        @click="switchTab('role')"
-      >角色权限</button>
-      <button
-        v-if="canViewDept"
-        class="rk-tab"
-        :class="{ 'is-active': activeTab === 'dept' }"
-        @click="switchTab('dept')"
-      >部门管理</button>
-    </div>
-
-    <!-- ===== 子模块：角色权限 ===== -->
-    <div v-show="activeTab === 'role'" class="rm-tab-panel">
+    <!-- 部门（队伍/训练小组）维护已独立为顶级菜单「组织架构」 -->
+    <div class="rm-tab-panel">
       <div class="rk-header rm-sub-header">
         <div>
           <h2 class="rk-sub-title">{{ total }} 个角色</h2>
@@ -232,11 +217,6 @@
     </div>
     </div><!-- /角色权限 panel -->
 
-    <!-- ===== 子模块：部门管理（复用 system/dept 页面，super 可建 APMS 总部下级） ===== -->
-    <div v-if="canViewDept && deptMounted" v-show="activeTab === 'dept'" class="rm-tab-panel">
-      <DeptPage embedded />
-    </div>
-
     <!-- 添加或修改角色配置对话框 -->
     <el-dialog :title="title" v-model="open" width="500px" append-to-body>
       <el-form ref="roleRef" :model="form" :rules="rules" label-width="100px">
@@ -359,22 +339,10 @@ import { addRole, changeRoleStatus, dataScope, delRole, getRole, listRole, updat
 import { roleMenuTreeselect, treeselect as menuTreeselect, roleMenuFlatList } from "@/api/system/menu"
 import { Plus, RefreshLeft, MoreFilled, ArrowLeft, ArrowRight, Download, Edit, Delete, CircleCheck, User } from '@element-plus/icons-vue'
 import useUserStore from "@/store/modules/user"
-import { checkPermi } from '@/utils/permission'
-import DeptPage from '../dept/index.vue'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance()
 const { sys_normal_disable } = useDict("sys_normal_disable")
-
-/* ===== 子模块 Tab ===== */
-const activeTab = ref('role')
-// 部门管理仅对具备 dept:list 的角色呈现（super/admin）；首次切换时才挂载，避免提前请求
-const canViewDept = checkPermi(['system:dept:list'])
-const deptMounted = ref(false)
-function switchTab(key) {
-  activeTab.value = key
-  if (key === 'dept') deptMounted.value = true
-}
 
 const PAGE_SIZE = 12
 const roleList = ref([])
@@ -873,9 +841,6 @@ getList()
   background: $rk-canvas;
   overflow-x: hidden;
 }
-
-/* 子模块 Tab：紧贴总页头 */
-.rm-tabs { margin-top: 4px; }
 
 /* 角色权限面板内的次级工具行（计数 + 操作按钮）；
    左缘与 Tab 标签文字对齐（Tab 按钮自身有 16px 内边距），右侧仍贴卡片右缘 */

@@ -16,6 +16,12 @@
           v-hasPermi="['apms:athlete:remove']"
         >已选 {{ ids.length }} 人 · 批量离队</el-button>
         <el-button
+          plain
+          :icon="OfficeBuilding"
+          @click="goOrg"
+          v-hasPermi="['system:dept:list']"
+        >小组管理</el-button>
+        <el-button
           v-if="rosterStatus === 'active'"
           plain
           @click="openPromotionDialog"
@@ -170,7 +176,14 @@
                 <!-- 在训：当前在组小组；离队/退役：离队前所属主队伍 -->
                 <div v-if="rosterStatus === 'active'">
                   <div v-if="groupNames(row).length" class="rp-group-cell">
-                    <span v-for="g in groupNames(row)" :key="g" class="rp-group-chip">{{ g }}</span>
+                    <button
+                      v-for="g in groupNames(row)"
+                      :key="g"
+                      type="button"
+                      class="rp-group-chip rp-group-chip-link"
+                      title="在「组织架构」中管理小组"
+                      @click.stop="goOrg"
+                    >{{ g }}</button>
                   </div>
                   <span v-else class="rp-dash">—</span>
                 </div>
@@ -457,10 +470,16 @@ import RkPager from '@/components/RkPager/index.vue'
 import ReadOnlyBlock from '@/components/ReadOnlyBlock/index.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
 import { useDict } from '@/utils/dict'
-import { Plus, Search, RefreshLeft, MoreFilled } from '@element-plus/icons-vue'
+import { Plus, Search, RefreshLeft, MoreFilled, OfficeBuilding } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
+const router = useRouter()
 const { apms_athlete_status } = useDict('apms_athlete_status')
+
+// 跳转到「系统 → 组织架构」（队伍/训练小组维护）
+function goOrg() {
+  router.push('/sysmgr/org')
+}
 
 /* ===== demo 花名册视觉常量（与 demo tailwind token 对齐） ===== */
 // 年龄段内部值为纯数字（与后端 ageGroups 参数一致），展示时统一拼「岁」，避免与 U16 梯队混淆
@@ -1248,6 +1267,16 @@ $risk: #dc2626;
   border: 1px solid #bfdbfe;
   border-radius: 999px;
   white-space: nowrap;
+}
+/* 可点击的小组 chip：跳转「组织架构」管理小组 */
+button.rp-group-chip-link {
+  cursor: pointer;
+  font-family: inherit;
+  transition: background .15s ease, border-color .15s ease;
+  &:hover {
+    background: #dbeafe;
+    border-color: $brand-600;
+  }
 }
 
 .num {
