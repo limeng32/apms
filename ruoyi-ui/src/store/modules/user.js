@@ -25,8 +25,9 @@ const useUserStore = defineStore(
         const password = userInfo.password
         const code = userInfo.code
         const uuid = userInfo.uuid
+        const sliderUuid = userInfo.sliderUuid
         return new Promise((resolve, reject) => {
-          login(username, password, code, uuid).then(res => {
+          login(username, password, code, uuid, sliderUuid).then(res => {
             setToken(res.token)
             this.token = res.token
             useLockStore().unlockScreen()

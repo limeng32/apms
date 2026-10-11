@@ -23,6 +23,13 @@
     </template>
   </LoginRenderer>
 
+  <!-- 真人拖拽拼图验证码（模态框；点登录时弹出，通过后自动发起登录） -->
+  <SliderCaptcha
+    ref="sliderRef"
+    @verified="onSliderVerified"
+    @enabled-change="onSliderEnabledChange"
+  />
+
   <!-- 一键体验口令弹窗（仅业务域登录页；展示页不挂 login.vue） -->
   <DemoPassDialog v-model="demoDialogVisible" @success="handleDemoSuccess" />
 </template>
@@ -34,6 +41,7 @@ import { WarningFilled } from '@element-plus/icons-vue'
 import useUserStore from '@/store/modules/user'
 import LoginRenderer from './login/LoginRenderer.vue'
 import LoginFormFields from './login/LoginFormFields.vue'
+import SliderCaptcha from './login/SliderCaptcha.vue'
 import DemoPassDialog from './login/DemoPassDialog.vue'
 import useLoginThemeStore from '@/store/modules/loginTheme'
 import { applyLoginHead, restoreLoginHead } from './login/login.utils'
@@ -52,6 +60,20 @@ const demoDialogVisible = ref(false)
 const sessionState = ref(readDemoSessionState().state)
 
 const loginFieldsRef = ref(null)
+
+// 真人滑块拼图：enabled=后端开关；sliderUuid=本次通过标识（登录前必须持有）
+const sliderRef = ref(null)
+const sliderEnabled = ref(false)
+const sliderUuid = ref('')
+function onSliderEnabledChange(enabled) {
+  sliderEnabled.value = enabled
+  if (!enabled) sliderUuid.value = ''
+}
+function onSliderVerified(uuid) {
+  sliderUuid.value = uuid
+  // 模态框流程：滑块通过后自动发起登录（模态约 0.4s 后自行收起）
+  doLogin()
+}
 
 const loginForm = ref({
   username: "admin",
@@ -101,30 +123,41 @@ function reloadPage() {
 
 function handleLogin() {
   loginFieldsRef.value.validate(valid => {
-    if (valid) {
-      loading.value = true
-      if (loginForm.value.rememberMe) {
-        Cookies.set(cookieName("username"), loginForm.value.username, { expires: 30 })
-        Cookies.set(cookieName("rememberMe"), loginForm.value.rememberMe, { expires: 30 })
-      } else {
-        Cookies.remove(cookieName("username"))
-        Cookies.remove(cookieName("rememberMe"))
-      }
-      // 密码不再写入 cookie，并清除历史版本遗留的密码 cookie
-      Cookies.remove("password")
-      userStore.login(loginForm.value).then(() => {
-        const query = route.query
-        const otherQueryParams = Object.keys(query).reduce((acc, cur) => {
-          if (cur !== "redirect") {
-            acc[cur] = query[cur]
-          }
-          return acc
-        }, {})
-        router.push({ path: redirect.value || "/", query: otherQueryParams })
-      }).catch(() => {
-        loading.value = false
-      })
+    if (!valid) return
+    if (loginForm.value.rememberMe) {
+      Cookies.set(cookieName("username"), loginForm.value.username, { expires: 30 })
+      Cookies.set(cookieName("rememberMe"), loginForm.value.rememberMe, { expires: 30 })
+    } else {
+      Cookies.remove(cookieName("username"))
+      Cookies.remove(cookieName("rememberMe"))
     }
+    // 密码不再写入 cookie，并清除历史版本遗留的密码 cookie
+    Cookies.remove("password")
+    // 滑块开启：先弹出验证模态，通过后由 onSliderVerified 调 doLogin
+    if (sliderEnabled.value) {
+      sliderRef.value && sliderRef.value.open()
+      return
+    }
+    doLogin()
+  })
+}
+
+/** 实际发起登录（普通登录直接调；滑块通过后由 onSliderVerified 调） */
+function doLogin() {
+  loading.value = true
+  userStore.login({ ...loginForm.value, sliderUuid: sliderUuid.value || undefined }).then(() => {
+    const query = route.query
+    const otherQueryParams = Object.keys(query).reduce((acc, cur) => {
+      if (cur !== "redirect") {
+        acc[cur] = query[cur]
+      }
+      return acc
+    }, {})
+    router.push({ path: redirect.value || "/", query: otherQueryParams })
+  }).catch(() => {
+    loading.value = false
+    // 登录失败：滑块通过标记已被服务端消费，下次点登录会重新弹窗换新题
+    sliderUuid.value = ''
   })
 }
 

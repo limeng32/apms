@@ -94,6 +94,20 @@ public class SysConfigServiceImpl implements ISysConfigService
     }
 
     /**
+     * 滑块拼图验证码开关：默认关闭（未配置参数时不影响既有登录链路）
+     */
+    @Override
+    public boolean selectSliderCaptchaEnabled()
+    {
+        String sliderEnabled = selectConfigByKey("sys.account.sliderCaptchaEnabled");
+        if (StringUtils.isEmpty(sliderEnabled))
+        {
+            return false;
+        }
+        return Convert.toBool(sliderEnabled);
+    }
+
+    /**
      * 查询参数配置列表
      * 
      * @param config 参数配置信息

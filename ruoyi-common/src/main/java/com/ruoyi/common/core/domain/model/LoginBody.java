@@ -27,6 +27,21 @@ public class LoginBody
      */
     private String uuid;
 
+    /**
+     * 滑块拼图验证通过标识（开启滑块验证码时必传）
+     */
+    private String sliderUuid;
+
+    public String getSliderUuid()
+    {
+        return sliderUuid;
+    }
+
+    public void setSliderUuid(String sliderUuid)
+    {
+        this.sliderUuid = sliderUuid;
+    }
+
     public String getUsername()
     {
         return username;

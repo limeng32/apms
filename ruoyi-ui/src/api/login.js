@@ -1,12 +1,13 @@
 import request from '@/utils/request'
 
 // 登录方法
-export function login(username, password, code, uuid) {
+export function login(username, password, code, uuid, sliderUuid) {
   const data = {
     username,
     password,
     code,
-    uuid
+    uuid,
+    sliderUuid
   }
   return request({
     url: '/login',
@@ -56,5 +57,25 @@ export function getCodeImg() {
     },
     method: 'get',
     timeout: 20000
+  })
+}
+
+// 获取滑块拼图挑战（同时返回开关状态；关闭时仅返回 sliderEnabled=false）
+export function getSliderCaptcha() {
+  return request({
+    url: '/captcha/slider',
+    headers: { isToken: false },
+    method: 'get',
+    timeout: 20000
+  })
+}
+
+// 校验滑块拖拽结果
+export function checkSliderCaptcha(data) {
+  return request({
+    url: '/captcha/slider/check',
+    headers: { isToken: false, repeatSubmit: false },
+    method: 'post',
+    data
   })
 }

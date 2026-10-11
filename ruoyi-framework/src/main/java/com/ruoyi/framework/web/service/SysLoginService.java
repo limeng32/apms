@@ -51,19 +51,23 @@ public class SysLoginService
     @Autowired
     private ISysConfigService configService;
 
+    @Autowired
+    private com.ruoyi.framework.captcha.SliderCaptchaService sliderCaptchaService;
+
     /**
      * 登录验证
-     * 
-     * @param username 用户名
-     * @param password 密码
-     * @param code 验证码
-     * @param uuid 唯一标识
+     *
+     * @param username   用户名
+     * @param password   密码
+     * @param code       验证码
+     * @param uuid       唯一标识
+     * @param sliderUuid 滑块拼图验证通过标识
      * @return 结果
      */
-    public String login(String username, String password, String code, String uuid)
+    public String login(String username, String password, String code, String uuid, String sliderUuid)
     {
-        // 验证码校验
-        validateCaptcha(username, code, uuid);
+        // 验证码校验（滑块拼图 与 字符/算术验证码 二选一）
+        validateCaptcha(username, code, uuid, sliderUuid);
         // 登录前置校验
         loginPreCheck(username, password);
         // 用户验证
@@ -100,15 +104,26 @@ public class SysLoginService
     }
 
     /**
-     * 校验验证码
-     * 
-     * @param username 用户名
-     * @param code 验证码
-     * @param uuid 唯一标识
-     * @return 结果
+     * 校验验证码（滑块拼图 与 字符/算术验证码 二选一）
+     *
+     * @param username   用户名
+     * @param code       字符验证码
+     * @param uuid       字符验证码唯一标识（滑块关闭时使用）
+     * @param sliderUuid 滑块拼图通过标识（滑块开启时使用）
      */
-    public void validateCaptcha(String username, String code, String uuid)
+    public void validateCaptcha(String username, String code, String uuid, String sliderUuid)
     {
+        // 滑块拼图开启：以一次性通过标记为准，不再校验字符验证码
+        if (configService.selectSliderCaptchaEnabled())
+        {
+            if (!sliderCaptchaService.consumePass(sliderUuid))
+            {
+                AsyncManager.me().execute(AsyncFactory.recordLogininfor(username, Constants.LOGIN_FAIL, "滑块验证未通过或已失效"));
+                throw new CaptchaException();
+            }
+            return;
+        }
+
         boolean captchaEnabled = configService.selectCaptchaEnabled();
         if (captchaEnabled)
         {
