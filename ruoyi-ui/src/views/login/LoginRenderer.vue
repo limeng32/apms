@@ -156,17 +156,20 @@
 
     <!-- ============ split：左右双栏模板（默认） ============ -->
     <template v-else>
-    <!-- 左侧品牌区：科技动态背景（主图/遮罩/线稿/雷达/粒子） -->
+    <!-- 整页科技动态背景：铺满整个视口而非只铺左栏。
+         登录页右半由不透明白色 .login-form-side 盖住（即「登录域」），
+         品牌展示（showcase）无右栏则整屏可见 —— 两种形态背景画面完全一致。 -->
+    <LoginTechBackground
+      v-if="hasTechLayer"
+      :src="bgSrc"
+      :texture="bgTexture"
+      :overlay="bgOverlay"
+      :show-radar="showRadar"
+      :show-particles="showParticles"
+      :ken-burns="kenBurns"
+    />
+    <!-- 左侧品牌区（背景已提升到整页，本栏透明，文字浮于整页背景之上） -->
     <aside class="login-brand">
-      <LoginTechBackground
-        v-if="hasTechLayer"
-        :src="bgSrc"
-        :texture="bgTexture"
-        :overlay="bgOverlay"
-        :show-radar="showRadar"
-        :show-particles="showParticles"
-        :ken-burns="kenBurns"
-      />
       <div class="lb-head" data-anim data-anim-delay="0.1s">
         <div
           class="brand-logo-slot"
@@ -480,34 +483,52 @@ function onLogoPointerUp() {
   font-family: var(--login-font-family);
 }
 
-/* split：左右双栏（默认） */
+/* split：左右双栏（默认）。
+   底色用品牌深色（无背景图时兜住透明品牌区）；整页背景/辉光为 absolute 层，
+   左右两栏浮于其上（z-index:2），右栏白底不透明显现为「登录域」。 */
 .login-split {
+  position: relative;
   display: grid;
   grid-template-columns: var(--login-split);
   grid-template-rows: 1fr;
-  background: var(--login-page-bg);
+  overflow: hidden;
+  background: var(--login-brand-bg);
+}
+/* 整页辉光（原品牌区 ::before，提升到整页，保证登录页/展示页位置一致）。
+   ::after 在子元素之后生成，同 z-index:1 时绘制于背景层(.ltech z:0)之上、内容(z:2)之下。 */
+.login-split::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 85% 15%, var(--login-glow-1) 0, transparent 38%),
+    radial-gradient(circle at 12% 88%, var(--login-glow-2) 0, transparent 42%);
+}
+/* 雷达装饰随整屏背景铺满后，默认锚在视口右缘会被 aoti 右侧白色登录域盖住。
+   按品牌区占比把它拉回左品牌区：宽 64%，圆心落在品牌区宽度约 78% 处
+   （right = 100% - 64%/2 - 78%·品牌占比）。showcase 无登录域时位置相同。 */
+.login-split > .ltech :deep(.ltech-radar) {
+  right: calc(68% - 78 * var(--login-brand-frac, 0.52) * 1%);
+}
+/* 球场线稿纹理同样锚到品牌区右下角（原在品牌区内 right:0），避免被右登录域盖住、
+   且保证 showcase 与登录页位置一致：right = 视口宽度 × 右栏占比 */
+.login-split > .ltech :deep(.ltech-texture) {
+  right: calc((1 - var(--login-brand-frac, 0.52)) * 100%);
 }
 
-/* ============ 左侧品牌区 ============ */
+/* ============ 左侧品牌区（透明，文字浮于整页背景之上） ============ */
 .login-brand {
   position: relative;
-  background: var(--login-brand-bg);
+  z-index: 2;
+  background: transparent;
   color: var(--login-text-brand);
   padding: var(--login-logo-top-split) 64px 56px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   height: 100%;
-  &::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background:
-      radial-gradient(circle at 85% 15%, var(--login-glow-1) 0, transparent 38%),
-      radial-gradient(circle at 12% 88%, var(--login-glow-2) 0, transparent 42%);
-    pointer-events: none;
-  }
-  /* 仅内容区抬到背景层之上；LoginTechBackground 自身 z-index:0 */
   > .lb-head, > .lb-hero, > .lb-foot { position: relative; z-index: 1; }
 }
 
@@ -626,6 +647,8 @@ function onLogoPointerUp() {
 /* 与左栏 .login-brand 同机制：flex column 文档流 + 同一顶部留白变量，
    两个 logo 都锚定各自面板的文档流顶部，屏幕高度变化时相对位置不变且始终顶部对齐 */
 .login-form-side {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   padding: var(--login-logo-top-split) 24px 40px;
@@ -823,6 +846,8 @@ function onLogoPointerUp() {
   .login-split {
     grid-template-columns: 1fr;
   }
+  /* 单列时内容可能超过一屏，背景改相对视口固定，避免 cover 被超长容器异常放大 */
+  .login-split > .ltech { position: fixed; }
   .login-wrap.brand-hidden-mobile .login-brand { display: none; }
   .login-form-side {
     min-height: 100vh;
@@ -840,6 +865,7 @@ function onLogoPointerUp() {
  * 媒体查询不会命中，用 .force-mobile 复刻同样的 H5 形态。
  */
 .login-wrap.force-mobile.login-split { grid-template-columns: 1fr; }
+.login-wrap.force-mobile.login-split > .ltech { position: fixed; }
 .login-wrap.force-mobile.brand-hidden-mobile .login-brand { display: none; }
 .login-wrap.force-mobile .login-form-side {
   min-height: 100%;
@@ -868,9 +894,7 @@ function onLogoPointerUp() {
 }
 
 /* ============ 暗黑模式 ============ */
-html.dark .login-brand {
-  background: linear-gradient(150deg, #060b16 0%, #0b1222 55%, #0f172a 100%);
-}
+html.dark .login-split,
 html.dark .login-centered,
 html.dark .login-fullscreen {
   background: linear-gradient(150deg, #060b16 0%, #0b1222 55%, #0f172a 100%);

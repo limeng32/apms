@@ -92,9 +92,21 @@ public class SysLoginController
         ajax.put("user", user);
         ajax.put("roles", roles);
         ajax.put("permissions", permissions);
+        boolean defaultModifyPwd = initPasswordIsModify(user.getPwdUpdateDate());
+        boolean passwordExpired = passwordIsExpiration(user.getPwdUpdateDate());
+        // super / 教练 / 测试 / 医疗四类角色使用初始密码时不弹「请修改初始密码」提示。
+        // 注意：从未改过密码(pwd_update_date 为空)时「过期」判定也为 true，前端过期提示的
+        // 条件又是 !isDefaultModifyPwd && isPasswordExpired——只关默认标志会被过期提示顶替，
+        // 因此初始密码状态下两个标志一并关闭；真正设置过密码后过期的，过期提示照常。
+        if (defaultModifyPwd && containsAnyRole(roles,
+                "super", "portal_coach", "portal_tester", "portal_medic"))
+        {
+            defaultModifyPwd = false;
+            passwordExpired = false;
+        }
         ajax.put("pwdChrtype", getSysAccountChrtype());
-        ajax.put("isDefaultModifyPwd", initPasswordIsModify(user.getPwdUpdateDate()));
-        ajax.put("isPasswordExpired", passwordIsExpiration(user.getPwdUpdateDate()));
+        ajax.put("isDefaultModifyPwd", defaultModifyPwd);
+        ajax.put("isPasswordExpired", passwordExpired);
         // Portal模式与落地页：任一已分配角色 portal_mode=1 即生效
         // 注意：selectRolesByUserId 返回全部角色（供用户表单勾选），此处须用实际分配的角色
         boolean portalMode = false;
@@ -132,6 +144,23 @@ public class SysLoginController
     public String getSysAccountChrtype()
     {
         return Convert.toStr(configService.selectConfigByKey("sys.account.chrtype"), "0");
+    }
+
+    // 用户角色集合是否命中任一指定 role_key
+    private boolean containsAnyRole(Set<String> userRoles, String... roleKeys)
+    {
+        if (userRoles == null || userRoles.isEmpty())
+        {
+            return false;
+        }
+        for (String key : roleKeys)
+        {
+            if (userRoles.contains(key))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     // 检查初始密码是否提醒修改

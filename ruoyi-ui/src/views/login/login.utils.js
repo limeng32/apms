@@ -297,6 +297,10 @@ export function toCssVars(config) {
     '--login-font-family': FONT_STACKS[ty.fontFamily] || FONT_STACKS.heiti,
     // 直接输出完整的两栏轨道值（1.1fr 合法且全浏览器兼容；不要用 calc(1.1 * 1fr)）
     '--login-split': `${Number(c.layout.splitRatio) || 1.1}fr 1fr`,
+    // 左品牌区占整屏宽度的比例（splitRatio/(splitRatio+1)），供整页背景层里
+    // 雷达等装饰锚定到品牌区（背景提升为整屏后，固定 right 会落到右侧登录域里）
+    '--login-brand-frac': String(((Number(c.layout.splitRatio) || 1.1) /
+      ((Number(c.layout.splitRatio) || 1.1) + 1)).toFixed(4)),
     // Logo 上下留白：split（左右分栏）与 overlay（居中卡片/全屏背景）各自独立
     '--login-logo-top-split': px(c.brand?.logoSpace?.split?.top, '56px'),
     '--login-logo-bottom-split': px(c.brand?.logoSpace?.split?.bottom, '0px'),
