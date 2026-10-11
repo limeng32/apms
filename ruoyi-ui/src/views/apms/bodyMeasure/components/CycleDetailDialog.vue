@@ -87,11 +87,31 @@
             <tbody>
               <tr v-for="row in batchRows" :key="row.athleteId">
                 <td>{{ row.athleteName }} <GenderBadge :gender="row.athleteGender" :size="14" class="cd-gender"/> <span class="re-muted">{{ row.teamName }}</span></td>
-                <td class="text-center"><el-input-number v-model="row.height" :precision="1" :step="0.5" :controls="false" :min="100" :max="230" size="small" style="width:96px"/></td>
-                <td class="text-center"><el-input-number v-model="row.weight" :precision="1" :step="0.5" :controls="false" :min="30" :max="150" size="small" style="width:96px"/></td>
-                <td class="text-center"><el-input-number v-model="row.sitHeight" :precision="1" :step="0.5" :controls="false" :min="40" :max="150" size="small" style="width:96px"/></td>
-                <td class="text-center"><el-input-number v-model="row.bodyFatRate" :precision="1" :step="0.5" :controls="false" :min="3" :max="40" size="small" style="width:96px"/></td>
-                <td class="text-center"><el-input-number v-model="row.waist" :precision="1" :step="0.5" :controls="false" :min="40" :max="150" size="small" style="width:96px"/></td>
+                <td class="text-center" :class="{ 'cd-cell-abnormal': abnormal('height', row.height) }">
+                  <el-input-number v-model="row.height" :precision="1" :step="0.5" :controls="false"
+                                  :min="rangeOf('height').hardMin" :max="rangeOf('height').hardMax"
+                                  size="small" style="width:96px"/>
+                </td>
+                <td class="text-center" :class="{ 'cd-cell-abnormal': abnormal('weight', row.weight) }">
+                  <el-input-number v-model="row.weight" :precision="1" :step="0.5" :controls="false"
+                                  :min="rangeOf('weight').hardMin" :max="rangeOf('weight').hardMax"
+                                  size="small" style="width:96px"/>
+                </td>
+                <td class="text-center" :class="{ 'cd-cell-abnormal': abnormal('sitHeight', row.sitHeight) }">
+                  <el-input-number v-model="row.sitHeight" :precision="1" :step="0.5" :controls="false"
+                                  :min="rangeOf('sitHeight').hardMin" :max="rangeOf('sitHeight').hardMax"
+                                  size="small" style="width:96px"/>
+                </td>
+                <td class="text-center" :class="{ 'cd-cell-abnormal': abnormal('bodyFatRate', row.bodyFatRate) }">
+                  <el-input-number v-model="row.bodyFatRate" :precision="1" :step="0.5" :controls="false"
+                                  :min="rangeOf('bodyFatRate').hardMin" :max="rangeOf('bodyFatRate').hardMax"
+                                  size="small" style="width:96px"/>
+                </td>
+                <td class="text-center" :class="{ 'cd-cell-abnormal': abnormal('waist', row.waist) }">
+                  <el-input-number v-model="row.waist" :precision="1" :step="0.5" :controls="false"
+                                  :min="rangeOf('waist').hardMin" :max="rangeOf('waist').hardMax"
+                                  size="small" style="width:96px"/>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -113,9 +133,21 @@
 import { computed, reactive, ref } from 'vue'
 import { cycleProgress, batchSaveCycle } from '@/api/apms/measureCycle'
 import GenderBadge from '@/components/GenderBadge/index.vue'
+import {
+  loadRanges, getBodyRange, classify, isAbnormal,
+  BODY_FIELDS, hardMessage, warnMessage
+} from '@/utils/measureRange'
 
 const { proxy } = getCurrentInstance()
 const emit = defineEmits(['saved'])
+
+// 录入区间（字典 apms_measure_range；失败静默用内置默认）
+loadRanges().catch(() => {})
+function rangeOf(key) { return getBodyRange(key) }
+// 批量表格异常单元格标红
+function abnormal(key, v) {
+  return isAbnormal(classify(getBodyRange(key), v))
+}
 
 const visible = ref(false)
 const loading = ref(false)
@@ -172,27 +204,58 @@ function enterBatch() {
   batchMode.value = true
 }
 
-async function submitBatch() {
-  const filled = batchRows.value.filter(r =>
-    r.height != null || r.weight != null || r.sitHeight != null || r.bodyFatRate != null || r.waist != null)
-  if (!filled.length) return proxy.$modal.msgWarning('请至少填写一项测量数据')
+// 汇总批量表格中所有越界单元格（带队员名）
+function collectBatchIssues() {
+  const hard = []
+  const warn = []
+  batchRows.value.forEach(r => {
+    BODY_FIELDS.forEach(key => {
+      if (r[key] == null) return
+      const range = getBodyRange(key)
+      const level = classify(range, r[key])
+      const who = r.athleteName + ' '
+      if (level === 'hard-low' || level === 'hard-high' || level === 'invalid') hard.push(who + hardMessage(range, r[key]))
+      else if (level === 'warn-low' || level === 'warn-high') warn.push(who + warnMessage(range, r[key]))
+    })
+  })
+  return { hard, warn }
+}
+
+function doBatchSave(filled) {
   saving.value = true
-  try {
-    await batchSaveCycle(data.cycle.id, filled.map(r => ({
-      id: r.measureId || undefined,
-      athleteId: r.athleteId,
-      measureDate: batchDate.value,
-      height: r.height, weight: r.weight, sitHeight: r.sitHeight,
-      bodyFatRate: r.bodyFatRate, waist: r.waist
-    })))
+  batchSaveCycle(data.cycle.id, filled.map(r => ({
+    id: r.measureId || undefined,
+    athleteId: r.athleteId,
+    measureDate: batchDate.value,
+    height: r.height, weight: r.weight, sitHeight: r.sitHeight,
+    bodyFatRate: r.bodyFatRate, waist: r.waist
+  }))).then(async () => {
     proxy.$modal.msgSuccess(`已保存 ${filled.length} 条测量记录`)
     await reload()
     emit('saved')
     batchMode.value = false
     view.value = 'measured'
-  } finally {
-    saving.value = false
+  }).finally(() => { saving.value = false })
+}
+
+async function submitBatch() {
+  const filled = batchRows.value.filter(r =>
+    r.height != null || r.weight != null || r.sitHeight != null || r.bodyFatRate != null || r.waist != null)
+  if (!filled.length) return proxy.$modal.msgWarning('请至少填写一项测量数据')
+  if (!batchDate.value) return proxy.$modal.msgWarning('请选择统一测量日期')
+  const { hard, warn } = collectBatchIssues()
+  // 硬限拦截（仅提示前 5 条，避免弹窗过长）
+  if (hard.length) {
+    return proxy.$modal.msgError(hard.slice(0, 5).join('；') + (hard.length > 5 ? ` 等 ${hard.length} 处` : ''))
   }
+  if (warn.length) {
+    const lines = warn.slice(0, 8).map(w => '· ' + w).join('\n')
+      + (warn.length > 8 ? `\n· ……共 ${warn.length} 处` : '')
+    proxy.$modal.confirm('以下数值超出合理区间，确认数据无误仍要保存吗？\n' + lines, '异常值确认')
+      .then(() => doBatchSave(filled)).catch(() => {})
+    return
+  }
+  doBatchSave(filled)
 }
 
 function reset() {
@@ -204,6 +267,10 @@ defineExpose({ open, reload })
 </script>
 
 <style lang="scss" scoped>
+/* 批量表格：异常值单元格红底提醒 */
+.cd-cell-abnormal :deep(.el-input-number),
+.cd-cell-abnormal :deep(.el-input__wrapper) { background: #fef2f2; }
+.cd-cell-abnormal :deep(input.el-input__inner) { color: #dc2626; font-weight: 600; }
 .cd-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 20px; flex-wrap: wrap; }
 .cd-meta { display: flex; gap: 8px; align-items: center; }
 .cd-window { font-size: 12px; color: #64748b; font-family: ui-monospace, Menlo, monospace; }

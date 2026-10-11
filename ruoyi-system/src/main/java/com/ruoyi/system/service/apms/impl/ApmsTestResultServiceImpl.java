@@ -14,6 +14,7 @@ import com.ruoyi.system.service.apms.IApmsTestResultService;
 import com.ruoyi.system.service.apms.ITaskProgressService;
 import com.ruoyi.system.service.apms.IBodyMeasureSyncService;
 import com.ruoyi.system.service.apms.IApmsPhvService;
+import com.ruoyi.system.service.apms.InputRangeValidator;
 
 /**
  * 测试结果 Service
@@ -37,6 +38,7 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
     @Autowired private ITaskProgressService taskProgressService;
     @Autowired private IBodyMeasureSyncService bodyMeasureSyncService;
     @Autowired private IApmsPhvService phvService;
+    @Autowired private InputRangeValidator inputRangeValidator;
 
     // ============== 基础 CRUD ==============
     @Override
@@ -73,6 +75,10 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
         validateType(result);
         // MODEL 型：按模型字段配置校验/归一采集值（字段角色、必填、类型、单位）
         if ("MODEL".equals(result.getItemType())) prepareModelValues(result, values);
+        // INDICATOR 型：按指标编码的录入区间字典做硬限兜底（未配置区间则放行）
+        if ("INDICATOR".equals(result.getItemType())) {
+            inputRangeValidator.validateIndicatorValues(result.getIndicatorId(), values);
+        }
         // 默认选中
         if (result.getIsSelected() == null || result.getIsSelected().isEmpty()) {
             result.setIsSelected("1");
@@ -127,6 +133,10 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
         ApmsTestResult old = resultMapper.selectById(result.getId());
         if (old == null) throw new ServiceException("结果不存在");
         validateType(result);
+        // INDICATOR 型编辑同样走录入硬限
+        if ("INDICATOR".equals(result.getItemType())) {
+            inputRangeValidator.validateIndicatorValues(result.getIndicatorId(), values);
+        }
 
         // 如果 is_valid 从 1 变为 0，强制取消 is_selected 并自动选下一个最优
         handleInvalidateAttempt(old, result);

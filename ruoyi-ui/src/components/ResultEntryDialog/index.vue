@@ -79,9 +79,12 @@
                   {{ bestMap[r._key] ?? '—' }}<span v-if="bestMap[r._key] != null && bestMap[r._key] !== '' && r.indicatorUnit" class="re-best-unit">{{ r.indicatorUnit }}</span>
                 </td>
                 <td>
-                  <el-input v-model="r.input" placeholder="数值" clearable class="re-input">
+                  <el-input v-model="r.input" placeholder="数值" clearable
+                            class="re-input"
+                            :class="{ 're-input-abnormal': indHint(r) }">
                     <template v-if="r.indicatorUnit" #append><span class="re-input-unit">{{ r.indicatorUnit }}</span></template>
                   </el-input>
+                  <p v-if="indHint(r)" class="re-range-hint">{{ indHint(r) }}</p>
                 </td>
               </tr>
             </tbody>
@@ -161,9 +164,39 @@ import { listAthlete } from '@/api/apms/athlete'
 import { listIndicator } from '@/api/apms/indicator'
 import { listField, listTestModel } from '@/api/apms/testModel'
 import { addTestResult, listByTaskMember, pushDeviceModel } from '@/api/apms/testResult'
+import {
+  loadRanges, getIndicatorRange, classify, isHard, isWarn, hardMessage, warnMessage
+} from '@/utils/measureRange'
 
 const { proxy } = getCurrentInstance()
 const emit = defineEmits(['success'])
+
+// 指标录入区间（字典 apms_indicator_range；未配置的指标不做范围校验）
+loadRanges().catch(() => {})
+
+/** 单个直接指标输入的异常提示（空串=正常/未配置） */
+function indHint(r) {
+  if (r.input === '' || r.input == null) return ''
+  const range = getIndicatorRange(r.indicatorCode)
+  if (!range) return ''
+  const level = classify(range, r.input)
+  if (level === 'invalid') return `${r.indicatorName || r.indicatorCode} 成绩必须是数字`
+  if (isHard(level)) return hardMessage(range, r.input)
+  if (isWarn(level)) return warnMessage(range, r.input)
+  return ''
+}
+function indIsHard(r) {
+  if (r.input === '' || r.input == null) return false
+  const range = getIndicatorRange(r.indicatorCode)
+  if (!range) return false
+  const level = classify(range, r.input)
+  return level === 'invalid' || isHard(level)
+}
+function indIsWarn(r) {
+  if (r.input === '' || r.input == null) return false
+  const range = getIndicatorRange(r.indicatorCode)
+  return !!range && isWarn(classify(range, r.input))
+}
 
 const visible = ref(false)
 const saving = ref(false)
@@ -367,9 +400,22 @@ async function submit() {
     return proxy.$modal.msgWarning('请至少填写一项成绩')
   }
 
+  // 已配置录入区间的指标：非数字/超硬限直接拦截，超合理区间汇总后确认
+  const hardRows = filledIndicators.filter(indIsHard)
+  if (hardRows.length) {
+    return proxy.$modal.msgError(hardRows.slice(0, 3).map(indHint).join('；')
+      + (hardRows.length > 3 ? ` 等 ${hardRows.length} 项` : ''))
+  }
+  const warnRows = filledIndicators.filter(indIsWarn)
+
   const count = filledIndicators.length + modelPayloads.length
+  const who = mode.value === 'task' ? ctx.athleteName : '该运动员'
+  const confirmText = warnRows.length
+    ? '以下成绩超出合理区间：\n· ' + warnRows.map(indHint).join('\n· ')
+      + `\n\n确认数据无误，为 ${who} 保存 ${count} 项测试结果？`
+    : `将为 ${who} 保存 ${count} 项测试结果，是否继续？`
   try {
-    await proxy.$modal.confirm(`将为 ${mode.value === 'task' ? ctx.athleteName : '该运动员'} 保存 ${count} 项测试结果，是否继续？`, '保存测试结果')
+    await proxy.$modal.confirm(confirmText, warnRows.length ? '异常值确认' : '保存测试结果')
   } catch {
     return
   }
@@ -493,6 +539,18 @@ defineExpose({ openForTask, openFree })
 .re-unit { display: inline-block; min-width: 34px; padding: 1px 8px; border-radius: 4px; background: #f1f5f9; color: #475569; font-size: 12px; font-weight: 500; }
 .re-best-unit { margin-left: 4px; color: #94a3b8; font-size: 11px; }
 .re-input-unit { color: #64748b; font-size: 12px; padding: 0 4px; white-space: nowrap; }
+/* 成绩输入异常（非数字/超区间）：红框 + 浅红小字 */
+.re-input-abnormal :deep(.el-input__wrapper) {
+  box-shadow: 0 0 0 1px #dc2626 inset;
+  background: #fef2f2;
+}
+.re-range-hint {
+  margin: 3px 0 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: #dc2626;
+}
+
 /* 空状态：与 roster-kit .rk-empty-sm 同款小图标（组件自包含，不引 kit） */
 $re-empty-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z'/%3E%3C/svg%3E");
 .re-empty {

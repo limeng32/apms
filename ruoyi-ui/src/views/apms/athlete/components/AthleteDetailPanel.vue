@@ -408,11 +408,46 @@
       <el-form :model="bodyForm" label-width="90px">
         <el-row :gutter="12">
           <el-col :span="12"><el-form-item label="测量日期"><el-date-picker v-model="bodyForm.measureDate" type="date" value-format="YYYY-MM-DD" style="width: 100%"/></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="身高(cm)"><el-input-number v-model="bodyForm.height" :precision="1" :step="0.1" :min="0" style="width: 100%"/></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="坐高(cm)"><el-input-number v-model="bodyForm.sitHeight" :precision="1" :step="0.1" :min="0" style="width: 100%"/></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="体重(kg)"><el-input-number v-model="bodyForm.weight" :precision="1" :step="0.1" :min="0" style="width: 100%"/></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="体脂率(%)"><el-input-number v-model="bodyForm.bodyFatRate" :precision="1" :step="0.1" :min="0" style="width: 100%"/></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="腰围(cm)"><el-input-number v-model="bodyForm.waist" :precision="1" :step="0.1" :min="0" style="width: 100%"/></el-form-item></el-col>
+          <el-col :span="12">
+            <el-form-item label="身高(cm)">
+              <el-input-number v-model="bodyForm.height" :precision="1" :step="0.1" style="width: 100%"
+                              :min="rangeOf('height').hardMin" :max="rangeOf('height').hardMax"
+                              @change="checkBodyField(bodyForm, bodyHints, 'height')"/>
+              <p v-if="bodyHints.height" class="adp-range-hint">{{ bodyHints.height }}</p>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="坐高(cm)">
+              <el-input-number v-model="bodyForm.sitHeight" :precision="1" :step="0.1" style="width: 100%"
+                              :min="rangeOf('sitHeight').hardMin" :max="rangeOf('sitHeight').hardMax"
+                              @change="checkBodyField(bodyForm, bodyHints, 'sitHeight')"/>
+              <p v-if="bodyHints.sitHeight" class="adp-range-hint">{{ bodyHints.sitHeight }}</p>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="体重(kg)">
+              <el-input-number v-model="bodyForm.weight" :precision="1" :step="0.1" style="width: 100%"
+                              :min="rangeOf('weight').hardMin" :max="rangeOf('weight').hardMax"
+                              @change="checkBodyField(bodyForm, bodyHints, 'weight')"/>
+              <p v-if="bodyHints.weight" class="adp-range-hint">{{ bodyHints.weight }}</p>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="体脂率(%)">
+              <el-input-number v-model="bodyForm.bodyFatRate" :precision="1" :step="0.1" style="width: 100%"
+                              :min="rangeOf('bodyFatRate').hardMin" :max="rangeOf('bodyFatRate').hardMax"
+                              @change="checkBodyField(bodyForm, bodyHints, 'bodyFatRate')"/>
+              <p v-if="bodyHints.bodyFatRate" class="adp-range-hint">{{ bodyHints.bodyFatRate }}</p>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="腰围(cm)">
+              <el-input-number v-model="bodyForm.waist" :precision="1" :step="0.1" style="width: 100%"
+                              :min="rangeOf('waist').hardMin" :max="rangeOf('waist').hardMax"
+                              @change="checkBodyField(bodyForm, bodyHints, 'waist')"/>
+              <p v-if="bodyHints.waist" class="adp-range-hint">{{ bodyHints.waist }}</p>
+            </el-form-item>
+          </el-col>
         </el-row>
       </el-form>
       <template #footer>
@@ -481,7 +516,16 @@ import GenderBadge from '@/components/GenderBadge/index.vue'
 import ComboScoreReport from '@/views/apms/comboScore/ComboScoreReport.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
 import { useDict } from '@/utils/dict'
+import {
+  loadRanges, getBodyRange,
+  makeBodyHints, clearBodyHints, checkBodyField, collectBodyIssues
+} from '@/utils/measureRange'
 import { ArrowDown, ArrowLeft, Plus, Delete, Edit, RefreshLeft, DataLine, InfoFilled, CircleCheck, Warning, CircleClose } from '@element-plus/icons-vue'
+
+// 录入区间（字典 apms_measure_range；加载失败静默用内置默认）
+loadRanges().catch(() => {})
+function rangeOf(key) { return getBodyRange(key) }
+const bodyHints = makeBodyHints()
 
 const props = defineProps({
   athleteId: { type: Number, required: true },
@@ -701,15 +745,32 @@ function openBodyMeasureDialog() {
     bodyForm.weight = latest.weight
   }
   bodyForm.measureDate = new Date().toISOString().slice(0, 10)
+  clearBodyHints(bodyHints)
   showBodyDialog.value = true
 }
-function submitBody() {
-  if (!bodyForm.height && !bodyForm.weight) return proxy.$modal.msgWarning('请至少填写身高或体重')
+function doSubmitBody() {
   bodyMeasureApi.upsert({ ...bodyForm, athleteId: props.athleteId }).then(() => {
     proxy.$modal.msgSuccess('保存成功')
     showBodyDialog.value = false
     reloadAndNotify()
   })
+}
+function submitBody() {
+  if (!bodyForm.height && !bodyForm.weight) return proxy.$modal.msgWarning('请至少填写身高或体重')
+  const { hard, warn } = collectBodyIssues(bodyForm)
+  // 硬限直接拦截（后端兜底一致）；超出合理区间弹确认
+  if (hard.length) {
+    proxy.$modal.msgError(hard[0])
+    return
+  }
+  if (warn.length) {
+    proxy.$modal.confirm(
+      '以下数值超出合理区间，确认数据无误仍要保存吗？\n· ' + warn.join('\n· '),
+      '异常值确认'
+    ).then(doSubmitBody).catch(() => {})
+    return
+  }
+  doSubmitBody()
 }
 function handleDeleteMeasure(row) {
   proxy.$modal.confirm('确认删除该条测量记录？', '删除体态测量').then(() => {
@@ -775,6 +836,14 @@ loadAll()
 
 .ad-panel { min-height: 100%; }
 .ad-card-gap { margin-top: 14px; }
+
+/* 体态测量弹窗：超出合理区间的浅红小字 */
+.adp-range-hint {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: $rk-risk;
+}
 
 .ad-cell-strong { font-weight: 600; color: $rk-text-1; }
 .rk-text-2 { color: $rk-text-2; }

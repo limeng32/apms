@@ -16,6 +16,7 @@ import com.ruoyi.system.mapper.apms.ApmsBodyMeasureMapper;
 import com.ruoyi.system.mapper.apms.ApmsPhvRecordMapper;
 import com.ruoyi.system.service.apms.IApmsBodyMeasureService;
 import com.ruoyi.system.service.apms.IApmsPhvService;
+import com.ruoyi.system.service.apms.InputRangeValidator;
 import com.ruoyi.system.util.apms.KhamisRocheCalculator;
 
 /**
@@ -37,6 +38,9 @@ public class ApmsBodyMeasureServiceImpl implements IApmsBodyMeasureService {
 
     @Autowired
     private ApmsAthleteMapper athleteMapper;
+
+    @Autowired
+    private InputRangeValidator inputRangeValidator;
 
     @Override
     public List<ApmsBodyMeasure> list(ApmsBodyMeasure query) {
@@ -60,6 +64,9 @@ public class ApmsBodyMeasureServiceImpl implements IApmsBodyMeasureService {
 
     @Override
     public int upsert(ApmsBodyMeasure measure) {
+        // 硬限兜底（字典 apms_measure_range 可配）：超出物理范围直接拒绝，
+        // 覆盖页面录入/周期批量/成绩同步/CSV 等全部入口
+        inputRangeValidator.validateBody(measure);
         int rows;
         Long carryId = measure.getId();
         if (carryId != null && measureMapper.selectById(carryId) != null) {

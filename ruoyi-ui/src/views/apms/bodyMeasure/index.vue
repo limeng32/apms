@@ -93,12 +93,32 @@
                   </button>
                 </td>
                 <td class="text-center rk-mono">{{ row.measureDate || '—' }}</td>
-                <td class="text-right rk-mono col-height">{{ row.height ?? '—' }}</td>
-                <td class="text-right rk-mono col-weight">{{ row.weight ?? '—' }}</td>
-                <td class="text-right rk-mono col-sit">{{ row.sitHeight ?? '—' }}</td>
+                <td class="text-right rk-mono col-height">
+                  <span v-if="row.height != null" :class="{ 'pm-val-abnormal': abnormal('height', row.height) }"
+                        :title="abnormal('height', row.height) ? rangeTitle('height') : ''">{{ row.height }}</span>
+                  <span v-else>—</span>
+                </td>
+                <td class="text-right rk-mono col-weight">
+                  <span v-if="row.weight != null" :class="{ 'pm-val-abnormal': abnormal('weight', row.weight) }"
+                        :title="abnormal('weight', row.weight) ? rangeTitle('weight') : ''">{{ row.weight }}</span>
+                  <span v-else>—</span>
+                </td>
+                <td class="text-right rk-mono col-sit">
+                  <span v-if="row.sitHeight != null" :class="{ 'pm-val-abnormal': abnormal('sitHeight', row.sitHeight) }"
+                        :title="abnormal('sitHeight', row.sitHeight) ? rangeTitle('sitHeight') : ''">{{ row.sitHeight }}</span>
+                  <span v-else>—</span>
+                </td>
                 <td class="text-right rk-mono col-leg">{{ calcLeg(row) }}</td>
-                <td class="text-right rk-mono col-fat">{{ row.bodyFatRate ?? '—' }}</td>
-                <td class="text-right rk-mono col-waist">{{ row.waist ?? '—' }}</td>
+                <td class="text-right rk-mono col-fat">
+                  <span v-if="row.bodyFatRate != null" :class="{ 'pm-val-abnormal': abnormal('bodyFatRate', row.bodyFatRate) }"
+                        :title="abnormal('bodyFatRate', row.bodyFatRate) ? rangeTitle('bodyFatRate') : ''">{{ row.bodyFatRate }}</span>
+                  <span v-else>—</span>
+                </td>
+                <td class="text-right rk-mono col-waist">
+                  <span v-if="row.waist != null" :class="{ 'pm-val-abnormal': abnormal('waist', row.waist) }"
+                        :title="abnormal('waist', row.waist) ? rangeTitle('waist') : ''">{{ row.waist }}</span>
+                  <span v-else>—</span>
+                </td>
                 <td class="text-right col-bmi">
                   <span v-if="row.height && row.weight" class="pm-bmi rk-mono">{{ calcBmi(row) }}</span>
                   <span v-else class="rk-dash">—</span>
@@ -163,29 +183,44 @@
           <el-row :gutter="12">
             <el-col :span="12">
               <el-form-item label="身高(cm)">
-                <el-input-number v-model="editForm.height" :precision="1" :step="0.5" :min="100" :max="230"/>
+                <el-input-number v-model="editForm.height" :precision="1" :step="0.5"
+                                :min="rangeOf('height').hardMin" :max="rangeOf('height').hardMax"
+                                @change="checkField('height')"/>
+                <p v-if="hints.height" class="pm-range-hint">{{ hints.height }}</p>
               </el-form-item>
             </el-col>
             <el-col :span="12">
               <el-form-item label="体重(kg)">
-                <el-input-number v-model="editForm.weight" :precision="1" :step="0.5" :min="30" :max="150"/>
+                <el-input-number v-model="editForm.weight" :precision="1" :step="0.5"
+                                :min="rangeOf('weight').hardMin" :max="rangeOf('weight').hardMax"
+                                @change="checkField('weight')"/>
+                <p v-if="hints.weight" class="pm-range-hint">{{ hints.weight }}</p>
               </el-form-item>
             </el-col>
           </el-row>
           <el-row :gutter="12">
             <el-col :span="12">
               <el-form-item label="坐高(cm)">
-                <el-input-number v-model="editForm.sitHeight" :precision="1" :step="0.5" :min="40" :max="150"/>
+                <el-input-number v-model="editForm.sitHeight" :precision="1" :step="0.5"
+                                :min="rangeOf('sitHeight').hardMin" :max="rangeOf('sitHeight').hardMax"
+                                @change="checkField('sitHeight')"/>
+                <p v-if="hints.sitHeight" class="pm-range-hint">{{ hints.sitHeight }}</p>
               </el-form-item>
             </el-col>
             <el-col :span="12">
               <el-form-item label="体脂率(%)">
-                <el-input-number v-model="editForm.bodyFatRate" :precision="1" :step="0.5" :min="3" :max="40"/>
+                <el-input-number v-model="editForm.bodyFatRate" :precision="1" :step="0.5"
+                                :min="rangeOf('bodyFatRate').hardMin" :max="rangeOf('bodyFatRate').hardMax"
+                                @change="checkField('bodyFatRate')"/>
+                <p v-if="hints.bodyFatRate" class="pm-range-hint">{{ hints.bodyFatRate }}</p>
               </el-form-item>
             </el-col>
           </el-row>
           <el-form-item label="腰围(cm)">
-            <el-input-number v-model="editForm.waist" :precision="1" :step="0.5" :min="40" :max="150"/>
+            <el-input-number v-model="editForm.waist" :precision="1" :step="0.5"
+                            :min="rangeOf('waist').hardMin" :max="rangeOf('waist').hardMax"
+                            @change="checkField('waist')"/>
+            <p v-if="hints.waist" class="pm-range-hint">{{ hints.waist }}</p>
           </el-form-item>
         </el-form>
         <template #footer>
@@ -212,8 +247,34 @@ import CycleDetailDialog from './components/CycleDetailDialog.vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import RkPager from '@/components/RkPager/index.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
+import {
+  loadRanges, getBodyRange, classify, isHard, isWarn, isAbnormal,
+  hardMessage, warnMessage, collectBodyIssues
+} from '@/utils/measureRange'
 
 const { proxy } = getCurrentInstance()
+
+// 预加载录入区间字典（失败静默，工具内置默认兜底）
+loadRanges().catch(() => {})
+function rangeOf(key) { return getBodyRange(key) }
+
+// 弹窗字段越界实时提示
+const hints = reactive({ height: '', weight: '', sitHeight: '', bodyFatRate: '', waist: '' })
+function checkField(key) {
+  const range = getBodyRange(key)
+  const level = classify(range, editForm[key])
+  if (isHard(level) || level === 'invalid') hints[key] = hardMessage(range, editForm[key])
+  else if (isWarn(level)) hints[key] = warnMessage(range, editForm[key])
+  else hints[key] = ''
+}
+// 列表异常值标红判定
+function abnormal(key, v) {
+  return isAbnormal(classify(getBodyRange(key), v))
+}
+function rangeTitle(key) {
+  const r = getBodyRange(key)
+  return `合理区间 ${r.warnMin}~${r.warnMax}${r.unit ? ' ' + r.unit : ''}`
+}
 
 const activeTab = ref('ledger')
 const historyDrawerRef = ref(null)
@@ -343,20 +404,22 @@ Promise.all([
   deptOpts.value = Array.isArray(d.data) ? d.data : []
 })
 
+function clearHints() {
+  Object.keys(hints).forEach(k => { hints[k] = '' })
+}
 function showAddDialog() {
   Object.assign(editForm, { id: null, athleteId: null, measureDate: new Date().toISOString().slice(0, 10),
     height: null, weight: null, sitHeight: null, bodyFatRate: null, waist: null, dataSource: 'manual' })
+  clearHints()
   showEdit.value = true
 }
 function showEditDialog(row) {
   Object.assign(editForm, { ...row })
+  clearHints()
+  Object.keys(hints).forEach(k => checkField(k))
   showEdit.value = true
 }
-function submitEdit() {
-  if (!editForm.athleteId || !editForm.measureDate) {
-    proxy.$modal.msgWarning('队员和测量日期必填')
-    return
-  }
+function doSubmitEdit() {
   saving.value = true
   upsert(editForm).then(() => {
     proxy.$modal.msgSuccess('保存成功')
@@ -364,6 +427,27 @@ function submitEdit() {
     loadList()
     historyDrawerRef.value?.reload()
   }).finally(() => saving.value = false)
+}
+function submitEdit() {
+  if (!editForm.athleteId || !editForm.measureDate) {
+    proxy.$modal.msgWarning('队员和测量日期必填')
+    return
+  }
+  const { hard, warn } = collectBodyIssues(editForm)
+  // 硬限（物理不可能值）：直接拦截；后端还会兜底再拦一次
+  if (hard.length) {
+    proxy.$modal.msgError(hard[0])
+    return
+  }
+  // 超出合理区间但在硬限内：汇总弹确认，确认后可保存
+  if (warn.length) {
+    proxy.$modal.confirm(
+      '以下数值超出合理区间，确认数据无误仍要保存吗？\n· ' + warn.join('\n· '),
+      '异常值确认'
+    ).then(doSubmitEdit).catch(() => {})
+    return
+  }
+  doSubmitEdit()
 }
 function handleDelete(row) {
   proxy.$modal.confirm(`确认删除 ${row.athleteName} 的测量记录 (${row.measureDate}) 吗？`, '删除测量记录').then(() => {
@@ -382,6 +466,19 @@ loadCycleNames()
 :deep(.pm-tabs .el-tabs__header) { margin-bottom: 14px; }
 
 .pm-person-btn { background: none; border: 0; padding: 0; cursor: pointer; text-align: left; width: 100%; }
+
+/* 录入弹窗：超出合理区间的字段下方浅红小字 */
+.pm-range-hint {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: $rk-risk;
+}
+/* 列表：异常值（超合理区间/硬限）标红 */
+.pm-val-abnormal {
+  color: $rk-risk;
+  font-weight: 600;
+}
 .pm-person-btn .rk-person-main { display: inline-flex; align-items: center; gap: 6px; }
 .pm-person-btn:hover .rk-person-main { color: #2563eb; }
 .pm-cycle-chip {
