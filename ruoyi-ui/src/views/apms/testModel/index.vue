@@ -35,11 +35,11 @@
       <div class="rk-filter">
         <label class="rk-group">
           <span class="rk-label">模型编码</span>
-          <input v-model="queryParams.code" class="rk-input tm-input-code" type="text" placeholder="如 YOYO_IR1" @keyup.enter="handleQuery"/>
+          <input v-model="queryParams.code" class="rk-input tm-input-code" type="text" placeholder="如 YOYO_IR1"/>
         </label>
         <label class="rk-group">
           <span class="rk-label">模型名称</span>
-          <input v-model="queryParams.name" class="rk-input tm-input-name" type="text" placeholder="如 RSA 10×20m" @keyup.enter="handleQuery"/>
+          <input v-model="queryParams.name" class="rk-input tm-input-name" type="text" placeholder="如 RSA 10×20m"/>
         </label>
         <label class="rk-group">
           <span class="rk-label">分类</span>
@@ -238,7 +238,7 @@
                 </table>
               </div>
               <div v-else class="tm-field-empty">
-                <div class="rk-empty">
+                <div class="rk-empty rk-empty-sm">
                   <p class="rk-empty-title">该模型暂无字段定义</p>
                   <p class="rk-empty-desc">点击右上角「新增字段」配置成绩录入口径</p>
                 </div>
@@ -311,8 +311,8 @@
           </el-row>
         </el-form>
         <template #footer>
-          <el-button @click="showModelDialog = false">取 消</el-button>
-          <el-button type="primary" @click="submitModel">保 存</el-button>
+          <el-button @click="showModelDialog = false">取消</el-button>
+          <el-button type="primary" @click="submitModel">保存</el-button>
         </template>
       </el-dialog>
 
@@ -368,8 +368,8 @@
           </el-row>
         </el-form>
         <template #footer>
-          <el-button @click="showFieldDialogVisible = false">取 消</el-button>
-          <el-button type="primary" @click="submitField">保 存</el-button>
+          <el-button @click="showFieldDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="submitField">保存</el-button>
         </template>
       </el-dialog>
     </div>
@@ -561,7 +561,7 @@ function submitModel() {
 }
 function handleDelete(row) {
   const selIds = row ? row.id : ids.value
-  proxy.$modal.confirm('确认删除？其下字段定义将一并删除。').then(() => delTestModel(selIds))
+  proxy.$modal.confirm('确认删除？其下字段定义将一并删除。', '删除测试模型').then(() => delTestModel(selIds))
     .then(() => {
       proxy.$modal.msgSuccess('删除成功')
       ids.value = []
@@ -607,7 +607,7 @@ function submitField() {
   })
 }
 function handleDeleteField(field) {
-  proxy.$modal.confirm(`确认删除字段 "${field.fieldKey}"？`).then(() => delField(field.id))
+  proxy.$modal.confirm(`确认删除字段 "${field.fieldKey}"？`, '删除字段').then(() => delField(field.id))
     .then(() => {
       proxy.$modal.msgSuccess('删除成功')
       loadDetail(currentModel.value.id)

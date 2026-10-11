@@ -361,8 +361,8 @@
           </el-row>
         </el-form>
         <template #footer>
-          <el-button @click="showIndicatorDialog = false">取 消</el-button>
-          <el-button type="primary" @click="submitIndicator">确 定</el-button>
+          <el-button @click="showIndicatorDialog = false">取消</el-button>
+          <el-button type="primary" @click="submitIndicator">确定</el-button>
         </template>
       </el-dialog>
 
@@ -402,8 +402,8 @@
           </el-row>
         </el-form>
         <template #footer>
-          <el-button @click="showRefDialogVisible = false">取 消</el-button>
-          <el-button type="primary" @click="submitRef">保 存</el-button>
+          <el-button @click="showRefDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="submitRef">保存</el-button>
         </template>
       </el-dialog>
     </div>
@@ -592,7 +592,7 @@ function submitIndicator() {
 }
 function handleDelete(row) {
   const selIds = row ? row.id : ids.value
-  proxy.$modal.confirm('确认删除选中指标？其下参考范围和三级判定将一并删除。').then(() => {
+  proxy.$modal.confirm('确认删除选中指标？其下参考范围和三级判定将一并删除。', '删除指标').then(() => {
     return delIndicator(selIds)
   }).then(() => {
     proxy.$modal.msgSuccess('删除成功')
@@ -639,7 +639,7 @@ function submitRef() {
   })
 }
 function handleDeleteRef(ref) {
-  proxy.$modal.confirm(`确认删除参考范围 [${ref.gender || '通用'} ${ref.ageGroup || ''}]？其下三级判定将一并删除。`).then(() => {
+  proxy.$modal.confirm(`确认删除参考范围 [${ref.gender || '通用'} ${ref.ageGroup || ''}]？其下三级判定将一并删除。`, '删除参考范围').then(() => {
     return delRef(ref.id)
   }).then(() => {
     proxy.$modal.msgSuccess('删除成功')
@@ -730,7 +730,7 @@ function saveLevel(row) {
 }
 
 function handleDeleteLevel(row, ref) {
-  proxy.$modal.confirm(`确认删除评级 [${row.level}]？`).then(() => {
+  proxy.$modal.confirm(`确认删除评级 [${row.level}]？`, '删除评级').then(() => {
     return delLevel(row.id)
   }).then(() => {
     proxy.$modal.msgSuccess('已删除')
@@ -758,7 +758,7 @@ function bulkAddLevels(ref) {
   if (ref.levels?.length > 0) {
     const missing = ['GOOD', 'NORMAL', 'ATTENTION'].filter(l => !ref.levels.find(x => (x.level || '').toUpperCase() === l))
     if (missing.length === 0) return proxy.$modal.msgWarning('已有三档评级，无需添加')
-    proxy.$modal.confirm(`将为当前参考范围补加 [${missing.join(', ')}] 三档（留空数值，保存时填写区间）。继续？`).then(() => {
+    proxy.$modal.confirm(`将为当前参考范围补加 [${missing.join(', ')}] 三档（留空数值，保存时填写区间）。继续？`, '一键补加评级').then(() => {
       const promises = missing.map(l => addLevel({ refId: ref.id, level: l, minValue: null, maxValue: null }))
       Promise.all(promises).then(() => {
         loadDetail(currentIndicator.value.id)
@@ -768,7 +768,7 @@ function bulkAddLevels(ref) {
       })
     }).catch(() => {})
   } else {
-    proxy.$modal.confirm('当前参考范围无评级，将添加 GOOD / NORMAL / ATTENTION 三档模板（区间值留空，自行填写）。继续？').then(() => {
+    proxy.$modal.confirm('当前参考范围无评级，将添加 GOOD / NORMAL / ATTENTION 三档模板（区间值留空，自行填写）。继续？', '一键三档模板').then(() => {
       Promise.all([
         addLevel({ refId: ref.id, level: 'GOOD', minValue: null, maxValue: null }),
         addLevel({ refId: ref.id, level: 'NORMAL', minValue: null, maxValue: null }),

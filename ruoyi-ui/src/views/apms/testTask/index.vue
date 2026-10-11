@@ -34,7 +34,7 @@
       <div class="rk-filter">
         <label class="rk-group">
           <span class="rk-label">任务名称</span>
-          <input v-model="queryParams.taskName" class="rk-input" placeholder="搜索任务名称" @keyup.enter="handleQuery"/>
+          <input v-model="queryParams.taskName" class="rk-input" placeholder="搜索任务名称"/>
         </label>
         <label class="rk-group">
           <span class="rk-label">状态</span>
@@ -63,7 +63,9 @@
               <table class="rk-table tt-table is-compact">
                 <thead>
                   <tr>
-                    <th class="col-check"></th>
+                    <th class="col-check">
+                      <input type="checkbox" class="rk-check" :checked="allChecked" @change="toggleAll"/>
+                    </th>
                     <th>任务名称</th>
                     <th class="col-dept">队伍</th>
                     <th class="text-center col-date">时间</th>
@@ -252,8 +254,8 @@
                         </td>
                         <td class="text-center rk-mono">{{ it.sortOrder }}</td>
                         <td class="text-center">
-                          <button type="button" class="rk-link" @click="openItemDialog(it)">改</button>
-                          <button type="button" class="rk-link tt-link-danger" @click="handleDeleteItem(it)">删</button>
+                          <button type="button" class="rk-link" @click="openItemDialog(it)">编辑</button>
+                          <button type="button" class="rk-link tt-link-danger" @click="handleDeleteItem(it)">删除</button>
                         </td>
                       </tr>
                     </tbody>
@@ -361,8 +363,8 @@
           </el-row>
         </el-form>
         <template #footer>
-          <el-button @click="showTaskDialog = false">取 消</el-button>
-          <el-button type="primary" @click="submitTask">保 存</el-button>
+          <el-button @click="showTaskDialog = false">取消</el-button>
+          <el-button type="primary" @click="submitTask">保存</el-button>
         </template>
       </el-dialog>
 
@@ -382,8 +384,8 @@
           </el-form-item>
         </el-form>
         <template #footer>
-          <el-button @click="showStatusDialog = false">取 消</el-button>
-          <el-button type="primary" @click="submitStatus">保 存</el-button>
+          <el-button @click="showStatusDialog = false">取消</el-button>
+          <el-button type="primary" @click="submitStatus">保存</el-button>
         </template>
       </el-dialog>
 
@@ -430,8 +432,8 @@
           </el-form-item>
         </el-form>
         <template #footer>
-          <el-button @click="showItemDialog = false">取 消</el-button>
-          <el-button type="primary" @click="submitItem">保 存</el-button>
+          <el-button @click="showItemDialog = false">取消</el-button>
+          <el-button type="primary" @click="submitItem">保存</el-button>
         </template>
       </el-dialog>
 
@@ -448,8 +450,8 @@
           </el-form-item>
         </el-form>
         <template #footer>
-          <el-button @click="showEnrollDialog = false">取 消</el-button>
-          <el-button type="primary" @click="submitEnroll">登 记</el-button>
+          <el-button @click="showEnrollDialog = false">取消</el-button>
+          <el-button type="primary" @click="submitEnroll">登记</el-button>
         </template>
       </el-dialog>
 
@@ -467,7 +469,7 @@
         </el-select>
         <div class="form-tip">已选 {{ batchAthleteIds.length }} 人 · 已在名单中的队员会自动跳过（幂等）</div>
         <template #footer>
-          <el-button @click="showBatchEnrollDialog = false">取 消</el-button>
+          <el-button @click="showBatchEnrollDialog = false">取消</el-button>
           <el-button type="primary" @click="submitBatchEnroll">批量登记</el-button>
         </template>
       </el-dialog>
@@ -548,9 +550,19 @@ function goPage(p) {
   getList()
 }
 
+const allChecked = computed(() => taskList.value.length > 0 && taskList.value.every(r => ids.value.includes(r.id)))
 function toggleRow(row) {
   const i = ids.value.indexOf(row.id)
   if (i >= 0) ids.value.splice(i, 1); else ids.value.push(row.id)
+  multiple.value = !ids.value.length
+}
+function toggleAll() {
+  const every = allChecked.value
+  const set = new Set(ids.value)
+  taskList.value.forEach(r => {
+    if (every) set.delete(r.id); else set.add(r.id)
+  })
+  ids.value = Array.from(set)
   multiple.value = !ids.value.length
 }
 
@@ -682,7 +694,7 @@ function submitTask() {
 }
 function handleDelete(row) {
   const selIds = row ? row.id : ids.value
-  proxy.$modal.confirm('确认删除？其下测试项和成员将一并删除。').then(() => delTestTask(selIds))
+  proxy.$modal.confirm('确认删除？其下测试项和成员将一并删除。', '删除测试任务').then(() => delTestTask(selIds))
     .then(() => {
       proxy.$modal.msgSuccess('删除成功'); getList(); loadStats()
       ids.value = []; multiple.value = true
@@ -764,7 +776,7 @@ function submitItem() {
   })
 }
 function handleDeleteItem(row) {
-  proxy.$modal.confirm(`确认删除测试项 "${row.indicatorName || row.modelName}"？`).then(() => {
+  proxy.$modal.confirm(`确认删除测试项 "${row.indicatorName || row.modelName}"？`, '删除测试项').then(() => {
     return delTaskItem(row.id)
   }).then(() => {
     proxy.$modal.msgSuccess('已删除')
@@ -811,7 +823,7 @@ function submitBatchEnroll() {
 }
 
 function handleRemoveMember(row) {
-  proxy.$modal.confirm(`确认将 ${row.athleteName} 移出本任务？`).then(() => {
+  proxy.$modal.confirm(`确认将 ${row.athleteName} 移出本任务？`, '移出任务').then(() => {
     return removeMember(currentTask.value.id, row.athleteId)
   }).then(() => {
     proxy.$modal.msgSuccess('已移出')

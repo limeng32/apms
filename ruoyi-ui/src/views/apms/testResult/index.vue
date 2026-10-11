@@ -80,7 +80,6 @@
               <table class="rk-table tr-table is-compact">
                 <thead>
                   <tr>
-                    <th class="text-center col-id">#</th>
                     <th class="col-athlete">运动员</th>
                     <th class="text-center col-type">类型</th>
                     <th class="col-item">项目</th>
@@ -93,7 +92,6 @@
                       class="rk-row"
                       :class="{ 'is-selected': current && current.id === row.id }"
                       @click="handleRowClick(row)">
-                    <td class="text-center rk-mono">{{ row.id }}</td>
                     <td>
                       <div class="tr-athlete">
                         <span class="tr-name">{{ row.athleteName }}</span>
@@ -118,7 +116,7 @@
                     <td class="text-center rk-mono">{{ formatDate(row.measureDate) }}</td>
                   </tr>
                   <tr v-if="!loading && resultList.length === 0">
-                    <td colspan="6" class="rk-empty-cell">
+                    <td colspan="5" class="rk-empty-cell">
                       <div class="rk-empty">
                         <p class="rk-empty-title">暂无结果</p>
                         <p class="rk-empty-desc">调整筛选条件，或先通过 CSV 导入成绩</p>
@@ -433,7 +431,7 @@ function loadDetail(id) {
 // ========= 手动选最佳 =========
 function handleSelectAttempt(row) {
   if (selectingId.value != null) return
-  proxy.$modal.confirm(`确认将 attempt #${row.attemptNo} 选为最佳？原来的选中项会被覆盖。`).then(() => {
+  proxy.$modal.confirm(`确认将 attempt #${row.attemptNo} 选为最佳？原来的选中项会被覆盖。`, '选为最佳').then(() => {
     selectingId.value = row.id
     return selectAttempt(row.id)
   }).then(() => {

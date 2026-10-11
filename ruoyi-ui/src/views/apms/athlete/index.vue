@@ -200,8 +200,32 @@
               </td>
               <td>
                 <div class="rp-actions">
-                  <button type="button" class="rp-link" @click.stop="handleDetail(row)">查看档案 →</button>
-                  <div class="rp-menu" @click.stop>
+                  <!-- 统一行操作：≤3 个全部平铺；离队行有 4 个（查看/编辑/退役/重入队），后两个收 ⋮ -->
+                  <button type="button" class="rp-link" @click.stop="handleDetail(row)">查看</button>
+                  <button
+                    type="button"
+                    class="rp-link"
+                    @click.stop="onMenuEdit(row)"
+                    v-hasPermi="['apms:athlete:edit']"
+                  >编辑</button>
+                  <!-- 在训：离队平铺 -->
+                  <button
+                    v-if="rosterStatus === 'active'"
+                    type="button"
+                    class="rp-link is-danger"
+                    @click.stop="onMenuLeave(row)"
+                    v-hasPermi="['apms:athlete:remove']"
+                  >离队</button>
+                  <!-- 退役：重入队平铺 -->
+                  <button
+                    v-else-if="row.status !== '1'"
+                    type="button"
+                    class="rp-link is-primary"
+                    @click.stop="openRejoin(row)"
+                    v-hasPermi="['apms:athlete:edit']"
+                  >重入队</button>
+                  <!-- 离队(status=1)：设为退役 / 重入队 收 ⋮ -->
+                  <div v-else class="rp-menu" @click.stop>
                     <button type="button" class="rp-menu-btn" @click="toggleMenu(row.athleteId)" aria-label="更多操作">
                       <el-icon><MoreFilled /></el-icon>
                     </button>
@@ -209,33 +233,15 @@
                       <button
                         type="button"
                         class="rp-menu-item"
-                        @click="onMenuEdit(row)"
+                        @click="handleRetire(row)"
                         v-hasPermi="['apms:athlete:edit']"
-                      >编辑档案</button>
-                      <!-- 在训：队员离队 -->
+                      >设为退役</button>
                       <button
-                        v-if="rosterStatus === 'active'"
                         type="button"
-                        class="rp-menu-item is-danger"
-                        @click="onMenuLeave(row)"
-                        v-hasPermi="['apms:athlete:remove']"
-                      >队员离队</button>
-                      <!-- 离队：转退役 / 重入队 -->
-                      <template v-else>
-                        <button
-                          v-if="row.status === '1'"
-                          type="button"
-                          class="rp-menu-item"
-                          @click="handleRetire(row)"
-                          v-hasPermi="['apms:athlete:edit']"
-                        >设为退役</button>
-                        <button
-                          type="button"
-                          class="rp-menu-item is-primary"
-                          @click="openRejoin(row)"
-                          v-hasPermi="['apms:athlete:edit']"
-                        >重入队</button>
-                      </template>
+                        class="rp-menu-item is-primary"
+                        @click="openRejoin(row)"
+                        v-hasPermi="['apms:athlete:edit']"
+                      >重入队</button>
                     </div>
                   </div>
                 </div>
@@ -310,8 +316,8 @@
       </el-form>
       <template #footer>
         <div class="dialog-footer">
-          <el-button type="primary" @click="submitForm">确 定</el-button>
-          <el-button @click="cancel">取 消</el-button>
+          <el-button @click="cancel">取消</el-button>
+          <el-button type="primary" @click="submitForm">确定</el-button>
         </div>
       </template>
     </el-dialog>
@@ -332,8 +338,8 @@
       </el-select>
       <template #footer>
         <div class="dialog-footer">
-          <el-button type="primary" :disabled="!rejoin.teamId" @click="submitRejoin">确 定</el-button>
-          <el-button @click="rejoin.open = false">取 消</el-button>
+          <el-button @click="rejoin.open = false">取消</el-button>
+          <el-button type="primary" :disabled="!rejoin.teamId" @click="submitRejoin">确定</el-button>
         </div>
       </template>
     </el-dialog>
@@ -421,7 +427,7 @@
       </template>
 
       <template #footer>
-        <el-button @click="promotion.open = false">关 闭</el-button>
+        <el-button @click="promotion.open = false">关闭</el-button>
         <el-button
           type="primary"
           :loading="promotion.executing"
@@ -632,7 +638,7 @@ watch(filters, () => {
   filterTimer = setTimeout(() => {
     queryParams.value.pageNum = 1
     reload()
-  }, 250), { deep: true }
+  }, 300), { deep: true }
 })
 
 function toggleGroup(g) {
@@ -749,7 +755,7 @@ function reset() {
 /* ===== 离队（逻辑删除，单个/批量） ===== */
 function handleDelete(row) {
   const athleteIds = row && row.athleteId ? [row.athleteId] : ids.value
-  proxy.$modal.confirm('确认将选中的 ' + athleteIds.length + ' 名队员设为离队状态？').then(() => {
+  proxy.$modal.confirm('确认将选中的 ' + athleteIds.length + ' 名队员设为离队状态？', '队员离队').then(() => {
     return delAthlete(athleteIds.join(','))
   }).then(() => {
     reload()
@@ -760,7 +766,7 @@ function handleDelete(row) {
 /* ===== 离队 → 退役（不要求重新挂队伍；复用编辑接口，后端同步解除归属） ===== */
 function handleRetire(row) {
   openMenuId.value = null
-  proxy.$modal.confirm('确认将 ' + row.name + ' 设为退役状态？').then(() => {
+  proxy.$modal.confirm('确认将 ' + row.name + ' 设为退役状态？', '设为退役').then(() => {
     return updateAthlete({ athleteId: row.athleteId, status: '2' })
   }).then(() => {
     reload()
@@ -858,7 +864,7 @@ function handleExecutePromotion() {
   msg += '\n仅调整队员所属梯队，历史成绩与评级不变。'
   if (overage) msg += '\n另有 ' + overage + ' 名超龄队员因无更高档梯队留队。'
   if (invalid) msg += '\n另有 ' + invalid + ' 名队员所属部门非 U 档梯队/已失效，本次不动。'
-  proxy.$modal.confirm(msg).then(() => {
+  proxy.$modal.confirm(msg, '赛季整队晋升').then(() => {
     promotion.executing = true
     return executePromotion({ cutoffDate: promotion.cutoffDate || null })
   }).then(res => {
@@ -1306,15 +1312,18 @@ $risk: #dc2626;
   gap: 4px;
 }
 .rp-link {
-  padding: 4px 2px;
+  padding: 4px 6px;
   font-size: 12px;
   font-weight: 500;
   color: $brand-600;
   background: none;
   border: none;
+  border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
-  &:hover { color: $brand-700; }
+  &:hover { color: $brand-700; background: $canvas; }
+  &.is-danger { color: $risk; &:hover { color: $risk; } }
+  &.is-primary { color: $brand-600; font-weight: 600; }
 }
 .rp-menu { position: relative; }
 .rp-menu-btn {
@@ -1353,10 +1362,22 @@ $risk: #dc2626;
   &.is-danger { color: $risk; }
 }
 
-/* 空状态 */
+/* 空状态（图标与 roster-kit .rk-empty 同款，私有壳层自包含） */
+$rp-empty-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z'/%3E%3C/svg%3E");
 .rp-empty {
   padding: 48px 0;
   text-align: center;
+}
+.rp-empty::before {
+  content: '';
+  display: block;
+  width: 46px;
+  height: 46px;
+  margin: 0 auto 12px;
+  border-radius: 12px;
+  background-color: #cbd5e1;
+  -webkit-mask: $rp-empty-icon center / contain no-repeat;
+  mask: $rp-empty-icon center / contain no-repeat;
 }
 .rp-empty-title {
   margin: 0;

@@ -55,7 +55,7 @@
     <div v-else class="dv-empty">选择上方一台设备，查看推送密钥与对接示例</div>
 
     <template #footer>
-      <el-button @click="visible = false">关 闭</el-button>
+      <el-button @click="visible = false">关闭</el-button>
     </template>
   </el-dialog>
 </template>

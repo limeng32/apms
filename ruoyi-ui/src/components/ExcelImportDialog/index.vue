@@ -16,8 +16,8 @@
     <div v-if="isDemoMode()" class="el-upload__tip text-center" style="color: #e6a23c;">演示环境暂不支持数据导入</div>
     <template #footer>
       <div class="dialog-footer">
-        <el-button type="primary" @click="handleSubmit">确 定</el-button>
-        <el-button @click="visible = false">取 消</el-button>
+        <el-button @click="visible = false">取消</el-button>
+        <el-button type="primary" @click="handleSubmit">确定</el-button>
       </div>
     </template>
   </el-dialog>

@@ -81,8 +81,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="formVisible = false">取 消</el-button>
-        <el-button type="primary" :loading="saving" @click="submit">保 存</el-button>
+        <el-button @click="formVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -173,7 +173,7 @@ function toggleStatus(c) {
   })
 }
 function handleDelete(c) {
-  proxy.$modal.confirm(`确认删除周期「${c.name}」吗？周期内测量记录将保留，但不再归属该周期。`).then(() =>
+  proxy.$modal.confirm(`确认删除周期「${c.name}」吗？周期内测量记录将保留，但不再归属该周期。`, '删除测量周期').then(() =>
     delCycle(c.id)
   ).then(() => {
     proxy.$modal.msgSuccess('已删除')

@@ -60,7 +60,6 @@
           <table class="rk-table pm-table">
             <thead>
               <tr>
-                <th class="text-center col-index">#</th>
                 <th>队员</th>
                 <th class="text-center col-date">测量日期</th>
                 <th class="text-right col-height">身高(cm)</th>
@@ -77,7 +76,6 @@
             </thead>
             <tbody>
               <tr v-for="(row, idx) in pagedData" :key="row.id" class="rk-row" :class="{ 'is-zebra': idx % 2 === 1 }">
-                <td class="text-center rk-mono rk-dash">{{ (page - 1) * PAGE_SIZE + idx + 1 }}</td>
                 <td>
                   <button type="button" class="pm-person-btn" @click="openHistory(row)">
                     <div class="rk-person">
@@ -368,7 +366,7 @@ function submitEdit() {
   }).finally(() => saving.value = false)
 }
 function handleDelete(row) {
-  proxy.$modal.confirm(`确认删除 ${row.athleteName} 的测量记录 (${row.measureDate}) 吗？`).then(() => {
+  proxy.$modal.confirm(`确认删除 ${row.athleteName} 的测量记录 (${row.measureDate}) 吗？`, '删除测量记录').then(() => {
     delMeasure(row.id).then(() => { proxy.$modal.msgSuccess('已删除'); loadList() })
   }).catch(() => {})
 }

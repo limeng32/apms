@@ -52,7 +52,6 @@
             <table class="rk-table cs-table">
               <thead>
                 <tr>
-                  <th class="text-center col-idx">#</th>
                   <th>队员</th>
                   <th>组合模型</th>
                   <th class="text-center col-score">
@@ -66,8 +65,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(row, idx) in pagedData" :key="row.id" class="rk-row" :class="{ 'is-zebra': idx % 2 === 1 }">
-                  <td class="text-center rk-mono cs-idx">{{ (page - 1) * PAGE_SIZE + idx + 1 }}</td>
+                <tr v-for="row in pagedData" :key="row.id" class="rk-row">
                   <td>
                     <div class="rk-person">
                       <span class="cs-avatar" :style="{ background: avatarColor(row) }">{{ (row.athleteName || '?').charAt(0) }}</span>
@@ -101,7 +99,7 @@
                   </td>
                 </tr>
                 <tr v-if="!loading && tableData.length === 0">
-                  <td colspan="7" class="rk-empty-cell">
+                  <td colspan="6" class="rk-empty-cell">
                     <div class="rk-empty">
                       <p class="rk-empty-title">暂无评分记录</p>
                       <p class="rk-empty-desc">选择一次测试任务执行批量计算后生成</p>
@@ -310,7 +308,7 @@ function submitCalc() {
 }
 
 function handleDelete(row) {
-  proxy.$modal.confirm(`确认删除 #${row.id} ${row.athleteName} 的组合评分记录吗？`).then(() => {
+  proxy.$modal.confirm(`确认删除 #${row.id} ${row.athleteName} 的组合评分记录吗？`, '删除组合评分').then(() => {
     delScore(row.id).then(() => { proxy.$modal.msgSuccess('已删除'); loadList() })
   }).catch(() => {})
 }

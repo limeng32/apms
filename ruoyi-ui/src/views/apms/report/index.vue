@@ -56,7 +56,6 @@
               <table class="rk-table rp-table is-compact">
                 <thead>
                   <tr>
-                    <th class="text-center col-id">#</th>
                     <th class="text-center col-type">类型</th>
                     <th class="col-subject">主体</th>
                     <th class="col-time">生成时间</th>
@@ -68,7 +67,6 @@
                   <tr v-for="row in reportList" :key="row.id" class="rk-row"
                       :class="{ 'is-selected': current && current.id === row.id }"
                       @click="handleRowClick(row)">
-                    <td class="text-center rk-mono">{{ row.id }}</td>
                     <td class="text-center">
                       <span class="rk-soft-chip" :class="typeChipClass(row.reportType)">
                         {{ typeLabel(row.reportType) }}
@@ -92,11 +90,11 @@
                               v-hasPermi="['apms:report:download']">下载</button>
                       <span v-else class="rk-dash">—</span>
                       <button type="button" class="rk-link is-danger" @click.stop="handleDelete(row)"
-                              v-hasPermi="['apms:report:remove']">删</button>
+                              v-hasPermi="['apms:report:remove']">删除</button>
                     </td>
                   </tr>
                   <tr v-if="!loading && reportList.length === 0">
-                    <td colspan="6" class="rk-empty-cell">
+                    <td colspan="5" class="rk-empty-cell">
                       <div class="rk-empty">
                         <p class="rk-empty-title">暂无报告</p>
                         <p class="rk-empty-desc">点击右上角「生成新报告」生成单人 / 任务 / 队伍 PDF 报告</p>
@@ -253,7 +251,7 @@
           </el-form-item>
         </el-form>
         <template #footer>
-          <el-button @click="showGenDialog = false">取 消</el-button>
+          <el-button @click="showGenDialog = false">取消</el-button>
           <el-button type="primary" :loading="genLoading" @click="submitGen">生成</el-button>
         </template>
       </el-dialog>
@@ -515,7 +513,8 @@ async function handleDownload(row, regenerating = false) {
     // PDF 物理文件缺失：询问是否按相同条件重新生成并下载
     if (!regenerating && isFileMissingError(errBody) && checkPermi(['apms:report:generate'])) {
       proxy.$modal.confirm(
-        '该报告的 PDF 文件已不存在（可能已被清理）。是否立即重新生成？将按相同条件刷新本报告的数据快照与 PDF（覆盖原记录，不会新增报告），生成后自动下载。'
+        '该报告的 PDF 文件已不存在（可能已被清理）。是否立即重新生成？将按相同条件刷新本报告的数据快照与 PDF（覆盖原记录，不会新增报告），生成后自动下载。',
+        '重新生成报告'
       ).then(() => regenerateAndDownload(row)).catch(() => {})
       return
     }
@@ -553,7 +552,7 @@ async function regenerateAndDownload(row) {
 }
 
 function handleDelete(row) {
-  proxy.$modal.confirm('确认删除该报告？PDF 文件一并清理。').then(() => delReport(row.id))
+  proxy.$modal.confirm('确认删除该报告？PDF 文件一并清理。', '删除报告').then(() => delReport(row.id))
     .then(() => {
       proxy.$modal.msgSuccess('已删除')
       if (current.value?.id === row.id) detailDrawerVisible.value = false  // @close 中回收预览并清空 current

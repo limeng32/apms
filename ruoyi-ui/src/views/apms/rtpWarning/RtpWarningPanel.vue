@@ -28,7 +28,7 @@
     <div class="rk-filter rw-filter">
       <label class="rk-group">
         <span class="rk-label">建议级别</span>
-        <select v-model="filters.level" class="rk-input rw-select">
+        <select v-model="filters.level" class="rk-select rw-select">
           <option value="">全部级别</option>
           <option value="WARNING">建议停训（红）</option>
           <option value="ATTENTION">建议限制（黄）</option>
@@ -38,7 +38,7 @@
       </label>
       <label class="rk-group">
         <span class="rk-label">状态</span>
-        <select v-model="filters.statusTab" class="rk-input rw-select">
+        <select v-model="filters.statusTab" class="rk-select rw-select">
           <option value="ACTIVE">待处理</option>
           <option value="HANDLED">已处理</option>
         </select>
@@ -54,8 +54,7 @@
       </label>
       <label class="rk-group">
         <span class="rk-label">姓名</span>
-        <input v-model="filters.keyword" class="rk-input" type="text" placeholder="队员姓名"
-               @keyup.enter="reloadFirst"/>
+        <input v-model="filters.keyword" class="rk-input" type="text" placeholder="队员姓名"/>
       </label>
       <label class="rw-switch-group">
         <input type="checkbox" v-model="filters.overdueOnly" class="rw-switch"/>
@@ -138,9 +137,9 @@
         </div>
       </div>
 
-      <pagination v-show="total > 0" :total="total"
-                  v-model:page="query.pageNum" v-model:limit="query.pageSize"
-                  @pagination="loadList"/>
+      <RkPager v-if="total > 0"
+               :page="query.pageNum" :total="total" :page-size="query.pageSize"
+               unit="条" @update:page="goPage"/>
     </div>
 
     <!-- ========== 因子详情抽屉 ========== -->
@@ -213,7 +212,7 @@
         </div>
 
         <!-- 底部操作 -->
-        <div class="rw-drawer-foot" v-if="current.status === 'ACTIVE'">
+        <div class="rk-drawer-foot" v-if="current.status === 'ACTIVE'">
           <template v-if="current.suggestedLevel === 'INFO'">
             <button type="button" class="rk-btn rk-btn-sm" :loading="acting"
                     @click="handleAck" v-hasPermi="['apms:rtpRisk:handle']">已知悉</button>
@@ -271,6 +270,7 @@ import { listDept } from '@/api/system/dept'
 import { checkPermi } from '@/utils/permission'
 import { Close, RefreshLeft, Aim, Clock } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
+import RkPager from '@/components/RkPager/index.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
 import { useDrawerOffset } from '@/utils/drawerOffset'
 
@@ -384,25 +384,38 @@ function loadStat() {
 
 function reloadFirst() { query.pageNum = 1; loadList(); loadStat() }
 
+function goPage(p) {
+  query.pageNum = p
+  loadList()
+}
+
+// 筛选统一 300ms 防抖（含姓名输入）；重置用 guard 避免与 watcher 重复请求
+let filterTimer = null
+let filterGuard = false
+watch(filters, () => {
+  if (filterGuard) return
+  clearTimeout(filterTimer)
+  filterTimer = setTimeout(reloadFirst, 300)
+}, { deep: true })
+
 function resetFilter() {
+  filterGuard = true
   filters.level = ''
   filters.statusTab = 'ACTIVE'
   filters.deptId = null
   filters.keyword = ''
   filters.overdueOnly = false
-  reloadFirst()
+  nextTick(() => { filterGuard = false; reloadFirst() })
 }
 
 function pickLevel(level) {
+  // 两个字段连续赋值只触发一次防抖请求
   filters.level = (filters.level === level && !filters.overdueOnly) ? '' : level
   filters.statusTab = 'ACTIVE'
-  reloadFirst()
 }
 
-watch(() => [filters.level, filters.statusTab, filters.deptId, filters.overdueOnly], reloadFirst)
-
 function handleScan() {
-  proxy.$modal.confirm('立即对全部在训运动员执行一次风险扫描？将生成/刷新当日快照。').then(() => {
+  proxy.$modal.confirm('立即对全部在训运动员执行一次风险扫描？将生成/刷新当日快照。', '立即扫描').then(() => {
     scanning.value = true
     scanAll().then(res => {
       const s = res.data || {}
@@ -665,11 +678,6 @@ loadStat()
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
 }
 
-.rw-drawer-foot {
-  margin-top: auto; padding-top: 16px;
-  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
-  border-top: 1px solid $rk-line;
-}
 .rw-perm-tip { font-size: 12px; color: $rk-text-3; }
 
 .rw-accept-target { font-weight: 700; font-size: 14px; }

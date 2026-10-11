@@ -158,7 +158,7 @@
 
     <template #footer>
       <el-button @click="printReport" icon="Printer">🖨️ 打印报告</el-button>
-      <el-button @click="emit('update:modelValue', false)">关 闭</el-button>
+      <el-button @click="emit('update:modelValue', false)">关闭</el-button>
     </template>
   </el-dialog>
 </template>

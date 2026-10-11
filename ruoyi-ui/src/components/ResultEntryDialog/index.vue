@@ -86,7 +86,9 @@
               </tr>
             </tbody>
           </table>
-          <div v-else class="re-empty">暂无可录入的直接指标</div>
+          <div v-else class="re-empty">
+            <p class="re-empty-title">暂无可录入的直接指标</p>
+          </div>
         </div>
       </el-form-item>
 
@@ -120,7 +122,8 @@
             </span>
           </div>
           <div v-if="!mf.inputFields.length" class="re-empty re-empty-sm">
-            该模型未配置人工采集字段（collect_mode=INPUT），无法录入
+            <p class="re-empty-title">暂无可录入字段</p>
+            <p class="re-empty-desc">该模型未配置人工采集字段（collect_mode=INPUT），无法录入</p>
           </div>
         </div>
       </el-form-item>
@@ -129,7 +132,7 @@
         title="只填本次已测项目即可；指标自动参与最佳试次判定与 REP 评价，模型原始数据保存后自动产出派生结果。"/>
     </el-form>
     <template #footer>
-      <el-button @click="visible = false">取 消</el-button>
+      <el-button @click="visible = false">取消</el-button>
       <el-button type="primary" :loading="saving" @click="submit">保存成绩</el-button>
     </template>
 
@@ -144,7 +147,7 @@
         <template #prepend><el-icon><Key /></el-icon></template>
       </el-input>
       <template #footer>
-        <el-button @click="device.visible = false">关 闭</el-button>
+        <el-button @click="device.visible = false">关闭</el-button>
         <el-button type="primary" :loading="device.loading" @click="submitDevice">校验并采集</el-button>
       </template>
     </el-dialog>
@@ -366,7 +369,7 @@ async function submit() {
 
   const count = filledIndicators.length + modelPayloads.length
   try {
-    await proxy.$modal.confirm(`将为 ${mode.value === 'task' ? ctx.athleteName : '该运动员'} 保存 ${count} 项测试结果，是否继续？`)
+    await proxy.$modal.confirm(`将为 ${mode.value === 'task' ? ctx.athleteName : '该运动员'} 保存 ${count} 项测试结果，是否继续？`, '保存测试结果')
   } catch {
     return
   }
@@ -490,8 +493,27 @@ defineExpose({ openForTask, openFree })
 .re-unit { display: inline-block; min-width: 34px; padding: 1px 8px; border-radius: 4px; background: #f1f5f9; color: #475569; font-size: 12px; font-weight: 500; }
 .re-best-unit { margin-left: 4px; color: #94a3b8; font-size: 11px; }
 .re-input-unit { color: #64748b; font-size: 12px; padding: 0 4px; white-space: nowrap; }
-.re-empty { padding: 28px; text-align: center; color: #909399; font-size: 13px; }
-.re-empty-sm { padding: 14px; }
+/* 空状态：与 roster-kit .rk-empty-sm 同款小图标（组件自包含，不引 kit） */
+$re-empty-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z'/%3E%3C/svg%3E");
+.re-empty {
+  padding: 20px;
+  text-align: center;
+  color: #64748b;
+  font-size: 13px;
+}
+.re-empty::before {
+  content: '';
+  display: block;
+  width: 34px;
+  height: 34px;
+  margin: 0 auto 9px;
+  background-color: #cbd5e1;
+  -webkit-mask: $re-empty-icon center / contain no-repeat;
+  mask: $re-empty-icon center / contain no-repeat;
+}
+.re-empty-title { margin: 0; font-size: 13px; font-weight: 600; color: #475569; }
+.re-empty-desc { margin: 4px 0 0; font-size: 12px; color: #94a3b8; }
+.re-empty-sm { padding: 12px; }
 
 /* 模型结构化卡片 */
 .re-model-card { width: 100%; border: 1px solid #e9e4ff; border-radius: 8px; background: #fbfaff; padding: 12px; }

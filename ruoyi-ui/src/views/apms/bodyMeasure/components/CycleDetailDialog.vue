@@ -101,10 +101,10 @@
 
     <template #footer>
       <template v-if="batchMode">
-        <el-button @click="batchMode = false">返 回</el-button>
+        <el-button @click="batchMode = false">返回</el-button>
         <el-button type="primary" :loading="saving" @click="submitBatch">保存测量结果</el-button>
       </template>
-      <el-button v-else @click="visible = false">关 闭</el-button>
+      <el-button v-else @click="visible = false">关闭</el-button>
     </template>
   </el-dialog>
 </template>

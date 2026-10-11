@@ -241,7 +241,7 @@
           </div>
           <div v-else class="md-no-files">无附件</div>
 
-          <div class="md-drawer-foot">
+          <div class="rk-drawer-foot md-drawer-foot">
             <button type="button" class="rk-btn rk-btn-sm" @click="handleEdit(current)"
                     v-hasPermi="['apms:medicalRecord:edit']">
               <el-icon><Edit /></el-icon>编辑记录
@@ -341,8 +341,8 @@
           </div>
         </div>
         <template #footer>
-          <el-button @click="showDialog = false">取 消</el-button>
-          <el-button type="primary" @click="submit">保 存</el-button>
+          <el-button @click="showDialog = false">取消</el-button>
+          <el-button type="primary" @click="submit">保存</el-button>
         </template>
       </el-dialog>
     </div>
@@ -656,7 +656,7 @@ async function handleDownload(f) {
   }
 }
 function handleDeleteFile(f) {
-  proxy.$modal.confirm(`确认删除附件 "${f.fileName}"？`).then(() => {
+  proxy.$modal.confirm(`确认删除附件 "${f.fileName}"？`, '删除附件').then(() => {
     delMedicalFile(f.id).then(() => {
       proxy.$modal.msgSuccess('已删除')
       loadDetail(current.value.id)
@@ -666,7 +666,7 @@ function handleDeleteFile(f) {
 }
 
 function handleDelete(row) {
-  proxy.$modal.confirm('确认删除该条医疗康复记录？附件一并删除。').then(() => {
+  proxy.$modal.confirm('确认删除该条医疗康复记录？附件一并删除。', '删除医疗记录').then(() => {
     delMedical(row.id).then(() => {
       proxy.$modal.msgSuccess('删除成功')
       getList(); loadStats(); loadSiteStats()
@@ -1012,12 +1012,8 @@ loadSiteStats()
 .md-drawer .md-files-title { margin: 18px 20px 10px; }
 .md-drawer .md-file-list { margin: 0 20px; }
 .md-drawer .md-no-files { margin: 0 20px; }
-.md-drawer-foot {
-  margin: auto 20px 0;
-  padding-top: 16px;
-  display: flex; gap: 10px; flex-wrap: wrap;
-  border-top: 1px solid $rk-line;
-}
+/* rk-drawer-foot 在本抽屉保留 20px 侧距（抽屉内容无横向 padding） */
+.md-drawer .md-drawer-foot { margin-left: 20px; margin-right: 20px; }
 @media (max-width: 1279px) {
   .md-main-grid { --rk-split-l: 1fr; --rk-split-r: 1fr; }
 }

@@ -45,7 +45,6 @@
           <table class="rk-table pm-table">
             <thead>
               <tr>
-                <th class="text-center col-index">#</th>
                 <th>队员</th>
                 <th class="text-center col-date">测量日期</th>
                 <th class="text-right col-height">身高(cm)</th>
@@ -61,7 +60,6 @@
             </thead>
             <tbody>
               <tr v-for="(row, idx) in pagedData" :key="row.id" class="rk-row" :class="{ 'is-zebra': idx % 2 === 1 }">
-                <td class="text-center rk-mono rk-dash">{{ (page - 1) * PAGE_SIZE + idx + 1 }}</td>
                 <td>
                   <div class="rk-person">
                     <span class="rk-avatar pm-avatar" :style="{ background: avatarColor(row) }">
@@ -292,7 +290,7 @@
           </div>
         </div>
         <template #footer>
-          <el-button type="primary" @click="showFormula = false">关 闭</el-button>
+          <el-button type="primary" @click="showFormula = false">关闭</el-button>
         </template>
       </el-dialog>
 
@@ -364,7 +362,7 @@
                     title="无法复现当时的计算输入（缺少生日或关联体态测量），档案保存值为 {{ adult.savedHeight }} cm"/>
         </div>
         <template #footer>
-          <el-button type="primary" @click="showAdult = false">关 闭</el-button>
+          <el-button type="primary" @click="showAdult = false">关闭</el-button>
         </template>
       </el-dialog>
     </div>
@@ -644,7 +642,7 @@ function handleCalcResult(record) {
 }
 
 function handleDelete(row) {
-  proxy.$modal.confirm(`确认删除这条 PHV 记录吗？`).then(() => {
+  proxy.$modal.confirm(`确认删除这条 PHV 记录吗？`, '删除 PHV 记录').then(() => {
     delPhv(row.id).then(() => { proxy.$modal.msgSuccess('已删除'); loadList() })
   }).catch(() => {})
 }

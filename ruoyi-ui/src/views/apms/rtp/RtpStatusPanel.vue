@@ -246,7 +246,7 @@
         <div v-else class="rt-tl-empty">暂无变更记录</div>
 
         <!-- 清除状态 -->
-        <div class="rt-drawer-foot" v-if="currentAthlete.status" v-hasPermi="['apms:rtp:clear']">
+        <div class="rk-drawer-foot" v-if="currentAthlete.status" v-hasPermi="['apms:rtp:clear']">
           <button type="button" class="rk-btn rk-btn-sm rk-btn-danger" @click="handleClear(currentAthlete)">
             清除状态（回到未评估）
           </button>
@@ -447,7 +447,7 @@ function onDrop(key) {
   if (fromKey === key) return
 
   const targetLabel = key === 'na' ? '未评估（清除当前状态）' : statusLabel(key)
-  proxy.$modal.confirm(`确认将「${row.athleteName}」的 RTP 状态标记为「${targetLabel}」？`)
+  proxy.$modal.confirm(`确认将「${row.athleteName}」的 RTP 状态标记为「${targetLabel}」？`, '更新 RTP 状态')
     .then(() => {
       if (key === 'na') return clearStatus(athleteId, {})
       return updateStatus({
@@ -542,7 +542,7 @@ function submitEdit() {
 }
 
 function handleClear(row) {
-  proxy.$modal.confirm(`确认清除 ${row.athleteName} 的 RTP 状态？将回到"未评估"。`).then(() => {
+  proxy.$modal.confirm(`确认清除 ${row.athleteName} 的 RTP 状态？将回到"未评估"。`, '清除 RTP 状态').then(() => {
     clearStatus(row.athleteId, {}).then(() => {
       proxy.$modal.msgSuccess('已清除')
       loadAll()
@@ -744,11 +744,6 @@ loadAll()
   text-align: center;
 }
 
-.rt-drawer-foot {
-  margin-top: 20px;
-  padding-top: 14px;
-  border-top: 1px solid $rk-line;
-}
 
 /* ===== 弹窗内文字 ===== */
 .edit-athlete { font-weight: 500; color: $rk-text-1; }

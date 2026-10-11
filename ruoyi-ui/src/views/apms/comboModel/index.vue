@@ -215,14 +215,14 @@
                           <button type="button" class="rk-link" @click="saveComponent(c)">保存</button>
                           <button type="button" class="rk-link" @click="cancelCompEdit(c)">取消</button>
                         </template>
-                        <button type="button" class="rk-link is-danger" @click="handleDeleteComponent(c)">删</button>
+                        <button type="button" class="rk-link is-danger" @click="handleDeleteComponent(c)">删除</button>
                       </td>
                     </tr>
                   </tbody>
                 </table>
               </div>
               <div v-else class="cm-comp-empty">
-                <div class="rk-empty">
+                <div class="rk-empty rk-empty-sm">
                   <p class="rk-empty-title">该组合模型暂无组成项</p>
                   <p class="rk-empty-desc">点击右上角「新增组成项」选择指标并设置权重</p>
                 </div>
@@ -271,8 +271,8 @@
           </el-row>
         </el-form>
         <template #footer>
-          <el-button @click="showComboDialog = false">取 消</el-button>
-          <el-button type="primary" @click="submitCombo">保 存</el-button>
+          <el-button @click="showComboDialog = false">取消</el-button>
+          <el-button type="primary" @click="submitCombo">保存</el-button>
         </template>
       </el-dialog>
 
@@ -310,8 +310,8 @@
           </el-row>
         </el-form>
         <template #footer>
-          <el-button @click="showCompDialogVisible = false">取 消</el-button>
-          <el-button type="primary" @click="submitComponent">保 存</el-button>
+          <el-button @click="showCompDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="submitComponent">保存</el-button>
         </template>
       </el-dialog>
     </div>
@@ -499,7 +499,7 @@ function submitCombo() {
 }
 function handleDelete(row) {
   const selIds = row ? row.id : ids.value
-  proxy.$modal.confirm('确认删除？其下组成项将一并删除。').then(() => delComboModel(selIds))
+  proxy.$modal.confirm('确认删除？其下组成项将一并删除。', '删除组合模型').then(() => delComboModel(selIds))
     .then(() => {
       proxy.$modal.msgSuccess('删除成功')
       ids.value = []
@@ -542,7 +542,7 @@ function saveComponent(row) {
     })
 }
 function handleDeleteComponent(row) {
-  proxy.$modal.confirm(`确认移除 ${row.indicatorCode}？`).then(() => delComponent(row.id))
+  proxy.$modal.confirm(`确认移除 ${row.indicatorCode}？`, '移除组成项').then(() => delComponent(row.id))
     .then(() => {
       proxy.$modal.msgSuccess('已移除')
       loadDetail(currentCombo.value.id)

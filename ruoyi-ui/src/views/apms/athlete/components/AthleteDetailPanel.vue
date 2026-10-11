@@ -398,8 +398,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showJoinDialog = false">取 消</el-button>
-        <el-button type="primary" @click="submitJoin">确 定</el-button>
+        <el-button @click="showJoinDialog = false">取消</el-button>
+        <el-button type="primary" @click="submitJoin">确定</el-button>
       </template>
     </el-dialog>
 
@@ -416,8 +416,8 @@
         </el-row>
       </el-form>
       <template #footer>
-        <el-button @click="showBodyDialog = false">取 消</el-button>
-        <el-button type="primary" @click="submitBody">保 存</el-button>
+        <el-button @click="showBodyDialog = false">取消</el-button>
+        <el-button type="primary" @click="submitBody">保存</el-button>
       </template>
     </el-dialog>
 
@@ -438,8 +438,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showRtpDialog = false">取 消</el-button>
-        <el-button type="primary" @click="submitRtp">保 存</el-button>
+        <el-button @click="showRtpDialog = false">取消</el-button>
+        <el-button type="primary" @click="submitRtp">保存</el-button>
       </template>
     </el-dialog>
 
@@ -460,7 +460,7 @@
         </el-row>
       </el-form>
       <template #footer>
-        <el-button @click="showPhvDialog = false">取 消</el-button>
+        <el-button @click="showPhvDialog = false">取消</el-button>
         <el-button type="primary" @click="submitPhv">开始计算</el-button>
       </template>
     </el-dialog>
@@ -685,7 +685,7 @@ function submitJoin() {
   })
 }
 function handleLeave(row) {
-  proxy.$modal.confirm('确认让 ' + athlete.value.name + ' 离开「' + (row.deptName || ('小组#' + row.deptId)) + '」？不影响其在其他小组的在组关系。').then(() => {
+  proxy.$modal.confirm('确认让 ' + athlete.value.name + ' 离开「' + (row.deptName || ('小组#' + row.deptId)) + '」？不影响其在其他小组的在组关系。', '离开小组').then(() => {
     return athleteGroupApi.leaveGroup(props.athleteId, { deptId: row.deptId, leaveDate: new Date().toISOString().slice(0, 10) })
   }).then(() => { reloadAndNotify(); proxy.$modal.msgSuccess('已离开') }).catch(() => {})
 }
@@ -712,7 +712,7 @@ function submitBody() {
   })
 }
 function handleDeleteMeasure(row) {
-  proxy.$modal.confirm('确认删除该条测量记录？').then(() => {
+  proxy.$modal.confirm('确认删除该条测量记录？', '删除体态测量').then(() => {
     return bodyMeasureApi.delMeasure(row.id)
   }).then(() => { reloadAndNotify(); proxy.$modal.msgSuccess('已删除') }).catch(() => {})
 }
@@ -728,7 +728,7 @@ function submitRtp() {
   })
 }
 function handleClearRtp() {
-  proxy.$modal.confirm('确认清除 RTP 状态（恢复为未评估）？').then(() => {
+  proxy.$modal.confirm('确认清除 RTP 状态（恢复为未评估）？', '清除 RTP 状态').then(() => {
     return rtpApi.clearStatus(props.athleteId, { reason: '手动清除' })
   }).then(() => { reloadAndNotify(); proxy.$modal.msgSuccess('已清除') }).catch(() => {})
 }
@@ -751,7 +751,7 @@ function submitPhv() {
   })
 }
 function handleDeletePhv(row) {
-  proxy.$modal.confirm('确认删除该条 PHV 记录？').then(() => {
+  proxy.$modal.confirm('确认删除该条 PHV 记录？', '删除 PHV 记录').then(() => {
     return phvApi.delPhv(row.id)
   }).then(() => { reloadAndNotify(); proxy.$modal.msgSuccess('已删除') }).catch(() => {})
 }

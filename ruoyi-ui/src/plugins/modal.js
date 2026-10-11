@@ -19,21 +19,21 @@ export default {
   msgWarning(content) {
     ElMessage.warning(content)
   },
-  // 弹出提示
-  alert(content) {
-    ElMessageBox.alert(content, "系统提示")
+  // 弹出提示（title 可选，默认「系统提示」；建议业务确认传动作名，如「删除指标」）
+  alert(content, title) {
+    ElMessageBox.alert(content, title || "系统提示")
   },
   // 错误提示
-  alertError(content) {
-    ElMessageBox.alert(content, "系统提示", { type: 'error' })
+  alertError(content, title) {
+    ElMessageBox.alert(content, title || "系统提示", { type: 'error' })
   },
   // 成功提示
-  alertSuccess(content) {
-    ElMessageBox.alert(content, "系统提示", { type: 'success' })
+  alertSuccess(content, title) {
+    ElMessageBox.alert(content, title || "系统提示", { type: 'success' })
   },
   // 警告提示
-  alertWarning(content) {
-    ElMessageBox.alert(content, "系统提示", { type: 'warning' })
+  alertWarning(content, title) {
+    ElMessageBox.alert(content, title || "系统提示", { type: 'warning' })
   },
   // 通知提示
   notify(content) {
@@ -51,20 +51,22 @@ export default {
   notifyWarning(content) {
     ElNotification.warning(content)
   },
-  // 确认窗体
-  confirm(content) {
-    return ElMessageBox.confirm(content, "系统提示", {
+  // 确认窗体（title 可选，默认「系统提示」；业务写操作请传动作名，如 confirm(text, '队员离队')）
+  confirm(content, title, options) {
+    return ElMessageBox.confirm(content, title || "系统提示", {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: "warning",
+      ...options,
     })
   },
-  // 提交内容
-  prompt(content) {
-    return ElMessageBox.prompt(content, "系统提示", {
+  // 提交内容（title/options 可选）
+  prompt(content, title, options) {
+    return ElMessageBox.prompt(content, title || "系统提示", {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: "warning",
+      ...options,
     })
   },
   // 打开遮罩层
