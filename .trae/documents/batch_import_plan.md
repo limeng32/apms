@@ -37,7 +37,7 @@ XML `a.name LIKE CONCAT('%', #{name}, '%')`，[CsvResultImportProvider#L224-L241
   - 入参 DTO 在 **ruoyi-system 层定义**（不能用 ruoyi-admin 的 Controller 内部类 AddBody，避免模块反向依赖）：`service/apms/import/ResultImportItem.java { ApmsTestResult result; List<ApmsTestResultValue> values; }`；HTTP 层的 `ApmsTestResultController.AddBody` 仅用于接口入参，Facade 内部组装 system 层 DTO。
   - `@Transactional(rollbackFor = Exception.class) writeRow(List<ResultImportItem> items)`：顺序调用 `testResultService.add(item.result, item.values)`，默认传播 REQUIRED，全部加入**同一个行事务**；任一列抛异常 → 整行回滚（含 add 内部的 autoSelectBest/REP/任务进度/体态同步/PHV 全部回滚）。
 - Facade 对每一行调用一次 writer.writeRow，try/catch 收集该行失败原因后继续下一行（下一行是全新事务）。
-- 体态侧一行只 upsert 一条记录，天然单行单事务，无需 RowWriter。
+- 体态侧一行只写一条记录，由专用 importInsert/importUpdateImported 完成，无需 RowWriter。
 
 ### E. 成绩导入一期只支持 INDICATOR（MODEL 列跳过并明示）
 
@@ -79,9 +79,9 @@ XML `a.name LIKE CONCAT('%', #{name}, '%')`，[CsvResultImportProvider#L224-L241
 
 - 新增 `ApmsAthleteMapper.selectImportCandidates(ApmsAthlete q)`：独立简单 SQL，`FROM apms_athlete a`，条件为 `a.athlete_id=?` 或 `a.name = ?`（**精确等值，禁止 LIKE**），并拼接 `<if test="params.dataScope...">AND ${params.dataScope}</if>`（deptAlias=a, deptField=primary_team_id）。
 - 新增 service 方法标 `@DataScope(deptAlias="a", deptField="primary_team_id")` 调用该 mapper（切面把 scope 写入入参实体 params；admin 超管切面自动跳过、super data_scope=全部数据放行）。
-- 解析规则（每行）：
-  1. athlete_id 填了数字 → 精确查 id；查不到/不在 scope → **error**（不说"还是否按姓名"，避免越权探测）。
-  2. id 空 → name 必填，按精确等值查 scope 内：0 人 error"匹配不到队员（请核对姓名或填写运动员编号）"；>1 人 error"姓名重名（N 人），请填写 athlete_id"；恰好 1 人命中。
+- 解析规则（输入为 parseRows 产出的原始串，resolver 不接触任何旧匹配结果）：
+  1. athleteIdRaw 填了数字 → 精确查 id；查不到/不在 scope → **error**（不回退姓名猜测，避免越权探测/错配）；ID 与姓名同时填时以 ID 命中人为准，姓名仅在预览中作核对展示（不一致时给 warn 提示）。
+  2. id 空 → athleteNameRaw 必填，按精确等值查 scope 内：0 人 error"匹配不到队员（请核对姓名或填写运动员编号）"；>1 人 error"姓名重名（N 人），请填写 athlete_id"；恰好 1 人命中。
 - **commit 提交前用草稿中的 athleteId 再跑一次 scope 校验**（权限可能在 preview 后变化）。
 - **任务绑定（成绩）**：
   - 散录入口（testResult 页）：taskId 只能为空；即使文件含 task_id 列也**拒绝**（报错"散录批量导入不允许指定任务"）。
@@ -90,13 +90,17 @@ XML `a.name LIKE CONCAT('%', #{name}, '%')`，[CsvResultImportProvider#L224-L241
 ## 后端改动（ruoyi-system / ruoyi-admin）
 
 1. **新增** `service/apms/import/TabularFileReader.java`：`List<String[]> read(InputStream, fileName)`；CSV 分支搬入现有手写状态机（引号/BOM/#说明行规则保留），Excel 分支 POI `WorkbookFactory + DataFormatter`；上限 10MB / 1000 数据行，超限抛带中文说明的异常。
-2. **重构** `CsvResultImportProvider`：表头/行解析主体抽为 `parseRows(List<String[]>, taskId)`（逻辑零变更），CSV Provider 变薄读 CSV；`ITestResultImportProvider.ImportResult` 及 Row 实现 Serializable，Row 补 athleteName。旧 `/import/csv`、importAll 保留不动。
+2. **重构** `CsvResultImportProvider`：**parseRows 必须是纯解析，禁止内置人员匹配**——
+   - `parseRows(List<String[]>, taskId)` 只产出：表头映射（code→indicator/model）、`athleteIdRaw`（athlete_id 列原始串）、`athleteNameRaw`（athlete_name 列原始串）、measureDate、sessionKey、各指标列原始值。Row 新增 `String athleteIdRaw / athleteNameRaw`（保留原 `athleteId` 字段供旧链路填充）。
+   - 旧 `resolveAthleteId()`（数字 ID 优先→LIKE 姓名→多人取第一条）改名为 `legacyResolveAthlete(ImportResult)` 原样保留；**旧 `/import/csv` 链路 = parseRows → legacyResolveAthlete → persist，行为完全不变**。
+   - **新 preview 链路 = parseRows → AthleteImportResolver**（精确 ID/精确姓名/scope/重名拦截），resolver 直接消费两个 raw 字段，旧 LIKE 结果永远不会进入新链路，杜绝"张三被 LIKE 错配成 1001 后再被精确校验放行"。
+   - CSV Provider 变薄为：TabularFileReader 读 CSV → parseRows；`ImportResult`/Row 实现 Serializable。
 3. **新增** `service/apms/import/AthleteImportResolver.java`（@Component）：实现约束 C 的精确+scope 解析；preview 与 commit 共用。
 4. **新增** `service/apms/import/ImportDraftStore.java`（@Component）：preview 存草稿、commit 原子消费（约束 B），RedisTemplate 状态机 draft/processing/done。
 5. **修改** `InputRangeValidator.java`：新增只读分类（不影响现有拦截）：体态 `Map<String,String> classifyBodyFields(...)`、成绩 `String classifyIndicatorByCode(code, BigDecimal)`，供预览标色复用同一字典口径。
 6. **新增** `service/apms/import/ResultImportRowWriter.java`（约束 D）：跨 bean 的行事务包装。
 7. **新增** `service/apms/import/ResultImportFacade.java`：
-   - preview：读取→parseRows（**仅接受 INDICATOR 列；MODEL 列标 ignore+warning（约束 E）**）→resolver 匹配人（scope）→指标列任务归属校验→数值单元格四级分类（ok/warn/error/ignore，成绩指标未配置区间字典时仅查数字格式，日期沿用现有白名单）→存草稿（仅指标数据）→返回预览体。
+   - preview：读取→**纯 parseRows**（不做人匹配）→消费 Row.athleteIdRaw/athleteNameRaw 走 AthleteImportResolver 精确匹配（scope；ID 与姓名同时存在时以 ID 为准、姓名仅作核对展示）→仅接受 INDICATOR 列，MODEL 列标 ignore+warning（约束 E）→指标列任务归属校验→数值单元格四级分类（ok/warn/error/ignore，成绩指标未配置区间字典时仅查数字格式，日期沿用现有白名单）→存草稿（仅指标数据+已解析 athleteId）→返回预览体。
    - commit：消费 token→人再校验 scope→过滤 error/ignore→**每行经 ResultImportRowWriter.writeRow 一事务写多列**，dataSource='import'→逐行成功/失败汇总写 done。
 8. **新增** `service/apms/import/BodyMeasureImportService.java`：preview（读取→resolver→日期→冲突检查 A→5 字段区间分类→行打 conflict 标记→草稿，**不存 overwriteImport**）；commit(token, overwriteImport)（消费 token→scope 复检→按 A：IMPORT_CONFLICT 依参数 skip 或重查后 importUpdateImported，无冲突 importInsert→成功/跳过/失败汇总）。
 9. **修改** `IApmsBodyMeasureService` / Impl / Mapper(+XML)：新增 importInsert、importUpdateImported（固定五列专用 update 语句）、selectConflictOnDate；Impl 抽 `afterMeasureSaved(athleteId)` 供 upsert 与两个导入入口共用后处理链。
@@ -145,7 +149,7 @@ XML `a.name LIKE CONCAT('%', #{name}, '%')`，[CsvResultImportProvider#L224-L241
 
 ## 风险与应对
 
-- parser 重构回归：整体搬迁不改语义，旧接口保留对照。
+- parser 重构回归：parseRows 仅搬解析、人员匹配下沉为 legacyResolveAthlete，旧 /import/csv 链路（parseRows→legacy→persist）逐段保留作对照，新旧两条人员解析路径严格不交叉。
 - xlsx 数字/日期：DataFormatter 取字符串走同一日期白名单，预览显示原值。
 - 导入期间被他人抢先建当天记录：importInsert 前再查冲突，冲突行失败并在明细说明。
 - Redis 不可用：preview 直接报错，不落本地临时文件。
