@@ -131,7 +131,6 @@ function dotClass(l) {
   &.is-amber { background: linear-gradient(90deg, #fbbf24, #d97706); }
   &.is-brand { background: linear-gradient(90deg, #60a5fa, #2563eb); }
 }
-.is-big .ha-seg.is-brand { background: linear-gradient(90deg, #22d3ee, #2563eb); }
 
 .ha-list {
   flex: 1;

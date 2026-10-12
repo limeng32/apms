@@ -32,7 +32,7 @@ const enterStyle = computed(() => ({ animationDelay: props.enterDelay + 'ms' }))
 
 <style lang="scss" scoped>
 .dbx-card {
-  /* 主题变量：浅色（默认）/大屏深色（is-big） */
+  /* 主题变量：全站恒定亮色（大屏模式同样只匹配亮模式，不做深色切换） */
   --dbx-bg: #fff;
   --dbx-bg-soft: #f8fafc;
   --dbx-text: #0f172a;
@@ -49,17 +49,6 @@ const enterStyle = computed(() => ({ animationDelay: props.enterDelay + 'ms' }))
   overflow: hidden;
   opacity: 0;
   animation: dbx-fade-up 0.5s ease-out forwards;
-
-  &.is-big {
-    --dbx-bg: #111b31;
-    --dbx-bg-soft: rgba(255, 255, 255, 0.04);
-    --dbx-text: rgba(255, 255, 255, 0.92);
-    --dbx-sub: rgba(255, 255, 255, 0.48);
-    --dbx-line: rgba(148, 163, 191, 0.18);
-    --dbx-brand: #22d3ee;
-    border-color: rgba(34, 211, 238, 0.22);
-    box-shadow: 0 0 28px rgba(37, 99, 235, 0.08), inset 0 0 0 1px rgba(34, 211, 238, 0.05);
-  }
 }
 .dbx-head {
   flex: none;

@@ -25,7 +25,6 @@ const props = defineProps({
 })
 
 const BAND_COLORS = ['#8B5CF6', '#3B82F6', '#06B6D4', '#22C55E']
-const BAND_COLORS_BIG = ['#a78bfa', '#60a5fa', '#22d3ee', '#4ade80']
 
 const bands = computed(() => props.block.bands || [])
 const assessed = computed(() => Number(props.block.total || 0) > 0)
@@ -40,12 +39,12 @@ function render() {
     if (chart) chart.dispose()
     chart = echarts.init(barRef.value)
     const t = chartTheme(props.big)
-    const colors = props.big ? BAND_COLORS_BIG : BAND_COLORS
+    const colors = BAND_COLORS
     chart.setOption({
       tooltip: {
         ...t.tooltip,
         trigger: 'axis',
-        axisPointer: { type: 'shadow', shadowStyle: { color: props.big ? 'rgba(255,255,255,.04)' : 'rgba(37,99,235,.05)' } },
+        axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(37,99,235,.05)' } },
         formatter: (items) => {
           const it = items[0]
           return `<b>${it.axisValue}</b><br/>队员：<b>${it.value}</b> 人`
@@ -79,7 +78,7 @@ function render() {
         label: {
           show: true, position: 'top', distance: 4,
           fontSize: 12, fontWeight: 700,
-          color: props.big ? 'rgba(255,255,255,.85)' : '#334155'
+          color: '#334155'
         },
         animationDuration: GROW_ANIM_MS,
         animationEasing: 'cubicOut',

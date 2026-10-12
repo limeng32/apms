@@ -1,42 +1,37 @@
 /**
- * 驾驶舱 ECharts 浅/深双主题常量。
- * big=false：日常浅色（roster-kit 风格）；big=true：大屏模式深色科技风。
+ * 驾驶舱 ECharts 主题常量。
+ * 产品规定：全站只使用亮色（见 store/modules/settings.js），大屏模式同样
+ * 只匹配亮模式，仅保留布局差异，不做深色切换。函数保留 big 入参以兼容
+ * 既有调用方，但内部恒返回浅色配色。
  */
 export const STATUS_COLORS = {
   green: '#16A34A',
   amber: '#D97706',
+  // RTP 分布数据（rtpDistribution/byTeam）使用后端字段名 yellow，
+  // 与主题语义键 amber 必须同色；否则扇区/堆叠条会落到 none 灰，与图例橙色不符
+  yellow: '#D97706',
   red: '#DC2626',
-  none: '#CBD5E1',
-  greenDark: '#4ADE80',
-  amberDark: '#FBBF24',
-  redDark: '#F87171',
-  noneDark: '#475569'
+  none: '#CBD5E1'
 }
 
-/** 三态色（随大屏模式切换明暗） */
-export function statusColor(level, big) {
-  if (big) {
-    return level === 'green' ? STATUS_COLORS.greenDark
-      : level === 'amber' ? STATUS_COLORS.amberDark
-      : level === 'red' ? STATUS_COLORS.redDark
-      : STATUS_COLORS.noneDark
-  }
+/** 三态色（恒定浅色，big 入参已忽略） */
+export function statusColor(level, big = false) {
   return STATUS_COLORS[level] || STATUS_COLORS.none
 }
 
 export function chartTheme(big = false) {
   return {
-    axisLabel: { fontSize: 11, color: big ? '#8FA3C0' : '#94A3B8' },
-    axisLabelDark: { fontSize: 12, color: big ? 'rgba(255,255,255,.82)' : '#475569' },
-    splitLine: { lineStyle: { color: big ? 'rgba(148,163,191,.14)' : '#EEF2F7' } },
+    axisLabel: { fontSize: 11, color: '#94A3B8' },
+    axisLabelDark: { fontSize: 12, color: '#475569' },
+    splitLine: { lineStyle: { color: '#EEF2F7' } },
     tooltip: {
-      backgroundColor: big ? 'rgba(10,18,32,.94)' : '#0F172A',
+      backgroundColor: '#0F172A',
       borderWidth: 0,
       padding: [8, 12],
       textStyle: { color: '#fff', fontSize: 12 },
       extraCssText: 'border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.25);'
     },
-    legendText: { fontSize: 11, color: big ? 'rgba(255,255,255,.68)' : '#64748B' }
+    legendText: { fontSize: 11, color: '#64748B' }
   }
 }
 
@@ -55,7 +50,7 @@ export function growDelay(idx) {
  * 坐标计算再减回容器偏移。
  *
  * @param {HTMLElement} chartEl 图表容器元素
- * @param {[number,number]} point ECharts 回调的指针坐标（相对图表 DOM）
+ * @param {[number,number]} point ECharts 回调的指针位置（相对图表 DOM）
  * @param {{contentSize:[number,number], viewSize:[number,number]}} size
  */
 export function tipRightPosition(chartEl, point, size) {

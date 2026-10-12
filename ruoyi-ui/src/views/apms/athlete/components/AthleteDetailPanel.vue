@@ -48,11 +48,10 @@
             <span class="rk-mini-stat-value">{{ athlete.predictedAdultHeight != null ? Number(athlete.predictedAdultHeight).toFixed(1) : '—' }}<span class="rk-mini-stat-unit">cm</span></span>
           </div>
         </div>
-        <div class="rk-profile-actions">
-          <button v-if="!embedded" class="rk-btn" @click="emit('back')"><el-icon><ArrowLeft/></el-icon>返回列表</button>
-          <button class="rk-btn rk-btn-primary" @click="openBodyMeasureDialog" v-hasPermi="['apms:athlete:edit']">
-            <el-icon><Plus/></el-icon>新增测量
-          </button>
+        <!-- 「新增测量」仅保留在「发育评估 · 体态测量」页签内，页头不再重复放置，
+             避免同一操作在抽屉内出现多个入口（独立页浏览时保留返回按钮） -->
+        <div class="rk-profile-actions" v-if="!embedded">
+          <button class="rk-btn" @click="emit('back')"><el-icon><ArrowLeft/></el-icon>返回列表</button>
         </div>
       </div>
     </div>
@@ -65,15 +64,23 @@
       <span v-if="rtpStatus.nextReviewDate" class="rk-banner-item">下次复核 <span class="rk-mono">{{ rtpStatus.nextReviewDate }}</span></span>
     </div>
 
-    <!-- ===== Tab 栏 ===== -->
-    <div class="rk-tabs">
-      <button
-        v-for="t in tabs"
-        :key="t.key"
-        class="rk-tab"
-        :class="{ 'is-active': activeTab === t.key }"
-        @click="activeTab = t.key"
-      >{{ t.label }}</button>
+    <!-- ===== 分类导航：按 组织归属 / 发育评估 / 健康状态 / 测试数据 四组归类 ===== -->
+    <div class="ad-tabgroups">
+      <div v-for="g in tabGroups" :key="g.key" class="ad-tabgroup">
+        <span class="ad-tabgroup-title">
+          <el-icon><component :is="g.icon"/></el-icon>{{ g.title }}
+        </span>
+        <button
+          v-for="t in g.tabs"
+          :key="t.key"
+          type="button"
+          class="ad-tab"
+          :class="{ 'is-active': activeTab === t.key }"
+          @click="activeTab = t.key"
+        >
+          <el-icon class="ad-tab-ic"><component :is="t.icon"/></el-icon>{{ t.label }}
+        </button>
+      </div>
     </div>
 
     <!-- ===== Tab 1: 小组归属 ===== -->
@@ -520,7 +527,8 @@ import {
   loadRanges, getBodyRange,
   makeBodyHints, clearBodyHints, checkBodyField, collectBodyIssues
 } from '@/utils/measureRange'
-import { ArrowDown, ArrowLeft, Plus, Delete, Edit, RefreshLeft, DataLine, InfoFilled, CircleCheck, Warning, CircleClose } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowLeft, Plus, Delete, Edit, RefreshLeft, DataLine, InfoFilled, CircleCheck, Warning, CircleClose,
+  Connection, UserFilled, TrendCharts, Histogram, FirstAidKit, DataAnalysis, Medal } from '@element-plus/icons-vue'
 
 // 录入区间（字典 apms_measure_range；加载失败静默用内置默认）
 loadRanges().catch(() => {})
@@ -542,12 +550,27 @@ const loading = ref(true)
 const activeTab = ref('group')
 const showTrend = ref(false)
 
-const tabs = [
-  { key: 'group', label: '小组归属' },
-  { key: 'body', label: '体态测量' },
-  { key: 'rtp', label: 'RTP 参训状态' },
-  { key: 'phv', label: 'PHV 生长发育' },
-  { key: 'score', label: '组合评分' }
+// 功能入口按业务域归为四组，避免跨模块操作在抽屉内平铺造成认知负担
+const tabGroups = [
+  {
+    key: 'g-org', title: '组织归属', icon: Connection,
+    tabs: [{ key: 'group', label: '小组归属', icon: UserFilled }]
+  },
+  {
+    key: 'g-growth', title: '发育评估', icon: TrendCharts,
+    tabs: [
+      { key: 'body', label: '体态测量', icon: Histogram },
+      { key: 'phv', label: 'PHV 生长发育', icon: DataLine }
+    ]
+  },
+  {
+    key: 'g-health', title: '健康状态', icon: FirstAidKit,
+    tabs: [{ key: 'rtp', label: 'RTP 参训状态', icon: CircleCheck }]
+  },
+  {
+    key: 'g-test', title: '测试数据', icon: DataAnalysis,
+    tabs: [{ key: 'score', label: '组合评分', icon: Medal }]
+  }
 ]
 
 // 主数据
@@ -836,6 +859,64 @@ loadAll()
 
 .ad-panel { min-height: 100%; }
 .ad-card-gap { margin-top: 14px; }
+
+/* ===== 分类导航：组织归属 / 发育评估 / 健康状态 / 测试数据 ===== */
+.ad-tabgroups {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 22px;
+  row-gap: 2px;
+  margin: 4px 0 0;
+  border-bottom: 1px solid $rk-line;
+}
+.ad-tabgroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ad-tabgroup-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  color: $rk-text-3;
+  white-space: nowrap;
+  user-select: none;
+  .el-icon { font-size: 13px; }
+}
+.ad-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 9px 10px 10px;
+  font-size: 13.5px;
+  color: $rk-text-2;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color .15s ease;
+  &:hover { color: $rk-text-1; }
+  &.is-active { color: $rk-brand-600; font-weight: 600; }
+  &.is-active::after {
+    content: '';
+    position: absolute;
+    left: 10px; right: 10px;
+    bottom: -1px;
+    height: 2px;
+    border-radius: 2px;
+    background: $rk-brand-600;
+  }
+}
+.ad-tab-ic { font-size: 14px; }
+@media (max-width: 640px) {
+  .ad-tabgroups { column-gap: 12px; }
+  .ad-tab { padding: 8px 7px 9px; font-size: 13px; }
+  .ad-tabgroup-title { display: none; }
+}
 
 /* 体态测量弹窗：超出合理区间的浅红小字 */
 .adp-range-hint {

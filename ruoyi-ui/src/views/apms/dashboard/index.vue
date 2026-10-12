@@ -22,6 +22,62 @@
         </div>
       </div>
 
+      <!-- ===== 冷启动引导：系统无数据/仅有队员无测试时分阶段给出下一步与快捷入口 ===== -->
+      <div v-if="onboardStage" class="db-onboard">
+        <div class="db-ob-head">
+          <div class="db-ob-title">
+            <span class="db-ob-badge">新手引导</span>
+            {{ onboardStage === 'empty' ? '欢迎使用 APMS，从建立队员档案开始' : '队员已就位，开始第一次测试吧' }}
+          </div>
+          <button type="button" class="db-ob-close" title="本阶段不再提示" @click="dismissOnboard">
+            <el-icon><Close /></el-icon>
+          </button>
+        </div>
+        <p class="db-ob-desc">
+          {{ onboardStage === 'empty'
+            ? '驾驶舱数据会在以下三步完成后自动生成。按顺序操作，几分钟即可看到第一版数据概览。'
+            : '还没有测试任务与成绩数据，驾驶舱图表暂为空。下发任务并录入成绩后，任务进度、风险分布与评分将自动更新。' }}
+        </p>
+        <div class="db-ob-steps">
+          <div class="db-ob-step" :class="{ 'is-done': onboardStage === 'testing' }">
+            <span class="db-ob-step-no">{{ onboardStage === 'testing' ? '✓' : '1' }}</span>
+            <div class="db-ob-step-main">
+              <div class="db-ob-step-title">建立队员档案</div>
+              <div class="db-ob-step-sub">在花名册新增运动员、分配队伍与小组</div>
+            </div>
+            <button type="button" class="rk-btn rk-btn-sm" @click="goPath('/athletes/roster')">
+              {{ onboardStage === 'testing' ? '查看花名册' : '前往花名册' }}
+            </button>
+          </div>
+          <div class="db-ob-step">
+            <span class="db-ob-step-no">2</span>
+            <div class="db-ob-step-main">
+              <div class="db-ob-step-title">下发测试任务并录入成绩</div>
+              <div class="db-ob-step-sub">选择队员与测试模型下发任务，或直接手动录入 / 批量导入成绩</div>
+            </div>
+            <div class="db-ob-step-actions">
+              <button type="button" class="rk-btn rk-btn-sm rk-btn-primary"
+                      @click="goPath('/testings/dispatch?tab=task')">新建测试任务</button>
+              <button type="button" class="rk-btn rk-btn-sm"
+                      @click="goPath('/testings/dispatch?tab=result')">录入成绩</button>
+            </div>
+          </div>
+          <div class="db-ob-step">
+            <span class="db-ob-step-no">3</span>
+            <div class="db-ob-step-main">
+              <div class="db-ob-step-title">健康与发育评估</div>
+              <div class="db-ob-step-sub">登记 RTP 参训状态、录入体态测量并计算 PHV，风险预警自动生效</div>
+            </div>
+            <div class="db-ob-step-actions">
+              <button type="button" class="rk-btn rk-btn-sm"
+                      @click="goPath('/healthcare/alert-center/rtp-status')">RTP 状态</button>
+              <button type="button" class="rk-btn rk-btn-sm"
+                      @click="goPath('/athletes/growth/body-measure')">体态 / PHV</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ===== 门面 KPI ×5（count-up） ===== -->
       <div class="db-kpi-row">
         <div class="rk-kpi-card db-kpi" v-for="(k, i) in kpiCards" :key="k.label"
@@ -190,7 +246,7 @@
 import { getOverview } from '@/api/apms/dashboard'
 import * as echarts from 'echarts'
 import { onBeforeUnmount } from 'vue'
-import { Monitor, Sunny, ArrowDown } from '@element-plus/icons-vue'
+import { Monitor, Sunny, ArrowDown, Close } from '@element-plus/icons-vue'
 import DashRtpDonut from './components/DashRtpDonut.vue'
 import DashTaskProgress from './components/DashTaskProgress.vue'
 import DashInjurySummary from './components/DashInjurySummary.vue'
@@ -231,11 +287,34 @@ if (bigScreen.value) startClock()
 onBeforeUnmount(stopClock)
 
 /* ===== 门面区数据 ===== */
+const onboardLoaded = ref(false)
 const rtpDistribution = ref({ green: 0, yellow: 0, red: 0, none: 0, total: 0, byTeam: [] })
 const activeTasks = ref({ list: [], avgProgress: 0 })
 const injurySummary = ref({ active: 0, newThisMonth: 0, recovered: 0, sites: [], recent: [] })
 const phvBands = ref({ bands: [], windowCount: 0, total: 0 })
 const healthAlerts = ref({ total: 0, warning: 0, attention: 0, infoHealth: 0, list: [] })
+
+/* ===== 冷启动引导：empty=无在训队员；testing=有队员但从未下发过测试任务；
+   关闭偏好按阶段记忆，数据推进到下一阶段时会再次提示一次 ===== */
+const router = useRouter()
+const ONBOARD_KEY = 'apms-dash-onboard-hidden'
+const dismissedStage = ref(localStorage.getItem(ONBOARD_KEY) || '')
+const onboardStage = computed(() => {
+  if (!onboardLoaded.value) return null
+  let stage = null
+  if (Number(rtpDistribution.value.total || 0) === 0) stage = 'empty'
+  else if (!(taskCompletion.value || []).length) stage = 'testing'
+  return stage && dismissedStage.value !== stage ? stage : null
+})
+function dismissOnboard() {
+  if (onboardStage.value) {
+    dismissedStage.value = onboardStage.value
+    localStorage.setItem(ONBOARD_KEY, onboardStage.value)
+  }
+}
+function goPath(url) {
+  router.push(url)
+}
 
 const rankingRef = ref(null)
 const phvRef = ref(null)
@@ -336,6 +415,9 @@ function loadData() {
 
     // 大屏态详情区隐藏：图表仍初始化（ResizeObserver 在展开时自动 resize）
     nextTick(function () { initCharts() })
+  }).finally(function () {
+    // 数据落定后再判定冷启动阶段，避免初始 0 值误闪引导卡
+    onboardLoaded.value = true
   })
 }
 
@@ -553,8 +635,8 @@ loadData()
 .db-header-actions { gap: 12px; }
 .db-clock {
   font-size: 20px; font-weight: 600;
-  color: #22d3ee;
-  text-shadow: 0 0 16px rgba(34, 211, 238, .45);
+  /* 大屏模式只匹配亮模式：时钟用深青色保证浅底可读 */
+  color: #0e7490;
   letter-spacing: 1px;
 }
 .db-big-btn {
@@ -569,10 +651,9 @@ loadData()
   transition: all .15s ease;
   &:hover { background: #f8fafc; }
   &.is-on {
-    color: #22d3ee;
-    border-color: rgba(34, 211, 238, .45);
-    background: rgba(34, 211, 238, .08);
-    box-shadow: 0 0 18px rgba(34, 211, 238, .18);
+    color: #0e7490;
+    border-color: rgba(14, 116, 144, .4);
+    background: rgba(14, 116, 144, .08);
   }
 }
 
@@ -581,6 +662,106 @@ loadData()
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 16px;
+}
+
+/* ===== 冷启动引导卡 ===== */
+.db-onboard {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 16px;
+  padding: 16px 18px 14px;
+  border: 1px solid rgba(37, 99, 235, .25);
+  border-radius: 16px;
+  background: linear-gradient(135deg, #f4f7ff 0%, #eef4ff 55%, #f0fdf7 100%);
+  animation: db-fade-up .4s ease-out;
+}
+.db-ob-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.db-ob-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.db-ob-badge {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: #2563eb;
+  background: #dbe7ff;
+  border-radius: 999px;
+  padding: 2px 9px;
+  letter-spacing: .3px;
+}
+.db-ob-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  &:hover { background: rgba(37, 99, 235, .1); color: #1e293b; }
+}
+.db-ob-desc {
+  margin: 7px 0 13px;
+  font-size: 12.5px;
+  line-height: 19px;
+  color: #475569;
+}
+.db-ob-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.db-ob-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  background: rgba(255, 255, 255, .82);
+  border: 1px solid #e2e8f6;
+  border-radius: 12px;
+  &.is-done { border-color: #b7e4c7; background: #f2fbf5; }
+}
+.db-ob-step-no {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  background: #2563eb;
+  .is-done & { background: #16a34a; }
+}
+.db-ob-step-main { flex: 1; min-width: 0; }
+.db-ob-step-title { font-size: 13px; font-weight: 600; color: #1e293b; }
+.db-ob-step-sub { margin-top: 2px; font-size: 11.5px; line-height: 16px; color: #64748b; }
+.db-ob-step-actions {
+  flex: none;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.db-ob-step-actions .rk-btn,
+.db-ob-step > .rk-btn { flex: none; white-space: nowrap; }
+@media (max-width: 1080px) {
+  .db-ob-steps { grid-template-columns: 1fr; }
+  .db-ob-step-actions { flex-direction: row; }
 }
 .db-kpi {
   opacity: 0;
@@ -629,34 +810,10 @@ loadData()
 .db-toggle-ic.is-open { transform: rotate(180deg); }
 .db-detail { animation: db-fade-up .35s ease-out; }
 
-/* ===== 大屏深色模式 ===== */
-.app-container.is-bigscreen { background: #0a1120; }
-.db-page.is-bigscreen {
-  background: #0a1120;
-  .rk-title { color: #fff; }
-  .rk-subtitle { color: rgba(255, 255, 255, .5); }
-}
-.is-bigscreen .rk-kpi-card {
-  background: #111b31;
-  border-color: rgba(148, 163, 191, .18);
-  box-shadow: 0 0 22px rgba(37, 99, 235, .07);
-}
-.is-bigscreen .rk-kpi-label { color: rgba(255, 255, 255, .55); }
-.is-bigscreen .rk-kpi-value { color: #fff; }
-.is-bigscreen .db-big-btn {
-  background: rgba(255, 255, 255, .05);
-  border-color: rgba(148, 163, 191, .3);
-  color: rgba(255, 255, 255, .75);
-  &:hover { background: rgba(255, 255, 255, .09); }
-}
-.is-bigscreen .db-detail-toggle {
-  color: #22d3ee;
-  background: rgba(34, 211, 238, .08);
-  border-color: rgba(34, 211, 238, .25);
-}
+/* ===== 大屏模式：产品规定只匹配亮模式，不做深色覆盖，仅保留布局差异 ===== */
 
 @media (prefers-reduced-motion: reduce) {
-  .db-kpi, .db-detail { animation: none; opacity: 1; }
+  .db-kpi, .db-detail, .db-onboard { animation: none; opacity: 1; }
   .db-page { transition: none; }
 }
 

@@ -40,8 +40,22 @@
       </div>
     </div>
 
+    <!-- ===== 操作指引条（可关闭，偏好持久化） ===== -->
+    <div v-if="canEdit && !guideHidden" class="rt-guide-bar">
+      <el-icon class="rt-guide-ic"><Pointer /></el-icon>
+      <div class="rt-guide-text">
+        <b>更新 RTP 状态有两种方式：</b>
+        ① 将队员卡片<b>拖拽</b>到下方对应状态列（红/黄/绿），确认后生效；
+        ② <b>点击卡片</b>查看详情并选择状态，或直接点卡片右上角的「改状态」。
+        <button type="button" class="rt-guide-replay" @click="startTour">再看一次引导</button>
+      </div>
+      <button type="button" class="rt-guide-close" title="不再提示" @click="hideGuide">
+        <el-icon><Close /></el-icon>
+      </button>
+    </div>
+
     <!-- ===== RTP 看板（红/黄/绿/灰 四列） ===== -->
-    <div v-loading="loading" class="rk-kanban-grid">
+    <div v-loading="loading" class="rk-kanban-grid" id="rt-kanban-grid">
       <section
         v-for="col in COLUMNS"
         :key="col.key"
@@ -94,6 +108,25 @@
                 {{ row.athleteName || '未评估' }}
                 <GenderBadge :gender="row.athleteGender" :size="14"/>
               </span>
+              <!-- 点击式状态切换（管理系统更常见的交互）：阻止冒泡，避免触发卡片详情抽屉 -->
+              <el-dropdown
+                v-if="canEdit && statusOptions(row).length"
+                trigger="click"
+                placement="bottom-end"
+                @command="(key) => onCardCommand(row, key)"
+                @click.stop
+              >
+                <span class="rt-card-set" @click.stop title="点击切换状态">
+                  改状态<el-icon class="rt-card-set-caret"><ArrowDown /></el-icon>
+                </span>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item v-for="o in statusOptions(row)" :key="o.key" :command="o.key">
+                      {{ o.label }}
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
             <div class="rk-kanban-card-sub">{{ row.athleteTeam || '—' }} · #{{ row.athleteId }}</div>
             <template v-if="row.status">
@@ -253,6 +286,9 @@
         </div>
       </div>
     </el-drawer>
+
+    <!-- ========== 首次使用引导蒙层（仅自动播放一次，可在指引条中重播） ========== -->
+    <el-tour v-model="tourOpen" :steps="tourSteps" @close="finishTour" @finish="finishTour"/>
   </section>
 </template>
 
@@ -261,7 +297,7 @@ import { listStatus, getLog, updateStatus, clearStatus } from '@/api/apms/rtp'
 import { listAthlete } from '@/api/apms/athlete'
 import { listDept } from '@/api/system/dept'
 import { checkPermi } from '@/utils/permission'
-import { Close, RefreshLeft, CircleCheck, Warning, CircleClose, QuestionFilled, ArrowRight } from '@element-plus/icons-vue'
+import { Close, RefreshLeft, CircleCheck, Warning, CircleClose, QuestionFilled, ArrowRight, ArrowDown, Pointer } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import RkPager from '@/components/RkPager/index.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
@@ -442,10 +478,17 @@ function onDrop(key) {
   onDragEnd()
   if (!canEdit || athleteId == null) return
   const row = fullList.value.find(r => r.athleteId === athleteId)
-  if (!row) return
+  if (row) applyStatusChange(row, key)
+}
+
+/**
+ * 统一的状态变更流程（拖拽投放与卡片「改状态」下拉共用，保证两种操作口径一致）：
+ * 确认框 → 清除走 clearStatus / 其余走 updateStatus → 刷新看板与抽屉时间线
+ */
+function applyStatusChange(row, key) {
   const fromKey = row.status || 'na'
   if (fromKey === key) return
-
+  const athleteId = row.athleteId
   const targetLabel = key === 'na' ? '未评估（清除当前状态）' : statusLabel(key)
   proxy.$modal.confirm(`确认将「${row.athleteName}」的 RTP 状态标记为「${targetLabel}」？`, '更新 RTP 状态')
     .then(() => {
@@ -466,6 +509,20 @@ function onDrop(key) {
       }
     })
     .catch(() => {})
+}
+
+// 卡片「改状态」下拉选项：不列出当前所处状态
+const STATUS_OPTIONS = [
+  { key: 'g', label: '🟢 正常参训' },
+  { key: 'y', label: '🟡 限制参训' },
+  { key: 'r', label: '🔴 不建议训练' }
+]
+function statusOptions(row) {
+  const cur = row.status || 'na'
+  return STATUS_OPTIONS.filter(o => o.key !== cur)
+}
+function onCardCommand(row, key) {
+  applyStatusChange(row, key)
 }
 
 // ========= 详情抽屉 =========
@@ -553,6 +610,49 @@ function handleClear(row) {
   }).catch(() => {})
 }
 
+// ========= 操作指引：指引条（可永久关闭）+ 首次使用引导蒙层（仅一次，可重播） =========
+const GUIDE_BAR_KEY = 'apms-rtp-guide-hidden'
+const TOUR_DONE_KEY = 'apms-rtp-tour-done-v1'
+
+const guideHidden = ref(localStorage.getItem(GUIDE_BAR_KEY) === '1')
+function hideGuide() {
+  guideHidden.value = true
+  localStorage.setItem(GUIDE_BAR_KEY, '1')
+}
+
+const tourOpen = ref(false)
+const tourSteps = computed(() => {
+  const steps = [{
+    target: '.rk-kanban-col.tone-red .rk-kanban-head',
+    title: '方式①：拖拽更新状态',
+    description: '按住任意队员卡片，拖到红/黄/绿任一状态列，松开后在确认框中点确定即完成变更。',
+    placement: 'bottom'
+  }]
+  // 有队员卡片时才加入第二步（空数据组织下卡片不存在）
+  if (fullList.value.length) {
+    steps.push({
+      target: '.rk-kanban-card',
+      title: '方式②：点击操作',
+      description: '点击卡片可查看详情与变更时间线；不习惯拖拽时，点卡片右上角「改状态」即可直接选择状态。',
+      placement: 'right'
+    })
+  }
+  return steps
+})
+function startTour() { tourOpen.value = true }
+function finishTour() {
+  tourOpen.value = false
+  localStorage.setItem(TOUR_DONE_KEY, '1')
+}
+// 首次进入（有编辑权限且未看过）：看板数据渲染完成后自动播放一次
+let tourTried = false
+watch(loading, (v) => {
+  if (!v && canEdit && !tourTried && localStorage.getItem(TOUR_DONE_KEY) !== '1') {
+    tourTried = true
+    nextTick(() => setTimeout(() => { tourOpen.value = true }, 250))
+  }
+})
+
 loadAll()
 </script>
 
@@ -604,6 +704,83 @@ loadAll()
   font-size: 13px;
 }
 .rt-card-time { margin-left: auto; color: $rk-text-3; }
+
+/* ===== 操作指引条 ===== */
+.rt-guide-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(37, 99, 235, .22);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f5f8ff, #eef4ff);
+}
+.rt-guide-ic { flex: none; margin-top: 2px; font-size: 16px; color: $rk-brand-600; }
+.rt-guide-text {
+  flex: 1;
+  font-size: 12.5px;
+  line-height: 20px;
+  color: #334155;
+  b { color: #1e293b; }
+}
+.rt-guide-replay {
+  margin-left: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 12px;
+  color: $rk-brand-600;
+  cursor: pointer;
+  &:hover { text-decoration: underline; }
+}
+.rt-guide-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  &:hover { background: rgba(37, 99, 235, .1); color: #1e293b; }
+}
+
+/* ===== 卡片右上角「改状态」点击入口（默认浅隐、悬停显现，不干扰拖拽主交互） ===== */
+.rt-card-set {
+  flex: none;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  border: 1px solid $rk-line;
+  border-radius: 999px;
+  background: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  color: $rk-text-2;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .15s ease, color .15s ease, border-color .15s ease;
+}
+.rk-kanban-card:hover .rt-card-set { opacity: 1; }
+.rt-card-set:hover, .rt-card-set:focus {
+  color: $rk-brand-600;
+  border-color: rgba(37, 99, 235, .4);
+  background: #f5f8ff;
+  outline: none;
+}
+.rt-card-set-caret { font-size: 11px; }
+/* 给右侧入口让位后，姓名仍可正常省略号截断 */
+.rk-kanban-card-top .rk-kanban-card-name { min-width: 0; flex: 1; }
+/* 触摸设备无 hover：常显，保证平板上入口可见 */
+@media (hover: none) {
+  .rt-card-set { opacity: 1; }
+}
 
 /* ===== 列折叠（正常参训/未评估：人数多，默认只显姓氏首字） ===== */
 .rk-kanban-head.is-collapsible { cursor: pointer; user-select: none; }

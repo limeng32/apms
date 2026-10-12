@@ -83,7 +83,7 @@ function render() {
       tooltip: {
         ...t.tooltip,
         trigger: 'axis',
-        axisPointer: { type: 'shadow', shadowStyle: { color: props.big ? 'rgba(255,255,255,.04)' : 'rgba(37,99,235,.05)' } },
+        axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(37,99,235,.05)' } },
         formatter: (items) => {
           const it = items[0]
           return `部位 · <b>${siteLabel(it.axisValue)}</b><br/>活跃伤病：<b>${it.value}</b> 例`
@@ -108,7 +108,7 @@ function render() {
         label: {
           show: true, position: 'right', distance: 6,
           fontSize: 11, fontWeight: 700,
-          color: props.big ? 'rgba(255,255,255,.8)' : '#475569',
+          color: '#475569',
           formatter: '{c}'
         },
         animationDuration: GROW_ANIM_MS,

@@ -6,6 +6,9 @@
         每日 07:00 自动扫描 · 健康风险（建议红/黄）与流程待办（复检逾期/临近）分开呈现 ·
         系统只给建议，红黄绿由康复师人工确认
       </p>
+      <el-button class="rk-btn ha-rules-btn" @click="openRulesDrawer">
+        <el-icon><Document /></el-icon>预警规则
+      </el-button>
       <el-button type="primary" class="rk-btn rk-btn-primary ha-scan-btn" :loading="scanning"
                  @click="handleScan" v-hasPermi="['apms:rtpRisk:scan']">
         <el-icon><Aim /></el-icon>立即扫描
@@ -201,6 +204,11 @@
               </span>
             </div>
             <div class="rw-factor-detail">{{ f.detail }}</div>
+            <!-- 触发该因子的规则口径（阈值参数来自规则配置，让用户知道"为什么会预警"） -->
+            <div v-if="ruleBasis(f.code)" class="rw-factor-basis">
+              <el-icon><InfoFilled /></el-icon>
+              <span>规则口径：{{ ruleBasis(f.code) }}</span>
+            </div>
           </div>
         </div>
 
@@ -260,15 +268,82 @@
         <el-button type="primary" :loading="saving" @click="submitAccept">确认采纳（单次提交）</el-button>
       </template>
     </el-dialog>
+
+    <!-- ========== 预警规则说明抽屉（只读：展示引擎定级方式与各规则阈值口径） ========== -->
+    <el-drawer v-model="rulesDrawer" size="520px" :with-header="false" class="rw-drawer-wrap" :style="drawerPanelStyle">
+      <div class="rw-drawer" v-loading="rulesLoading">
+        <div class="rw-drawer-head">
+          <div class="rw-drawer-title">
+            <span class="rw-rules-ico"><el-icon><Document /></el-icon></span>
+            <div>
+              <div class="rw-drawer-name">RTP 预警规则说明</div>
+              <div class="rw-drawer-sub">规则引擎每日 07:00 自动扫描 · 以下为当前生效的判定口径</div>
+            </div>
+          </div>
+          <button type="button" class="rt-drawer-close" @click="rulesDrawer = false">
+            <el-icon><Close /></el-icon>
+          </button>
+        </div>
+
+        <!-- 定级方式 -->
+        <div class="rw-rules-intro">
+          <div class="rw-rules-intro-title">系统如何给出建议级别</div>
+          <ul class="rw-rules-steps">
+            <li><b>健康因子</b>（伤病未闭环、PHV 峰期等）按「严重度 × 权重」累加<b>健康分</b>；<b>流程因子</b>（复检逾期/临近）只生成待办，<b>不计健康分</b>，不会单独推高到黄/红。</li>
+            <li>健康分 ≥ 9 → 建议<b class="txt-red">停训（红）</b>；≥ 6 → 建议<b class="txt-amber">限制（黄）</b>；≥ 3 或存在任意健康因子 → 健康关注（INFO）。</li>
+            <li>个别高危因子（如术后未闭环）可<b>直接建议红色</b>，不依赖累计分。</li>
+            <li>系统只给建议，红黄绿状态始终由康复师在处置时人工确认。</li>
+          </ul>
+        </div>
+
+        <!-- 规则卡列表 -->
+        <div class="rw-section-title">
+          规则清单
+          <span class="rw-section-sub">{{ enabledRuleCount }} 条生效 · 共 {{ rules.length }} 条</span>
+        </div>
+        <div class="rw-rule-list">
+          <div v-for="r in rules" :key="r.id" class="rw-rule-card" :class="{ 'is-off': r.enabled !== '1' }">
+            <div class="rw-rule-head">
+              <span class="rw-factor-kind" :class="r.kind === 'PROCESS' ? 'is-process' : 'is-health'">
+                {{ r.kind === 'PROCESS' ? '流程' : '健康' }}
+              </span>
+              <span class="rw-rule-name">{{ r.ruleName }}</span>
+              <span class="rw-rule-status">
+                {{ r.enabled === '1' ? '生效中' : '已停用' }}
+              </span>
+            </div>
+            <div class="rw-rule-code rk-mono">{{ r.ruleCode }}</div>
+            <div class="rw-rule-desc">{{ ruleDescription(r) }}</div>
+            <div class="rw-rule-meta">
+              <template v-if="r.kind === 'HEALTH'">
+                <span>严重度 <b>{{ r.severity }}</b></span>
+                <span>权重 <b>{{ r.weight }}</b></span>
+                <span>可直推红色 <b>{{ r.forceWarning === '1' ? '是' : '否' }}</b></span>
+              </template>
+              <span>紧迫度 <b>{{ r.urgency }}</b></span>
+            </div>
+          </div>
+          <div v-if="!rulesLoading && rules.length === 0" class="rk-empty">
+            <p class="rk-empty-title">未加载到规则配置</p>
+            <p class="rk-empty-desc">请稍后重试，或联系系统管理员检查规则引擎配置</p>
+          </div>
+        </div>
+
+        <div class="rw-rules-foot">
+          <el-icon><InfoFilled /></el-icon>
+          阈值与权重一期由系统统一配置维护，确保各机构判定口径一致；如需调整规则参数，请联系系统管理员通过配置变更处理，后续版本将开放在线编辑。
+        </div>
+      </div>
+    </el-drawer>
   </section>
 </template>
 
 <script setup name="RtpWarningPanel">
-import { listRisk, statRisk, getRisk, ackRisk, dismissRisk, acceptRisk, scanAll } from '@/api/apms/rtpRisk'
+import { listRisk, statRisk, getRisk, ackRisk, dismissRisk, acceptRisk, scanAll, listRules } from '@/api/apms/rtpRisk'
 import { getStatus as getRtpStatus } from '@/api/apms/rtp'
 import { listDept } from '@/api/system/dept'
 import { checkPermi } from '@/utils/permission'
-import { Close, RefreshLeft, Aim, Clock } from '@element-plus/icons-vue'
+import { Close, RefreshLeft, Aim, Clock, Document, InfoFilled } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import RkPager from '@/components/RkPager/index.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
@@ -327,6 +402,67 @@ const acting = ref(false)
 const rows = ref([])
 const total = ref(0)
 const stats = reactive({ total: 0, warning: 0, attention: 0, infoHealth: 0, processOnly: 0 })
+
+// ========= 规则配置（只读展示：页头「预警规则」抽屉 + 因子卡口径行共用） =========
+const rules = ref([])
+const rulesLoading = ref(false)
+const rulesDrawer = ref(false)
+let rulesPromise = null
+function loadRules() {
+  // 全页面只拉一次（4 条配置，接口很轻）；并发调用复用同一 Promise
+  if (rulesPromise) return rulesPromise
+  rulesLoading.value = true
+  rulesPromise = listRules().then(res => {
+    rules.value = res.data || []
+  }).catch(() => {
+    rulesPromise = null // 失败后允许重试
+  }).finally(() => { rulesLoading.value = false })
+  return rulesPromise
+}
+function openRulesDrawer() {
+  rulesDrawer.value = true
+  loadRules()
+}
+const ruleMap = computed(() => {
+  const m = {}
+  rules.value.forEach(r => { m[r.ruleCode] = r })
+  return m
+})
+const enabledRuleCount = computed(() => rules.value.filter(r => r.enabled === '1').length)
+
+/** 解析规则 params JSON（后端存 JSON 字符串，异常时兜底空对象） */
+function ruleParams(r) {
+  try { return JSON.parse(r?.params || '{}') || {} } catch { return {} }
+}
+
+/**
+ * 规则口径的人类可读说明：阈值参数取自规则配置，保证与引擎实际判定一致；
+ * 未识别的新规则回退展示参数键值，不吞信息
+ */
+function ruleDescription(r) {
+  if (!r) return ''
+  const p = ruleParams(r)
+  switch (r.ruleCode) {
+    case 'REVIEW_OVERDUE':
+      return 'RTP 状态中登记的「下次复检」日期已过，但状态尚未更新。生成流程待办提醒康复师跟进处置；不计健康分，不会单独触发红/黄建议。'
+    case 'REVIEW_SOON':
+      return `距下次复检日期不足 ${p.reviewSoonDays ?? 14} 天时提前提醒，便于安排复检计划；仅用于待办排序，不计健康分。`
+    case 'INJURY_OPEN':
+      return `近 ${p.injuryWindowDays ?? 45} 天内有损伤/手术记录且未闭环（${p.closureWindowDays ?? 90} 天内无复查记录）即命中。普通损伤按严重度 2 计分；手术按严重度 3 计分并可直接建议红色。健康分 = 严重度 × 权重。`
+    case 'PHV_PEAK':
+      return `最新 PHV 成熟度偏移在 ±${p.phvPeakBand ?? 0.5} 岁以内、且测量时间在 ${p.phvFreshDays ?? 180} 天内（处于身高突增峰期）时命中，提示关注训练负荷安排，按严重度 1 计分。`
+    default: {
+      const keys = Object.keys(p)
+      return keys.length
+        ? '自定义规则，参数：' + keys.map(k => `${k}=${p[k]}`).join('；')
+        : '系统内置规则，无额外阈值参数。'
+    }
+  }
+}
+/** 详情抽屉因子卡上的短口径（复用规则说明） */
+function ruleBasis(code) {
+  return ruleDescription(ruleMap.value[code])
+}
 
 const query = reactive({ pageNum: 1, pageSize: 10 })
 const filters = reactive({ level: '', statusTab: 'ACTIVE', deptId: null, keyword: '', overdueOnly: false })
@@ -446,6 +582,8 @@ function openDrawer(row) {
   current.value = row
   currentStatus.value = null
   drawer.value = true
+  // 规则口径（懒加载一次，已加载则为同一 Promise 直接 resolve）
+  loadRules()
   // 拉取最新明细（因子留痕）+ 当前 RTP（不降级判断）
   getRisk(row.id).then(res => { current.value = res.data || row })
   if (canAccept(row) && checkRtpEdit) {
@@ -571,7 +709,8 @@ loadStat()
   font-size: 12px;
   color: $rk-text-3;
 }
-.ha-scan-btn { margin-left: auto; flex: none; }
+.ha-rules-btn { margin-left: auto; flex: none; }
+.ha-scan-btn { flex: none; }
 
 .rw-select { width: 160px; }
 .rw-select-team { width: 150px; }
@@ -671,6 +810,96 @@ loadStat()
 .rw-factor-title { font-size: 13px; font-weight: 600; color: $rk-text-1; }
 .rw-factor-meta { margin-left: auto; font-size: 11px; color: $rk-text-3; white-space: nowrap; }
 .rw-factor-detail { font-size: 12.5px; line-height: 19px; color: $rk-text-2; }
+/* 因子卡内的规则口径行 */
+.rw-factor-basis {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px dashed $rk-line;
+  font-size: 11.5px;
+  line-height: 17px;
+  color: $rk-text-3;
+  .el-icon { flex: none; margin-top: 2px; font-size: 13px; color: $rk-brand-600; }
+}
+
+/* ===== 预警规则说明抽屉 ===== */
+.rw-rules-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  background: $rk-brand-50;
+  color: $rk-brand-600;
+  font-size: 20px;
+}
+.rw-rules-intro {
+  border: 1px solid #dbe3ee;
+  border-radius: 14px;
+  padding: 13px 15px;
+  background: #f8fafc;
+}
+.rw-rules-intro-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: $rk-text-1;
+  margin-bottom: 8px;
+}
+.rw-rules-steps {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 20px;
+  color: $rk-text-2;
+  li { margin-bottom: 5px; }
+  li:last-child { margin-bottom: 0; }
+}
+.rw-rule-list { display: flex; flex-direction: column; gap: 10px; }
+.rw-rule-card {
+  border: 1px solid $rk-line;
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #fff;
+  &.is-off { background: $rk-canvas; opacity: .72; }
+}
+.rw-rule-head { display: flex; align-items: center; gap: 8px; }
+.rw-rule-name { font-size: 13.5px; font-weight: 600; color: $rk-text-1; }
+.rw-rule-status {
+  margin-left: auto;
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: $rk-ok;
+  .is-off & { color: $rk-text-3; }
+}
+.rw-rule-code { font-size: 11px; color: #94a3b8; margin: 3px 0 7px; }
+.rw-rule-desc { font-size: 12.5px; line-height: 19px; color: $rk-text-2; }
+.rw-rule-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px dashed $rk-line;
+  font-size: 11.5px;
+  color: $rk-text-3;
+  b { color: $rk-text-1; font-weight: 600; margin-left: 2px; }
+}
+.rw-rules-foot {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f5f8ff;
+  font-size: 11.5px;
+  line-height: 17px;
+  color: #475569;
+  .el-icon { flex: none; margin-top: 2px; color: $rk-brand-600; }
+}
 
 .rw-handled {
   margin-top: 16px; padding: 10px 12px; border-radius: 10px;
