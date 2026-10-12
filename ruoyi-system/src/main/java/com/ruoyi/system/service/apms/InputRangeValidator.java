@@ -93,6 +93,39 @@ public class InputRangeValidator {
         return BODY_LABELS.getOrDefault(field, field);
     }
 
+    // ================= 只读分类（导入预览标色复用，与前端 measureRange.js 同口径） =================
+    // 级别：empty / ok / hard-low / hard-high / warn-low / warn-high
+
+    /** 体态 5 字段分级（空字段为 empty；未配置区间时非空即 ok） */
+    public java.util.Map<String, String> classifyBody(ApmsBodyMeasure m) {
+        java.util.Map<String, String> out = new java.util.LinkedHashMap<>();
+        if (m == null) return out;
+        Map<String, Range> ranges = loadRanges(DICT_BODY);
+        out.put("height", classify(ranges.get("height"), m.getHeight()));
+        out.put("weight", classify(ranges.get("weight"), m.getWeight()));
+        out.put("sitHeight", classify(ranges.get("sitHeight"), m.getSitHeight()));
+        out.put("bodyFatRate", classify(ranges.get("bodyFatRate"), m.getBodyFatRate()));
+        out.put("waist", classify(ranges.get("waist"), m.getWaist()));
+        return out;
+    }
+
+    /** 成绩指标按编码分级；未配置区间的指标返回 ok（仅数字格式由调用方保证）；value 为 null 返回 empty */
+    public String classifyIndicatorByCode(String code, BigDecimal value) {
+        if (value == null) return "empty";
+        Range range = code == null ? null : loadRanges(DICT_INDICATOR).get(code);
+        return classify(range, value);
+    }
+
+    private String classify(Range range, BigDecimal value) {
+        if (value == null) return "empty";
+        if (range == null) return "ok";
+        if (range.hardMin != null && value.compareTo(range.hardMin) < 0) return "hard-low";
+        if (range.hardMax != null && value.compareTo(range.hardMax) > 0) return "hard-high";
+        if (range.warnMin != null && value.compareTo(range.warnMin) < 0) return "warn-low";
+        if (range.warnMax != null && value.compareTo(range.warnMax) > 0) return "warn-high";
+        return "ok";
+    }
+
     private void check(Range range, BigDecimal value, String label) {
         if (range == null || value == null) return;
         boolean tooSmall = range.hardMin != null && value.compareTo(range.hardMin) < 0;

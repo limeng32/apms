@@ -25,6 +25,18 @@ public interface IApmsBodyMeasureService {
     /** 新增或更新（upsert 模式：唯一键为 athlete_id + measure_date + source_task_id + source_session_key） */
     int upsert(ApmsBodyMeasure measure);
 
+    /**
+     * 批量导入新增：dataSource='import'、无任务/周期来源。
+     * 写前重查同队员同日期冲突（任何来源已存在即抛 ServiceException），成功后触发 PHV/KR 重算。
+     */
+    int importInsert(ApmsBodyMeasure measure);
+
+    /**
+     * 批量导入覆盖：仅更新五个数值列，且仅限 data_source='import' 的记录。
+     * 影响行数 0（记录不存在/来源已被改为其他来源）抛 ServiceException；成功后触发 PHV/KR 重算。
+     */
+    int importUpdateImported(Long id, ApmsBodyMeasure measure);
+
     /** 按ID删除 */
     int deleteById(Long id);
 }

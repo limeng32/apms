@@ -18,6 +18,8 @@ import com.ruoyi.system.domain.apms.ApmsTestResultValue;
 import com.ruoyi.system.service.apms.IApmsTestResultService;
 import com.ruoyi.system.service.apms.ITestResultImportProvider;
 import com.ruoyi.system.service.apms.ITestResultTemplateService;
+import com.ruoyi.system.service.apms.batchimport.ImportTemplates;
+import com.ruoyi.system.service.apms.batchimport.ResultImportFacade;
 
 /**
  * 测试结果 Controller
@@ -34,6 +36,33 @@ public class ApmsTestResultController extends BaseController {
 
     @Autowired
     private ITestResultTemplateService templateService;
+
+    @Autowired
+    private ResultImportFacade resultImportFacade;
+
+    @Autowired
+    private ImportTemplates importTemplates;
+
+    // ==================== 两阶段批量导入（Excel/CSV · 预览 → 确认） ====================
+
+    /** 第一步：上传解析，返回预览数据（不入库） */
+    @PreAuthorize("@ss.hasPermi('apms:testResult:add')")
+    @PostMapping("/import/preview")
+    public AjaxResult importPreview(@RequestParam("file") MultipartFile file,
+                                    @RequestParam(value = "taskId", required = false) Long taskId) {
+        if (file == null || file.isEmpty()) return AjaxResult.error("上传文件为空");
+        if (file.getSize() > 10L * 1024 * 1024) return AjaxResult.error("文件不能超过 10MB");
+        return AjaxResult.success(resultImportFacade.preview(file, taskId, getUserId()));
+    }
+
+    /** 第二步：按一次性 token 提交入库 */
+    @PreAuthorize("@ss.hasPermi('apms:testResult:add')")
+    @PostMapping("/import/commit")
+    public AjaxResult importCommit(@RequestBody java.util.Map<String, String> body) {
+        String token = body == null ? null : body.get("token");
+        if (token == null || token.isEmpty()) return AjaxResult.error("缺少 token");
+        return AjaxResult.success(resultImportFacade.commit(token, getUserId()));
+    }
 
     /** 列表查询 */
     @PreAuthorize("@ss.hasPermi('apms:testResult:list')")
@@ -152,15 +181,32 @@ public class ApmsTestResultController extends BaseController {
     }
 
     /**
-     * 下载 CSV 导入模板
+     * 下载导入模板。
      *
-     * <p>带 taskId：任务模板（预填 task_id、参测队员，列只含该任务测试项）。
-     * 不带：通用模板（全部启用指标列，预填在训队员）。
+     * <p>不带 format 参数：历史 CSV 模板（含指标/模型列，兼容旧 CsvImportDialog）。
+     * <br>带 format=csv|xlsx：两阶段导入新模板（<b>仅 INDICATOR 列</b>，预填在训队员）。
      */
     @PreAuthorize("@ss.hasPermi('apms:testResult:list')")
     @GetMapping("/import/template")
     public void downloadTemplate(@RequestParam(value = "taskId", required = false) Long taskId,
+                                 @RequestParam(value = "format", required = false) String format,
                                  HttpServletResponse response) throws IOException {
+        if (format != null && !format.isEmpty()) {
+            byte[] data = importTemplates.buildResult(format.toLowerCase());
+            boolean xlsx = "xlsx".equalsIgnoreCase(format) || "xls".equalsIgnoreCase(format);
+            String ext = xlsx ? "xlsx" : "csv";
+            String fileName = "test-result-template." + ext;
+            response.setContentType(xlsx
+                    ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    : "text/csv; charset=UTF-8");
+            response.setCharacterEncoding("UTF-8");
+            response.setHeader("Content-Disposition",
+                    "attachment; filename=\"" + fileName + "\"; filename*=UTF-8''"
+                            + URLEncoder.encode(fileName, StandardCharsets.UTF_8.name()).replace("+", "%20"));
+            response.getOutputStream().write(data);
+            return;
+        }
+        // 历史 CSV 模板（保持原行为）
         String csv = templateService.buildTemplateCsv(taskId);
         String fileName = (taskId == null ? "test-result-template.csv" : "test-result-task-" + taskId + "-template.csv");
         response.setContentType("text/csv; charset=UTF-8");
@@ -169,7 +215,6 @@ public class ApmsTestResultController extends BaseController {
                 "attachment; filename=\"" + fileName + "\"; filename*=UTF-8''"
                         + URLEncoder.encode(fileName, StandardCharsets.UTF_8.name()).replace("+", "%20"));
         // UTF-8 BOM（EF BB BF），保证 Excel 双击打开中文不乱码。
-        // 注意 OutputStream.write(int) 只写低字节，不能直接 write(0xFEFF)（会变成单字节 0xFF）
         response.getOutputStream().write(new byte[]{(byte) 0xEF, (byte) 0xBB, (byte) 0xBF});
         response.getOutputStream().write(csv.getBytes(StandardCharsets.UTF_8));
     }

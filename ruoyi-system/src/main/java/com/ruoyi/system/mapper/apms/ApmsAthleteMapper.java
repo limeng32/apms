@@ -51,4 +51,11 @@ public interface ApmsAthleteMapper {
     int rejoinAthleteTeam(@Param("athleteId") Long athleteId,
                           @Param("teamId") Long teamId,
                           @Param("updateBy") String updateBy);
+
+    /**
+     * 批量导入专用：按运动员编号（精确）或姓名（精确等值）查询，
+     * 配合 service 层 @DataScope 拼接数据权限（params.dataScope，别名 a）。
+     * 禁止用于模糊搜索。
+     */
+    List<ApmsAthlete> selectImportCandidates(ApmsAthlete query);
 }

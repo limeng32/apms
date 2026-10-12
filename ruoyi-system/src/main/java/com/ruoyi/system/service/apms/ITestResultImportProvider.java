@@ -54,7 +54,9 @@ public interface ITestResultImportProvider {
     /**
      * 导入结果 DTO
      */
-    class ImportResult {
+    class ImportResult implements java.io.Serializable {
+
+        private static final long serialVersionUID = 1L;
         /** 表头列名 → indicator_id / model_id 的解析映射 */
         public Map<String, Long> headerToIndicatorId;
         public Map<String, Long> headerToModelId;
@@ -84,6 +86,10 @@ public interface ITestResultImportProvider {
             public String measureDate; // YYYY-MM-DD
             public String sessionKey;
             public Map<String, String> values = new java.util.LinkedHashMap<>(); // header → 原始值
+
+            /** 文件中的原始值（纯解析阶段填充，不做人员匹配）；新批量导入链路由精确 resolver 消费 */
+            public String athleteIdRaw;
+            public String athleteNameRaw;
         }
     }
 }

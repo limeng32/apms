@@ -47,6 +47,18 @@
         <include refid="selectVo"/> WHERE t.id = #{id}
     </select>
 
+    <!-- 批量导入：按 id + DataScope 校验任务归属 -->
+    <select id="selectScopedById" parameterType="com.ruoyi.system.domain.apms.ApmsTestTask" resultMap="ApmsTestTaskResult">
+        <include refid="selectVo"/>
+        <where>
+            t.id = #{id}
+            <if test="params != null and params.dataScope != null and params.dataScope != ''">
+                AND ${params.dataScope}
+            </if>
+        </where>
+        LIMIT 1
+    </select>
+
     <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsTestTask" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO apms_test_task (task_name, target_dept_id, tester_id, start_date, end_date, status, create_by, create_time)
         VALUES (#{taskName}, #{targetDeptId}, #{testerId}, #{startDate}, #{endDate}, #{status}, #{createBy}, NOW())

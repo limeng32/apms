@@ -92,13 +92,54 @@ public class ApmsBodyMeasureServiceImpl implements IApmsBodyMeasureService {
             }
         }
 
-        // 🟢 PHV 自动触发：upsert 成功后尝试 Mirwald 计算
+        // 🟢 PHV 自动触发 + Khamis-Roche 成年身高预测（upsert / 批量导入三入口共用）
         if (rows > 0 && measure.getAthleteId() != null) {
-            try { phvService.tryAutoCalculate(measure.getAthleteId()); } catch (Exception ignored) {}
-
-            // 🟢 Khamis-Roche 成年身高预测自动触发
-            try { tryKhamisRoche(measure.getAthleteId()); } catch (Exception ignored) {}
+            afterMeasureSaved(measure.getAthleteId());
         }
+        return rows;
+    }
+
+    /**
+     * 体态数据写库后的统一后处理链：Mirwald PHV 自动计算 + Khamis-Roche 成年身高预测。
+     * 两个计算均容错（失败不影响写入）。upsert / importInsert / importUpdateImported 共用。
+     */
+    private void afterMeasureSaved(Long athleteId) {
+        if (athleteId == null) return;
+        try { phvService.tryAutoCalculate(athleteId); } catch (Exception ignored) {}
+        try { tryKhamisRoche(athleteId); } catch (Exception ignored) {}
+    }
+
+    @Override
+    public int importInsert(ApmsBodyMeasure measure) {
+        // 提交前重查冲突：同队员同日期已有任何来源记录则拒绝（防 preview 后新增/来源混合）
+        ApmsBodyMeasure probe = new ApmsBodyMeasure();
+        probe.setAthleteId(measure.getAthleteId());
+        probe.setMeasureDate(measure.getMeasureDate());
+        List<ApmsBodyMeasure> conflicts = measureMapper.selectConflictOnDate(probe);
+        if (conflicts != null && !conflicts.isEmpty()) {
+            throw new ServiceException("该队员当天已存在测量记录（来源："
+                    + conflicts.get(0).getDataSource() + "），未导入");
+        }
+        measure.setId(null);
+        measure.setDataSource("import");
+        measure.setSourceTaskId(null);
+        measure.setSourceSessionKey(null);
+        measure.setCycleId(null);
+        measure.setCreateBy(SecurityUtils.getUsername());
+        int rows = measureMapper.insert(measure);
+        if (rows > 0) afterMeasureSaved(measure.getAthleteId());
+        return rows;
+    }
+
+    @Override
+    public int importUpdateImported(Long id, ApmsBodyMeasure measure) {
+        measure.setId(id);
+        // 固定五列 update，WHERE 限定 data_source='import'；来源已变则影响行数为 0
+        int rows = measureMapper.updateImportedValues(measure);
+        if (rows == 0) {
+            throw new ServiceException("该记录已不是批量导入数据（可能已被手工/任务数据覆盖），未更新");
+        }
+        afterMeasureSaved(measure.getAthleteId());
         return rows;
     }
 

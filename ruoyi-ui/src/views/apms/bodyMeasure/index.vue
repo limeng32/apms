@@ -9,6 +9,10 @@
           <p class="rk-subtitle">{{ summary.total }} 条测量记录 · {{ summary.athletes }} 名队员 · 周期测量与趋势追踪</p>
         </div>
         <div class="rk-header-actions">
+          <el-button class="rk-btn" @click="importDialogRef?.open()"
+                     v-hasPermi="['apms:body:edit']">
+            <el-icon><Upload /></el-icon>批量导入
+          </el-button>
           <el-button class="rk-btn" @click="activeTab = 'cycle'">
             <el-icon><Calendar /></el-icon>测量周期
           </el-button>
@@ -228,6 +232,18 @@
           <el-button type="primary" :loading="saving" @click="submitEdit">保存</el-button>
         </template>
       </el-dialog>
+
+      <!-- Excel/CSV 批量导入（两阶段预览） -->
+      <import-preview-dialog
+        ref="importDialogRef"
+        title="体态测量批量导入"
+        preview-url="/apms/body-measure/import/preview"
+        commit-url="/apms/body-measure/import/commit"
+        template-url="apms/body-measure/import/template"
+        allow-overwrite
+        :tips="['列：运动员编号、姓名、测量日期、身高、体重、坐高、体脂率、腰围', '同队员同日期已有手工/任务/周期记录时不可导入；已有批量导入记录可勾选覆盖', '超合理区间（如身高 99cm）会黄色提示需确认，超物理范围（如 24cm）直接跳过']"
+        @success="handleImportSuccess"
+      />
     </div>
   </div>
 </template>
@@ -240,12 +256,13 @@ import { list as listMeasures, upsert, delMeasure } from '@/api/apms/bodyMeasure
 import { listAthlete } from '@/api/apms/athlete'
 import { listDept } from '@/api/system/dept'
 import { listCycle } from '@/api/apms/measureCycle'
-import { Plus, RefreshLeft, Calendar } from '@element-plus/icons-vue'
+import { Plus, RefreshLeft, Calendar, Upload } from '@element-plus/icons-vue'
 import AthleteMeasureDrawer from './components/AthleteMeasureDrawer.vue'
 import MeasureCyclePanel from './components/MeasureCyclePanel.vue'
 import CycleDetailDialog from './components/CycleDetailDialog.vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import RkPager from '@/components/RkPager/index.vue'
+import ImportPreviewDialog from '@/components/ImportPreviewDialog/index.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
 import {
   loadRanges, getBodyRange, classify, isHard, isWarn, isAbnormal,
@@ -279,6 +296,8 @@ function rangeTitle(key) {
 const activeTab = ref('ledger')
 const historyDrawerRef = ref(null)
 const cycleDetailRef = ref(null)
+const importDialogRef = ref(null)
+function handleImportSuccess() { loadList(); loadCycleNames(); historyDrawerRef.value?.reload() }
 const cyclePanelRef = ref(null)
 const cycleNameMap = ref({})
 

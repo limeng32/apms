@@ -75,6 +75,25 @@
         LIMIT 1
     </select>
 
+    <!-- 批量导入：同队员同日期冲突检查（不限来源） -->
+    <select id="selectConflictOnDate" parameterType="com.ruoyi.system.domain.apms.ApmsBodyMeasure" resultMap="ApmsBodyMeasureResult">
+        <include refid="selectApmsBodyMeasureVo"/>
+        WHERE m.athlete_id = #{athleteId}
+          AND m.measure_date = #{measureDate}
+        ORDER BY m.id DESC
+    </select>
+
+    <!-- 批量导入：仅当记录仍为 import 来源时覆盖五个数值列 -->
+    <update id="updateImportedValues" parameterType="com.ruoyi.system.domain.apms.ApmsBodyMeasure">
+        UPDATE apms_body_measure
+        SET height = #{height},
+            weight = #{weight},
+            sit_height = #{sitHeight},
+            body_fat_rate = #{bodyFatRate},
+            waist = #{waist}
+        WHERE id = #{id} AND data_source = 'import'
+    </update>
+
     <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsBodyMeasure" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO apms_body_measure (
             athlete_id, measure_date, height, weight, sit_height,

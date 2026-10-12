@@ -11,6 +11,10 @@
           </p>
         </div>
         <div class="rk-header-actions">
+          <el-button class="rk-btn" :disabled="!hasImportPerm" @click="importDialogRef?.open()"
+                     v-hasPermi="['apms:testResult:add']">
+            <el-icon><Upload /></el-icon>批量导入
+          </el-button>
           <el-button class="rk-btn" :disabled="!hasImportPerm" @click="entryDialogRef?.openFree()">
             <el-icon><EditPen /></el-icon>手动录入
           </el-button>
@@ -285,6 +289,16 @@
       <result-entry-dialog ref="entryDialogRef" @success="handleImportSuccess"/>
       <!-- 设备接入 -->
       <device-access-dialog ref="deviceDialogRef" @pushed="handleImportSuccess"/>
+      <!-- Excel/CSV 批量导入（两阶段预览） -->
+      <import-preview-dialog
+        ref="importDialogRef"
+        title="测试成绩批量导入"
+        preview-url="/apms/test-result/import/preview"
+        commit-url="/apms/test-result/import/commit"
+        template-url="apms/test-result/import/template"
+        :tips="['一期仅支持指标（INDICATOR）成绩，模型类测试请在任务中手工录入', '每格一个数值；非数字或超出允许范围的单元格会在预览中标红，错误行将跳过']"
+        @success="handleImportSuccess"
+      />
     </div>
   </div>
 </template>
@@ -298,9 +312,10 @@ import { listTestTask } from '@/api/apms/testTask'
 import { listAthlete } from '@/api/apms/athlete'
 import ResultEntryDialog from '@/components/ResultEntryDialog/index.vue'
 import DeviceAccessDialog from '@/components/DeviceAccessDialog/index.vue'
+import ImportPreviewDialog from '@/components/ImportPreviewDialog/index.vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import { checkPermi } from '@/utils/permission'
-import { EditPen, Connection, RefreshLeft, ArrowLeft, ArrowRight, Close } from '@element-plus/icons-vue'
+import { EditPen, Connection, RefreshLeft, ArrowLeft, ArrowRight, Close, Upload } from '@element-plus/icons-vue'
 import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
 
 const { proxy } = getCurrentInstance()
@@ -312,6 +327,7 @@ const PAGE_SIZE = 10
 // ========= 手动录入 / 设备推送 =========
 const entryDialogRef = ref(null)
 const deviceDialogRef = ref(null)
+const importDialogRef = ref(null)
 // 修复原页缺陷：proxy.$checkPermi 全局未注册（main.js 无此挂载）且 checkPermi 要求传数组（原传字符串），
 // 导致 hasImportPerm 恒为 undefined、导入按钮恒禁用
 const hasImportPerm = computed(() => checkPermi(['apms:testResult:add']))

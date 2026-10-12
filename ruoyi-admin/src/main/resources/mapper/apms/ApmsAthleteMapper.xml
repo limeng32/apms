@@ -115,6 +115,20 @@
         ORDER BY a.athlete_id ASC
     </select>
 
+    <!-- 批量导入专用：编号精确 / 姓名精确等值 + DataScope（params.dataScope 由 @DataScope 切面注入） -->
+    <select id="selectImportCandidates" parameterType="com.ruoyi.system.domain.apms.ApmsAthlete" resultMap="ApmsAthleteResult">
+        <include refid="selectApmsAthleteVo"/>
+        <where>
+            <choose>
+                <when test="athleteId != null">a.athlete_id = #{athleteId}</when>
+                <otherwise>a.name = #{name}</otherwise>
+            </choose>
+            <if test="params != null and params.dataScope != null and params.dataScope != ''">
+                AND ${params.dataScope}
+            </if>
+        </where>
+    </select>
+
     <!-- RTP 人数汇总（与列表同一套过滤；未评估运动员 status 为 NULL） -->
     <select id="selectRtpSummary" parameterType="com.ruoyi.system.domain.apms.ApmsAthlete" resultType="java.util.Map">
         SELECT r.status AS status, COUNT(1) AS cnt
