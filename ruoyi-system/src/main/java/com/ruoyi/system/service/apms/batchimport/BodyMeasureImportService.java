@@ -26,7 +26,8 @@ import com.ruoyi.system.service.apms.batchimport.BodyImportDraft.DraftRow;
  * 体态测量两阶段批量导入。
  *
  * <p>列：athlete_id, athlete_name, measure_date, height, weight, sit_height, body_fat_rate, waist
- * （表头按列名定位，大小写/下划线驼峰兼容；# 说明行跳过）。
+ * （表头按列名定位；列名同时兼容 snake_case 与 camelCase，见 {@link #canonical(String)}；
+ * # 说明行跳过）。
  *
  * @author apms
  */
@@ -35,14 +36,17 @@ public class BodyMeasureImportService {
 
     public static final String DOMAIN = "body";
 
-    /** 字段 key → 中文列名（表头/提示） */
+    /** 字段 key → 中文列名（表头/提示）。key 统一用实体属性的 camelCase 形式 */
     private static final LinkedHashMap<String, String> COLUMNS = new LinkedHashMap<>();
+    /** 规范列名 → camelCase 字段 key：snake_case 与 camelCase 表头都能落到同一字段 */
+    private static final Map<String, String> CANON_TO_KEY = new LinkedHashMap<>();
     static {
         COLUMNS.put("height", "身高");
         COLUMNS.put("weight", "体重");
         COLUMNS.put("sitHeight", "坐高");
         COLUMNS.put("bodyFatRate", "体脂率");
         COLUMNS.put("waist", "腰围");
+        COLUMNS.keySet().forEach(k -> CANON_TO_KEY.put(canonical(k), k));
     }
 
     @Autowired private TabularFileReader reader;
@@ -84,11 +88,16 @@ public class BodyMeasureImportService {
         int idIdx = -1, nameIdx = -1, dateIdx = -1;
         Map<String, Integer> colIdx = new LinkedHashMap<>();
         for (int i = 0; i < header.length; i++) {
-            String h = norm(header[i]);
+            // 规范键去分隔符并小写：athlete_id 与 athleteId 都归一为 athleteid，
+            // sit_height 与 sitHeight 都归一为 sitheight，两种表头写法等价
+            String h = canonical(header[i]);
             if ("athleteid".equals(h)) idIdx = i;
             else if ("athletename".equals(h)) nameIdx = i;
             else if ("measuredate".equals(h)) dateIdx = i;
-            else if (COLUMNS.containsKey(h)) colIdx.put(h, i);
+            else {
+                String fieldKey = CANON_TO_KEY.get(h);
+                if (fieldKey != null) colIdx.put(fieldKey, i);
+            }
         }
         if (idIdx < 0 || dateIdx < 0) {
             vo.getErrors().add("缺少必须列：athlete_id、measure_date");
@@ -328,17 +337,22 @@ public class BodyMeasureImportService {
         };
     }
 
-    /** 表头归一：去空格/下划线/连字符并小写（sit_height → sitHeight 驼峰） */
-    private String norm(String h) {
+    /**
+     * 表头规范键：trim 后去掉下划线/连字符/空格并整体小写（不做驼峰转换）。
+     * 这样 snake_case 与 camelCase 两种表头写法归一：
+     * athlete_id / athleteId   → athleteid
+     * measure_date / measureDate → measuredate
+     * sit_height / sitHeight   → sitheight
+     * body_fat_rate / bodyFatRate → bodyfatrate
+     */
+    private static String canonical(String h) {
         if (h == null) return "";
         String s = h.trim();
-        StringBuilder out = new StringBuilder();
-        boolean upperNext = false;
+        StringBuilder out = new StringBuilder(s.length());
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
-            if (c == '_' || c == '-' || c == ' ') { upperNext = true; continue; }
-            out.append(upperNext ? Character.toUpperCase(c) : Character.toLowerCase(c));
-            upperNext = false;
+            if (c == '_' || c == '-' || c == ' ') continue;
+            out.append(Character.toLowerCase(c));
         }
         return out.toString();
     }
