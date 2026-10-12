@@ -142,22 +142,55 @@
           </el-form-item>
         </el-form>
 
+        <!-- 任务就绪度预检：把"无 is_selected 结果"的死胡同前置为可跳转引导 -->
+        <div v-if="calcForm.taskId && taskCheck.loaded" class="calc-preflight">
+          <template v-if="taskCheck.indicatorCount === 0">
+            <el-alert type="error" show-icon :closable="false">
+              <template #title>该任务尚未配置测试指标，无法计算组合分</template>
+              <div class="preflight-actions">
+                <el-button type="primary" size="small" @click="goConfigTask">去配置测试项/队员</el-button>
+              </div>
+            </el-alert>
+          </template>
+          <template v-else-if="taskCheck.selectedCount === 0">
+            <el-alert type="warning" show-icon :closable="false">
+              <template #title>
+                已配置 {{ taskCheck.indicatorCount }} 项指标 · 登记 {{ taskCheck.memberCount }} 名队员，
+                但还没有「已选中」的测试成绩
+              </template>
+              <div class="preflight-actions">
+                <el-button type="primary" size="small" @click="goEntryResult">去录入成绩</el-button>
+              </div>
+            </el-alert>
+          </template>
+          <template v-else>
+            <el-alert type="success" show-icon :closable="false">
+              <template #title>
+                就绪：{{ taskCheck.indicatorCount }} 项指标 · {{ taskCheck.memberCount }} 名登记队员 ·
+                {{ taskCheck.selectedCount }} 条已选最佳成绩，可执行计算
+              </template>
+            </el-alert>
+          </template>
+        </div>
+
         <div v-if="previewItems.length" class="preview-box">
-          <div class="preview-title">📋 参与队员预览（{{ previewItems.length }} 人）</div>
+          <div class="preview-title">📋 参测队员预览（{{ previewItems.length }} 人）</div>
           <el-table :data="previewItems" border size="small" max-height="240">
             <el-table-column label="#" type="index" width="40"/>
             <el-table-column label="队员" min-width="130">
               <template #default="scope">
                 {{ scope.row.athleteName }}
-                <GenderBadge :gender="scope.row.gender || scope.row.athleteGender" :size="14"/>
+                <GenderBadge :gender="scope.row.athleteGender" :size="14"/>
               </template>
             </el-table-column>
             <el-table-column label="队伍" min-width="120">
-              <template #default="scope">{{ scope.row.primaryTeamName || '—' }}</template>
+              <template #default="scope">{{ scope.row.athleteTeam || '—' }}</template>
             </el-table-column>
-            <el-table-column label="性别" width="60" align="center">
+            <el-table-column label="完成状态" width="92" align="center">
               <template #default="scope">
-                <GenderBadge :gender="scope.row.gender || scope.row.athleteGender" :size="15"/>
+                <span class="rk-status-badge" :class="memberStatusTone(scope.row.status)">
+                  {{ memberStatusLabel(scope.row.status) }}
+                </span>
               </template>
             </el-table-column>
           </el-table>
@@ -180,7 +213,9 @@
 <script setup name="ApmsComboScore">
 import { list, calculate as calcBatch, delScore } from '@/api/apms/comboScore'
 import { listComboModel } from '@/api/apms/comboModel'
-import { listTestTask, listTaskMember } from '@/api/apms/testTask'
+import { useRouter } from 'vue-router'
+import { listTestTask, getTestTask } from '@/api/apms/testTask'
+import { listTestResult } from '@/api/apms/testResult'
 import { RefreshLeft, Cpu } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import RkPager from '@/components/RkPager/index.vue'
@@ -275,24 +310,76 @@ listTestTask({ pageSize: 200 }).then(res => { taskOpts.value = res.data || res.r
 const showCalc = ref(false)
 const saving = ref(false)
 const calcForm = reactive({ comboModelId: null, taskId: null })
+// 选任务后的就绪度预检：指标项数 / 登记队员数 / 已选最佳成绩数
+const taskCheck = reactive({ loaded: false, indicatorCount: 0, memberCount: 0, selectedCount: 0 })
+const router = useRouter()
 
+const MEMBER_STATUS_LABEL = { completed: '已完成', partial: '部分完成', pending: '未测' }
+function memberStatusLabel(s) { return MEMBER_STATUS_LABEL[s] || s || '—' }
+function memberStatusTone(s) {
+  if (s === 'completed') return 'tone-green'
+  if (s === 'partial') return 'tone-amber'
+  return 'tone-gray'
+}
+
+function resetTaskCheck() {
+  Object.assign(taskCheck, { loaded: false, indicatorCount: 0, memberCount: 0, selectedCount: 0 })
+}
 function showCalcDialog() {
   calcForm.comboModelId = null; calcForm.taskId = null
-  currentModel.value = null; previewItems.value = []
+  currentModel.value = null; previewItems.value = []; resetTaskCheck()
   showCalc.value = true
 }
 function onModelChange(id) {
   currentModel.value = modelOpts.value.find(m => m.id === id) || null
 }
 function onTaskChange(taskId) {
-  if (!taskId) { previewItems.value = []; return }
-  listTaskMember(taskId).then(res => {
-    previewItems.value = (res.data || res.rows || []).filter(m => m.isSelected === '1' || m.isSelected === 1 || m.isSelected === true)
-  }).catch(() => { previewItems.value = [] })
+  previewItems.value = []
+  resetTaskCheck()
+  if (!taskId) return
+  // 任务详情（测试项 + 登记队员）与该任务已选最佳成绩数并行预检
+  Promise.all([
+    getTestTask(taskId),
+    listTestResult({ taskId, isSelected: '1', pageNum: 1, pageSize: 1 })
+  ]).then(([detailRes, resultRes]) => {
+    const d = detailRes.data || {}
+    const items = d.items || []
+    const members = d.members || []
+    taskCheck.indicatorCount = items.filter(i => i.itemType === 'INDICATOR').length
+    taskCheck.memberCount = members.length
+    taskCheck.selectedCount = resultRes.total ?? (resultRes.rows || []).length
+    taskCheck.loaded = true
+    // 参与队员预览按「登记队员 + 实际完成状态」展示
+    // （apms_task_member 没有 isSelected 字段，旧代码按 isSelected 过滤导致恒为空）
+    previewItems.value = members
+  }).catch(() => { taskCheck.loaded = true })
+}
+function goConfigTask() {
+  showCalc.value = false
+  router.push('/testings/dispatch?tab=task')
+}
+function goEntryResult() {
+  showCalc.value = false
+  router.push('/testings/dispatch?tab=result')
 }
 function submitCalc() {
   if (!calcForm.comboModelId || !calcForm.taskId) {
     proxy.$modal.msgWarning('请先选择组合模型和测试任务'); return
+  }
+  // 前置拦截：把后端「无 is_selected 结果」的死胡同，转成可跳转的引导
+  if (taskCheck.loaded && taskCheck.indicatorCount === 0) {
+    proxy.$modal.confirm(
+      '该任务尚未配置任何测试指标，批量组合分没有数据可计算。是否现在去配置测试项和参测队员？',
+      '任务尚未配置', { confirmButtonText: '去配置任务', cancelButtonText: '取消', type: 'warning' }
+    ).then(goConfigTask).catch(() => {})
+    return
+  }
+  if (taskCheck.loaded && taskCheck.selectedCount === 0) {
+    proxy.$modal.confirm(
+      '该任务下还没有「已选中」的测试成绩（请先在测试结果中按任务录入）。是否现在去录入成绩？',
+      '缺少测试成绩', { confirmButtonText: '去录入成绩', cancelButtonText: '取消', type: 'warning' }
+    ).then(goEntryResult).catch(() => {})
+    return
   }
   saving.value = true
   calcBatch(calcForm.comboModelId, calcForm.taskId).then(res => {
@@ -371,6 +458,8 @@ loadList()
 
 .sub-hint { font-size: 12px; color: #909399; margin-top: 4px; }
 .calc-tip { margin-bottom: 14px; }
+.calc-preflight { margin-bottom: 14px; }
+.preflight-actions { margin-top: 8px; }
 .preview-box { margin-top: 16px; border: 1px solid #e6ebf0; border-radius: 8px; padding: 12px; background: #fafbfc; }
 .preview-title { font-size: 13px; font-weight: 600; color: #303133; margin-bottom: 8px; }
 

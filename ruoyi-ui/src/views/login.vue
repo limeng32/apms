@@ -76,7 +76,7 @@ function onSliderVerified(uuid) {
 }
 
 const loginForm = ref({
-  username: "admin",
+  username: "",
   password: "",
   rememberMe: false
 })

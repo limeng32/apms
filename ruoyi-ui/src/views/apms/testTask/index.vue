@@ -85,6 +85,7 @@
                     <td>
                       <div class="tt-task-name">{{ row.taskName }}</div>
                       <div class="tt-task-id rk-mono">#{{ row.id }} · 主测 {{ row.testerName || '—' }}</div>
+                      <div v-if="(row.memberTotal || 0) === 0" class="tt-unconfigured">⚠ 尚未配置参测队员，无法录入/评分</div>
                     </td>
                     <td class="tt-dept">{{ row.targetDeptName || '—' }}</td>
                     <td class="text-center">
@@ -98,6 +99,7 @@
                         <div class="rk-progress"><div class="rk-progress-bar" :class="progressTone(row.progressPercent)" :style="{ width: (row.progressPercent || 0) + '%' }"></div></div>
                         <span class="tt-progress-num rk-mono">{{ row.progressPercent || 0 }}%</span>
                       </div>
+                      <button type="button" class="rk-link tt-edit-link" @click.stop="handleRowClick(row)">配置测试项/队员</button>
                       <button type="button" class="rk-link tt-edit-link" @click.stop="handleEdit(row)" v-hasPermi="['apms:testTask:edit']">编辑</button>
                     </td>
                   </tr>
@@ -685,10 +687,29 @@ function submitTask() {
     if (parentDeptIds.value.has(taskForm.targetDeptId)) {
       return proxy.$modal.msgWarning('目标队伍只能选择末级队伍（含下级的部门为分组，不可选）')
     }
-    const req = taskForm.id ? updateTestTask(taskForm) : addTestTask(taskForm)
-    req.then(() => {
-      proxy.$modal.msgSuccess('保存成功'); showTaskDialog.value = false; getList(); loadStats()
-      if (currentTask.value?.id === taskForm.id) loadDetail(currentTask.value.id)
+    const isAdd = !taskForm.id
+    const req = isAdd ? addTestTask(taskForm) : updateTestTask(taskForm)
+    req.then((res) => {
+      showTaskDialog.value = false; getList(); loadStats()
+      if (isAdd) {
+        // 新建后任务尚无测试项/队员，直接打开详情抽屉引导完成必经的配置步骤
+        const newId = res?.data ?? res?.id
+        proxy.$modal.msgSuccess('任务已创建，请继续添加测试项并登记参测队员')
+        if (newId != null) {
+          activeTab.value = 'items'
+          currentTask.value = {
+            id: newId, taskName: taskForm.taskName, targetDeptId: taskForm.targetDeptId,
+            testerId: taskForm.testerId, memberTotal: 0, memberCompleted: 0,
+            memberPartial: 0, memberPending: 0, progressPercent: 0
+          }
+          detail.items = []; detail.members = []
+          detailDrawerVisible.value = true
+          loadDetail(newId)
+        }
+      } else {
+        proxy.$modal.msgSuccess('保存成功')
+        if (currentTask.value?.id === taskForm.id) loadDetail(currentTask.value.id)
+      }
     })
   })
 }
@@ -876,11 +897,12 @@ loadStats()
 .tt-task-id { font-size: 11px; color: $rk-text-3; margin-top: 2px; }
 .tt-dept { font-size: 12px; color: $rk-text-2; }
 .tt-date { font-size: 11px; color: $rk-text-2; white-space: nowrap; }
-.tt-progress-cell { display: flex; align-items: center; gap: 8px; }
+.tt-progress-cell { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 /* flex 容器内轨道需显式占满剩余空间，否则宽度坍缩为 min-content，进度条只剩一小截 */
 .tt-progress-cell .rk-progress { flex: 1; min-width: 120px; }
 .tt-progress-num { font-size: 11px; font-weight: 600; color: $rk-text-2; min-width: 34px; }
 .tt-edit-link { margin-top: 4px; font-size: 12px; }
+.tt-unconfigured { margin-top: 4px; font-size: 11px; color: $rk-risk; }
 
 :deep(.rk-soft-chip.is-indicator) { background: $rk-brand-50; color: $rk-brand-600; }
 :deep(.rk-soft-chip.is-model) { background: #e8f7ee; color: $rk-ok; }

@@ -45,7 +45,9 @@ public class ApmsTestTaskController extends BaseController {
     @PostMapping
     public AjaxResult add(@RequestBody ApmsTestTask task) {
         task.setCreateBy(getUsername());
-        return toAjax(taskService.insert(task));
+        taskService.insert(task);
+        // 回填新任务 id：前端创建成功后据此直接打开详情抽屉配置测试项/参测队员
+        return AjaxResult.success(task.getId());
     }
 
     @PreAuthorize("@ss.hasPermi('apms:testTask:edit')")

@@ -45,7 +45,9 @@ public class ApmsComboScoreServiceImpl implements IApmsComboScoreService {
         query.setTaskId(taskId);
         query.setIsSelected("1");
         List<ApmsTestResult> selected = testResultMapper.selectList(query);
-        if (selected.isEmpty()) throw new ServiceException("该 task 下无 is_selected 结果");
+        if (selected.isEmpty()) throw new ServiceException(
+                "该任务下还没有已选中（is_selected=1）的测试成绩。请先在「指标库与任务下发」中："
+                + "①为任务配置测试项并登记参测队员；②按任务录入成绩（默认标记为已选中）后，再执行批量计算。");
 
         // 收集所有 result_id + 按 athleteId 聚合 triggerResultId（用第一条）
         List<Long> allResultIds = new ArrayList<>();
