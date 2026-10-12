@@ -62,7 +62,8 @@ XML `a.name LIKE CONCAT('%', #{name}, '%')`，[CsvResultImportProvider#L224-L241
   - 无冲突行 → 新增（与 overwriteImport 无关）。
 - **commit 走两条专用方法（IApmsBodyMeasureService 新增），禁止走 upsert**：
   - `importInsert(m)`：dataSource 固定 `'import'`、sourceTaskId/sourceSessionKey/cycleId 固定 null；insert 前再查一次冲突（防 preview 后新增），冲突则该行失败。
-  - `importUpdateImported(id, m)`：`UPDATE ... WHERE id=? AND data_source='import'`，只 SET 五个数值列+measureDate+update_time，**不触碰 source_task_id/source_session_key/cycle_id/data_source**；影响行数 0（已被改成其他来源）则该行失败。
+  - `importUpdateImported(id, m)`：**新增一条固定列的专用 Mapper 语句**（现有 update 是动态全字段、会触碰 data_source/source，不能复用）：`UPDATE apms_body_measure SET height,sit_height,weight,body_fat_rate,waist WHERE id=? AND data_source='import'`——只 SET 五个数值列（measure_date 即冲突键必然相同，不写；**该表无 update_time/update_by 列，禁止写**），不触碰 data_source/source_task_id/source_session_key/cycle_id/create_*；影响行数 0（已被改成其他来源）则该行失败。
+- **后处理链三入口共用**：现有 upsert 成功后会触发 `phvService.tryAutoCalculate(athleteId)` 与 `tryKhamisRoche(athleteId)`（均 try/catch 吞异常）。在 Impl 中抽出私有 `afterMeasureSaved(Long athleteId)` 承载该链，`upsert` / `importInsert` / `importUpdateImported` 写成功后统一调用——**不复制逻辑**，保证批量导入后 PHV、预测成年身高随数据更新。
 - 成绩侧 dataSource 新导入写 `'import'`；旧 /import/csv 维持 `CSV_IMPORT` 不动。
 
 ### B. commit token 一次性消费（后端幂等，不依赖前端按钮）
@@ -98,7 +99,7 @@ XML `a.name LIKE CONCAT('%', #{name}, '%')`，[CsvResultImportProvider#L224-L241
    - preview：读取→parseRows（**仅接受 INDICATOR 列；MODEL 列标 ignore+warning（约束 E）**）→resolver 匹配人（scope）→指标列任务归属校验→数值单元格四级分类（ok/warn/error/ignore，成绩指标未配置区间字典时仅查数字格式，日期沿用现有白名单）→存草稿（仅指标数据）→返回预览体。
    - commit：消费 token→人再校验 scope→过滤 error/ignore→**每行经 ResultImportRowWriter.writeRow 一事务写多列**，dataSource='import'→逐行成功/失败汇总写 done。
 8. **新增** `service/apms/import/BodyMeasureImportService.java`：preview（读取→resolver→日期→冲突检查 A→5 字段区间分类→行打 conflict 标记→草稿，**不存 overwriteImport**）；commit(token, overwriteImport)（消费 token→scope 复检→按 A：IMPORT_CONFLICT 依参数 skip 或重查后 importUpdateImported，无冲突 importInsert→成功/跳过/失败汇总）。
-9. **修改** `IApmsBodyMeasureService` / Impl / Mapper：新增 importInsert、importUpdateImported、selectConflictOnDate。
+9. **修改** `IApmsBodyMeasureService` / Impl / Mapper(+XML)：新增 importInsert、importUpdateImported（固定五列专用 update 语句）、selectConflictOnDate；Impl 抽 `afterMeasureSaved(athleteId)` 供 upsert 与两个导入入口共用后处理链。
 10. **新增** `service/apms/import/ImportTemplates.java`：XLSX 模板（POI XSSF：表头加粗/冻结/列宽，预填在训队员 id+姓名；**成绩模板只含启用 INDICATOR 列（E）**，任务模板仅任务内指标项）；CSV(BOM) 模板沿用现有服务并补体态 CSV。
 11. **Controller**：
    - ApmsTestResultController 新增 `POST /import/preview`、`POST /import/commit`；`GET /import/template` 加 `format=csv|xlsx`（默认 xlsx）。
