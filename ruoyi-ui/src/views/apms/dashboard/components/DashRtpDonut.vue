@@ -161,7 +161,7 @@ function renderDonut() {
       startAngle: START_ANGLE, // 从 12 点位（0 点）起
       clockwise: true,         // 顺时针
       avoidLabelOverlap: true,
-      itemStyle: { borderColor: props.big ? '#111B31' : '#fff', borderWidth: props.big ? 2 : 3, borderRadius: 4 },
+      itemStyle: { borderColor: '#fff', borderWidth: 3, borderRadius: 4 },
       label: { show: false },
       emphasis: { scale: true, scaleSize: 6, label: { show: false } },
       data: reducedMotion
@@ -254,7 +254,7 @@ function renderTeam() {
       ...t.tooltip,
       trigger: 'axis',
       appendToBody: true,
-      axisPointer: { type: 'shadow', shadowStyle: { color: props.big ? 'rgba(255,255,255,.04)' : 'rgba(37,99,235,.05)' } },
+      axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(37,99,235,.05)' } },
       formatter: (items) => {
         const name = items[0]?.axisValue || ''
         const labels = { green: '可参训', yellow: '限制参训', red: '停训', none: '未评估' }

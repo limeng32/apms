@@ -113,8 +113,6 @@ function tone(p) {
   &.tone-warn { background: linear-gradient(90deg, #fbbf24, #d97706); }
   &.tone-risk { background: linear-gradient(90deg, #f87171, #dc2626); }
 }
-.is-big .tp-bar { box-shadow: 0 0 10px rgba(34, 211, 238, 0.25); }
-.is-big .tp-bar.tone-brand { background: linear-gradient(90deg, #22d3ee, #2563eb); }
 .tp-window { flex: none; font-size: 11px; color: var(--dbx-sub); }
 .tp-right { flex: none; display: flex; align-items: baseline; gap: 8px; min-width: 92px; justify-content: flex-end; }
 .tp-count { font-size: 13px; font-weight: 700; color: var(--dbx-text); }

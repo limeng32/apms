@@ -223,9 +223,9 @@
            AND status = '0'
     </select>
 
-    <!-- 赛季晋升：全量有效部门（不走数据权限，保证梯队链完整） -->
+    <!-- 赛季晋升：全量有效部门（不走数据权限，保证梯队链完整）；dept_type 用于只识别「队伍」(20) -->
     <select id="selectAllValidDepts" resultType="com.ruoyi.common.core.domain.entity.SysDept">
-        SELECT dept_id AS deptId, dept_name AS deptName, parent_id AS parentId
+        SELECT dept_id AS deptId, dept_name AS deptName, parent_id AS parentId, dept_type AS deptType
         FROM sys_dept
         WHERE del_flag = '0' AND status = '0'
     </select>

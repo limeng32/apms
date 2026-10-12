@@ -121,6 +121,8 @@ function buildPromotionPlan(ctx) {
   const byParent = new Map()
   const configErrors = []
   db.depts.forEach(d => {
+    // 与后端一致：晋升链只识别 dept_type=20 的「队伍」，训练小组不计入
+    if (String(d.deptType) !== '20') return
     const m = String(d.deptName || '').match(U_BRACKET_RE)
     if (!m) return
     const parentId = d.parentId == null ? 0 : d.parentId
@@ -128,12 +130,19 @@ function buildPromotionPlan(ctx) {
     if (!byParent.has(parentId)) byParent.set(parentId, new Map())
     const map = byParent.get(parentId)
     if (map.has(bracket)) {
-      configErrors.push(`同一上级下存在两个 U${bracket} 梯队`)
+      const old = map.get(bracket)
+      const parentName = db.depts.find(x => x.deptId === parentId)?.deptName || parentId
+      configErrors.push(
+        `「${parentName}」下同时存在两支 U${bracket} 队伍（${old.deptName}、${d.deptName}），无法判定晋升链。`
+        + '解决方式：①同一上级下每个 U 档只保留一支「队伍」类型的主梯队，'
+        + '速度组/精英组等训练分组应挂在主梯队下、以「训练小组」类型维护（队员仍归属主梯队）；'
+        + '②若两条赛道需各自独立晋升，请将它们挂到不同上级机构下分别成链。请勿仅靠改名区分档位。'
+      )
     }
     map.set(bracket, d)
   })
   if (!byParent.size) {
-    configErrors.push('未识别到任何 U 档梯队（部门名需含 U+数字，如 U16 梯队）')
+    configErrors.push('未识别到任何 U 档梯队：请在部门设置中建立「队伍」类型、且名称含 U+数字 的部门（如「U16 梯队」），训练小组不计入晋升链')
   }
 
   const teams = []

@@ -67,8 +67,12 @@
             <tbody>
               <tr v-for="r in rows" :key="r._key">
                 <td>
-                  <span class="re-code">{{ r.indicatorCode }}</span>
-                  <span class="re-name">{{ r.indicatorName }}</span>
+                  <!-- 中文名主显、编码次显：避免只看到 HEIGHT/WEIGHT 等编码时靠位置记忆 -->
+                  <div class="re-item-title">{{ r.indicatorName || r.indicatorCode }}</div>
+                  <div v-if="r.indicatorName && r.indicatorCode" class="re-item-sub">
+                    <span class="re-code">{{ r.indicatorCode }}</span>
+                    <span v-if="r.indicatorCategory" class="re-cat">{{ r.indicatorCategory }}</span>
+                  </div>
                 </td>
                 <td class="text-center re-muted">
                   <span v-if="r.indicatorUnit" class="re-unit">{{ r.indicatorUnit }}</span>
@@ -214,7 +218,7 @@ const bestMap = ref({})
 const modelForms = ref([])
 // 任务内组合模型（不开放录入）名称
 const comboModels = ref([])
-// 指标 id → 单位（任务项 join 不带单位，用指标库补齐）
+// 指标 id → 指标元信息（任务项 join 不带单位/分类，用指标库补齐；只请求一次）
 const unitMap = ref({})
 
 // 设备假门禁
@@ -231,6 +235,11 @@ function today() {
 
 function dirLabel(d) {
   return d === 'HIGHER_BETTER' ? '越高越好' : d === 'LOWER_BETTER' ? '越低越好' : (d || '—')
+}
+// 散录排序：分类业务优先级（形态类核心指标如身高/体重靠前），未归类排最后
+const CATEGORY_RANK = { '形态': 0, '机能': 1, '素质': 2, '筛查': 3 }
+function categoryRank(cat) {
+  return Object.prototype.hasOwnProperty.call(CATEGORY_RANK, cat) ? CATEGORY_RANK[cat] : 99
 }
 function dataTypeText(t) {
   return t === 'text' ? '文本' : '数值'
@@ -292,8 +301,11 @@ async function loadItems() {
         .map(it => tagRow({
           ...it,
           indicatorUnit: it.indicatorId != null
-            ? (unitMap.value[it.indicatorId] || it.indicatorUnit || '')
-            : (it.indicatorUnit || '')
+            ? (unitMap.value[it.indicatorId]?.unit || it.indicatorUnit || '')
+            : (it.indicatorUnit || ''),
+          indicatorCategory: it.indicatorId != null
+            ? (unitMap.value[it.indicatorId]?.category || '')
+            : ''
         }))
       // 模型测试项 → 按字段配置构建结构化表单（组合模型除外）
       const modelItems = all.filter(it => it.itemType === 'MODEL')
@@ -307,9 +319,15 @@ async function loadItems() {
       modelForms.value = forms
     } else if (mode.value === 'free') {
       const res = await listIndicator({ pageNum: 1, pageSize: 999, status: '0' })
-      rows.value = (res.rows || []).map(i => tagRow({
+      // 散录无任务配置顺序：按分类业务优先级排列（形态核心指标如身高/体重靠前），
+      // 同类内保持后端 id 顺序；任务模式不重排，沿用任务项 sort_order（测试设计顺序）
+      const sorted = (res.rows || []).slice().sort(
+        (a, b) => categoryRank(a.category) - categoryRank(b.category)
+      )
+      rows.value = sorted.map(i => tagRow({
         itemType: 'INDICATOR', indicatorId: i.id, indicatorCode: i.code,
-        indicatorName: i.name, indicatorUnit: i.unit, indicatorDirection: i.evaluationDirection
+        indicatorName: i.name, indicatorUnit: i.unit,
+        indicatorDirection: i.evaluationDirection, indicatorCategory: i.category
       }))
       if (form.freeModelId) await onFreeModelChange(form.freeModelId)
     }
@@ -349,12 +367,12 @@ async function buildModelForm(model, { taskItemId }) {
   }
 }
 
-/** 加载启用指标的单位映射（仅一次） */
+/** 加载启用指标的元信息映射（单位/分类，仅一次） */
 async function ensureUnitMap() {
   if (Object.keys(unitMap.value).length) return
   const res = await listIndicator({ pageNum: 1, pageSize: 999, status: '0' })
   const map = {}
-  for (const i of (res.rows || [])) map[i.id] = i.unit
+  for (const i of (res.rows || [])) map[i.id] = i
   unitMap.value = map
 }
 
@@ -525,15 +543,18 @@ defineExpose({ openForTask, openFree })
 
 <style lang="scss" scoped>
 .re-readonly { color: #303133; font-weight: 500; }
-.re-item-box { width: 100%; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; max-height: 280px; overflow: auto; }
+.re-item-box { width: 100%; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; max-height: 320px; overflow: auto; }
 .re-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .re-table th { background: #f7f8fa; color: #606266; font-weight: 500; padding: 8px 10px; text-align: left; position: sticky; top: 0; }
 .re-table td { padding: 7px 10px; border-top: 1px solid #f0f0f0; vertical-align: middle; }
 .text-center { text-align: center; }
-.col-name { min-width: 180px; }
+.col-name { min-width: 170px; }
 .col-input { width: 180px; }
-.re-code { font-family: ui-monospace, Menlo, monospace; color: #2563eb; margin-right: 8px; }
-.re-name { color: #303133; }
+/* 项目列：中文名主显，编码/分类次显（两行，避免仅靠编码和位置记忆） */
+.re-item-title { font-size: 13px; font-weight: 600; color: #1e293b; line-height: 18px; }
+.re-item-sub { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.re-code { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #94a3b8; }
+.re-cat { font-size: 11px; line-height: 16px; padding: 0 6px; border-radius: 4px; background: #f1f5f9; color: #64748b; }
 .re-muted { color: #909399; }
 .re-mono { font-family: ui-monospace, Menlo, monospace; }
 .re-unit { display: inline-block; min-width: 34px; padding: 1px 8px; border-radius: 4px; background: #f1f5f9; color: #475569; font-size: 12px; font-weight: 500; }

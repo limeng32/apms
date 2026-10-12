@@ -40,6 +40,10 @@ public class ApmsSeasonPromotionServiceImpl implements IApmsSeasonPromotionServi
     /** 部门名中的 U 档标记：U 前不能是字母/数字，后接 1~2 位数字，如 U16 / U18 梯队 */
     private static final Pattern U_BRACKET = Pattern.compile("(?<![A-Za-z0-9])U(\\d{1,2})(?![0-9])", Pattern.CASE_INSENSITIVE);
 
+    /** 部门类型：队伍（字典 apms_dept_type：10 机构 / 20 队伍 / 30 训练小组 / 40 科研小组 / 50 恢复小组）。
+     *  晋升链只认「队伍」：训练小组即便名字含 U+数字 也不构成梯队，避免与主梯队产生歧义 */
+    private static final String DEPT_TYPE_TEAM = "20";
+
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     @Autowired
@@ -114,11 +118,15 @@ public class ApmsSeasonPromotionServiceImpl implements IApmsSeasonPromotionServi
         ApmsPromotionPlan plan = new ApmsPromotionPlan();
         plan.setCutoffDate(cutoff.format(DATE_FMT));
 
-        // 1. 识别 U 档梯队：parentId -> (档位数字 -> 部门)
+        // 1. 识别 U 档梯队：parentId -> (档位数字 -> 部门)。只认 dept_type=20 的「队伍」，
+        //    训练/科研/恢复小组不参与晋升链（队员主属队伍也仅能挂在「队伍」类型部门下）
         List<SysDept> allDepts = athleteMapper.selectAllValidDepts();
         Map<Long, TreeMap<Integer, SysDept>> bracketByParent = new HashMap<>();
         Map<Long, int[]> duplicateGuard = new HashMap<>();
         for (SysDept dept : allDepts) {
+            if (!DEPT_TYPE_TEAM.equals(dept.getDeptType())) {
+                continue;
+            }
             Integer bracket = parseBracket(dept.getDeptName());
             if (bracket == null) {
                 continue;
@@ -126,12 +134,16 @@ public class ApmsSeasonPromotionServiceImpl implements IApmsSeasonPromotionServi
             Long parentId = dept.getParentId() == null ? 0L : dept.getParentId();
             SysDept old = bracketByParent.computeIfAbsent(parentId, k -> new TreeMap<>()).put(bracket, dept);
             if (old != null) {
-                plan.getConfigErrors().add(String.format("「%s」下同时存在两个 U%d 梯队（%s、%s），无法判定晋升链",
+                plan.getConfigErrors().add(String.format(
+                        "「%s」下同时存在两支 U%d 队伍（%s、%s），无法判定晋升链。"
+                        + "解决方式：①同一上级下每个 U 档只保留一支「队伍」类型的主梯队，"
+                        + "速度组/精英组等训练分组应挂在主梯队下、以「训练小组」类型维护（队员仍归属主梯队）；"
+                        + "②若两条赛道需各自独立晋升，请将它们挂到不同上级机构下分别成链。请勿仅靠改名区分档位。",
                         parentName(allDepts, parentId), bracket, old.getDeptName(), dept.getDeptName()));
             }
         }
         if (bracketByParent.isEmpty()) {
-            plan.getConfigErrors().add("未识别到任何 U 档梯队（部门名需含 U+数字，如 U16 梯队）");
+            plan.getConfigErrors().add("未识别到任何 U 档梯队：请在部门设置中建立「队伍」类型、且名称含 U+数字 的部门（如「U16 梯队」），训练小组不计入晋升链");
         }
 
         // 2. 拉取全部在训运动员（含挂在非 U 档/失效部门的队员，需单列提示），统计各梯队人数

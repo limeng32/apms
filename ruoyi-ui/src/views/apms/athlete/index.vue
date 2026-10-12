@@ -384,6 +384,25 @@
         </span>
       </div>
 
+      <!-- 配置错误：先给行动指引与快捷入口，再逐条展示后端错误（错误文案内含解决方式） -->
+      <el-alert
+        v-if="hasPromotionConfigErrors"
+        type="error"
+        :closable="false"
+        show-icon
+        style="margin-bottom:8px"
+      >
+        <template #title>
+          <div class="rp-prom-cfg-head">
+            <span>梯队配置存在问题，晋升已暂停。请先到「组织架构」调整部门设置，再回来重新预览。</span>
+            <span class="rp-prom-cfg-actions">
+              <el-button link type="primary" size="small" @click="goOrg">去调整部门设置</el-button>
+              <el-button link type="primary" size="small" :loading="promotion.loading" @click="loadPromotionPreview">重新预览</el-button>
+            </span>
+          </div>
+        </template>
+      </el-alert>
+
       <el-alert
         v-for="(err, i) in (promotion.plan?.configErrors || [])"
         :key="'e' + i"
@@ -860,6 +879,10 @@ const canExecutePromotion = computed(() =>
   !(promotion.plan.configErrors && promotion.plan.configErrors.length) &&
   promotion.plan.promoteCount > 0 &&
   !promotion.loading && !promotion.executing
+)
+// 梯队配置错误（歧义/未识别）：存在时禁用执行并展示「去调整部门设置」指引
+const hasPromotionConfigErrors = computed(() =>
+  !!(promotion.plan?.configErrors && promotion.plan.configErrors.length)
 )
 
 function openPromotionDialog() {
@@ -1437,6 +1460,19 @@ $rp-empty-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg
 .rp-promotion-hint {
   font-size: 12px;
   color: #64748b;
+}
+/* 配置错误指引条：文案与快捷操作同一行，窄屏自动换行 */
+.rp-prom-cfg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.rp-prom-cfg-actions {
+  flex: none;
+  display: inline-flex;
+  gap: 8px;
 }
 .rp-promotion-stats {
   display: flex;
