@@ -34,7 +34,8 @@ XML `a.name LIKE CONCAT('%', #{name}, '%')`，[CsvResultImportProvider#L224-L241
 成绩一行可含 HEIGHT/WEIGHT/SPRINT 等多个指标列，而 `ApmsTestResultServiceImpl.add()` 自身是独立 `@Transactional`——在 Facade 里直接循环调用，前两列成功第三列失败会产生半行数据。为此新增独立 bean：
 
 - `service/apms/import/ResultImportRowWriter.java`（@Component，**必须跨类调用以走 Spring 代理**，禁止 Facade 自调用事务方法）：
-  - `@Transactional(rollbackFor = Exception.class) writeRow(List<AddBody> items)`：顺序调用 `testResultService.add()`，默认传播 REQUIRED，全部加入**同一个行事务**；任一列抛异常 → 整行回滚（含 add 内部的 autoSelectBest/REP/任务进度/体态同步/PHV 全部回滚）。
+  - 入参 DTO 在 **ruoyi-system 层定义**（不能用 ruoyi-admin 的 Controller 内部类 AddBody，避免模块反向依赖）：`service/apms/import/ResultImportItem.java { ApmsTestResult result; List<ApmsTestResultValue> values; }`；HTTP 层的 `ApmsTestResultController.AddBody` 仅用于接口入参，Facade 内部组装 system 层 DTO。
+  - `@Transactional(rollbackFor = Exception.class) writeRow(List<ResultImportItem> items)`：顺序调用 `testResultService.add(item.result, item.values)`，默认传播 REQUIRED，全部加入**同一个行事务**；任一列抛异常 → 整行回滚（含 add 内部的 autoSelectBest/REP/任务进度/体态同步/PHV 全部回滚）。
 - Facade 对每一行调用一次 writer.writeRow，try/catch 收集该行失败原因后继续下一行（下一行是全新事务）。
 - 体态侧一行只 upsert 一条记录，天然单行单事务，无需 RowWriter。
 
@@ -49,20 +50,24 @@ XML `a.name LIKE CONCAT('%', #{name}, '%')`，[CsvResultImportProvider#L224-L241
 
 ## 关键强约束（本轮审查三条意见的落地）
 
-### A. 体态冲突策略（不静默覆盖，不用 upsert）
+### A. 体态冲突策略（不静默覆盖，不用 upsert；冲突状态随草稿走，覆盖策略随提交走）
 
-- **preview 逐行冲突检查**：新增 `ApmsBodyMeasureMapper.selectConflictOnDate(athleteId, measureDate)`（查同队员同日期全部记录，返回 id+data_source，LIMIT 若干）。
-  - 当天已有 `manual` / `cycle` / `task`（含 DEVICE 等非 import）记录 → 该行 **error**："该队员当天已有{来源}记录，未导入"，不可提交。
-  - 当天已有 `import` 记录 → 默认同样 error；预览页提供勾选框「**允许覆盖此前【批量导入】的数据**」(overwriteImport)，勾选后这些行变 warn 可提交。
-  - 当天无记录 → 新增。
-- **commit 走两条新的专用方法（IApmsBodyMeasureService 新增），禁止走 upsert**：
+- **preview 逐行冲突检查**：新增 `ApmsBodyMeasureMapper.selectConflictOnDate(athleteId, measureDate)`（查同队员同日期全部记录，返回 id+data_source）。行状态三分支：
+  - 当天已有 `manual`/`cycle`/`task`/DEVICE 等非 import 记录 → **error**（"该队员当天已有{来源}记录"），不可提交。
+  - 当天已有 `data_source='import'` 记录 → 行打标 **IMPORT_CONFLICT**（携带 existingId、existingSource），默认计入"将跳过"；预览页据此显示「允许覆盖此前批量导入的数据」勾选。
+  - 当天无记录 → 正常新增行。
+- **draft 只存行的冲突标记与 existingId，不存覆盖决定**；commit 请求体 `{token, overwriteImport}`：
+  - IMPORT_CONFLICT + overwriteImport=false → **skipped**（计入跳过明细）。
+  - IMPORT_CONFLICT + overwriteImport=true → **重新查一次冲突**（防 preview 后记录变化）：仅当 existingId 此刻仍是 `data_source='import'` 才执行覆盖；已变为其他来源 → 该行 **failed**。
+  - 无冲突行 → 新增（与 overwriteImport 无关）。
+- **commit 走两条专用方法（IApmsBodyMeasureService 新增），禁止走 upsert**：
   - `importInsert(m)`：dataSource 固定 `'import'`、sourceTaskId/sourceSessionKey/cycleId 固定 null；insert 前再查一次冲突（防 preview 后新增），冲突则该行失败。
   - `importUpdateImported(id, m)`：`UPDATE ... WHERE id=? AND data_source='import'`，只 SET 五个数值列+measureDate+update_time，**不触碰 source_task_id/source_session_key/cycle_id/data_source**；影响行数 0（已被改成其他来源）则该行失败。
 - 成绩侧 dataSource 新导入写 `'import'`；旧 /import/csv 维持 `CSV_IMPORT` 不动。
 
 ### B. commit token 一次性消费（后端幂等，不依赖前端按钮）
 
-- draft key=`import:draft:{domain}:{uuid}`，值含 userId/domain/overwriteImport/rows，TTL 10 分钟。
+- draft key=`import:draft:{domain}:{uuid}`，值含 userId/domain/rows（**不含 overwriteImport——用户在看到预览后才勾选，草稿创建时无从得知**），TTL 10 分钟。
 - commit 用 RedisTemplate 原子状态机：
   1. `GET draft`：不存在 → 查 `import:done:{token}`：有→**直接返回首次结果**（幂等）；有 `import:processing:{token}`→报"导入处理中，请勿重复提交"；都没有→"草稿不存在或已过期，请重新上传"。
   2. 校验 userId == 当前登录人、domain 与接口一致，不匹配拒绝。
@@ -92,7 +97,7 @@ XML `a.name LIKE CONCAT('%', #{name}, '%')`，[CsvResultImportProvider#L224-L241
 7. **新增** `service/apms/import/ResultImportFacade.java`：
    - preview：读取→parseRows（**仅接受 INDICATOR 列；MODEL 列标 ignore+warning（约束 E）**）→resolver 匹配人（scope）→指标列任务归属校验→数值单元格四级分类（ok/warn/error/ignore，成绩指标未配置区间字典时仅查数字格式，日期沿用现有白名单）→存草稿（仅指标数据）→返回预览体。
    - commit：消费 token→人再校验 scope→过滤 error/ignore→**每行经 ResultImportRowWriter.writeRow 一事务写多列**，dataSource='import'→逐行成功/失败汇总写 done。
-8. **新增** `service/apms/import/BodyMeasureImportService.java`：preview（读取→resolver→日期→冲突检查 A→5 字段区间分类→草稿）；commit（消费 token→scope 复检→按冲突结论 importInsert / importUpdateImported(A)→汇总）。
+8. **新增** `service/apms/import/BodyMeasureImportService.java`：preview（读取→resolver→日期→冲突检查 A→5 字段区间分类→行打 conflict 标记→草稿，**不存 overwriteImport**）；commit(token, overwriteImport)（消费 token→scope 复检→按 A：IMPORT_CONFLICT 依参数 skip 或重查后 importUpdateImported，无冲突 importInsert→成功/跳过/失败汇总）。
 9. **修改** `IApmsBodyMeasureService` / Impl / Mapper：新增 importInsert、importUpdateImported、selectConflictOnDate。
 10. **新增** `service/apms/import/ImportTemplates.java`：XLSX 模板（POI XSSF：表头加粗/冻结/列宽，预填在训队员 id+姓名；**成绩模板只含启用 INDICATOR 列（E）**，任务模板仅任务内指标项）；CSV(BOM) 模板沿用现有服务并补体态 CSV。
 11. **Controller**：
@@ -100,13 +105,14 @@ XML `a.name LIKE CONCAT('%', #{name}, '%')`，[CsvResultImportProvider#L224-L241
    - ApmsBodyMeasureController 新增 `POST /import/preview`（multipart file）、`POST /import/commit`（{token,overwriteImport}）、`GET /import/template?format=`。
    - 权限：成绩 preview/commit=`apms:testResult:add`、模板=`apms:testResult:list`；体态 preview/commit=`apms:body:edit`、模板=`apms:body:list`。
 12. 预览返回体（两域同构）：
-    `{ token, domain, summary:{total,valid,warn,error}, headers:[{key,label}], ignoredColumns:[], rows:[{lineNo,athleteId,athleteName,matched,date,cells:[{key,raw,status,message}],rowError}], warnings:[], allowOverwriteImport:bool }`
+    `{ token, domain, summary:{total,valid,warn,error,importConflict}, headers:[{key,label}], ignoredColumns:[], rows:[{lineNo,athleteId,athleteName,matched,date,cells:[{key,raw,status,message}],rowError, conflict:null|{type:'IMPORT_CONFLICT',existingId,existingSource}}], warnings:[] }`
+    - 体态 IMPORT_CONFLICT 行默认计入 importConflict/跳过数；前端勾选仅作为 commit 的 overwriteImport 参数，不回写草稿。
 
 ## 前端改动（ruoyi-ui）
 
 13. **新增** `components/ImportPreviewDialog/index.vue`（两域通用）：
     - 步骤①：选文件（.xlsx/.xls/.csv，10MB）+ 下载模板（默认 xlsx，可切 csv）+ 格式说明（明确"一格一值，多次测试填多行"；姓名重名需填编号）。
-    - 步骤②：统计条（可导入 N / 警告 M / 错误 K）；预览表黄=warn、红=error、灰=ignore；错误明细折叠区；体态且存在 import 旧数据时显示「允许覆盖此前批量导入的数据」勾选；确认按钮文案"导入 N 条有效数据（K 条错误将跳过）"，K>0 时需二次理解（按钮旁明示）。
+    - 步骤②：统计条（可导入 N / 警告 M / 错误 K / 将跳过含导入冲突 C）；预览表黄=warn、红=error、灰=ignore、蓝=IMPORT_CONFLICT（当天已有导入数据）；错误明细折叠区；存在 IMPORT_CONFLICT 行时显示「允许覆盖此前【批量导入】的数据」勾选，勾选后这些行并入可导入数（该选择只随 commit 请求提交，不修改预览）；确认按钮文案实时反映"导入 N 条（跳过 X 条）"。
     - 步骤③：成功/跳过/失败计数 + 失败明细（行号+原因），完成 emit success。
     - props：title/previewUrl/commitUrl/templateUrl/templateParams/extraForm/allowOverwriteOption。
 14. **新增** `api/apms/batchImport.js`：previewImport(url, formData)、commitImport(url, body)。
@@ -134,7 +140,7 @@ XML `a.name LIKE CONCAT('%', #{name}, '%')`，[CsvResultImportProvider#L224-L241
 
 - 后端 mvn 编译；前端 build:prod + 诊断 0 错误。
 - 用户验收（真实小样本）：
-  ① xlsx 模板下载/预填队员正常 ② 正常文件全绿入库 ③ 身高 24(红,跳过)/999(黄,可确认) ④ 部分姓名匹配不到→红；构造重名→红并提示填 id ⑤ 非 scope 队员 id→匹配失败 ⑥ 体态同队员同日期：manual 记录存在→冲突红；import 记录默认冲突、勾选后覆盖且来源/周期字段不串 ⑦ token 双击提交不产生重复成绩 ⑧ 散录文件带 task_id 被拒 ⑨ 旧 /import/csv 仍可用 ⑩ 同一行构造一个指标列非法：该行整体不入库（其他正常行正常入库），无半行数据 ⑪ 文件含 model.code 列：该列灰显跳过并有提示，指标列正常导入 ⑫ 下载的模板只含指标列。
+  ① xlsx 模板下载/预填队员正常 ② 正常文件全绿入库 ③ 身高 24(红,跳过)/999(黄,可确认) ④ 部分姓名匹配不到→红；构造重名→红并提示填 id ⑤ 非 scope 队员 id→匹配失败 ⑥ 体态同队员同日期：manual/cycle/task 记录存在→冲突红不可提交；import 记录→蓝色 IMPORT_CONFLICT 默认跳过，勾选 overwriteImport 后提交才覆盖且来源/周期字段不串；不勾选提交该计入跳过；preview 后手工把来源改为 manual 再勾选提交→该行失败 ⑦ token 双击提交不产生重复成绩 ⑧ 散录文件带 task_id 被拒 ⑨ 旧 /import/csv 仍可用 ⑩ 同一行构造一个指标列非法：该行整体不入库（其他正常行正常入库），无半行数据 ⑪ 文件含 model.code 列：该列灰显跳过并有提示，指标列正常导入 ⑫ 下载的模板只含指标列。
 
 ## 风险与应对
 
