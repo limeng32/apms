@@ -122,7 +122,7 @@
             <el-form-item label="上级部门" prop="parentId">
               <el-tree-select
                 v-model="form.parentId"
-                :data="embedded ? parentDeptOptions : deptOptions"
+                :data="parentDeptOptions"
                 :props="{ value: 'deptId', label: 'deptName', children: 'children' }"
                 value-key="deptId"
                 placeholder="选择上级部门"
@@ -193,6 +193,7 @@
 
 <script setup name="Dept">
 import { listDept, getDept, delDept, addDept, updateDept, updateDeptSort, listDeptExcludeChild } from "@/api/system/dept"
+import useUserStore from '@/store/modules/user'
 import { Plus, RefreshLeft, Check, Sort } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
@@ -200,6 +201,13 @@ const { sys_normal_disable, apms_dept_type } = useDict("sys_normal_disable", "ap
 
 // 嵌入角色权限管理合并页 Tab 时传 true，去除独立页全宽外扩样式
 const props = defineProps({ embedded: { type: Boolean, default: false } })
+
+const userStore = useUserStore()
+// super 的部门维护口径（独立「组织架构」页仅 super 可见，角色页内嵌同样适用）：
+// 上级树最高只到「APMS 总部」，不展示平台根公司「康耐特科技」
+const isSuper = computed(() => userStore.roles.includes('super'))
+// 新增/编辑对话框的上级部门树是否裁掉根公司层
+const trimRootCompany = computed(() => props.embedded || isSuper.value)
 
 const deptList = ref([])
 const open = ref(false)
@@ -254,7 +262,7 @@ const totalDepts = computed(() => {
   return n
 })
 
-/* 上级部门可选项：嵌入（super）场景去掉根公司这一层，
+/* 上级部门可选项：super 维护口径（独立组织架构页 / 角色页内嵌）去掉根公司这一层，
    以根节点的全部直接子节点作为可选树根（APMS 总部及平级单位，
    其各自 children 子树完整保留）。
    注意 deptOptions 是树不是平铺列表，不能直接 filter 顶层数组，
@@ -271,7 +279,7 @@ function pickAllowedRoots(tree) {
   return out
 }
 const parentDeptOptions = computed(() =>
-  props.embedded ? pickAllowedRoots(deptOptions.value) : deptOptions.value
+  trimRootCompany.value ? pickAllowedRoots(deptOptions.value) : deptOptions.value
 )
 
 /* ===== 部门类型（apms_dept_type）与层级联动 =====
@@ -381,18 +389,18 @@ function resetQuery() {
 
 /** 新增按钮操作 */
 function handleAdd(row) {
-  // 嵌入（super）场景不允许把部门挂到根公司下（与 APMS 总部平级）：
+  // super 口径不允许把部门挂到根公司下（与 APMS 总部平级）：
   // 行内入口若来自根行则拦截；顶部按钮放开，弹窗的上级选项已排除根公司，
   // 并默认选中 APMS 总部
-  if (props.embedded && row != null && row.parentId === 0) {
+  if (trimRootCompany.value && row != null && row.parentId === 0) {
     proxy.$modal.msgWarning('仅支持在 APMS 总部及其下级部门下新增')
     return
   }
   reset()
   listDept().then(response => {
     deptOptions.value = proxy.handleTree(response.data, "deptId")
-    // 顶部按钮：默认挂到 APMS 总部（可选树的第一个节点）
-    if (props.embedded && row == null) {
+    // 顶部按钮：默认挂到 APMS 总部（裁剪后可选树的第一个节点）
+    if (trimRootCompany.value && row == null) {
       const allowed = pickAllowedRoots(deptOptions.value)
       if (allowed[0]) form.value.parentId = allowed[0].deptId
     }

@@ -105,6 +105,7 @@ let startTime = 0
 let pointCount = 0
 let dragging = false
 let closeTimer = null
+let retryTimer = null
 
 // 拼图块显示尺寸
 const pieceW = computed(() => PIECE_SIZE * scale.value)
@@ -136,14 +137,22 @@ function calcScale() {
 }
 function onResize() { if (visible.value) calcScale() }
 
+// 组件存活标志：卸载后不再发起新请求（避免登录跳转瞬间留下孤儿 XHR）
+let alive = true
+// 当前挑战是否已被服务端消费（校验成功/失败后一次性答案即失效，需换新题）
+let consumed = false
+
 async function loadChallenge() {
+  if (!alive) return
   state.value = 'loading'
   resetPosition()
   try {
     const res = await getSliderCaptcha()
+    if (!alive) return
     enabled.value = res.sliderEnabled === true
     emit('enabled-change', enabled.value)
     if (!enabled.value) return
+    consumed = false
     challenge.uuid = res.uuid
     challenge.img = res.img
     challenge.sliderImg = res.sliderImg
@@ -219,6 +228,8 @@ async function onUp() {
   state.value = 'checking'
   try {
     await checkSliderCaptcha({ uuid: challenge.uuid, x, duration, points: pointCount })
+    if (!alive) return
+    consumed = true
     state.value = 'success'
     checking.value = false
     emit('verified', challenge.uuid)
@@ -226,23 +237,31 @@ async function onUp() {
     clearTimeout(closeTimer)
     closeTimer = setTimeout(close, 420)
   } catch (err) {
+    if (!alive) return
     checking.value = false
     state.value = 'fail'
+    consumed = true
     // 失败抖动后换新挑战（一次性答案已被服务端消费）
-    setTimeout(loadChallenge, 900)
+    retryTimer = setTimeout(loadChallenge, 900)
   }
 }
 
-/** 打开模态：滑块关闭时返回 false（调用方直接登录）；开启则换新题并弹窗 */
+/**
+ * 打开模态：滑块关闭时返回 false（调用方直接登录）；开启则弹窗。
+ * 挂载时已预取且未被消费的挑战直接复用（避免与预取请求重复并发同 URL 请求，
+ * 慢网下产生无意义的竞态/中止）；仅在没有可用题目时才重新拉取。
+ */
 async function open() {
   if (!enabled.value) return false
   clearTimeout(closeTimer)
+  clearTimeout(retryTimer)
   visible.value = true
   document.body.style.overflow = 'hidden'
   window.addEventListener('keydown', onEsc)
   await nextTick()
-  loadChallenge()
-  calcScale()
+  const hasUsable = state.value === 'idle' && !!challenge.uuid && !consumed
+  if (!hasUsable) loadChallenge()
+  else { resetPosition(); calcScale() }
   return true
 }
 
@@ -255,6 +274,7 @@ function close() {
   document.body.style.overflow = ''
   window.removeEventListener('keydown', onEsc)
   clearTimeout(closeTimer)
+  clearTimeout(retryTimer)
 }
 
 defineExpose({ open, close })
@@ -265,6 +285,9 @@ onMounted(() => {
   window.addEventListener('resize', onResize)
 })
 onBeforeUnmount(() => {
+  alive = false
+  clearTimeout(closeTimer)
+  clearTimeout(retryTimer)
   close()
   window.removeEventListener('resize', onResize)
   window.removeEventListener('pointermove', onMove)

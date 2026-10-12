@@ -12,8 +12,14 @@
 产物体积翻倍且 woff 永不加载）。CJK 保留 Google 风格 unicode-range 编号分片，浏览器
 只下载当前页面字符命中的分片。
 
+注意：@fontsource v5 的 latin/latin-ext 便利入口 CSS 本身不带 unicode-range。
+若不补齐，同一字重的 latin 与 latin-ext 两条 @font-face 匹配范围完全重叠，浏览器
+下载其一后会以 net::ERR_ABORTED 中止另一个（控制台刷字体错误）。因此这里对缺少
+unicode-range 的子集，从包内 unicode.json 注入 Google 标准范围。
+
 升级字体版本后重跑：python3 scripts/sync-fonts.py
 """
+import json
 import pathlib
 import re
 import shutil
@@ -41,10 +47,13 @@ SOURCES = [
 
 FACE_RE = re.compile(r'@font-face\s*\{[^}]*?\}', re.S)
 WOFF2_RE = re.compile(r"url\(\s*(\S+?\.woff2)\s*\)\s*format\(\s*['\"]woff2['\"]\s*\)")
+# 从入口文件名取子集名：latin-ext-500.css -> latin-ext；500.css（CJK 全量）-> None
+SUBSET_RE = re.compile(r'^([a-z-]+?)-\d+\.css$')
 
 
-def convert_face(face: str, subdir: str) -> str | None:
-    """保留 woff2 src 与其余描述符，url 改写为站点绝对路径 /fonts/<subdir>/..."""
+def convert_face(face: str, subdir: str, unicode_range: str | None) -> str | None:
+    """保留 woff2 src 与其余描述符，url 改写为站点绝对路径 /fonts/<subdir>/...；
+    原 CSS 缺 unicode-range 且能从 unicode.json 取到标准范围时补齐。"""
     m = WOFF2_RE.search(face)
     if not m:
         return None
@@ -56,6 +65,9 @@ def convert_face(face: str, subdir: str) -> str | None:
         face,
         flags=re.S,
     )
+    if unicode_range and 'unicode-range' not in new_face:
+        new_face = new_face.rstrip().rstrip('}').rstrip() + \
+            f"\n  unicode-range: {unicode_range};\n}}"
     return new_face.strip()
 
 
@@ -72,6 +84,11 @@ def main() -> None:
         pkg_dir = NM / pkg
         if not pkg_dir.exists():
             raise SystemExit(f'缺少依赖 {pkg}，请先在 ruoyi-ui 下执行 pnpm install')
+        # 包内标准 unicode-range 表（latin/latin-ext 等便利入口 CSS 不含 range 时使用）
+        unicode_map = {}
+        unicode_json = pkg_dir / 'unicode.json'
+        if unicode_json.exists():
+            unicode_map = json.loads(unicode_json.read_text(encoding='utf-8'))
         dest = OUT_FONTS / subdir
         dest.mkdir(parents=True, exist_ok=True)
         copied = 0
@@ -79,6 +96,8 @@ def main() -> None:
             css_path = pkg_dir / css_name
             if not css_path.exists():
                 raise SystemExit(f'缺少 {css_path}')
+            subset_match = SUBSET_RE.match(css_name)
+            subset = subset_match.group(1) if subset_match else None
             css = css_path.read_text(encoding='utf-8')
             for face in FACE_RE.findall(css):
                 woff2_match = WOFF2_RE.search(face)
@@ -89,7 +108,7 @@ def main() -> None:
                     raise SystemExit(f'缺少字体文件 {src_woff2}')
                 shutil.copy2(src_woff2, dest / src_woff2.name)
                 copied += 1
-                converted = convert_face(face, subdir)
+                converted = convert_face(face, subdir, unicode_map.get(subset))
                 if converted:
                     blocks.append(converted)
                     blocks.append('')

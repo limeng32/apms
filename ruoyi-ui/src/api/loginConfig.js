@@ -5,12 +5,13 @@ import axios from 'axios'
  *
  * 刻意使用独立 axios 实例而非 @/utils/request：
  * 1. 不带 token（isToken:false）；
- * 2. 短超时 3s；
+ * 2. 10s 超时（与全局实例一致；生产冷启动/弱网下过短的超时会触发 xhr.abort，
+ *    在控制台留下 net::ERR_ABORTED 噪音）；
  * 3. 不走全局响应拦截器——后端不可达/超时时静默回退默认配置，不弹任何错误提示。
  */
 const publicHttp = axios.create({
   baseURL: import.meta.env.VITE_APP_BASE_API,
-  timeout: 3000,
+  timeout: 10000,
   headers: { isToken: false }
 })
 
