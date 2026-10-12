@@ -236,13 +236,16 @@
         data-anim
         :style="entranceOn ? { animationDelay: (descDelay + 0.65) + 's' } : null"
       ><FooterRichText :content="cfg.footer.brandText" :ctx="tplCtx" />
-        <!-- 展示形态（www）：原右下版权/ICP 上移到品牌区底部，与 brandText 堆叠；
-             网安备案同样仅在展示形态下放此（常规 split 布局只在右下表单区显示） -->
-        <div
-          v-if="showcase && cfg.footer.showCopyright"
-          class="lb-copyright-extra"
-        ><FooterRichText :content="cfg.footer.copyright" :ctx="tplCtx" /></div>
-        <PoliceBeian v-if="showcase && policeBeian.show" :info="policeBeian" />
+        <!-- 展示形态（www）：版权声明 + 网安备案紧随 brandText 同一行内联排列
+             （窄屏自动折行）；常规 split 布局二者只在右下表单区显示 -->
+        <span v-if="showcase" class="lb-copyright-extra">
+          <FooterRichText
+            v-if="cfg.footer.showCopyright"
+            :content="cfg.footer.copyright"
+            :ctx="tplCtx"
+          />
+          <PoliceBeian v-if="policeBeian.show" :info="policeBeian" />
+        </span>
       </div>
     </aside>
 
@@ -878,11 +881,22 @@ function onLogoPointerUp() {
 /* ============ 品牌展示形态（www.apms.top 落地页） ============ */
 /* split：右栏已 v-if 移除，品牌区独占整行 */
 .showcase-on.login-split { grid-template-columns: 1fr; }
-/* 超宽屏下内容列收窄，避免 Hero/特性/版权行被拉得过长 */
-.showcase-on .lb-hero,
-.showcase-on .lb-foot { max-width: 760px; }
-/* 表单区版权上移后的堆叠间距（.lb-foot 自身已有分隔线，不再加第二道） */
-.lb-copyright-extra { margin-top: 10px; }
+/* 超宽屏下 Hero 内容列收窄，控制阅读行宽 */
+.showcase-on .lb-hero { max-width: 760px; }
+/* 底部法定信息行不受 Hero 阅读行宽限制：版权 + ICP + 公安备案需在同一行排开，
+   实测三段合计约 850px，760 会把公安备案挤到第二行；放开到可用整宽。
+   窄屏放不下时由内联排版自然折行（警徽与备案号仍保持成组不拆） */
+.showcase-on .lb-foot { max-width: none; }
+/* 展示形态：版权声明 + 网安备案与品牌文（brandText）同一行内联排列。
+   清除 PoliceBeian 组件自带的 margin-top（那是为独立成行设计的），
+   备案块与版权文字间留 12px 间距；white-space:nowrap 保证警徽与备案号不被拆开 */
+.showcase-on .lb-copyright-extra {
+  :deep(.police-beian) {
+    margin-top: 0;
+    margin-left: 12px;
+    white-space: nowrap;
+  }
+}
 /* overlay 族（centered/fullscreen）：卡片摘除后品牌块不再需要给卡片留的底部间距 */
 .showcase-on .lc-brand { margin-bottom: 0; }
 /* 移动端必须保留品牌区：覆盖登录页「≤900px 隐藏品牌区」与设计器手机预览的同名规则 */
