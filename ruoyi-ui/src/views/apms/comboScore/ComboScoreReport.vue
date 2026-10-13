@@ -26,7 +26,7 @@
           <div class="score-grade" :class="'grade-' + comboGrade(row?.comboScore)">
             {{ comboGradeLabel(row?.comboScore) }}
           </div>
-          <div class="score-hint">综合 Z-Score（Σ wᵢ × Tᵢ）</div>
+          <div class="score-hint">综合 Z 分 = Σ 归一化权重ᵢ × 方向校正Zᵢ（群体均值 0）</div>
         </div>
       </div>
 
@@ -65,7 +65,10 @@
         <div class="section-header">
           <span>🧮 逐指标计算明细</span>
           <span class="section-sub">
-            有效权重 Σw={{ snapshotData.effectiveWeightSum?.toFixed(2) || '—' }}
+            原始有效权重 Σw={{ snapshotData.effectiveWeightSum?.toFixed(2) || '—' }}
+            <template v-if="renormalized">
+              （含仅参考/缺测项，已自动归一化为 <b>1.00</b>）
+            </template>
             · 有效 {{ validCount }}/{{ snapshotData.components?.length }}
           </span>
         </div>
@@ -85,8 +88,16 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="权重" width="70" align="center">
+          <el-table-column label="权重" width="68" align="center">
             <template #default="scope">{{ scope.row.weight?.toFixed(2) }}</template>
+          </el-table-column>
+          <el-table-column label="归一权重" width="80" align="center">
+            <template #default="scope">
+              <span v-if="scope.row.valid && scope.row.normalizedWeight != null" class="normw-cell">
+                {{ Number(scope.row.normalizedWeight).toFixed(3) }}
+              </span>
+              <span v-else class="muted">—</span>
+            </template>
           </el-table-column>
           <el-table-column label="测量值" width="85" align="right">
             <template #default="scope">{{ scope.row.value ?? '—' }}</template>
@@ -146,11 +157,16 @@
       </div>
 
       <!-- 备注 -->
-      <div v-if="hasRealStats || hasRefFallback" class="section-block notes">
-        <div class="section-header"><span>💡 数据来源说明</span></div>
+      <div class="section-block notes">
+        <div class="section-header"><span>💡 数据来源与口径说明</span></div>
         <ul class="notes-list">
-          <li v-if="hasRealStats">✅ <b>真实统计</b>：部分指标使用了同队+同性别范围的实际测量值（N≥5）计算 μ/σ</li>
-          <li v-if="hasRefFallback">ℹ️ <b>参考范围代理</b>：部分指标样本不足（N<5），使用 ref_min/ref_max 代理 μ/σ（μ=mid, σ=range/6）</li>
+          <li>
+            🔎 <b>参考样本池</b>：各指标的 μ/σ 取自该队员<b>同队伍 · 同性别</b>的<b>全部历史「已选中」最佳成绩</b>，
+            <b>不限于本次任务</b>；<b>N 为该指标实际样本量，不同指标可能不同</b>（见明细表 N 列）。
+          </li>
+          <li v-if="hasRealStats">✅ <b>真实统计</b>：N≥5 的指标用样本均值/标准差计算 μ/σ，Z=(实测值−μ)/σ，可比性以该参考群体为准。</li>
+          <li v-if="hasRefFallback">ℹ️ <b>参考范围代理</b>：N&lt;5 的指标样本不足，改用 ref_min/ref_max 代理（μ=(min+max)/2，σ=(max−min)/4），此时 Z 为粗略估计，需谨慎横向比较。</li>
+          <li v-if="renormalized">⚖️ <b>权重归一化</b>：存在「仅参考」或缺测指标时，其余有效指标权重已按比例放大、合计归一为 1.0，组合分不会因跳过指标而系统性偏低。</li>
         </ul>
       </div>
     </div>
@@ -230,6 +246,11 @@ const totalWeighted = computed(() =>
   sortedComponents.value.reduce((s, c) => s + (c.weightedScore ?? 0), 0))
 const hasRealStats = computed(() => sortedComponents.value.some(c => c.valid && c.useRealStats))
 const hasRefFallback = computed(() => sortedComponents.value.some(c => c.valid && !c.useRealStats))
+// 有效权重合计明显偏离 1（含被跳过的仅参考/缺测项）→ 报告展示"已自动归一化"
+const renormalized = computed(() => {
+  const s = snapshotData.value?.effectiveWeightSum
+  return s != null && Math.abs(Number(s) - 1) > 0.01
+})
 
 function comboGrade(v) {
   if (v == null) return 'na'
@@ -364,6 +385,7 @@ function printReport() { window.print() }
 .z-mid { color: #53655e; }
 
 .t-cell { font-weight: 600; color: #1b4332; font-family: var(--app-font-mono); }
+.normw-cell { font-family: var(--app-font-mono); font-size: 12px; color: #1b4332; }
 .weighted-cell { font-weight: 600; color: #2c8a57; font-family: var(--app-font-mono); }
 .ref-range { font-size: 12px; color: #606266; }
 .real-badge { margin-left: 4px; }

@@ -26,13 +26,19 @@ import java.util.Map;
  *   - REFERENCE_ONLY → 跳过（不计入加权）
  *   - direction_override 优先于 indicator.evaluation_direction
  *
- * <p>缺失指标：跳过该 component，剩余 component 权重归一化后再加权求和。
+ * <p>缺失/仅参考(REFERENCE_ONLY)指标：跳过该 component，<b>剩余 component 的权重自动归一化</b>
+ * （normalizedWeight = w / Σw_有效）后再加权求 Z 的加权均值：
+ * <pre>
+ *   combo = Σ (w_i / Σw_有效) × orientedZ_i
+ * </pre>
+ * 因此无论跳过几项，有效权重恒归一到 1，组合分不会被"压低"（历史 v2 漏除 Σw 导致
+ * 有效权重仅 0.8 时分数上限也只有 0.8，v3 修正）。
  *
  * <p>参考：combo_model.normalization_method = "z_score"
  */
 public class ComboScoreCalculator {
 
-    public static final String ALGO_VERSION = "composite-fitness-v2";
+    public static final String ALGO_VERSION = "composite-fitness-v3";
     public static final String NORMALIZATION = "t_score";
 
     private static final int SCALE_SCORE = 3;
@@ -66,7 +72,9 @@ public class ComboScoreCalculator {
         public BigDecimal tScore;
         /** 方向翻转后的 normalized 分（用于加权） */
         public BigDecimal normalized;
-        /** 加权得分 = weight * normalized */
+        /** 归一化后的有效权重 = weight / Σw_有效（跳过项为 null） */
+        public BigDecimal normalizedWeight;
+        /** 加权得分 = normalizedWeight * normalized（各有效项之和即 comboScore） */
         public BigDecimal weightedScore;
         /** 是否有效（有值且能算出 normalized） */
         public boolean valid;
@@ -101,6 +109,7 @@ public class ComboScoreCalculator {
                 sb.append(",\"indicatorCode\":\"").append(c.indicatorCode == null ? "" : c.indicatorCode).append("\"");
                 sb.append(",\"indicatorName\":\"").append(c.indicatorName == null ? "" : c.indicatorName).append("\"");
                 sb.append(",\"weight\":").append(c.weight == null ? "null" : c.weight);
+                sb.append(",\"normalizedWeight\":").append(c.normalizedWeight == null ? "null" : c.normalizedWeight);
                 sb.append(",\"direction\":\"").append(c.direction == null ? "" : c.direction).append("\"");
                 sb.append(",\"value\":").append(c.value == null ? "null" : c.value);
                 sb.append(",\"refMin\":").append(c.refMin == null ? "null" : c.refMin);
@@ -135,25 +144,30 @@ public class ComboScoreCalculator {
         Result result = new Result();
         result.breakdown = inputs;
 
-        BigDecimal sumWeighted = BigDecimal.ZERO;
+        // 第一趟：逐项算 μ/σ → Z → T → 方向校正 Z（processComponent 返回 orientedZ，null=跳过）
+        List<ComponentInput> valid = new ArrayList<>();
         BigDecimal sumWeight = BigDecimal.ZERO;
-        int covered = 0;
-
         for (ComponentInput c : inputs) {
-            BigDecimal weighted = processComponent(c);
-            if (weighted != null) {
-                sumWeighted = sumWeighted.add(weighted);
+            BigDecimal orientedZ = processComponent(c);
+            if (orientedZ != null) {
+                valid.add(c);
                 sumWeight = sumWeight.add(c.weight);
-                covered++;
             }
         }
 
         result.effectiveWeightSum = sumWeight;
-        result.coveredCount = covered;
-        result.complete = (covered == inputs.size());
+        result.coveredCount = valid.size();
+        result.complete = (valid.size() == inputs.size());
 
+        // 第二趟：有效权重归一化（w/Σw）后再加权，各有效项 weightedScore 之和即 comboScore
         if (sumWeight.compareTo(BigDecimal.ZERO) > 0) {
-            result.comboScore = sumWeighted.setScale(SCALE_SCORE, RM);
+            BigDecimal combo = BigDecimal.ZERO;
+            for (ComponentInput c : valid) {
+                c.normalizedWeight = c.weight.divide(sumWeight, SCALE_NORM, RM);
+                c.weightedScore = c.normalizedWeight.multiply(c.normalized).setScale(SCALE_SCORE, RM);
+                combo = combo.add(c.weightedScore);
+            }
+            result.comboScore = combo.setScale(SCALE_SCORE, RM);
         } else {
             result.comboScore = null;
         }
@@ -168,7 +182,7 @@ public class ComboScoreCalculator {
      *
      * <p>优先使用外部注入的 mu/sigma（真实参考组），否则用 ref 代理。
      *
-     * @return weightedScore 或 null 表示跳过
+     * @return 方向校正后的 Z（orientedZ）或 null 表示跳过；权重归一化与加权由 calculate() 统一处理
      */
     private static BigDecimal processComponent(ComponentInput c) {
         if (c.weight == null) { markSkip(c, "weight is null"); return null; }
@@ -202,18 +216,17 @@ public class ComboScoreCalculator {
         // 3. T-Score = 50 + 10 × Z
         c.tScore = new BigDecimal("50").add(z.multiply(new BigDecimal("10"))).setScale(SCALE_NORM, RM);
 
-        // 4. 方向翻转（normalized 用于加权，T-Score 本身不翻）
+        // 4. 方向翻转（normalized=orientedZ 用于加权，T-Score 本身不翻）
         BigDecimal normalized = z;
         if ("LOWER_BETTER".equals(c.direction)) {
             normalized = z.negate();
         }
         c.normalized = normalized;
 
-        // 5. 加权得分
-        c.weightedScore = c.weight.multiply(normalized).setScale(SCALE_SCORE, RM);
+        // 5. 标记有效；权重归一化与加权得分在 calculate() 第二趟统一计算
         c.valid = true;
         c.skipReason = null;
-        return c.weight.multiply(normalized);
+        return normalized;
     }
 
     private static void markSkip(ComponentInput c, String reason) {
