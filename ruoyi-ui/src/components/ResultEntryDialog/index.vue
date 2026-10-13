@@ -57,8 +57,11 @@
         </template>
       </el-alert>
 
-      <!-- ========== 直接指标（编辑模型时整段隐藏） ========== -->
-      <el-form-item v-if="mode !== 'edit' || editItemType === 'INDICATOR'" label="直接指标">
+      <!-- ========== 直接指标 ==========
+           显示条件：任务模式（任务可同时含指标与模型）；
+           散录仅在未选关联模型时显示（选了模型 = 本次只录模型，指标区隐藏，避免无关输入）；
+           编辑模式按被编辑记录类型显示。 -->
+      <el-form-item v-if="showIndicatorSection" label="直接指标">
         <div class="re-item-box" v-loading="loading">
           <table v-if="rows.length" class="re-table">
             <thead>
@@ -239,6 +242,13 @@ const unitMap = ref({})
 
 // 设备假门禁
 const device = reactive({ visible: false, loading: false, key: '', error: '', modelName: '', modelCode: '' })
+
+// 直接指标区是否展示：编辑只看被改类型；散录选了关联模型则隐藏；任务模式保留（任务可含两类项）
+const showIndicatorSection = computed(() => {
+  if (mode.value === 'edit') return editItemType.value === 'INDICATOR'
+  if (mode.value === 'free') return !form.freeModelId
+  return true
+})
 
 const dialogTitle = computed(() => {
   if (mode.value === 'edit') return `修改成绩 · ${ctx.athleteName || ''}`
@@ -512,17 +522,26 @@ async function submit() {
   if (!form.athleteId) return proxy.$modal.msgWarning('请选择运动员')
   if (!form.measureDate) return proxy.$modal.msgWarning('请选择测试日期')
 
+  const isEdit = mode.value === 'edit'
   const filledIndicators = rows.value.filter(r => r.input !== '' && r.input != null && String(r.input).trim() !== '')
-  // 每个模型只取有值的字段；新增模式做必填校验，编辑模式只改已存字段、不强制补录
+  // 编辑指标时该字段必须有值（原地修改不能清空成空记录）
+  if (isEdit && filledIndicators.length === 0 && rows.value.length > 0) {
+    const r = rows.value[0]
+    return proxy.$modal.msgWarning(`请填写「${r.indicatorName || r.indicatorCode}」的成绩，或改用删除移除该条记录`)
+  }
+  // 每个模型只取有值的字段；新增模式对所有必填项校验；
+  // 编辑模式字段集=该记录已存字段，其中必填项不允许清空（但允许保留原值不改）
   const modelPayloads = []
   for (const mf of modelForms.value) {
     const filledFields = mf.inputFields.filter(f => f.value !== '' && f.value != null && String(f.value).trim() !== '')
-    if (!filledFields.length) continue
-    if (mode.value !== 'edit') {
-      const missing = mf.inputFields.find(f => f.isRequired === '1'
-        && (f.value === '' || f.value == null || String(f.value).trim() === ''))
-      if (missing) return proxy.$modal.msgWarning(`模型「${mf.modelName}」的「${missing.fieldName}」为必填项`)
+    const missing = mf.inputFields.find(f => f.isRequired === '1'
+      && (f.value === '' || f.value == null || String(f.value).trim() === ''))
+    if (missing) {
+      return proxy.$modal.msgWarning(mode.value === 'edit'
+        ? `「${missing.fieldName}」为必填项，编辑时不能清空；如确需移除该数据请删除整条成绩`
+        : `模型「${mf.modelName}」的「${missing.fieldName}」为必填项`)
     }
+    if (!filledFields.length) continue
     modelPayloads.push({ mf, fields: filledFields })
   }
 
@@ -538,7 +557,6 @@ async function submit() {
   }
   const warnRows = filledIndicators.filter(indIsWarn)
 
-  const isEdit = mode.value === 'edit'
   const count = filledIndicators.length + modelPayloads.length
   const who = mode.value === 'task' ? ctx.athleteName : '该运动员'
   const confirmText = warnRows.length
