@@ -15,6 +15,10 @@ export function listFreeGroup(athleteId, indicatorId, modelId) {
 export function addTestResult(data) {
   return request({ url: '/apms/test-result', method: 'post', data })
 }
+// 在线网格批量录入：{ taskId?, measureDate, sessionKey?, rows: [{ athleteId, cells: [{ indicatorId, value }] }] }
+export function batchGridAdd(data) {
+  return request({ url: '/apms/test-result/batch-grid', method: 'post', data })
+}
 export function updateTestResult(data) {
   return request({ url: '/apms/test-result', method: 'put', data })
 }

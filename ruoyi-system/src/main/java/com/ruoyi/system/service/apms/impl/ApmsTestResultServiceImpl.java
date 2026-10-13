@@ -4,17 +4,25 @@ import java.math.BigDecimal;
 import java.util.*;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.SecurityUtils;
+import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.system.domain.apms.*;
+import com.ruoyi.system.domain.apms.dto.ResultGridForm;
 import com.ruoyi.system.mapper.apms.*;
 import com.ruoyi.system.service.apms.IApmsTestResultService;
 import com.ruoyi.system.service.apms.ITaskProgressService;
 import com.ruoyi.system.service.apms.IBodyMeasureSyncService;
 import com.ruoyi.system.service.apms.IApmsPhvService;
 import com.ruoyi.system.service.apms.InputRangeValidator;
+import com.ruoyi.system.service.apms.batchimport.AthleteImportResolver;
+import com.ruoyi.system.service.apms.batchimport.ImportCommitResult;
+import com.ruoyi.system.service.apms.batchimport.ResultImportItem;
+import com.ruoyi.system.service.apms.batchimport.ResultImportRowWriter;
+import com.ruoyi.system.service.apms.batchimport.TaskScopeQuery;
 
 /**
  * 测试结果 Service
@@ -39,6 +47,15 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
     @Autowired private IBodyMeasureSyncService bodyMeasureSyncService;
     @Autowired private IApmsPhvService phvService;
     @Autowired private InputRangeValidator inputRangeValidator;
+    // 在线网格批量录入：行级事务写入器（@Lazy 打破与 IApmsTestResultService 的构造期循环依赖；
+    // 运行时拿到的仍是带 @Transactional 代理的真实 Bean，行级事务语义不变）
+    @Lazy
+    @Autowired private ResultImportRowWriter gridRowWriter;
+    @Autowired private TaskScopeQuery taskScopeQuery;
+    @Autowired private AthleteImportResolver athleteResolver;
+    @Autowired private ApmsTaskItemMapper taskItemMapper;
+    @Autowired private ApmsTaskMemberMapper taskMemberMapper;
+    @Autowired private ApmsIndicatorMapper indicatorMapper;
 
     // ============== 基础 CRUD ==============
     @Override
@@ -125,6 +142,143 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
         // MODEL 型：按模型绑定的派生算法（algo_id）计算派生字段；无绑定则纯采集
         deriveModelResult(result, values);
         return 1;
+    }
+
+    /**
+     * 在线网格批量录入。本方法不加整体事务：gridRowWriter 逐人独立事务，一人失败只回滚一人。
+     * taskId/taskItemId 一律由服务端按任务配置权威解析，不信任前端传入的归属。
+     */
+    @Override
+    public ImportCommitResult batchGridAdd(ResultGridForm form) {
+        if (form == null || form.getMeasureDate() == null) {
+            throw new ServiceException("请选择测试日期");
+        }
+        List<ResultGridForm.Row> rawRows = form.getRows();
+        if (rawRows == null || rawRows.isEmpty()) {
+            throw new ServiceException("请至少选择一名队员");
+        }
+        if (rawRows.size() > ResultGridForm.MAX_ROWS) {
+            throw new ServiceException("单次网格录入不能超过 " + ResultGridForm.MAX_ROWS + " 人");
+        }
+
+        Long taskId = form.getTaskId();
+        Date measureDate = form.getMeasureDate();
+        String sessionKey = StringUtils.trim(form.getSessionKey());
+        if (StringUtils.isEmpty(sessionKey)) sessionKey = null;
+
+        // 任务模式：任务数据权限校验 + indicatorId → taskItemId 权威映射
+        Map<Long, Long> taskItemIdIndex = new HashMap<>();
+        if (taskId != null) {
+            ApmsTestTask taskQuery = new ApmsTestTask();
+            taskQuery.setId(taskId);
+            if (taskScopeQuery.findScopedById(taskQuery) == null) {
+                throw new ServiceException("任务 " + taskId + " 不存在或不在当前数据权限范围内");
+            }
+            for (ApmsTaskItem item : taskItemMapper.selectByTaskId(taskId)) {
+                if ("INDICATOR".equals(item.getItemType()) && item.getIndicatorId() != null) {
+                    taskItemIdIndex.put(item.getIndicatorId(), item.getId());
+                }
+            }
+        }
+
+        ImportCommitResult result = new ImportCommitResult();
+        int rowNo = 0;
+        for (ResultGridForm.Row rawRow : rawRows) {
+            rowNo++;
+            Long athleteId = rawRow != null ? rawRow.getAthleteId() : null;
+            String who = "第 " + rowNo + " 行（运动员 " + athleteId + "）";
+
+            if (athleteId == null) {
+                addGridFailure(result, who + "：缺少运动员ID");
+                continue;
+            }
+            // 人员数据权限复检（提交前可能已被调整出数据范围）
+            ApmsAthlete athlete = athleteMapper.selectApmsAthleteByAthleteId(athleteId);
+            if (athlete == null || !athleteResolver.existsInScope(athleteId)) {
+                addGridFailure(result, who + "：运动员不存在或不在当前数据权限范围内");
+                continue;
+            }
+            who = "队员「" + athlete.getName() + "」";
+            // 任务成员归属校验
+            if (taskId != null && taskMemberMapper.selectByTaskAndAthlete(taskId, athleteId) == null) {
+                addGridFailure(result, who + "：不是该任务的参测队员，未录入");
+                continue;
+            }
+
+            List<ResultGridForm.Cell> rawCells = rawRow.getCells();
+            if (rawCells == null || rawCells.isEmpty()) {
+                addGridFailure(result, who + "：没有任何成绩");
+                continue;
+            }
+            if (rawCells.size() > ResultGridForm.MAX_CELLS_PER_ROW) {
+                addGridFailure(result, who + "：单人指标数不能超过 " + ResultGridForm.MAX_CELLS_PER_ROW);
+                continue;
+            }
+            // 同队员同指标去重（保留最后一个非空值）；空值格直接跳过（当天未测）
+            Map<Long, BigDecimal> byIndicator = new LinkedHashMap<>();
+            for (ResultGridForm.Cell cell : rawCells) {
+                if (cell == null || cell.getIndicatorId() == null || cell.getValue() == null) continue;
+                byIndicator.put(cell.getIndicatorId(), cell.getValue());
+            }
+            if (byIndicator.isEmpty()) {
+                addGridFailure(result, who + "：没有任何有效成绩");
+                continue;
+            }
+            // 指标归属/存在性校验
+            if (taskId != null) {
+                List<Long> notInTask = byIndicator.keySet().stream()
+                        .filter(id -> !taskItemIdIndex.containsKey(id)).collect(Collectors.toList());
+                if (!notInTask.isEmpty()) {
+                    addGridFailure(result, who + "：" + notInTask.size() + " 个指标不在该任务测试项中，整人未录入");
+                    continue;
+                }
+            } else {
+                boolean badIndicator = false;
+                for (Long indicatorId : byIndicator.keySet()) {
+                    if (indicatorMapper.selectById(indicatorId) == null) {
+                        addGridFailure(result, who + "：指标 " + indicatorId + " 不存在，整人未录入");
+                        badIndicator = true;
+                        break;
+                    }
+                }
+                if (badIndicator) continue;
+            }
+
+            // 逐指标构造 add 入参，行内同一事务（任一指标硬限失败 → 该人整行回滚）
+            List<ResultImportItem> items = new ArrayList<>();
+            for (Map.Entry<Long, BigDecimal> e : byIndicator.entrySet()) {
+                Long indicatorId = e.getKey();
+                ApmsTestResult tr = new ApmsTestResult();
+                tr.setAthleteId(athleteId);
+                tr.setTaskId(taskId);
+                tr.setTaskItemId(taskId == null ? null : taskItemIdIndex.get(indicatorId));
+                tr.setMeasureDate(measureDate);
+                tr.setSessionKey(sessionKey);
+                tr.setItemType("INDICATOR");
+                tr.setIndicatorId(indicatorId);
+                tr.setIsValid("1");
+                tr.setIsSelected("1");
+                tr.setDataSource("MANUAL");
+                ApmsTestResultValue tv = new ApmsTestResultValue();
+                tv.setIndicatorId(indicatorId);
+                tv.setFieldKey("result");
+                tv.setIsDerived("0");
+                tv.setNumericValue(e.getValue());
+                items.add(new ResultImportItem(tr, Collections.singletonList(tv)));
+            }
+            try {
+                gridRowWriter.writeRow(items);
+                result.setCommitted(result.getCommitted() + 1);
+            } catch (Exception ex) {
+                addGridFailure(result, who + "：" + (StringUtils.isNotEmpty(ex.getMessage()) ? ex.getMessage() : "成绩写入失败"));
+            }
+        }
+        return result;
+    }
+
+    private void addGridFailure(ImportCommitResult result, String detail) {
+        result.setFailed(result.getFailed() + 1);
+        result.getFailedDetails().add(detail);
     }
 
     @Override

@@ -15,6 +15,9 @@
                      v-hasPermi="['apms:testResult:add']">
             <el-icon><Upload /></el-icon>批量导入
           </el-button>
+          <el-button class="rk-btn rk-btn-primary" :disabled="!hasImportPerm" @click="gridEntryDialogRef?.openFree()">
+            <el-icon><Grid /></el-icon>网格录入
+          </el-button>
           <el-button class="rk-btn" :disabled="!hasImportPerm" @click="entryDialogRef?.openFree()">
             <el-icon><EditPen /></el-icon>手动录入
           </el-button>
@@ -287,6 +290,8 @@
 
       <!-- 手动录入成绩 -->
       <result-entry-dialog ref="entryDialogRef" @success="handleImportSuccess"/>
+      <!-- 网格批量录入（散录模式：不绑任务） -->
+      <result-grid-entry-dialog ref="gridEntryDialogRef" @success="handleImportSuccess"/>
       <!-- 设备接入 -->
       <device-access-dialog ref="deviceDialogRef" @pushed="handleImportSuccess"/>
       <!-- Excel/CSV 批量导入（两阶段预览） -->
@@ -311,11 +316,12 @@ import { listTestResult, getTestResult, listByTaskMember, listFreeGroup, selectA
 import { listTestTask } from '@/api/apms/testTask'
 import { listAthlete } from '@/api/apms/athlete'
 import ResultEntryDialog from '@/components/ResultEntryDialog/index.vue'
+import ResultGridEntryDialog from '@/components/ResultGridEntryDialog/index.vue'
 import DeviceAccessDialog from '@/components/DeviceAccessDialog/index.vue'
 import ImportPreviewDialog from '@/components/ImportPreviewDialog/index.vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import { checkPermi } from '@/utils/permission'
-import { EditPen, Connection, RefreshLeft, ArrowLeft, ArrowRight, Close, Upload } from '@element-plus/icons-vue'
+import { EditPen, Grid, Connection, RefreshLeft, ArrowLeft, ArrowRight, Close, Upload } from '@element-plus/icons-vue'
 import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
 
 const { proxy } = getCurrentInstance()
@@ -324,8 +330,9 @@ const { drawerSize } = useDrawerSize('720px')
 
 const PAGE_SIZE = 10
 
-// ========= 手动录入 / 设备推送 =========
+// ========= 手动录入 / 网格批量 / 设备推送 =========
 const entryDialogRef = ref(null)
+const gridEntryDialogRef = ref(null)
 const deviceDialogRef = ref(null)
 const importDialogRef = ref(null)
 // 修复原页缺陷：proxy.$checkPermi 全局未注册（main.js 无此挂载）且 checkPermi 要求传数组（原传字符串），

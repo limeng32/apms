@@ -15,6 +15,7 @@ import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.page.TableDataInfo;
 import com.ruoyi.system.domain.apms.ApmsTestResult;
 import com.ruoyi.system.domain.apms.ApmsTestResultValue;
+import com.ruoyi.system.domain.apms.dto.ResultGridForm;
 import com.ruoyi.system.service.apms.IApmsTestResultService;
 import com.ruoyi.system.service.apms.ITestResultImportProvider;
 import com.ruoyi.system.service.apms.ITestResultTemplateService;
@@ -97,12 +98,24 @@ public class ApmsTestResultController extends BaseController {
         return AjaxResult.success(resultService.listFreeGroup(athleteId, indicatorId, modelId));
     }
 
-    /** 新增（Service 自动 REP 计算 + autoSelectBest） */
+    /**
+     * 新增（Service 自动 REP 计算 + autoSelectBest） */
     @PreAuthorize("@ss.hasPermi('apms:testResult:add')")
     @PostMapping
     public AjaxResult add(@RequestBody AddBody body) {
         resultService.add(body.result, body.values);
         return AjaxResult.success();
+    }
+
+    /**
+     * 在线网格批量录入（行=队员，格=直接指标）
+     * Body: { taskId?(散录不传), measureDate, sessionKey?, rows: [{ athleteId, cells: [{ indicatorId, value }] }] }
+     * 逐人行级事务、部分成功，返回 committed/failed/failedDetails
+     */
+    @PreAuthorize("@ss.hasPermi('apms:testResult:add')")
+    @PostMapping("/batch-grid")
+    public AjaxResult batchGrid(@RequestBody ResultGridForm form) {
+        return AjaxResult.success(resultService.batchGridAdd(form));
     }
 
     /** 修改 */

@@ -3,6 +3,8 @@ package com.ruoyi.system.service.apms;
 import java.util.List;
 import com.ruoyi.system.domain.apms.ApmsTestResult;
 import com.ruoyi.system.domain.apms.ApmsTestResultValue;
+import com.ruoyi.system.domain.apms.dto.ResultGridForm;
+import com.ruoyi.system.service.apms.batchimport.ImportCommitResult;
 
 /**
  * 测试结果 Service 接口
@@ -20,6 +22,12 @@ public interface IApmsTestResultService {
 
     int add(ApmsTestResult result, List<ApmsTestResultValue> values);
     int update(ApmsTestResult result, List<ApmsTestResultValue> values);
+
+    /**
+     * 在线网格批量录入（行=队员，格=直接指标）：
+     * 逐人行级事务，一人失败只回滚该人；任务模式权威解析 task_item 归属并校验成员/指标归属。
+     */
+    ImportCommitResult batchGridAdd(ResultGridForm form);
     int delete(Long id);
     int deleteByTaskId(Long taskId);
 

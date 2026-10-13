@@ -328,10 +328,18 @@
               <!-- Tab 2：参测队员 -->
               <div v-show="activeTab === 'members'" class="rk-tab-panel">
                 <div class="rk-toolbar">
-                  <el-button class="rk-btn rk-btn-primary rk-btn-sm" :disabled="!currentTask" @click="openEnrollDialog()">
+                  <el-button class="rk-btn rk-btn-primary rk-btn-sm" :disabled="!currentTask"
+                             @click="openGridEntry" v-hasPermi="['apms:testResult:add']">
+                    <el-icon><EditPen /></el-icon>网格录成绩
+                  </el-button>
+                  <el-button class="rk-btn rk-btn-sm" :disabled="!currentTask"
+                             @click="importDialogRef?.open()" v-hasPermi="['apms:testResult:add']">
+                    <el-icon><Upload /></el-icon>导入成绩
+                  </el-button>
+                  <el-button class="rk-btn rk-btn-sm" :disabled="!currentTask" @click="openEnrollDialog()">
                     <el-icon><Plus /></el-icon>单个登记
                   </el-button>
-                  <el-button class="rk-btn rk-btn-primary rk-btn-sm" :disabled="!currentTask" @click="openBatchEnrollDialog()">
+                  <el-button class="rk-btn rk-btn-sm" :disabled="!currentTask" @click="openBatchEnrollDialog()">
                     <el-icon><User /></el-icon>批量登记
                   </el-button>
                   <el-button class="rk-btn rk-btn-sm" :disabled="!currentTask" @click="loadDetail(currentTask.id)">
@@ -543,8 +551,21 @@
         </template>
       </el-dialog>
 
-      <!-- 成绩录入 -->
+      <!-- 成绩录入（单人） -->
       <result-entry-dialog ref="entryDialogRef" @success="handleEntrySuccess"/>
+      <!-- 成绩录入（网格批量：任务自动绑定） -->
+      <result-grid-entry-dialog ref="gridEntryDialogRef" @success="handleEntrySuccess"/>
+      <!-- Excel/CSV 批量导入（两阶段预览，extraForm 带当前任务 id 实现任务绑定） -->
+      <import-preview-dialog
+        ref="importDialogRef"
+        title="任务成绩批量导入"
+        preview-url="/apms/test-result/import/preview"
+        commit-url="/apms/test-result/import/commit"
+        template-url="apms/test-result/import/template"
+        :extra-form="importExtraForm"
+        :tips="['模板已按本任务预填参测队员名单与指标列，只需填写数值', '一期仅支持指标（INDICATOR）成绩；模型类测试请用网格旁的单人录入', '每格一个数值；非数字或超出允许范围的单元格会在预览中标红，错误行将跳过']"
+        @success="handleEntrySuccess"
+      />
     </div>
   </div>
 </template>
@@ -560,9 +581,11 @@ import { listDept } from '@/api/system/dept'
 import { listUser } from '@/api/system/user'
 import { useRouter } from 'vue-router'
 import request from '@/utils/request'
-import { Plus, Delete, RefreshLeft, Refresh, ArrowLeft, ArrowRight, User, Close } from '@element-plus/icons-vue'
+import { Plus, Delete, RefreshLeft, Refresh, ArrowLeft, ArrowRight, User, Close, EditPen, Upload } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import ResultEntryDialog from '@/components/ResultEntryDialog/index.vue'
+import ResultGridEntryDialog from '@/components/ResultGridEntryDialog/index.vue'
+import ImportPreviewDialog from '@/components/ImportPreviewDialog/index.vue'
 import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
 
 const { proxy } = getCurrentInstance()
@@ -941,6 +964,20 @@ function handleRemoveMember(row) {
 
 // ========= 成绩录入 =========
 const entryDialogRef = ref(null)
+const gridEntryDialogRef = ref(null)
+const importDialogRef = ref(null)
+// 导入弹窗按当前抽屉任务绑定（下载模板/上传解析都带 taskId）
+const importExtraForm = computed(() => ({ taskId: currentTask.value?.id ?? null }))
+
+function openGridEntry() {
+  if (!currentTask.value) return
+  gridEntryDialogRef.value?.openForTask({
+    taskId: currentTask.value.id,
+    taskName: currentTask.value.taskName,
+    items: detail.items,
+    members: detail.members
+  })
+}
 
 function openEntryForMember(m) {
   entryDialogRef.value?.openForTask({
