@@ -4,6 +4,23 @@
              append-to-body class="ip-dialog" :close-on-click-modal="false" @close="handleClose">
     <!-- ===== 步骤 1：下载模板 + 选择文件 ===== -->
     <div v-if="step === 1">
+      <!-- 关联任务：成绩导入可在散录/任务间选择；任务抽屉入口为锁定态；体态导入不显示 -->
+      <div v-if="showTaskSelect || lockedTaskId" class="ip-task-row">
+        <span class="ip-tpl-label">关联任务：</span>
+        <el-select v-if="showTaskSelect" v-model="selectedTaskId" filterable clearable
+                   placeholder="不选 = 散录（不计入任务进度）" style="width:340px">
+          <el-option v-for="t in taskOptions" :key="t.id"
+                     :label="`#${t.id} ${t.taskName}`" :value="t.id"/>
+        </el-select>
+        <span v-else class="ip-task-locked">
+          已绑定任务 #{{ lockedTaskId }}（由任务详情进入，自动按该任务的成员/指标校验）
+        </span>
+        <span class="ip-task-hint">
+          {{ showTaskSelect
+            ? (selectedTaskId ? '将按所选任务校验成员/指标，成绩计入该任务进度' : '未选任务：本次为散录，不计入任务进度')
+            : '' }}
+        </span>
+      </div>
       <div class="ip-tpl-row">
         <span class="ip-tpl-label">导入模板：</span>
         <el-button link type="primary" :icon="Download" @click="downloadTpl('xlsx')">下载 Excel 模板 (.xlsx)</el-button>
@@ -149,6 +166,7 @@
 import { ref, computed } from 'vue'
 import { Download, UploadFilled } from '@element-plus/icons-vue'
 import { previewImport, commitImport } from '@/api/apms/batchImport'
+import { listTestTask } from '@/api/apms/testTask'
 
 const props = defineProps({
   title: { type: String, default: '批量导入' },
@@ -157,6 +175,8 @@ const props = defineProps({
   templateUrl: { type: String, required: true },
   /** 提交/解析时附加的表单字段，如 { taskId } */
   extraForm: { type: Object, default: () => ({}) },
+  /** 是否允许在弹窗内选择关联任务（成绩导入开启；体态导入不显示） */
+  showTaskSelect: { type: Boolean, default: false },
   /** 是否展示「允许覆盖此前导入数据」勾选（体态 true，成绩 false） */
   allowOverwrite: { type: Boolean, default: false },
   /** 步骤①格式说明（默认值之外的补充） */
@@ -188,10 +208,31 @@ const overwriteImport = ref(false)
 const result = ref(null)
 const defaultTip = '一格一个数值；同一队员多次测试请分多行填写；运动员优先填写编号，姓名须与系统完全一致，重名必须填编号'
 
+// 关联任务选择（仅 showTaskSelect 时可改；任务抽屉入口通过 extraForm.taskId 锁定）
+const taskOptions = ref([])
+const selectedTaskId = ref(null)
+const lockedTaskId = computed(() =>
+  props.showTaskSelect ? null : (props.extraForm?.taskId ?? null))
+// 模板下载/预览/提交统一使用的附加参数
+const effectiveForm = computed(() => {
+  if (props.showTaskSelect) {
+    return { ...props.extraForm, taskId: selectedTaskId.value || null }
+  }
+  return props.extraForm
+})
+
 function open() {
   visible.value = true
   step.value = 1
   resetState()
+  if (props.showTaskSelect) {
+    selectedTaskId.value = props.extraForm?.taskId ?? null
+    if (!taskOptions.value.length) {
+      listTestTask({ pageNum: 1, pageSize: 999 })
+        .then(res => { taskOptions.value = res.rows || [] })
+        .catch(() => {})
+    }
+  }
 }
 function resetState() {
   file.value = null
@@ -215,7 +256,7 @@ function onRemove() {
 }
 
 function downloadTpl(format) {
-  const params = { format, ...props.extraForm }
+  const params = { format, ...effectiveForm.value }
   const prefix = props.previewUrl.includes('body-measure') ? 'body-measure-template' : 'test-result-template'
   proxy.download(props.templateUrl, params, `${prefix}.${format}`, { method: 'get' })
 }
@@ -224,7 +265,7 @@ async function doPreview() {
   if (!file.value) return
   parsing.value = true
   try {
-    const res = await previewImport(props.previewUrl, file.value, props.extraForm)
+    const res = await previewImport(props.previewUrl, file.value, effectiveForm.value)
     preview.value = res.data
     step.value = 2
   } finally {
@@ -307,7 +348,13 @@ defineExpose({ open })
   margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
   flex-wrap: wrap;
 }
-.ip-tpl-label { font-size: 13px; color: #475569; }
+.ip-tpl-label { font-size: 13px; color: #475569; white-space: nowrap; }
+.ip-task-row {
+  margin-bottom: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 12px; border: 1px solid #e5e9f0; border-radius: 10px; background: #f8faff;
+}
+.ip-task-locked { font-size: 13px; font-weight: 500; color: #2563eb; }
+.ip-task-hint { font-size: 12px; color: #94a3b8; }
 .ip-tip { font-size: 12px; color: #94a3b8; }
 .ip-rules { margin: 10px 0 0; padding-left: 4px; font-size: 12px; color: #64748b; line-height: 19px; }
 

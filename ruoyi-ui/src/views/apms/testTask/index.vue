@@ -563,7 +563,7 @@
         commit-url="/apms/test-result/import/commit"
         template-url="apms/test-result/import/template"
         :extra-form="importExtraForm"
-        :tips="['模板已按本任务预填参测队员名单与指标列，只需填写数值', '一期仅支持指标（INDICATOR）成绩；模型类测试请用网格旁的单人录入', '每格一个数值；非数字或超出允许范围的单元格会在预览中标红，错误行将跳过']"
+        :tips="['模板已按本任务预填参测队员名单与指标列，只需填写数值', '仅支持指标（INDICATOR）成绩；模型类测试请用网格旁的单人录入', '每格一个数值；非数字或超出允许范围的单元格会在预览中标红，错误行将跳过']"
         @success="handleEntrySuccess"
       />
     </div>

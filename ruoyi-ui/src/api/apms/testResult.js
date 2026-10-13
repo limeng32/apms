@@ -25,6 +25,10 @@ export function updateTestResult(data) {
 export function delTestResult(id) {
   return request({ url: '/apms/test-result/' + id, method: 'delete' })
 }
+// 批量删除（Body: [id,...]）
+export function delTestResultBatch(ids) {
+  return request({ url: '/apms/test-result/batch', method: 'delete', data: ids })
+}
 export function delByTask(taskId) {
   return request({ url: '/apms/test-result/task/' + taskId, method: 'delete' })
 }

@@ -15,6 +15,11 @@
             <span class="re-readonly">{{ ctx.taskName }}</span>
           </el-form-item>
         </el-col>
+        <el-col v-else-if="mode === 'edit'" :span="24">
+          <el-form-item label="任务">
+            <span class="re-readonly">{{ ctx.taskName || '不绑定任务（散录）' }}</span>
+          </el-form-item>
+        </el-col>
         <el-col :span="12">
           <el-form-item label="运动员" required>
             <el-select v-if="mode === 'free'" v-model="form.athleteId" filterable
@@ -52,8 +57,8 @@
         </template>
       </el-alert>
 
-      <!-- ========== 直接指标 ========== -->
-      <el-form-item label="直接指标">
+      <!-- ========== 直接指标（编辑模型时整段隐藏） ========== -->
+      <el-form-item v-if="mode !== 'edit' || editItemType === 'INDICATOR'" label="直接指标">
         <div class="re-item-box" v-loading="loading">
           <table v-if="rows.length" class="re-table">
             <thead>
@@ -99,8 +104,9 @@
         </div>
       </el-form-item>
 
-      <!-- ========== 模型结构化采集（字段由模型配置驱动，不写死任何模型） ========== -->
-      <el-form-item v-for="mf in modelForms" :key="mf._uid" :label="mf === modelForms[0] ? '模型测试' : ''">
+      <!-- ========== 模型结构化采集（编辑指标时整段隐藏；编辑模型只显示已存字段） ========== -->
+      <el-form-item v-for="mf in modelForms" v-show="mode !== 'edit' || editItemType === 'MODEL'"
+                    :key="mf._uid" :label="mf === modelForms[0] ? '模型测试' : ''">
         <div class="re-model-card">
           <div class="re-model-head">
             <div>
@@ -114,7 +120,7 @@
           <div class="re-field-grid">
             <div v-for="f in mf.inputFields" :key="f.fieldId" class="re-field">
               <label class="re-field-label">
-                <span v-if="f.isRequired === '1'" class="re-req">*</span>{{ f.fieldName }}
+                <span v-if="f.isRequired === '1' && mode !== 'edit'" class="re-req">*</span>{{ f.fieldName }}
                 <span class="re-field-key">{{ f.fieldKey }}</span>
               </label>
               <el-input v-model="f.value" :placeholder="dataTypeText(f.dataType)" clearable size="small">
@@ -135,12 +141,18 @@
         </div>
       </el-form-item>
 
-      <el-alert type="info" :closable="false" show-icon
+      <el-alert v-if="mode === 'edit'" type="warning" :closable="false" show-icon
+        :title="editItemType === 'MODEL'
+          ? '正在原地修改该条模型成绩（不新增尝试）：保存后派生字段、最佳试次与任务进度自动重算；清空的字段会被删除。'
+          : '正在原地修改该条成绩（不新增尝试）：保存后 REP 评价、最佳试次与任务进度自动重算。'"/>
+      <el-alert v-else type="info" :closable="false" show-icon
         title="只填本次已测项目即可；指标自动参与最佳试次判定与 REP 评价，模型原始数据保存后自动产出派生结果。"/>
     </el-form>
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="submit">保存成绩</el-button>
+      <el-button type="primary" :loading="saving" @click="submit">
+        {{ mode === 'edit' ? '保存修改' : '保存成绩' }}
+      </el-button>
     </template>
 
     <!-- 设备采集假门禁：任何密钥都返回失效 -->
@@ -167,7 +179,7 @@ import { listTestTask, listTaskItem } from '@/api/apms/testTask'
 import { listAthlete } from '@/api/apms/athlete'
 import { listIndicator } from '@/api/apms/indicator'
 import { listField, listTestModel } from '@/api/apms/testModel'
-import { addTestResult, listByTaskMember, pushDeviceModel } from '@/api/apms/testResult'
+import { addTestResult, updateTestResult, getTestResult, listByTaskMember, pushDeviceModel } from '@/api/apms/testResult'
 import {
   loadRanges, getIndicatorRange, classify, isHard, isWarn, hardMessage, warnMessage
 } from '@/utils/measureRange'
@@ -205,8 +217,12 @@ function indIsWarn(r) {
 const visible = ref(false)
 const saving = ref(false)
 const loading = ref(false)
-const mode = ref('free') // free | task
+const mode = ref('free') // free | task | edit
 const ctx = reactive({ taskId: null, taskName: '', athleteId: null, athleteName: '' })
+// 编辑模式：被修改的记录 id 与原始记录（提交时保留 taskItemId/isSelected/dataSource）
+const editId = ref(null)
+const editResult = ref(null)
+const editItemType = ref(null) // INDICATOR | MODEL（散录记录 JOIN 不出 itemType，前端按主表字段判定）
 
 const form = reactive({ taskId: null, athleteId: null, measureDate: '', sessionKey: '', freeModelId: null })
 const taskOptions = ref([])
@@ -224,9 +240,12 @@ const unitMap = ref({})
 // 设备假门禁
 const device = reactive({ visible: false, loading: false, key: '', error: '', modelName: '', modelCode: '' })
 
-const dialogTitle = computed(() => mode.value === 'task'
-  ? `录入成绩 · ${ctx.athleteName || ''}`
-  : '手动录入测试结果')
+const dialogTitle = computed(() => {
+  if (mode.value === 'edit') return `修改成绩 · ${ctx.athleteName || ''}`
+  return mode.value === 'task'
+    ? `录入成绩 · ${ctx.athleteName || ''}`
+    : '手动录入测试结果'
+})
 
 function today() {
   const d = new Date()
@@ -234,7 +253,12 @@ function today() {
 }
 
 function dirLabel(d) {
-  return d === 'HIGHER_BETTER' ? '越高越好' : d === 'LOWER_BETTER' ? '越低越好' : (d || '—')
+  return ({
+    HIGHER_BETTER: '越高越好',
+    LOWER_BETTER: '越低越好',
+    RANGE_BEST: '范围最佳',
+    REFERENCE_ONLY: '仅参考'
+  })[d] || (d || '—')
 }
 // 散录排序：分类业务优先级（形态类核心指标如身高/体重靠前），未归类排最后
 const CATEGORY_RANK = { '形态': 0, '机能': 1, '素质': 2, '筛查': 3 }
@@ -257,6 +281,92 @@ async function openForTask(task) {
   await ensureBaseOptions()
   await loadItems()
   await loadExisting()
+}
+
+/**
+ * 方案三入口：编辑已有成绩（原地修改，不新增 attempt）
+ * @param target 完整详情对象，或仅 { id }（内部补拉详情）
+ */
+async function openEdit(target) {
+  mode.value = 'edit'
+  editId.value = null
+  editResult.value = null
+  editItemType.value = null
+  loading.value = true
+  proxy.$modal.loading('加载成绩…')
+  // 关键：数据全部准备好（含过滤/回填）后再开窗，避免先渲染全量指标再"闪"成一行
+  try {
+    await ensureBaseOptions()
+    const d = target && target.values ? target : (await getTestResult(target.id)).data
+    if (!d) {
+      proxy.$modal.msgError('成绩不存在或已被删除')
+      return
+    }
+    await hydrateEdit(d)
+    visible.value = true
+  } catch (e) {
+    proxy.$modal.msgError(e?.msg || e?.message || '加载成绩失败')
+  } finally {
+    loading.value = false
+    proxy.$modal.closeLoading()
+  }
+}
+
+/** 按详情数据完成编辑态的字段/表格过滤与回填（弹窗打开前执行） */
+async function hydrateEdit(d) {
+  editId.value = d.id
+  editResult.value = d
+
+  // itemType 来自 task_item JOIN，散录（task_item_id 为空）时为 null；
+  // 编辑场景以主表上的 indicatorId / modelId 为准判定类型，否则散录记录无法回填
+  const itemType = d.indicatorId != null ? 'INDICATOR'
+    : (d.modelId != null ? 'MODEL' : d.itemType)
+  editItemType.value = itemType
+
+  const taskName = d.taskId ? (taskOptions.value.find(t => t.id === d.taskId)?.taskName || ('任务 #' + d.taskId)) : ''
+  Object.assign(ctx, {
+    taskId: d.taskId || null, taskName,
+    athleteId: d.athleteId, athleteName: d.athleteName || ''
+  })
+  Object.assign(form, {
+    taskId: d.taskId || null,
+    athleteId: d.athleteId,
+    measureDate: (d.measureDate || '').slice(0, 10),
+    sessionKey: d.sessionKey || '',
+    freeModelId: itemType === 'MODEL' && !d.taskId ? d.modelId : null
+  })
+
+  await loadItems()
+
+  // 回填：指标只显示并填被编辑项；模型只保留被编辑的模型卡片
+  const inputVals = (d.values || []).filter(v => v.isDerived !== '1')
+  if (itemType === 'INDICATOR') {
+    // 编辑指标：只保留该指标一行，模型卡片全部移除（避免出现无关录入项）
+    rows.value = rows.value.filter(r => r.indicatorId === d.indicatorId)
+    modelForms.value = []
+    comboModels.value = []
+    const r = rows.value[0]
+    if (r) {
+      const main = inputVals.find(v => v.fieldKey === 'result') || inputVals[0]
+      r.input = main ? (main.numericValue ?? main.textValue ?? '') : ''
+    }
+  } else if (itemType === 'MODEL') {
+    // 编辑模型：只保留该模型卡片，指标行全部移除
+    rows.value = []
+    modelForms.value = modelForms.value.filter(mf => mf.modelId === d.modelId)
+    const mf = modelForms.value[0]
+    if (mf) {
+      const storedKeys = new Set(inputVals.map(v => v.fieldKey))
+      const storedFields = mf.inputFields.filter(f => storedKeys.has(f.fieldKey))
+      // 只呈现本条记录已存的字段（避免摊出一堆空的必填项逼用户补录）；
+      // 极端情况下无匹配（历史脏数据）才回退展示全部字段
+      if (storedFields.length) mf.inputFields = storedFields
+      mf.inputFields.forEach(f => {
+        const cur = inputVals.find(v => v.fieldKey === f.fieldKey)
+        f.value = cur ? (cur.numericValue ?? cur.textValue ?? '') : ''
+      })
+    }
+  }
 }
 
 /** 方案二入口：结果页自由录 */
@@ -317,7 +427,7 @@ async function loadItems() {
         else comboModels.value.push(it.modelName || it.modelCode)
       }
       modelForms.value = forms
-    } else if (mode.value === 'free') {
+    } else if (mode.value === 'free' || mode.value === 'edit') {
       const res = await listIndicator({ pageNum: 1, pageSize: 999, status: '0' })
       // 散录无任务配置顺序：按分类业务优先级排列（形态核心指标如身高/体重靠前），
       // 同类内保持后端 id 顺序；任务模式不重排，沿用任务项 sort_order（测试设计顺序）
@@ -403,14 +513,16 @@ async function submit() {
   if (!form.measureDate) return proxy.$modal.msgWarning('请选择测试日期')
 
   const filledIndicators = rows.value.filter(r => r.input !== '' && r.input != null && String(r.input).trim() !== '')
-  // 每个模型只取有值的字段；同时在前端做一次必填校验（后端会强校验）
+  // 每个模型只取有值的字段；新增模式做必填校验，编辑模式只改已存字段、不强制补录
   const modelPayloads = []
   for (const mf of modelForms.value) {
     const filledFields = mf.inputFields.filter(f => f.value !== '' && f.value != null && String(f.value).trim() !== '')
     if (!filledFields.length) continue
-    const missing = mf.inputFields.find(f => f.isRequired === '1'
-      && (f.value === '' || f.value == null || String(f.value).trim() === ''))
-    if (missing) return proxy.$modal.msgWarning(`模型「${mf.modelName}」的「${missing.fieldName}」为必填项`)
+    if (mode.value !== 'edit') {
+      const missing = mf.inputFields.find(f => f.isRequired === '1'
+        && (f.value === '' || f.value == null || String(f.value).trim() === ''))
+      if (missing) return proxy.$modal.msgWarning(`模型「${mf.modelName}」的「${missing.fieldName}」为必填项`)
+    }
     modelPayloads.push({ mf, fields: filledFields })
   }
 
@@ -426,25 +538,36 @@ async function submit() {
   }
   const warnRows = filledIndicators.filter(indIsWarn)
 
+  const isEdit = mode.value === 'edit'
   const count = filledIndicators.length + modelPayloads.length
   const who = mode.value === 'task' ? ctx.athleteName : '该运动员'
   const confirmText = warnRows.length
     ? '以下成绩超出合理区间：\n· ' + warnRows.map(indHint).join('\n· ')
-      + `\n\n确认数据无误，为 ${who} 保存 ${count} 项测试结果？`
-    : `将为 ${who} 保存 ${count} 项测试结果，是否继续？`
+      + `\n\n确认数据无误，${isEdit ? `保存对 ${who} 该条成绩的修改？` : `为 ${who} 保存 ${count} 项测试结果？`}`
+    : isEdit
+      ? `确认保存对 ${who} 该条成绩的修改？（原地修改，不新增尝试）`
+      : `将为 ${who} 保存 ${count} 项测试结果，是否继续？`
   try {
-    await proxy.$modal.confirm(confirmText, warnRows.length ? '异常值确认' : '保存测试结果')
+    await proxy.$modal.confirm(confirmText, warnRows.length ? '异常值确认' : (isEdit ? '修改测试结果' : '保存测试结果'))
   } catch {
     return
   }
   saving.value = true
   try {
+    // 编辑模式保留原记录的归属/选中/来源；taskItemId 以原记录为准
+    const editBase = isEdit ? {
+      id: editId.value,
+      taskItemId: editResult.value?.taskItemId ?? null,
+      isSelected: editResult.value?.isSelected || '1',
+      dataSource: editResult.value?.dataSource || 'MANUAL'
+    } : null
+
     for (const r of filledIndicators) {
       const num = Number(String(r.input).trim())
-      await addTestResult({
+      const payload = {
         result: {
           taskId: form.taskId || null,
-          taskItemId: form.taskId ? (r.id ?? null) : null,
+          taskItemId: isEdit ? editBase.taskItemId : (form.taskId ? (r.id ?? null) : null),
           athleteId: form.athleteId,
           itemType: 'INDICATOR',
           indicatorId: r.indicatorId,
@@ -463,11 +586,19 @@ async function submit() {
           numericValue: Number.isFinite(num) ? num : null,
           textValue: Number.isFinite(num) ? null : String(r.input).trim()
         }]
-      })
+      }
+      if (isEdit) {
+        payload.result.id = editBase.id
+        payload.result.isSelected = editBase.isSelected
+        payload.result.dataSource = editBase.dataSource
+        await updateTestResult(payload)
+      } else {
+        await addTestResult(payload)
+      }
     }
     for (const { mf, fields } of modelPayloads) {
       const numericType = (f) => f.dataType === 'decimal' || f.dataType === 'number'
-      await addTestResult({
+      const payload = {
         result: {
           taskId: form.taskId || null,
           taskItemId: mf.taskItemId,
@@ -494,11 +625,20 @@ async function submit() {
             textValue: !numericType(f) ? raw : null
           }
         })
-      })
+      }
+      if (isEdit) {
+        payload.result.id = editBase.id
+        payload.result.taskItemId = editBase.taskItemId
+        payload.result.isSelected = editBase.isSelected
+        payload.result.dataSource = editBase.dataSource
+        await updateTestResult(payload)
+      } else {
+        await addTestResult(payload)
+      }
     }
-    proxy.$modal.msgSuccess(`已保存 ${count} 项测试结果`)
+    proxy.$modal.msgSuccess(isEdit ? '成绩已修改' : `已保存 ${count} 项测试结果`)
     visible.value = false
-    emit('success', { taskId: form.taskId, athleteId: form.athleteId })
+    emit('success', { taskId: form.taskId, athleteId: form.athleteId, resultId: editId.value })
   } finally {
     saving.value = false
   }
@@ -535,10 +675,13 @@ function reset() {
   modelForms.value = []
   comboModels.value = []
   saving.value = false
+  editId.value = null
+  editResult.value = null
+  editItemType.value = null
   Object.assign(device, { visible: false, loading: false, key: '', error: '' })
 }
 
-defineExpose({ openForTask, openFree })
+defineExpose({ openForTask, openFree, openEdit })
 </script>
 
 <style lang="scss" scoped>

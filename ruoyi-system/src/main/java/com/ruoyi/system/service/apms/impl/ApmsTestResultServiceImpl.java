@@ -355,6 +355,31 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public int deleteByIds(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) return 0;
+        // 去重 id；同 任务+队员 只在最后重算一次进度，避免批量删几十条时反复重算
+        Set<Long> uniqueIds = new LinkedHashSet<>(ids);
+        Set<String> recalcKeys = new LinkedHashSet<>();
+        int count = 0;
+        for (Long id : uniqueIds) {
+            ApmsTestResult old = resultMapper.selectById(id);
+            repMapper.deleteByResultId(id);
+            valueMapper.deleteByResultId(id);
+            count += resultMapper.deleteById(id);
+            if (old != null && old.getTaskId() != null && old.getAthleteId() != null) {
+                recalcKeys.add(old.getTaskId() + ":" + old.getAthleteId());
+            }
+        }
+        for (String key : recalcKeys) {
+            int sep = key.lastIndexOf(':');
+            taskProgressService.recalculate(Long.parseLong(key.substring(0, sep)),
+                    Long.parseLong(key.substring(sep + 1)));
+        }
+        return count;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public int deleteByTaskId(Long taskId) {
         // 先查所有 result id 再级联删除
         List<ApmsTestResult> list = resultMapper.selectList(

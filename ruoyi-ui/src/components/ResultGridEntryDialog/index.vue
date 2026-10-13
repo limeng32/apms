@@ -2,26 +2,41 @@
   <el-dialog :title="dialogTitle" v-model="visible" width="920px" append-to-body
              :close-on-click-modal="false" @closed="reset">
 
-    <!-- ============ 散录模式：选队员 + 选指标 ============ -->
-    <div v-if="mode === 'free' && !submitted" class="rg-pick">
-      <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px"
-                title="散录不绑定任务、不计入任务进度；任务内批量录入请从任务详情「网格录成绩」进入。"/>
+    <!-- ============ 散录模式：选任务（可选）+ 选队员 + 选指标 ============ -->
+    <div v-if="mode === 'free' && !pickedReady && !submitted" class="rg-pick" v-loading="pickLoading">
+      <div class="rg-pick-task">
+        <span class="rg-pick-task-label">关联任务</span>
+        <el-select v-model="pickTaskId" filterable clearable style="width:340px"
+                   placeholder="不选 = 散录（不计入任务进度，下方自由选人/选指标）">
+          <el-option v-for="t in taskOptions" :key="t.id"
+                     :label="`#${t.id} ${t.taskName}`" :value="t.id"/>
+        </el-select>
+        <span class="rg-pick-task-hint">
+          {{ pickTaskId
+            ? `已按任务锁定 ${taskLock?.members?.length || 0} 名参测队员、${taskLock?.indicators?.length || 0} 项指标（不可改勾选，如需调整请清空任务后自由选择）`
+            : '未选任务：请在下方自由勾选队员与指标' }}
+        </span>
+      </div>
+      <el-alert v-if="!pickTaskId" type="info" :closable="false" show-icon style="margin-bottom:12px"
+                title="散录不绑定任务、不计入任务进度；任务内批量录入也可在上方选择关联任务，或从任务详情「网格录成绩」进入。"/>
       <div class="rg-pick-grid">
         <div class="rg-pick-col">
           <div class="rg-pick-head">
-            <b>① 选择队员</b>
-            <span class="rg-pick-count">已选 {{ pickedAthletes.length }} 人</span>
+            <b>{{ pickTaskId ? '任务参测队员' : '① 选择队员' }}</b>
+            <span class="rg-pick-count">
+              {{ pickTaskId ? `共 ${displayAthletes.length} 人（已全选）` : `已选 ${pickedAthletes.length} 人` }}
+            </span>
           </div>
-          <div class="rg-pick-filter">
+          <div v-if="!pickTaskId" class="rg-pick-filter">
             <select v-model="pickTeam" class="rg-sel">
               <option :value="null">全部队伍</option>
               <option v-for="t in teamOptions" :key="t" :value="t">{{ t }}</option>
             </select>
             <input v-model="pickKeyword" class="rg-inp" placeholder="姓名筛选"/>
           </div>
-          <el-table ref="athleteTableRef" :data="filteredAthletes" row-key="athleteId"
-                    height="340" size="small" @selection-change="rows => pickedAthletes = rows">
-            <el-table-column type="selection" width="42" reserve-selection/>
+          <el-table ref="athleteTableRef" :data="displayAthletes" row-key="athleteId"
+                    height="340" size="small" @selection-change="onAthleteSelection">
+            <el-table-column type="selection" width="42" :selectable="athleteSelectable" reserve-selection/>
             <el-table-column label="队员" min-width="120">
               <template #default="{ row }">
                 <span class="rg-aname">{{ row.name }}</span>
@@ -33,12 +48,14 @@
         </div>
         <div class="rg-pick-col">
           <div class="rg-pick-head">
-            <b>② 选择指标</b>
-            <span class="rg-pick-count">已选 {{ pickedIndicators.length }} 项</span>
+            <b>{{ pickTaskId ? '任务指标项' : '② 选择指标' }}</b>
+            <span class="rg-pick-count">
+              {{ pickTaskId ? `共 ${displayIndicators.length} 项（已全选）` : `已选 ${pickedIndicators.length} 项` }}
+            </span>
           </div>
-          <el-table ref="indicatorTableRef" :data="indicatorLib" row-key="id"
-                    height="340" size="small" @selection-change="rows => pickedIndicators = rows">
-            <el-table-column type="selection" width="42"/>
+          <el-table ref="indicatorTableRef" :data="displayIndicators" row-key="id"
+                    height="340" size="small" @selection-change="onIndicatorSelection">
+            <el-table-column type="selection" width="42" :selectable="indicatorSelectable"/>
             <el-table-column label="指标" min-width="150">
               <template #default="{ row }">
                 <div class="rg-ind-name">{{ row.name }}</div>
@@ -135,7 +152,10 @@
       <template v-if="!submitted">
         <template v-if="mode === 'free' && !pickedReady">
           <el-button @click="close">取消</el-button>
-          <el-button type="primary" :disabled="!canBuildGrid" @click="buildFreeGrid">下一步：录入成绩</el-button>
+          <el-button type="primary" :loading="pickLoading" :disabled="pickLoading || !canBuildGrid"
+                     @click="nextFromPick">
+            {{ pickTaskId ? '下一步：按任务录入' : '下一步：录入成绩' }}
+          </el-button>
         </template>
         <template v-else>
           <el-button :disabled="saving" @click="mode === 'free' ? (pickedReady = false) : close()">
@@ -157,6 +177,7 @@ import GenderBadge from '@/components/GenderBadge/index.vue'
 import { listIndicator } from '@/api/apms/indicator'
 import { listAthlete } from '@/api/apms/athlete'
 import { listByTaskMember, batchGridAdd } from '@/api/apms/testResult'
+import { listTestTask, getTestTask } from '@/api/apms/testTask'
 import {
   loadRanges, getIndicatorRange, classify, isHard, isWarn, hardMessage, warnMessage
 } from '@/utils/measureRange'
@@ -199,6 +220,87 @@ const pickedIndicators = ref([])
 const pickedReady = ref(false)
 const pickTeam = ref(null)
 const pickKeyword = ref('')
+// 散录页可选关联任务：选中后两张表立即切换为该任务成员/指标并锁定全选
+const taskOptions = ref([])
+const pickTaskId = ref(null)
+const pickLoading = ref(false)
+// 任务锁定快照（行结构对齐下方两张选择表）：{ task, members:[{athleteId,name,gender,primaryTeamName}], indicators:[指标库同构] }
+const taskLock = ref(null)
+
+// 选择表数据源：任务态 = 任务成员/指标（锁定）；自由态 = 全量 + 筛选
+const displayAthletes = computed(() => {
+  if (pickTaskId.value && taskLock.value) return taskLock.value.members
+  return filteredAthletes.value
+})
+const displayIndicators = computed(() => {
+  if (pickTaskId.value && taskLock.value) return taskLock.value.indicators
+  return indicatorLib.value
+})
+function athleteSelectable() { return !pickTaskId.value }
+function indicatorSelectable() { return !pickTaskId.value }
+// 任务态的勾选由程序全选、忽略手动变更；自由态才写回 picked
+function onAthleteSelection(rows) { if (!pickTaskId.value) pickedAthletes.value = rows }
+function onIndicatorSelection(rows) { if (!pickTaskId.value) pickedIndicators.value = rows }
+
+// 切换任务：即时拉取任务详情，重绘两张表并全选；清空则恢复全量自由勾选
+let pickSeq = 0
+watch(pickTaskId, async (id, oldId) => {
+  if (id === oldId) return
+  const seq = ++pickSeq
+  // 先清旧选择（reserve-selection 跨数据源会残留）
+  athleteTableRef.value?.clearSelection()
+  indicatorTableRef.value?.clearSelection()
+  pickedAthletes.value = []
+  pickedIndicators.value = []
+  taskLock.value = null
+  if (!id) return
+  pickLoading.value = true
+  try {
+    const res = await getTestTask(id)
+    if (seq !== pickSeq) return // 期间又切换了，丢弃过期结果
+    const task = res.data
+    if (!task) {
+      pickTaskId.value = null
+      return proxy.$modal.msgWarning('任务不存在或已被删除')
+    }
+    const lib = await loadIndicatorLib()
+    if (seq !== pickSeq) return
+    const libMap = new Map(lib.map(i => [i.id, i]))
+    const indicatorIds = new Set()
+    const indicators = []
+    ;(task.items || [])
+      .filter(it => it.itemType === 'INDICATOR' && it.indicatorId != null)
+      .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+      .forEach(it => {
+        const meta = libMap.get(it.indicatorId) || {}
+        if (indicatorIds.has(it.indicatorId)) return
+        indicatorIds.add(it.indicatorId)
+        indicators.push({
+          id: it.indicatorId,
+          code: it.indicatorCode || meta.code || '',
+          name: it.indicatorName || meta.name || it.indicatorCode || ('指标#' + it.indicatorId),
+          category: meta.category || '',
+          unit: it.indicatorUnit || meta.unit || '',
+          evaluationDirection: it.indicatorDirection || meta.evaluationDirection || ''
+        })
+      })
+    const members = (task.members || []).map(m => ({
+      athleteId: m.athleteId,
+      name: m.athleteName,
+      gender: m.athleteGender,
+      primaryTeamName: m.athleteTeam
+    }))
+    taskLock.value = { task, members, indicators }
+    await nextTick()
+    // 程序全选（行已禁用取消勾选）
+    displayAthletes.value.forEach(r => athleteTableRef.value?.toggleRowSelection(r, true))
+    displayIndicators.value.forEach(r => indicatorTableRef.value?.toggleRowSelection(r, true))
+  } catch (e) {
+    if (seq === pickSeq) proxy.$modal.msgError(e?.msg || e?.message || '加载任务详情失败')
+  } finally {
+    if (seq === pickSeq) pickLoading.value = false
+  }
+})
 
 // 提交
 const saving = ref(false)
@@ -206,8 +308,12 @@ const submitted = ref(false)
 const commitResult = ref({ committed: 0, failed: 0, failedDetails: [] })
 
 const dialogTitle = computed(() => {
-  if (mode.value === 'free') return '网格录入成绩（散录）'
-  return `网格录入成绩 · ${taskCtx.name || ('任务 #' + taskCtx.id)}`
+  const id = taskCtx.id || (pickedReady.value ? null : pickTaskId.value)
+  if (id) {
+    const name = taskCtx.name || taskOptions.value.find(t => t.id === id)?.taskName || ''
+    return `网格录入成绩 · ${name || ('任务 #' + id)}`
+  }
+  return '网格录入成绩（散录）'
 })
 
 function today() {
@@ -229,15 +335,12 @@ async function loadIndicatorLib() {
   return indicatorLib.value
 }
 
-// ========= 任务模式入口 =========
-async function openForTask(task) {
-  mode.value = 'task'
-  submitted.value = false
-  pickedReady.value = true
-  saving.value = false
-  commitResult.value = { committed: 0, failed: 0, failedDetails: [] }
-  visible.value = true
-  taskCtx.id = task.taskId
+// ========= 按任务构建录入矩阵（任务抽屉入口 / 散录页选任务 共用） =========
+// task 兼容两种形态：抽屉传入 { taskId, taskName, items, members }；
+// getTestTask 返回 { id, taskName, items, members }
+async function buildTaskGrid(task) {
+  const id = task.taskId ?? task.id
+  taskCtx.id = id
   taskCtx.name = task.taskName || ''
   measureDate.value = today()
   sessionKey.value = ''
@@ -268,7 +371,18 @@ async function openForTask(task) {
     athleteTeam: m.athleteTeam,
     values: {}
   }))
+  pickedReady.value = true
   loadBestValues()
+}
+
+// ========= 任务模式入口（任务详情抽屉） =========
+async function openForTask(task) {
+  mode.value = 'task'
+  submitted.value = false
+  saving.value = false
+  commitResult.value = { committed: 0, failed: 0, failedDetails: [] }
+  visible.value = true
+  await buildTaskGrid(task)
 }
 
 // ========= 散录模式入口 =========
@@ -281,6 +395,8 @@ async function openFree() {
   pickedIndicators.value = []
   pickTeam.value = null
   pickKeyword.value = ''
+  pickTaskId.value = null
+  taskLock.value = null
   measureDate.value = today()
   sessionKey.value = ''
   columns.value = []
@@ -291,11 +407,24 @@ async function openFree() {
   commitResult.value = { committed: 0, failed: 0, failedDetails: [] }
   visible.value = true
 
-  await Promise.all([loadIndicatorLib(), loadAthleteLib()])
+  const loadTasks = listTestTask({ pageNum: 1, pageSize: 999 })
+    .then(res => { taskOptions.value = res.rows || [] }).catch(() => {})
+  await Promise.all([loadIndicatorLib(), loadAthleteLib(), loadTasks])
   nextTick(() => {
     athleteTableRef.value?.clearSelection()
     indicatorTableRef.value?.clearSelection()
   })
+}
+
+// 散录页「下一步」：选了任务 → 直接用已加载的任务快照建矩阵；未选 → 按勾选的人/指标自由组表
+function nextFromPick() {
+  if (pickTaskId.value) {
+    if (!taskLock.value) return // 任务详情仍在加载
+    buildTaskGrid(taskLock.value.task)
+    return
+  }
+  if (!canBuildGrid.value) return
+  buildFreeGrid()
 }
 
 async function loadAthleteLib() {
@@ -317,10 +446,18 @@ const filteredAthletes = computed(() => {
     return true
   })
 })
-const canBuildGrid = computed(() => pickedAthletes.value.length > 0 && pickedIndicators.value.length > 0
-  && pickedAthletes.value.length <= MAX_ROWS)
+const canBuildGrid = computed(() => {
+  // 任务态：任务已加载、有成员有指标即可（勾选由系统锁定）
+  if (pickTaskId.value) {
+    return !!taskLock.value && taskLock.value.members.length > 0 && taskLock.value.indicators.length > 0
+  }
+  return pickedAthletes.value.length > 0 && pickedIndicators.value.length > 0
+    && pickedAthletes.value.length <= MAX_ROWS
+})
 
 function buildFreeGrid() {
+  taskCtx.id = null
+  taskCtx.name = ''
   columns.value = pickedIndicators.value.map(i => ({
     indicatorId: i.id,
     code: i.code,
@@ -473,6 +610,12 @@ function reset() {
   submitted.value = false
   pickedReady.value = false
   saving.value = false
+  pickTaskId.value = null
+  taskLock.value = null
+  pickedAthletes.value = []
+  pickedIndicators.value = []
+  pickTeam.value = null
+  pickKeyword.value = ''
 }
 
 defineExpose({ openForTask, openFree })
@@ -482,6 +625,15 @@ defineExpose({ openForTask, openFree })
 @use "@/assets/styles/roster-kit.scss" as *;
 
 .rg-pick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+/* 任务态勾选框锁定（el-checkbox 禁用观感由 :selectable=false 提供，这里只弱化不可改列的光标） */
+.rg-pick-grid :deep(.el-checkbox.is-disabled) { cursor: not-allowed; }
+.rg-pick-task {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 12px; padding: 10px 12px;
+  border: 1px solid $rk-line; border-radius: 10px; background: #f8faff;
+}
+.rg-pick-task-label { font-size: 13px; font-weight: 600; color: $rk-text-1; white-space: nowrap; }
+.rg-pick-task-hint { font-size: 12px; color: $rk-text-3; }
 .rg-pick-col { border: 1px solid $rk-line; border-radius: 12px; padding: 10px; }
 .rg-pick-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 13px; color: $rk-text-1; }
 .rg-pick-count { font-size: 12px; color: $rk-brand-600; font-weight: 500; }

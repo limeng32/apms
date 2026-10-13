@@ -4,6 +4,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Font;
@@ -16,8 +17,12 @@ import org.springframework.stereotype.Component;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.system.domain.apms.ApmsAthlete;
 import com.ruoyi.system.domain.apms.ApmsIndicator;
+import com.ruoyi.system.domain.apms.ApmsTaskItem;
+import com.ruoyi.system.domain.apms.ApmsTaskMember;
 import com.ruoyi.system.mapper.apms.ApmsAthleteMapper;
 import com.ruoyi.system.mapper.apms.ApmsIndicatorMapper;
+import com.ruoyi.system.mapper.apms.ApmsTaskItemMapper;
+import com.ruoyi.system.mapper.apms.ApmsTaskMemberMapper;
 
 /**
  * 两阶段批量导入模板生成（成绩 / 体态；xlsx + csv）。
@@ -33,8 +38,15 @@ public class ImportTemplates {
 
     @Autowired private ApmsIndicatorMapper indicatorMapper;
     @Autowired private ApmsAthleteMapper athleteMapper;
+    @Autowired private ApmsTaskItemMapper taskItemMapper;
+    @Autowired private ApmsTaskMemberMapper taskMemberMapper;
 
-    public byte[] buildResult(String format) {
+    /**
+     * 成绩模板。
+     * @param taskId 非空 = 任务模式：只预填该任务参测队员、只列该任务 INDICATOR 指标（按测试项排序）；
+     *               为空 = 散录：全部在训队员 + 全部启用指标
+     */
+    public byte[] buildResult(String format, Long taskId) {
         List<String> header = new ArrayList<>(List.of(
                 "athlete_id", "athlete_name", "measure_date", "session_key"));
         List<String> guide = new ArrayList<>(List.of(
@@ -43,16 +55,35 @@ public class ImportTemplates {
                 "测试日期(YYYY-MM-DD)",
                 "场次（选填，如S1）"));
 
-        ApmsIndicator iq = new ApmsIndicator();
-        iq.setStatus("0");
-        for (ApmsIndicator ind : indicatorMapper.selectList(iq)) {
-            if (ind.getCode() == null || ind.getCode().isEmpty()) continue;
-            header.add(ind.getCode());
-            String g = ind.getName() != null ? ind.getName() : ind.getCode();
-            if (ind.getUnit() != null && !ind.getUnit().isEmpty()) g += "(" + ind.getUnit() + ")";
-            guide.add(g);
+        List<String[]> athleteRows;
+        if (taskId != null) {
+            // 任务模式：成员 + 指标列均按任务配置，模板与预览/提交校验口径一致
+            List<ApmsTaskItem> items = taskItemMapper.selectByTaskId(taskId);
+            items.stream()
+                    .filter(it -> "INDICATOR".equals(it.getItemType()) && it.getIndicatorId() != null)
+                    .sorted(Comparator.comparingInt(it -> it.getSortOrder() == null ? 0 : it.getSortOrder()))
+                    .forEach(it -> {
+                        ApmsIndicator ind = indicatorMapper.selectById(it.getIndicatorId());
+                        if (ind == null || ind.getCode() == null || ind.getCode().isEmpty()) return;
+                        header.add(ind.getCode());
+                        String g = ind.getName() != null ? ind.getName() : ind.getCode();
+                        if (ind.getUnit() != null && !ind.getUnit().isEmpty()) g += "(" + ind.getUnit() + ")";
+                        guide.add(g);
+                    });
+            athleteRows = taskAthleteRows(taskId);
+        } else {
+            ApmsIndicator iq = new ApmsIndicator();
+            iq.setStatus("0");
+            for (ApmsIndicator ind : indicatorMapper.selectList(iq)) {
+                if (ind.getCode() == null || ind.getCode().isEmpty()) continue;
+                header.add(ind.getCode());
+                String g = ind.getName() != null ? ind.getName() : ind.getCode();
+                if (ind.getUnit() != null && !ind.getUnit().isEmpty()) g += "(" + ind.getUnit() + ")";
+                guide.add(g);
+            }
+            athleteRows = athleteNameRows(activeAthletes());
         }
-        return build(format, "test-result-template", guide, header, true);
+        return build(format, "test-result-template", guide, header, athleteRows, true);
     }
 
     public byte[] buildBody(String format) {
@@ -64,19 +95,29 @@ public class ImportTemplates {
         List<String> header = new ArrayList<>(List.of(
                 "athlete_id", "athlete_name", "measure_date",
                 "height", "weight", "sit_height", "body_fat_rate", "waist"));
-        return build(format, "body-measure-template", guide, header, false);
+        return build(format, "body-measure-template", guide, header, athleteNameRows(activeAthletes()), false);
     }
 
     // ================= 内部 =================
 
-    /** @param hasSession 是否含 session_key 列（成绩有，体态无） */
-    private byte[] build(String format, String fileBaseName, List<String> guide,
-                         List<String> header, boolean hasSession) {
-        List<long[]> athletes = activeAthletes();
-        if ("csv".equalsIgnoreCase(format)) {
-            return buildCsv(guide, header, athletes, hasSession);
+    /** 任务成员行（mapper 已 LEFT JOIN 运动员带出姓名，无需逐人查询） */
+    private List<String[]> taskAthleteRows(Long taskId) {
+        List<String[]> rows = new ArrayList<>();
+        for (ApmsTaskMember m : taskMemberMapper.selectByTaskId(taskId)) {
+            if (m.getAthleteId() == null) continue;
+            rows.add(new String[]{String.valueOf(m.getAthleteId()),
+                    m.getAthleteName() != null ? m.getAthleteName() : ""});
         }
-        return buildXlsx(fileBaseName, guide, header, athletes, hasSession);
+        return rows;
+    }
+
+    /** @param athleteRows [编号, 姓名]；@param hasSession 是否含 session_key 列（成绩有，体态无） */
+    private byte[] build(String format, String fileBaseName, List<String> guide,
+                         List<String> header, List<String[]> athleteRows, boolean hasSession) {
+        if ("csv".equalsIgnoreCase(format)) {
+            return buildCsv(guide, header, athleteRows, hasSession);
+        }
+        return buildXlsx(fileBaseName, guide, header, athleteRows, hasSession);
     }
 
     /** 在训队员（编号列表） */
@@ -102,11 +143,11 @@ public class ImportTemplates {
     }
 
     private byte[] buildCsv(List<String> guide, List<String> header,
-                            List<long[]> athletes, boolean hasSession) {
+                            List<String[]> athleteRows, boolean hasSession) {
         StringBuilder sb = new StringBuilder();
         sb.append(guide.stream().map(this::csv).reduce((a, b) -> a + "," + b).orElse("")).append("\r\n");
         sb.append(String.join(",", header)).append("\r\n");
-        for (String[] r : athleteNameRows(athletes)) {
+        for (String[] r : athleteRows) {
             sb.append(csv(r[0])).append(',').append(csv(r[1]));
             // 剩余列（日期/场次/数值）全部留空
             for (int i = 2; i < header.size(); i++) sb.append(',');
@@ -122,7 +163,7 @@ public class ImportTemplates {
     }
 
     private byte[] buildXlsx(String sheetName, List<String> guide, List<String> header,
-                             List<long[]> athletes, boolean hasSession) {
+                             List<String[]> athleteRows, boolean hasSession) {
         try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = wb.createSheet("import");
             CellStyle headStyle = wb.createCellStyle();
@@ -142,7 +183,7 @@ public class ImportTemplates {
                 c.setCellStyle(headStyle);
             }
             int rowIdx = 2;
-            for (String[] r : athleteNameRows(athletes)) {
+            for (String[] r : athleteRows) {
                 Row row = sheet.createRow(rowIdx++);
                 row.createCell(0).setCellValue(r[0]);
                 row.createCell(1).setCellValue(r[1]);

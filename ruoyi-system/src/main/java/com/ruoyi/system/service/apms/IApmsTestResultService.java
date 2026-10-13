@@ -29,6 +29,10 @@ public interface IApmsTestResultService {
      */
     ImportCommitResult batchGridAdd(ResultGridForm form);
     int delete(Long id);
+
+    /** 批量删除（逐条级联清理 REP/值；按 任务+队员 去重后重算进度），返回实际删除条数 */
+    int deleteByIds(List<Long> ids);
+
     int deleteByTaskId(Long taskId);
 
     /** 同组 attempt 根据 indicator evaluation_direction 自动选最佳 (is_selected) */

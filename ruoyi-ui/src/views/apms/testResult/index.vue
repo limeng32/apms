@@ -37,6 +37,15 @@
         </div>
       </div>
 
+      <!-- ===== 批量操作条（勾选后出现） ===== -->
+      <div v-if="hasRemovePerm && selectedCount > 0" class="tr-batch-bar">
+        <span class="tr-batch-info">已选 <b>{{ selectedCount }}</b> 条成绩</span>
+        <el-button class="rk-btn rk-btn-sm rk-btn-danger" @click="handleBatchDelete">
+          <el-icon><Delete /></el-icon>删除所选
+        </el-button>
+        <button type="button" class="rk-link" @click="clearSelection">取消选择</button>
+      </div>
+
       <!-- ===== 筛选（原生控件；默认只看已选最佳） ===== -->
       <div class="rk-filter">
         <label class="rk-group">
@@ -87,6 +96,12 @@
               <table class="rk-table tr-table is-compact">
                 <thead>
                   <tr>
+                    <th class="col-check" v-if="hasRemovePerm">
+                      <input type="checkbox" class="rk-check"
+                             :checked="allPageChecked && pageIds.length > 0"
+                             :indeterminate.prop="somePageChecked && !allPageChecked"
+                             @change="toggleSelectAllPage"/>
+                    </th>
                     <th class="col-athlete">运动员</th>
                     <th class="text-center col-type">类型</th>
                     <th class="col-item">项目</th>
@@ -99,6 +114,11 @@
                       class="rk-row"
                       :class="{ 'is-selected': current && current.id === row.id }"
                       @click="handleRowClick(row)">
+                    <td class="col-check" v-if="hasRemovePerm" @click.stop>
+                      <input type="checkbox" class="rk-check"
+                             :checked="!!selectedIds[row.id]"
+                             @change="toggleSelectRow(row)"/>
+                    </td>
                     <td>
                       <div class="tr-athlete">
                         <span class="tr-name">{{ row.athleteName }}</span>
@@ -123,7 +143,7 @@
                     <td class="text-center rk-mono">{{ formatDate(row.measureDate) }}</td>
                   </tr>
                   <tr v-if="!loading && resultList.length === 0">
-                    <td colspan="5" class="rk-empty-cell">
+                    <td :colspan="hasRemovePerm ? 6 : 5" class="rk-empty-cell">
                       <div class="rk-empty">
                         <p class="rk-empty-title">暂无结果</p>
                         <p class="rk-empty-desc">调整筛选条件，或先通过 CSV 导入成绩</p>
@@ -239,7 +259,12 @@
                           <button v-if="a.isSelected !== '1'" type="button" class="rk-link"
                                   :disabled="selectingId != null"
                                   @click="handleSelectAttempt(a)">选为最佳</button>
-                          <span v-else class="rk-dash">—</span>
+                          <button type="button" class="rk-link"
+                                  v-hasPermi="['apms:testResult:edit']"
+                                  @click.stop="handleEditAttempt(a)">编辑</button>
+                          <button type="button" class="rk-link tr-link-danger"
+                                  v-hasPermi="['apms:testResult:remove']"
+                                  @click.stop="handleDeleteAttempt(a)">删除</button>
                         </td>
                       </tr>
                     </tbody>
@@ -284,12 +309,20 @@
               </div>
               <div v-else class="tr-mini-empty">无 REP 评价（模型或缺少参照系）</div>
             </div>
+
+            <!-- 当前记录操作 -->
+            <div class="tr-detail-foot">
+              <el-button class="rk-btn rk-btn-sm" v-hasPermi="['apms:testResult:edit']"
+                         @click="handleEditAttempt(current)">编辑该条成绩</el-button>
+              <el-button class="rk-btn rk-btn-sm rk-btn-danger" v-hasPermi="['apms:testResult:remove']"
+                         @click="handleDeleteAttempt(current)">删除</el-button>
+            </div>
           </div>
         </div>
       </el-drawer>
 
-      <!-- 手动录入成绩 -->
-      <result-entry-dialog ref="entryDialogRef" @success="handleImportSuccess"/>
+      <!-- 手动录入/编辑成绩 -->
+      <result-entry-dialog ref="entryDialogRef" @success="handleEntrySaved"/>
       <!-- 网格批量录入（散录模式：不绑任务） -->
       <result-grid-entry-dialog ref="gridEntryDialogRef" @success="handleImportSuccess"/>
       <!-- 设备接入 -->
@@ -301,7 +334,8 @@
         preview-url="/apms/test-result/import/preview"
         commit-url="/apms/test-result/import/commit"
         template-url="apms/test-result/import/template"
-        :tips="['一期仅支持指标（INDICATOR）成绩，模型类测试请在任务中手工录入', '每格一个数值；非数字或超出允许范围的单元格会在预览中标红，错误行将跳过']"
+        show-task-select
+        :tips="['仅支持指标（INDICATOR）成绩，模型类测试请在任务中手工录入', '每格一个数值；非数字或超出允许范围的单元格会在预览中标红，错误行将跳过', '选择关联任务后，模板与校验均按该任务的队员/指标执行；不选则为散录']"
         @success="handleImportSuccess"
       />
     </div>
@@ -312,7 +346,8 @@
 
 // 嵌入模式：由合并页（dispatch/growth/comboDispatch）堆叠使用
 defineProps({ embedded: { type: Boolean, default: false } })
-import { listTestResult, getTestResult, listByTaskMember, listFreeGroup, selectAttempt } from '@/api/apms/testResult'
+import { listTestResult, getTestResult, listByTaskMember, listFreeGroup, selectAttempt,
+         delTestResult, delTestResultBatch } from '@/api/apms/testResult'
 import { listTestTask } from '@/api/apms/testTask'
 import { listAthlete } from '@/api/apms/athlete'
 import ResultEntryDialog from '@/components/ResultEntryDialog/index.vue'
@@ -321,7 +356,7 @@ import DeviceAccessDialog from '@/components/DeviceAccessDialog/index.vue'
 import ImportPreviewDialog from '@/components/ImportPreviewDialog/index.vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import { checkPermi } from '@/utils/permission'
-import { EditPen, Grid, Connection, RefreshLeft, ArrowLeft, ArrowRight, Close, Upload } from '@element-plus/icons-vue'
+import { EditPen, Grid, Connection, RefreshLeft, ArrowLeft, ArrowRight, Close, Upload, Delete } from '@element-plus/icons-vue'
 import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
 
 const { proxy } = getCurrentInstance()
@@ -338,7 +373,49 @@ const importDialogRef = ref(null)
 // 修复原页缺陷：proxy.$checkPermi 全局未注册（main.js 无此挂载）且 checkPermi 要求传数组（原传字符串），
 // 导致 hasImportPerm 恒为 undefined、导入按钮恒禁用
 const hasImportPerm = computed(() => checkPermi(['apms:testResult:add']))
+const hasRemovePerm = computed(() => checkPermi(['apms:testResult:remove']))
 function handleImportSuccess() { getList(); loadStats() }
+
+// ========= 列表批量选择/删除 =========
+const selectedIds = reactive({})     // id -> true（跨页保留）
+const selectedCount = computed(() => Object.keys(selectedIds).filter(k => selectedIds[k]).length)
+const pageIds = computed(() => resultList.value.map(r => r.id))
+const allPageChecked = computed(() => pageIds.value.length > 0 && pageIds.value.every(id => selectedIds[id]))
+const somePageChecked = computed(() => pageIds.value.some(id => selectedIds[id]))
+
+function toggleSelectRow(row) {
+  if (selectedIds[row.id]) delete selectedIds[row.id]
+  else selectedIds[row.id] = true
+}
+function toggleSelectAllPage(ev) {
+  const checked = ev.target.checked
+  pageIds.value.forEach(id => {
+    if (checked) selectedIds[id] = true
+    else delete selectedIds[id]
+  })
+}
+function clearSelection() {
+  Object.keys(selectedIds).forEach(k => delete selectedIds[k])
+}
+
+const batchDeleting = ref(false)
+function handleBatchDelete() {
+  const ids = Object.keys(selectedIds).filter(k => selectedIds[k]).map(Number)
+  if (!ids.length) return
+  proxy.$modal.confirm(
+    `确认删除选中的 ${ids.length} 条成绩？删除后相关项目的最佳试次、REP 评价与任务进度会自动重算，且不可恢复。`,
+    '批量删除成绩', { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' }
+  ).then(() => {
+    batchDeleting.value = true
+    return delTestResultBatch(ids)
+  }).then(() => {
+    proxy.$modal.msgSuccess(`已删除 ${ids.length} 条成绩`)
+    clearSelection()
+    getList()
+    loadStats()
+    if (detailDrawerVisible.value && current.value) loadDetail(current.value.id)
+  }).catch(() => {}).finally(() => { batchDeleting.value = false })
+}
 
 // ========= 查询（服务端分页，默认只看已选最佳） =========
 const loading = ref(false)
@@ -467,6 +544,44 @@ function handleSelectAttempt(row) {
   }).catch(() => { selectingId.value = null })
 }
 
+// ========= 编辑成绩（原地修改，不新增 attempt） =========
+function handleEditAttempt(row) {
+  if (!row?.id) return
+  // openEdit 内部会补拉完整详情（attempt 列表项可能不带 values）
+  entryDialogRef.value?.openEdit({ id: row.id })
+}
+// 录入/编辑保存后：刷新列表统计；编辑场景把抽屉跳到被修改的记录
+function handleEntrySaved(payload) {
+  getList()
+  loadStats()
+  const rid = payload?.resultId
+  if (rid && detailDrawerVisible.value) loadDetail(rid)
+}
+
+// ========= 删除成绩（单条/批量） =========
+// 删除 attempt 后后端自动重算最佳试次与任务进度；删的是当前详情记录时，抽屉自动跳到新最佳或关闭
+function handleDeleteAttempt(row) {
+  proxy.$modal.confirm(
+    `确认删除该条成绩（attempt #${row.attemptNo}）？删除后同项目最佳试次、REP 评价与任务进度会自动重算，且不可恢复。`,
+    '删除成绩', { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' }
+  ).then(() => delTestResult(row.id)).then(() => {
+    proxy.$modal.msgSuccess('已删除')
+    getList()
+    loadStats()
+    // 当前详情记录被删：优先跳到同组新的已选最佳，没有则关闭抽屉
+    if (current.value && current.value.id === row.id) {
+      const remaining = attempts.value.filter(a => a.id !== row.id)
+      const next = remaining.find(a => a.isSelected === '1') || remaining[0]
+      if (next) { handleRowClick(next); return }
+      detailDrawerVisible.value = false
+      current.value = null
+      return
+    }
+    // 删的是同组其他尝试，刷新当前详情
+    if (current.value) loadDetail(current.value.id)
+  }).catch(() => {})
+}
+
 // ========= 辅助 =========
 function formatDate(d) { if (!d) return ''; return String(d).substring(0, 10) }
 function dirLabel(d) { return ({ HIGHER_BETTER: '↑越大越好', LOWER_BETTER: '↓越小越好', RANGE_BEST: '≈范围' })[d] || d || '—' }
@@ -482,6 +597,24 @@ loadStats()
 
 .tr-select-task { width: 200px; }
 .tr-select-sm { width: 110px; }
+
+/* 详情底部操作区 */
+.tr-detail-foot {
+  display: flex; gap: 10px; justify-content: flex-end;
+  margin-top: 18px; padding-top: 14px; border-top: 1px solid $rk-line;
+}
+
+/* 复选列与批量操作条 */
+.col-check { width: 40px; text-align: center; }
+.tr-batch-bar {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 10px; padding: 8px 14px;
+  border: 1px solid #f3c1c1; border-radius: 10px; background: #fef7f7;
+}
+.tr-batch-info { font-size: 13px; color: $rk-text-2; }
+.tr-batch-info b { color: $rk-risk; margin: 0 2px; }
+.tr-link-danger { color: $rk-risk; margin-left: 8px; }
+.tr-link-danger:hover { color: #b91c1c; text-decoration: underline; }
 
 /* 左表 */
 .tr-table tbody tr { cursor: pointer; }

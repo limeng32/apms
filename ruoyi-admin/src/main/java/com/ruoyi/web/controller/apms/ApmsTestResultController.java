@@ -133,6 +133,13 @@ public class ApmsTestResultController extends BaseController {
         return toAjax(resultService.delete(id));
     }
 
+    /** 批量删除：Body 为 id 数组，如 [1,2,3] */
+    @PreAuthorize("@ss.hasPermi('apms:testResult:remove')")
+    @DeleteMapping("/batch")
+    public AjaxResult removeBatch(@RequestBody List<Long> ids) {
+        return toAjax(resultService.deleteByIds(ids));
+    }
+
     /** 按 task_id 批量删除 */
     @PreAuthorize("@ss.hasPermi('apms:testResult:remove')")
     @DeleteMapping("/task/{taskId}")
@@ -205,7 +212,8 @@ public class ApmsTestResultController extends BaseController {
                                  @RequestParam(value = "format", required = false) String format,
                                  HttpServletResponse response) throws IOException {
         if (format != null && !format.isEmpty()) {
-            byte[] data = importTemplates.buildResult(format.toLowerCase());
+            // taskId 非空时模板只预填该任务成员、只列该任务指标列（与预览/提交校验同口径）
+            byte[] data = importTemplates.buildResult(format.toLowerCase(), taskId);
             boolean xlsx = "xlsx".equalsIgnoreCase(format) || "xls".equalsIgnoreCase(format);
             String ext = xlsx ? "xlsx" : "csv";
             String fileName = "test-result-template." + ext;
