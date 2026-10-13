@@ -866,6 +866,21 @@ $rk-empty-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg
   .rk-card-head { padding: 12px 14px 0; }
   .rk-card-body { padding: 12px 14px 14px; }
   .rk-title { font-size: 20px; }
+
+  /* H5 触摸可用性：主按钮 ≥44px，正文 14px */
+  .rk-btn { min-height: 44px; font-size: 14px; }
+  .rk-btn-sm { min-height: 36px; height: auto; }
+  .rk-table { font-size: 14px; }
+  /* 行内文字操作（下载/删除等，原仅约 28×26px）：加大热区到约 36px 高，视觉仍紧凑 */
+  .rk-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+  /* 原生筛选控件 ≥40px；16px 字号避免 iOS 聚焦自动放大 */
+  .rk-input, .rk-select { min-height: 40px; font-size: 16px; }
 }
 
 /* ============================================================

@@ -139,6 +139,30 @@
       }
     }
   }
+
+  /* 弹窗统一不超出视口：width 属性以内联 style 生效，固定 520/600px 会溢出，
+     需 !important 覆盖；保留左右各 12px 安全边距，底部按钮/关闭钮不再被裁剪 */
+  .el-dialog:not(.is-fullscreen) {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    margin-top: 4vh !important;
+  }
+  .el-dialog:not(.is-fullscreen) .el-dialog__header { padding-right: 40px; }
+  .el-dialog:not(.is-fullscreen) .el-dialog__body { padding: 12px 16px 0; }
+
+  /* 触摸目标：主按钮 ≥44px，小按钮由 24/28px 提升到 36px */
+  .el-button { min-height: 44px; font-size: 14px; }
+  .el-button--small { min-height: 36px; }
+
+  /* 表单控件：≥40px 易点；输入字号 16px 防止 iOS 聚焦自动放大 */
+  .el-input__wrapper,
+  .el-select__wrapper,
+  .el-textarea__inner { min-height: 40px; font-size: 16px; }
+  .el-input-number { min-height: 40px; }
+
+  /* 表格正文字号 12-13 → 14，阅读不吃力（表格横向滚动由各页容器承担） */
+  .el-table { font-size: 14px; }
+  .el-table th.el-table__cell { font-size: 13px; }
 }
 
 /* tree border */
