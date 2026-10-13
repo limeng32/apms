@@ -14,6 +14,7 @@ import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.system.domain.apms.ApmsRtpLog;
 import com.ruoyi.system.domain.apms.ApmsRtpStatus;
+import com.ruoyi.system.domain.apms.dto.RtpBatchUpdateForm;
 import com.ruoyi.system.service.apms.IApmsRtpService;
 
 /**
@@ -69,6 +70,17 @@ public class ApmsRtpController extends BaseController {
                 body.getReason(), body.getTrainingLimit(),
                 body.getNextReviewDate());
         return success();
+    }
+
+    /**
+     * 批量更新RTP状态（批量评估）
+     * Body: { items: [{ athleteId, status, reason, trainingLimit, nextReviewDate }] }
+     * 逐人独立事务、部分成功，返回每人成功/失败明细
+     */
+    @PreAuthorize("@ss.hasPermi('apms:rtp:edit')")
+    @PostMapping("/batch-update")
+    public AjaxResult batchUpdate(@RequestBody(required = false) RtpBatchUpdateForm form) {
+        return success(rtpService.batchUpdateRtpStatus(form != null ? form.getItems() : null));
     }
 
     /**

@@ -50,16 +50,15 @@
         )
     </insert>
 
+    <!-- 显式全列更新：Service 每次都携带完整结论，传 null 即清空（如转绿时清空旧训练限制/原因/复检日） -->
     <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsRtpStatus">
         UPDATE apms_rtp_status
-        <set>
-            <if test="status != null and status != ''">status = #{status},</if>
-            <if test="reason != null">reason = #{reason},</if>
-            <if test="trainingLimit != null">training_limit = #{trainingLimit},</if>
-            <if test="nextReviewDate != null">next_review_date = #{nextReviewDate},</if>
-            <if test="updatedBy != null and updatedBy != ''">updated_by = #{updatedBy},</if>
+        SET status = #{status},
+            reason = #{reason},
+            training_limit = #{trainingLimit},
+            next_review_date = #{nextReviewDate},
+            updated_by = #{updatedBy},
             updated_time = sysdate()
-        </set>
         WHERE id = #{id}
     </update>
 

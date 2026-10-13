@@ -83,7 +83,7 @@
                              @change="toggleRow(row)"/>
                     </td>
                     <td>
-                      <div class="tt-task-name">{{ row.taskName }}</div>
+                      <div class="tt-task-name" title="点击查看任务详情并配置测试项/队员">{{ row.taskName }}</div>
                       <div class="tt-task-id rk-mono">#{{ row.id }} · 主测 {{ row.testerName || '—' }}</div>
                       <div v-if="(row.memberTotal || 0) === 0" class="tt-unconfigured">
                         ⚠ 尚未配置测试项/队员，无法录入与评分
@@ -980,7 +980,21 @@ loadStats()
 .col-date { width: 118px; }
 .col-status { width: 84px; }
 .col-progress { width: 150px; }
-.tt-task-name { font-size: 13px; font-weight: 600; color: $rk-text-1; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 任务名做成链接观感：整行可点（tr 已绑 handleRowClick），这里只提供可点击的视觉暗示 */
+.tt-task-name {
+  font-size: 13px; font-weight: 600;
+  color: $rk-brand-600;
+  max-width: 240px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  text-decoration: underline;
+  text-decoration-color: rgba(37, 99, 235, .35);
+  text-underline-offset: 3px;
+  transition: text-decoration-color .15s, color .15s;
+}
+.tt-table tbody tr:hover .tt-task-name {
+  color: $rk-brand-700;
+  text-decoration-color: $rk-brand-700;
+}
 .tt-task-id { font-size: 11px; color: $rk-text-3; margin-top: 2px; }
 .tt-dept { font-size: 12px; color: $rk-text-2; }
 .tt-date { font-size: 11px; color: $rk-text-2; white-space: nowrap; }

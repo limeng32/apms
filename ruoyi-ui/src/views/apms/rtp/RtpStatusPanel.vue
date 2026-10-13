@@ -34,6 +34,10 @@
         <input v-model="filters.keyword" class="rk-input" type="text" placeholder="队员姓名" />
       </label>
       <div class="rk-filter-right">
+        <button v-if="canEdit" type="button" class="rk-btn rk-btn-sm rk-btn-primary"
+                @click="openBatch()">
+          <el-icon><EditPen /></el-icon>批量评估
+        </button>
         <button v-if="canEdit && confirmHidden" type="button" class="rk-btn-reset"
                 title="状态变更当前无需确认即生效，点击恢复确认提示" @click="restoreConfirm">
           <el-icon><CircleCheck /></el-icon>恢复变更确认
@@ -75,6 +79,12 @@
           <span class="rk-kanban-dot"></span>
           <span class="rk-kanban-title">{{ col.title }}</span>
           <span class="rk-kanban-count rk-mono">{{ columnList(col.key).length }}</span>
+          <button v-if="canEdit && col.key === 'na' && columnList('na').length"
+                  type="button" class="rt-batch-first"
+                  title="批量为当前筛选出的未评估队员做首次评估"
+                  @click.stop="openBatch(columnList('na').map(a => a.athleteId))">
+            批量首评
+          </button>
           <span class="rk-kanban-hint" v-if="canEdit && !col.collapse">{{ col.hint }}</span>
           <el-icon v-if="col.collapse" class="rt-col-caret"
                    :class="{ 'is-open': !collapsed[col.key] }"><ArrowRight /></el-icon>
@@ -309,6 +319,11 @@
         placement="right"
       />
     </el-tour>
+
+    <!-- ========== 批量评估弹窗（选人 → 统一/逐人结论 → 结果重试） ========== -->
+    <RtpBatchAssessDialog v-model="batchVisible" :athletes="fullList"
+                         :preset-athlete-ids="batchPresetIds"
+                         @success="loadAll"/>
   </section>
 </template>
 
@@ -318,9 +333,10 @@ import { listAthlete } from '@/api/apms/athlete'
 import { listDept } from '@/api/system/dept'
 import { checkPermi } from '@/utils/permission'
 import { ElMessageBox, ElCheckbox } from 'element-plus'
-import { Close, RefreshLeft, CircleCheck, Warning, CircleClose, QuestionFilled, ArrowRight, ArrowDown, Pointer } from '@element-plus/icons-vue'
+import { Close, RefreshLeft, CircleCheck, Warning, CircleClose, QuestionFilled, ArrowRight, ArrowDown, Pointer, EditPen } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import RkPager from '@/components/RkPager/index.vue'
+import RtpBatchAssessDialog from './RtpBatchAssessDialog.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
 
 const { proxy } = getCurrentInstance()
@@ -423,6 +439,14 @@ function loadAll() {
 
 // 供外部（如风险预警采纳后）刷新本面板
 defineExpose({ reload: loadAll })
+
+// ========= 批量评估弹窗 =========
+const batchVisible = ref(false)
+const batchPresetIds = ref([])
+function openBatch(presetIds) {
+  batchPresetIds.value = Array.isArray(presetIds) ? presetIds : []
+  batchVisible.value = true
+}
 
 // ========= 筛选（按队名匹配）；每列独立分页（仅展开卡片态分页，收起胶囊墙显示全部） =========
 const PAGE_SIZE = 10
@@ -826,6 +850,20 @@ loadAll()
   color: $rk-text-3;
   transition: transform .18s ease;
   &.is-open { transform: rotate(90deg); }
+}
+
+/* 未评估列头「批量首评」轻入口（阻止冒泡，避免触发折叠） */
+.rt-batch-first {
+  margin-left: 8px;
+  padding: 1px 8px;
+  font-size: 11px; font-weight: 500;
+  color: $rk-brand-600;
+  background: $rk-brand-50;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  &:hover { background: darken($rk-brand-50, 4%); }
 }
 .rt-avatar-wall {
   display: flex;

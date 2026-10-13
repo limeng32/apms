@@ -41,3 +41,13 @@ export function clearStatus(athleteId, data) {
     data: data || {}
   })
 }
+
+// 批量评估RTP状态（逐人独立事务、部分成功）
+// items: [{ athleteId, status, reason, trainingLimit, nextReviewDate }]
+export function batchUpdateStatus(items) {
+  return request({
+    url: '/apms/rtp/batch-update',
+    method: 'post',
+    data: { items }
+  })
+}
