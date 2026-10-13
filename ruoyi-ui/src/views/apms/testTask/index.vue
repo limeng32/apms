@@ -85,7 +85,12 @@
                     <td>
                       <div class="tt-task-name">{{ row.taskName }}</div>
                       <div class="tt-task-id rk-mono">#{{ row.id }} · 主测 {{ row.testerName || '—' }}</div>
-                      <div v-if="(row.memberTotal || 0) === 0" class="tt-unconfigured">⚠ 尚未配置参测队员，无法录入/评分</div>
+                      <div v-if="(row.memberTotal || 0) === 0" class="tt-unconfigured">
+                        ⚠ 尚未配置测试项/队员，无法录入与评分
+                        <el-button class="rk-btn rk-btn-sm rk-btn-primary tt-config-cta" @click.stop="handleRowClick(row)">
+                          立即配置
+                        </el-button>
+                      </div>
                     </td>
                     <td class="tt-dept">{{ row.targetDeptName || '—' }}</td>
                     <td class="text-center">
@@ -105,9 +110,17 @@
                   </tr>
                   <tr v-if="!loading && taskList.length === 0">
                     <td colspan="6" class="rk-empty-cell">
-                      <div class="rk-empty">
+                      <div class="tt-empty-guide">
                         <p class="rk-empty-title">暂无测试任务</p>
-                        <p class="rk-empty-desc">点击右上角「新增任务」创建</p>
+                        <ol class="tt-empty-steps">
+                          <li><b>① 新建任务</b>：填写任务名称、目标队伍与主测人</li>
+                          <li><b>② 配置任务</b>：创建后自动打开任务详情，添加测试项并批量登记参测队员</li>
+                          <li><b>③ 录入成绩</b>：在「测试结果」中按任务录入，随后即可组合评分批量计算</li>
+                        </ol>
+                        <el-button class="rk-btn rk-btn-primary" @click="handleAdd"
+                                   v-hasPermi="['apms:testTask:add']">
+                          <el-icon><Plus /></el-icon>新增任务
+                        </el-button>
                       </div>
                     </td>
                   </tr>
@@ -163,6 +176,45 @@
                 <span>{{ currentTask.targetDeptName || '未指定队伍' }}</span>
                 <span class="rk-mono">{{ currentTask.startDate || '—' }} ~ {{ currentTask.endDate || '—' }}</span>
                 <span>主测：{{ currentTask.testerName || '—' }}</span>
+              </div>
+            </div>
+
+            <!-- 配置完成度引导：测试项 + 参测队员缺一不可，否则无法录入成绩/批量评分 -->
+            <div class="tt-guide" :class="{ 'is-ready': guideReady }">
+              <div class="tt-guide-head">
+                <span class="tt-guide-title">
+                  {{ guideReady ? '✓ 配置完成，可以录入成绩了' : '开始前请先完成任务配置（2 步）' }}
+                </span>
+                <span class="tt-guide-sub">测试项和参测队员缺一不可，否则无法录入成绩、批量计算会提示「无结果」</span>
+              </div>
+              <div class="tt-guide-steps">
+                <div class="tt-guide-step" :class="itemsReady ? 'is-done' : 'is-todo'">
+                  <span class="tt-guide-no">{{ itemsReady ? '✓' : '1' }}</span>
+                  <div class="tt-guide-body">
+                    <div class="tt-guide-name">添加测试项<span class="tt-guide-count rk-mono">{{ detail.items.length }} 项</span></div>
+                    <div class="tt-guide-desc">从指标库 / 测试模型库选择</div>
+                  </div>
+                  <button v-if="itemsReady" type="button" class="rk-link" @click="activeTab = 'items'">管理</button>
+                  <el-button v-else class="rk-btn rk-btn-sm rk-btn-primary" @click="guideAddItems">添加</el-button>
+                </div>
+                <div class="tt-guide-step" :class="membersReady ? 'is-done' : 'is-todo'">
+                  <span class="tt-guide-no">{{ membersReady ? '✓' : '2' }}</span>
+                  <div class="tt-guide-body">
+                    <div class="tt-guide-name">登记参测队员<span class="tt-guide-count rk-mono">{{ detail.members.length }} 人</span></div>
+                    <div class="tt-guide-desc">可按目标队伍批量勾选</div>
+                  </div>
+                  <button v-if="membersReady" type="button" class="rk-link" @click="activeTab = 'members'">管理</button>
+                  <el-button v-else class="rk-btn rk-btn-sm rk-btn-primary" @click="guideEnroll">批量登记</el-button>
+                </div>
+                <div class="tt-guide-step" :class="guideReady ? 'is-done' : 'is-lock'">
+                  <span class="tt-guide-no">3</span>
+                  <div class="tt-guide-body">
+                    <div class="tt-guide-name">录入测试成绩</div>
+                    <div class="tt-guide-desc">{{ guideReady ? '成绩默认标记为「已选中」' : '完成前两步后可操作' }}</div>
+                  </div>
+                  <el-button class="rk-btn rk-btn-sm" :class="{ 'rk-btn-primary': guideReady }"
+                             :disabled="!guideReady" @click="goResultEntry">去测试结果</el-button>
+                </div>
               </div>
             </div>
 
@@ -263,7 +315,14 @@
                     </tbody>
                   </table>
                 </div>
-                <div v-else class="tt-inner-empty">暂无测试项 — 点击上方按钮添加</div>
+                <div v-else class="tt-inner-empty">
+                  <div>暂无测试项 — 添加后队员才能逐项测试，批量评分才有数据</div>
+                  <div class="tt-inner-empty-ops">
+                    <el-button class="rk-btn rk-btn-sm rk-btn-primary" @click="openItemDialog()">
+                      <el-icon><Plus /></el-icon>添加第一个测试项
+                    </el-button>
+                  </div>
+                </div>
               </div>
 
               <!-- Tab 2：参测队员 -->
@@ -312,7 +371,15 @@
                     </tbody>
                   </table>
                 </div>
-                <div v-else class="tt-inner-empty">暂无参测队员 — 点击上方按钮登记</div>
+                <div v-else class="tt-inner-empty">
+                  <div>暂无参测队员 — 登记后才能为其录入成绩</div>
+                  <div class="tt-inner-empty-ops">
+                    <el-button class="rk-btn rk-btn-sm rk-btn-primary" @click="openBatchEnrollDialog()">
+                      <el-icon><User /></el-icon>批量登记
+                    </el-button>
+                    <el-button class="rk-btn rk-btn-sm" @click="openEnrollDialog()">单个登记</el-button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -491,6 +558,7 @@ import { listTestTask, getTestTask, addTestTask, updateTestTask, delTestTask,
          listTaskMember, enrollMember, batchEnroll, removeMember } from '@/api/apms/testTask'
 import { listDept } from '@/api/system/dept'
 import { listUser } from '@/api/system/user'
+import { useRouter } from 'vue-router'
 import request from '@/utils/request'
 import { Plus, Delete, RefreshLeft, Refresh, ArrowLeft, ArrowRight, User, Close } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
@@ -498,6 +566,7 @@ import ResultEntryDialog from '@/components/ResultEntryDialog/index.vue'
 import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
 
 const { proxy } = getCurrentInstance()
+const router = useRouter()
 const { drawerPanelStyle } = useDrawerOffset()
 const { drawerSize } = useDrawerSize('780px')
 
@@ -612,6 +681,24 @@ function loadDetail(id) {
     Object.assign(detail, { items: d.items || [], members: d.members || [] })
     currentTask.value = d
   }).finally(() => { detailLoading.value = false })
+}
+
+// 抽屉顶部「配置完成度」引导：测试项 / 参测队员都齐备才能录成绩、算组合分
+const itemsReady = computed(() => detail.items.length > 0)
+const membersReady = computed(() => detail.members.length > 0)
+const guideReady = computed(() => itemsReady.value && membersReady.value)
+function guideAddItems() {
+  activeTab.value = 'items'
+  openItemDialog()
+}
+function guideEnroll() {
+  activeTab.value = 'members'
+  openBatchEnrollDialog()
+}
+function goResultEntry() {
+  if (!guideReady.value) return
+  detailDrawerVisible.value = false
+  router.push('/testings/dispatch?tab=result')
 }
 
 // ========= 辅助下拉 =========
@@ -954,6 +1041,72 @@ loadStats()
 .tt-banner-title { margin-top: 8px; font-size: 16px; font-weight: 700; color: $rk-text-1; }
 .tt-banner-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 5px; font-size: 12px; color: $rk-text-3; }
 
+/* ===== 抽屉内：配置完成度引导（琥珀提示态 → 全绿完成态） ===== */
+.tt-guide {
+  margin-top: 12px;
+  padding: 13px 14px;
+  border: 1px solid #f0d9a8;
+  border-radius: 12px;
+  background: #fffaf0;
+}
+.tt-guide.is-ready { border-color: #b7e0c4; background: #f3fbf5; }
+.tt-guide-head { margin-bottom: 10px; }
+.tt-guide-title { font-size: 13px; font-weight: 700; color: $rk-warn; }
+.tt-guide.is-ready .tt-guide-title { color: $rk-ok; }
+.tt-guide-sub { display: block; margin-top: 2px; font-size: 11px; line-height: 1.6; color: $rk-text-3; }
+.tt-guide-steps { display: flex; gap: 10px; }
+.tt-guide-step {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid $rk-line;
+  border-radius: 10px;
+}
+.tt-guide-no {
+  flex: none;
+  width: 24px; height: 24px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #fff;
+  background: $rk-text-3;
+}
+.tt-guide-step.is-todo .tt-guide-no { background: $rk-brand-600; }
+.tt-guide-step.is-done .tt-guide-no { background: $rk-ok; }
+.tt-guide-step.is-lock { opacity: .72; }
+.tt-guide-body { flex: 1; min-width: 0; }
+.tt-guide-name {
+  font-size: 13px; font-weight: 600; color: $rk-text-1;
+  display: flex; align-items: center; gap: 6px;
+}
+.tt-guide-count {
+  font-size: 11px; font-weight: 500; color: $rk-brand-600;
+  background: $rk-brand-50; border-radius: 999px; padding: 0 7px; line-height: 17px;
+}
+.is-done .tt-guide-count { color: $rk-ok; background: #e8f7ee; }
+.tt-guide-desc { margin-top: 2px; font-size: 11px; color: $rk-text-3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 640px) {
+  .tt-guide-steps { flex-direction: column; }
+  .tt-guide-desc { white-space: normal; }
+}
+
+/* 左表未配置任务的醒目主按钮（跟在红色警示文案下） */
+.tt-config-cta { margin-top: 6px; }
+
+/* 列表空状态：三步引导 */
+.tt-empty-guide { max-width: 560px; margin: 0 auto; text-align: center; }
+.tt-empty-steps {
+  list-style: none;
+  max-width: 430px;
+  margin: 12px auto 16px;
+  padding: 12px 16px;
+  text-align: left;
+  border: 1px dashed $rk-line;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+.tt-empty-steps li { font-size: 12px; line-height: 2; color: $rk-text-2; }
+.tt-empty-steps b { color: $rk-text-1; font-weight: 600; }
+
 /* 摘要条 */
 .tt-summary {
   display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -987,6 +1140,7 @@ loadStats()
   padding: 26px; text-align: center; font-size: 12px; color: $rk-text-3;
   background: #f8fafc; border: 1px dashed $rk-line; border-radius: 12px;
 }
+.tt-inner-empty-ops { margin-top: 12px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 
 .col-idx { width: 40px; }
 .col-type { width: 64px; }

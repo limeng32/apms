@@ -34,6 +34,10 @@
         <input v-model="filters.keyword" class="rk-input" type="text" placeholder="队员姓名" />
       </label>
       <div class="rk-filter-right">
+        <button v-if="canEdit && confirmHidden" type="button" class="rk-btn-reset"
+                title="状态变更当前无需确认即生效，点击恢复确认提示" @click="restoreConfirm">
+          <el-icon><CircleCheck /></el-icon>恢复变更确认
+        </button>
         <button type="button" class="rk-btn-reset" @click="resetFilter">
           <el-icon><RefreshLeft /></el-icon>重置
         </button>
@@ -313,6 +317,7 @@ import { listStatus, getLog, updateStatus, clearStatus } from '@/api/apms/rtp'
 import { listAthlete } from '@/api/apms/athlete'
 import { listDept } from '@/api/system/dept'
 import { checkPermi } from '@/utils/permission'
+import { ElMessageBox, ElCheckbox } from 'element-plus'
 import { Close, RefreshLeft, CircleCheck, Warning, CircleClose, QuestionFilled, ArrowRight, ArrowDown, Pointer } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import RkPager from '@/components/RkPager/index.vue'
@@ -501,30 +506,62 @@ function onDrop(key) {
  * 统一的状态变更流程（拖拽投放与卡片「改状态」下拉共用，保证两种操作口径一致）：
  * 确认框 → 清除走 clearStatus / 其余走 updateStatus → 刷新看板与抽屉时间线
  */
+// 确认框「不再显示」偏好：勾选后拖拽投放 / 卡片改状态都直接生效，可在筛选条随时恢复
+const SKIP_CONFIRM_KEY = 'apms-rtp-confirm-hidden'
+const confirmHidden = ref(localStorage.getItem(SKIP_CONFIRM_KEY) === '1')
+function restoreConfirm() {
+  localStorage.removeItem(SKIP_CONFIRM_KEY)
+  confirmHidden.value = false
+  proxy.$modal.msgSuccess('已恢复「更新 RTP 状态」确认提示')
+}
+
 function applyStatusChange(row, key) {
   const fromKey = row.status || 'na'
   if (fromKey === key) return
   const athleteId = row.athleteId
   const targetLabel = key === 'na' ? '未评估（清除当前状态）' : statusLabel(key)
-  proxy.$modal.confirm(`确认将「${row.athleteName}」的 RTP 状态标记为「${targetLabel}」？`, '更新 RTP 状态')
-    .then(() => {
-      if (key === 'na') return clearStatus(athleteId, {})
-      return updateStatus({
+
+  const execute = () => {
+    const req = key === 'na'
+      ? clearStatus(athleteId, {})
+      : updateStatus({
         athleteId,
         status: key,
         reason: null,
         trainingLimit: key === 'g' ? null : '待补充',
         nextReviewDate: null
       })
-    })
-    .then(() => {
+    req.then(() => {
       proxy.$modal.msgSuccess('RTP 状态已更新')
       loadAll()
       if (drawer.value && currentAthlete.value && currentAthlete.value.athleteId === athleteId) {
         getLog(athleteId).then(res => { logList.value = res.data || [] })
       }
-    })
-    .catch(() => {})
+    }).catch(() => {})
+  }
+
+  // 已勾选「不再显示」：跳过确认直接执行
+  if (confirmHidden.value) return execute()
+
+  const dontShow = ref(false)
+  ElMessageBox.confirm(
+    h('div', [
+      h('div', { style: 'line-height:1.7' },
+        `确认将「${row.athleteName}」的 RTP 状态标记为「${targetLabel}」？`),
+      h(ElCheckbox, {
+        style: 'display:inline-flex;margin-top:12px;color:#606266;font-size:13px;white-space:normal',
+        'onUpdate:modelValue': v => { dontShow.value = v }
+      }, () => '不再显示此确认（拖拽/改状态时直接生效，可在列表上方恢复）')
+    ]),
+    '更新 RTP 状态',
+    { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning', closeOnClickModal: false }
+  ).then(() => {
+    if (dontShow.value) {
+      localStorage.setItem(SKIP_CONFIRM_KEY, '1')
+      confirmHidden.value = true
+    }
+    execute()
+  }).catch(() => {})
 }
 
 // 卡片「改状态」下拉选项：不列出当前所处状态

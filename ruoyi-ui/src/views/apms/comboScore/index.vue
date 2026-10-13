@@ -100,9 +100,43 @@
                 </tr>
                 <tr v-if="!loading && tableData.length === 0">
                   <td colspan="6" class="rk-empty-cell">
-                    <div class="rk-empty">
-                      <p class="rk-empty-title">暂无评分记录</p>
-                      <p class="rk-empty-desc">选择一次测试任务执行批量计算后生成</p>
+                    <div class="cs-onboard">
+                      <div class="cs-onboard-head">
+                        <div class="cs-onboard-title">还没有组合评分，按 3 步开始</div>
+                        <div class="cs-onboard-sub">
+                          组合分 = 各指标在同队同性别群体中的 Z 分加权（缺失/仅参考指标权重自动归一化）
+                        </div>
+                      </div>
+                      <ol class="cs-onboard-steps">
+                        <li class="cs-step cs-step--1">
+                          <div class="cs-step-no">1</div>
+                          <div class="cs-step-body">
+                            <div class="cs-step-title">配置测试任务</div>
+                            <div class="cs-step-desc">新建任务后，在任务详情中添加测试指标、批量登记参测队员</div>
+                          </div>
+                          <button type="button" class="rk-btn rk-btn-sm" @click="goConfigTask">去配置</button>
+                        </li>
+                        <li class="cs-step-arrow" aria-hidden="true">↓</li>
+                        <li class="cs-step cs-step--2">
+                          <div class="cs-step-no">2</div>
+                          <div class="cs-step-body">
+                            <div class="cs-step-title">录入测试成绩</div>
+                            <div class="cs-step-desc">在测试结果中选择该任务，手动录入或批量导入成绩（默认标记为「已选中」）</div>
+                          </div>
+                          <button type="button" class="rk-btn rk-btn-sm" @click="goEntryResult">去录入</button>
+                        </li>
+                        <li class="cs-step-arrow" aria-hidden="true">↓</li>
+                        <li class="cs-step cs-step--3">
+                          <div class="cs-step-no">3</div>
+                          <div class="cs-step-body">
+                            <div class="cs-step-title">执行批量计算</div>
+                            <div class="cs-step-desc">回到本页选择组合模型与该任务，一键逐人计算加权组合分并生成快照报告</div>
+                          </div>
+                          <button type="button" class="rk-btn rk-btn-sm rk-btn-primary"
+                                  @click="showCalcDialog()"
+                                  v-hasPermi="['apms:comboScore:calculate']">批量计算</button>
+                        </li>
+                      </ol>
                     </div>
                   </td>
                 </tr>
@@ -420,7 +454,68 @@ loadList()
 @use "@/assets/styles/roster-kit.scss" as *;
 
 .cs-search { width: 180px; }
-.rk-empty-cell { padding: 36px 0; }
+.rk-empty-cell { padding: 36px 16px; }
+
+/* ===== 空状态：3 步引导卡（配置任务 → 录入成绩 → 批量计算） ===== */
+.cs-onboard {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 26px 28px 24px;
+  border: 1px solid $rk-line;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+  text-align: left;
+}
+.cs-onboard-head { text-align: center; margin-bottom: 18px; }
+.cs-onboard-title { font-size: 16px; font-weight: 700; color: $rk-text-1; }
+.cs-onboard-sub {
+  margin: 6px auto 0;
+  max-width: 560px;
+  font-size: 12px; line-height: 1.7;
+  color: $rk-text-3;
+}
+.cs-onboard-steps {
+  list-style: none;
+  margin: 0; padding: 0;
+  display: flex; flex-direction: column;
+}
+.cs-step {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid $rk-line;
+  border-radius: 12px;
+  background: $rk-canvas;
+}
+.cs-step-no {
+  flex: none;
+  width: 34px; height: 34px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 700; color: #fff;
+  background: $rk-brand-600;
+}
+.cs-step--2 .cs-step-no { background: $rk-warn; }
+.cs-step--3 .cs-step-no { background: $rk-ok; }
+.cs-step-body { flex: 1; min-width: 0; }
+.cs-step-title { font-size: 14px; font-weight: 600; color: $rk-text-1; }
+.cs-step-desc {
+  margin-top: 3px;
+  font-size: 12px; line-height: 1.6;
+  color: $rk-text-3;
+}
+.cs-step .rk-btn { flex: none; }
+.cs-step-arrow {
+  text-align: center;
+  font-size: 13px; line-height: 1;
+  color: $rk-text-3;
+  padding: 5px 0;
+}
+
+@media (max-width: 768px) {
+  .cs-onboard { padding: 20px 16px 16px; }
+  .cs-step { flex-wrap: wrap; }
+  .cs-step .rk-btn { margin-left: 48px; }
+}
 .rk-person-main { display: flex; flex-direction: column; gap: 3px; }
 .rk-person-link { display: flex; align-items: center; gap: 6px; }
 
