@@ -141,9 +141,10 @@ export default {
       splitRatio: 1.1
     },
     brand: {
-      // 移动端可使用独立 Logo（不同图标/尺寸/偏移）
-      logo: { type: 'builtin', value: 'shield', width: 42, height: 48, offsetX: 0, offsetY: 0 },
-      // 移动端独立客户方 Logo（右上）：nosc 奥体中心，小屏略缩
+      // 移动端主 Logo：nosc 奥体中心（含黑色字样，深色背景上由 Renderer 白色铭牌承托）；
+      // 横版 1.69:1 且下方带书法字，宽度需 150 才可读，位图高度按比例 auto
+      logo: { type: 'builtin', value: 'nosc', width: 150, height: 89, offsetX: 0, offsetY: 0 },
+      // 移动端独立客户方 Logo（右上）：nosc 奥体中心，角标尺寸
       logoClient: { enabled: true, type: 'builtin', value: 'nosc', width: 84, height: 50, offsetX: 0, offsetY: 0 },
       // 移动端独立上下留白
       logoSpace: {

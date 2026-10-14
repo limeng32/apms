@@ -65,6 +65,11 @@
 
           <!-- 展示形态（www）：无登录卡片 -->
           <div v-if="!showcase" class="lc-card" data-anim :style="entranceOn ? { animationDelay: '0.3s' } : null">
+            <!-- 移动端 logo 槽：桌面隐藏（logo 在卡外品牌区），手机上 logo 收入白卡，
+                 nosc 等黑色字样位图落在白底上清晰可见；支持设计器拖拽 -->
+            <div class="lc-card-logo">
+              <LoginLogoSlot :logo="logo" :draggable="logoDraggable" @logo-pointerdown="onLogoPointerDown" />
+            </div>
             <div class="lf-title" v-if="!hideCardHeader">{{ cfg.form.title }}</div>
             <div class="lf-subtitle" v-if="!hideCardHeader">{{ interpolate(cfg.form.subtitle, tplCtx) }}</div>
 
@@ -136,6 +141,11 @@
 
           <!-- 展示形态（www）：无登录卡片 -->
           <div v-if="!showcase" class="lc-card" data-anim :style="entranceOn ? { animationDelay: '0.3s' } : null">
+            <!-- 移动端 logo 槽：桌面隐藏（logo 在卡外品牌区），手机上 logo 收入白卡，
+                 nosc 等黑色字样位图落在白底上清晰可见；支持设计器拖拽 -->
+            <div class="lc-card-logo">
+              <LoginLogoSlot :logo="logo" :draggable="logoDraggable" @logo-pointerdown="onLogoPointerDown" />
+            </div>
             <div class="lf-title" v-if="!hideCardHeader">{{ cfg.form.title }}</div>
             <div class="lf-subtitle" v-if="!hideCardHeader">{{ interpolate(cfg.form.subtitle, tplCtx) }}</div>
 
@@ -844,6 +854,11 @@ function onLogoPointerUp() {
 /* 关闭入场动效时元素默认可见，不残留 transform */
 .login-wrap:not(.anim-on) [data-anim] { opacity: 1; transform: none; }
 
+/* 白卡内 logo 槽：桌面端隐藏（logo 在卡外深色品牌区），移动端才显示 */
+.lc-card-logo {
+  display: none;
+}
+
 /* ============ 移动端响应式 ============ */
 @media (max-width: 900px) {
   .login-split {
@@ -857,6 +872,25 @@ function onLogoPointerUp() {
     padding: var(--login-logo-top-split) 20px 32px;
   }
   .lc-logo-corner { left: 20px; }
+
+  /* centered/fullscreen：logo 收入白色登录卡顶部——nosc 等含黑色字样的位图
+     落在白底上天然清晰，不在深色背景上加任何色块。
+     卡外深色品牌块（logo+品牌名+英文副标题）与右上角客户方 logo 在移动端隐藏
+     （H5 竖屏空间有限，且客户方位图在深色区同样不可读）；
+     showcase 品牌展示页没有登录卡，保持其品牌区不变。 */
+  .login-centered:not(.showcase-on) .lc-brand,
+  .login-fullscreen:not(.showcase-on) .lc-brand,
+  .login-centered:not(.showcase-on) .lc-logo-corner,
+  .login-fullscreen:not(.showcase-on) .lc-logo-corner {
+    display: none;
+  }
+  .login-centered:not(.showcase-on) .lc-card-logo,
+  .login-fullscreen:not(.showcase-on) .lc-card-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 16px;
+  }
 }
 @media (max-width: 480px) {
   .login-form-box { max-width: 100%; }
@@ -877,6 +911,20 @@ function onLogoPointerUp() {
 .login-wrap.force-mobile .lc-logo-corner { left: 20px; }
 .login-wrap.force-mobile .login-form-box { max-width: 100%; }
 .login-wrap.force-mobile .lc-card { padding: 26px 22px 22px; }
+/* 手机预览：logo 入白卡（与 ≤900px 媒体查询同口径，设计器所见即所得） */
+.login-wrap.force-mobile.login-centered:not(.showcase-on) .lc-brand,
+.login-wrap.force-mobile.login-fullscreen:not(.showcase-on) .lc-brand,
+.login-wrap.force-mobile.login-centered:not(.showcase-on) .lc-logo-corner,
+.login-wrap.force-mobile.login-fullscreen:not(.showcase-on) .lc-logo-corner {
+  display: none;
+}
+.login-wrap.force-mobile.login-centered:not(.showcase-on) .lc-card-logo,
+.login-wrap.force-mobile.login-fullscreen:not(.showcase-on) .lc-card-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
 
 /* ============ 品牌展示形态（www.apms.top 落地页） ============ */
 /* split：右栏已 v-if 移除，品牌区独占整行 */
