@@ -11,6 +11,7 @@ export const tables = {
   // 框架可变表
   notices: system.notices,
   depts: system.depts,
+  roles: system.roles,
   // 业务表（13 模块）
   athletes: business.athletes,
   athleteGroups: business.athleteGroups,

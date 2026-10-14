@@ -19,8 +19,10 @@ export const getInfoBody = {
     sex: '0',
     status: '0'
   },
-  roles: ['business_admin'],
-  // 通配权限：保证 13 个业务页面内所有 v-hasPermi 按钮与真实 super 外观一致
+  // 与真实库一致：super 用户(100) 已由 business_admin 切换到 super 角色（role_id=200，
+  // 见 patch-0.0.6-2610061605）
+  roles: ['super'],
+  // 通配权限：演示无后端鉴权，保证所有 v-hasPermi 按钮与真实 super 外观一致
   permissions: ['*:*:*'],
   portalMode: false,
   homePath: '',
@@ -31,33 +33,92 @@ export const getInfoBody = {
 }
 
 /* ============================ GET /getRouters ============================ */
-/* 蓝本：真实 GET /getRouters 的 APMS 顶级节点（menu_id=2200 对应 name=Apms），
-   结构逐字段保留；不含系统管理目录（演示定位为 APMS 业务模块展示）。 */
+/* 蓝本：super 角色（role_id=200）的真实 2400 分组菜单树（patch-0.0.6 ~ 0.0.7 系列）。
+   六个两组结构（顶级 M=Layout + C 子页），F 型权限点不进路由树：
+     总览(数据驾驶舱)
+     运动员(花名册 / 青训发育监控)
+     测试(指标库与任务下发 / 组合测试调度)
+     健康(健康预警中心 / 医疗康复)
+     分析(报告中心)
+     系统(角色权限管理 / 组织架构)
+   字段与后端 RouterVo/MetaVo 同构：顶级 M path 带前导 /、redirect=noRedirect、
+   alwaysShow=true；C 页 path 不带前导 /；name=path 首字母大写。 */
 
 export const apmsRouters = [
   {
-    name: 'Apms',
-    path: '/apms',
+    name: 'Overview',
+    path: '/overview',
     hidden: false,
     redirect: 'noRedirect',
     component: 'Layout',
     alwaysShow: true,
-    meta: { icon: 'star', link: null, noCache: false, title: 'APMS 系统' },
+    meta: { icon: '', link: null, noCache: false, title: '总览' },
     children: [
-      { name: 'Dashboard', path: 'dashboard', hidden: false, component: 'apms/dashboard/index', meta: { icon: 'dashboard', link: null, noCache: false, title: '数据驾驶舱' } },
-      { name: 'Athlete', path: 'athlete', hidden: false, component: 'apms/athlete/index', meta: { icon: 'user', link: null, noCache: false, title: '花名册' } },
-      { name: 'Indicator', path: 'indicator', hidden: false, component: 'apms/indicator/index', meta: { icon: 'list', link: null, noCache: false, title: '指标库' } },
-      { name: 'TestModel', path: 'testModel', hidden: false, component: 'apms/testModel/index', meta: { icon: 'build', link: null, noCache: false, title: '测试模型库' } },
-      { name: 'TestTask', path: 'testTask', hidden: false, component: 'apms/testTask/index', meta: { icon: 'date', link: null, noCache: false, title: '测试任务' } },
-      { name: 'TestResult', path: 'testResult', hidden: false, component: 'apms/testResult/index', meta: { icon: 'edit', link: null, noCache: false, title: '测试结果' } },
-      { name: 'BodyMeasure', path: 'bodyMeasure', hidden: false, component: 'apms/bodyMeasure/index', meta: { icon: 'people', link: null, noCache: false, title: '体态测量' } },
-      { name: 'Phv', path: 'phv', hidden: false, component: 'apms/phv/index', meta: { icon: 'chart', link: null, noCache: false, title: 'PHV 成熟度' } },
-      { name: 'Rtp', path: 'rtp', hidden: false, component: 'apms/rtp/index', meta: { icon: 'monitor', link: null, noCache: false, title: 'RTP 状态管理' } },
-      { name: 'RtpWarning', path: 'rtpWarning', hidden: false, component: 'apms/rtpWarning/index', meta: { icon: 'bell', link: null, noCache: false, title: 'RTP 风险预警' } },
-      { name: 'ComboModel', path: 'comboModel', hidden: false, component: 'apms/comboModel/index', meta: { icon: 'component', link: null, noCache: false, title: '组合模型' } },
-      { name: 'ComboScore', path: 'comboScore', hidden: false, component: 'apms/comboScore/index', meta: { icon: 'validCode', link: null, noCache: false, title: '组合体能评分' } },
-      { name: 'Medical', path: 'medical', hidden: false, component: 'apms/medical/index', meta: { icon: 'documentation', link: null, noCache: false, title: '医疗康复' } },
-      { name: 'Report', path: 'report', hidden: false, component: 'apms/report/index', meta: { icon: 'form', link: null, noCache: false, title: '报告中心' } }
+      { name: 'Cockpit', path: 'cockpit', hidden: false, component: 'apms/dashboard/index', meta: { icon: 'layout-dashboard', link: null, noCache: false, title: '数据驾驶舱' } }
+    ]
+  },
+  {
+    name: 'Athletes',
+    path: '/athletes',
+    hidden: false,
+    redirect: 'noRedirect',
+    component: 'Layout',
+    alwaysShow: true,
+    meta: { icon: 'users', link: null, noCache: false, title: '运动员' },
+    children: [
+      { name: 'Roster', path: 'roster', hidden: false, component: 'apms/athlete/index', meta: { icon: 'users', link: null, noCache: false, title: '花名册' } },
+      { name: 'Growth', path: 'growth', hidden: false, component: 'apms/growth/index', meta: { icon: 'trending-up', link: null, noCache: false, title: '青训发育监控' } }
+    ]
+  },
+  {
+    name: 'Testings',
+    path: '/testings',
+    hidden: false,
+    redirect: 'noRedirect',
+    component: 'Layout',
+    alwaysShow: true,
+    meta: { icon: 'flask-conical', link: null, noCache: false, title: '测试' },
+    children: [
+      { name: 'Dispatch', path: 'dispatch', hidden: false, component: 'apms/dispatch/index', meta: { icon: 'clipboard-list', link: null, noCache: false, title: '指标库与任务下发' } },
+      { name: 'Combo-dispatch', path: 'combo-dispatch', hidden: false, component: 'apms/comboDispatch/index', meta: { icon: 'layers', link: null, noCache: false, title: '组合测试调度' } }
+    ]
+  },
+  {
+    name: 'Healthcare',
+    path: '/healthcare',
+    hidden: false,
+    redirect: 'noRedirect',
+    component: 'Layout',
+    alwaysShow: true,
+    meta: { icon: 'activity', link: null, noCache: false, title: '健康' },
+    children: [
+      { name: 'Alert-center', path: 'alert-center', hidden: false, component: 'apms/healthAlert/index', meta: { icon: 'heart-pulse', link: null, noCache: false, title: '健康预警中心' } },
+      { name: 'Medical-care', path: 'medical-care', hidden: false, component: 'apms/medical/index', meta: { icon: 'stethoscope', link: null, noCache: false, title: '医疗康复' } }
+    ]
+  },
+  {
+    name: 'Analytics',
+    path: '/analytics',
+    hidden: false,
+    redirect: 'noRedirect',
+    component: 'Layout',
+    alwaysShow: true,
+    meta: { icon: 'chart-line', link: null, noCache: false, title: '分析' },
+    children: [
+      { name: 'Report-center', path: 'report-center', hidden: false, component: 'apms/report/index', meta: { icon: 'file-text', link: null, noCache: false, title: '报告中心' } }
+    ]
+  },
+  {
+    name: 'Sysmgr',
+    path: '/sysmgr',
+    hidden: false,
+    redirect: 'noRedirect',
+    component: 'Layout',
+    alwaysShow: true,
+    meta: { icon: 'settings', link: null, noCache: false, title: '系统' },
+    children: [
+      { name: 'Role-acl', path: 'role-acl', hidden: false, component: 'system/role/index', meta: { icon: 'shield-check', link: null, noCache: false, title: '角色权限管理' } },
+      { name: 'Org', path: 'org', hidden: false, component: 'system/dept/index', meta: { icon: 'tree', link: null, noCache: false, title: '组织架构' } }
     ]
   }
 ]
@@ -139,5 +200,36 @@ export const depts = [
   { deptId: 202, parentId: 200, ancestors: '0,200,202', deptName: 'U16 梯队', deptType: '20', orderNum: 2, leader: '王指导', phone: '13800000202', email: 'u16@apms.demo', status: '0', parentName: 'APMS 总部', children: [] },
   { deptId: 203, parentId: 200, ancestors: '0,200,203', deptName: '速度专项组', deptType: '30', orderNum: 3, leader: '陈教练', phone: '13800000203', email: 'speed@apms.demo', status: '0', parentName: 'APMS 总部', children: [] },
   { deptId: 204, parentId: 200, ancestors: '0,200,204', deptName: '康复组', deptType: '50', orderNum: 4, leader: '刘康复师', phone: '13800000204', email: 'rehab@apms.demo', status: '0', parentName: 'APMS 总部', children: [] },
-  { deptId: 205, parentId: 200, ancestors: '0,200,205', deptName: '力量组', deptType: '30', orderNum: 5, leader: '赵体能师', phone: '13800000205', email: 'strength@apms.demo', status: '0', parentName: 'APMS 总部', children: [] }
+  { deptId: 205, parentId: 200, ancestors: '0,200,205', deptName: '力量组', deptType: '30', orderNum: 5, leader: '赵体能师', phone: '13800008205', email: 'strength@apms.demo', status: '0', parentName: 'APMS 总部', children: [] }
+]
+
+/* 角色列表（系统 → 角色权限管理页 GET /system/role/list 使用）。
+   蓝本取自真实库 super 可见的角色（200 super + 三门户专岗；
+   admin(1)/business_admin(100) 按权限设计对 super 不可见，演示从略）。
+   演示态只读：新增/修改/删除等写操作由 mock 引擎统一 601 拦截。 */
+export const roles = [
+  {
+    roleId: 200, roleName: '超级用户', roleKey: 'super', roleSort: 1,
+    dataScope: '1', menuCheckStrictly: true, deptCheckStrictly: true,
+    status: '0', delFlag: '0', remark: '客户侧超级账号', portalMode: '0', homePath: '',
+    createBy: 'admin', createTime: '2026-10-06 16:05:00'
+  },
+  {
+    roleId: 201, roleName: '教练', roleKey: 'portal_coach', roleSort: 2,
+    dataScope: '1', menuCheckStrictly: true, deptCheckStrictly: true,
+    status: '0', delFlag: '0', remark: '只读分析岗', portalMode: '1', homePath: '/overview/cockpit',
+    createBy: 'admin', createTime: '2026-09-23 14:00:00'
+  },
+  {
+    roleId: 202, roleName: '测量员', roleKey: 'portal_tester', roleSort: 3,
+    dataScope: '1', menuCheckStrictly: true, deptCheckStrictly: true,
+    status: '0', delFlag: '0', remark: '测量执行岗', portalMode: '1', homePath: '/testings/dispatch',
+    createBy: 'admin', createTime: '2026-09-23 14:00:00'
+  },
+  {
+    roleId: 203, roleName: '队医', roleKey: 'portal_medic', roleSort: 4,
+    dataScope: '1', menuCheckStrictly: true, deptCheckStrictly: true,
+    status: '0', delFlag: '0', remark: '医疗保障岗', portalMode: '1', homePath: '/healthcare/medical-care',
+    createBy: 'admin', createTime: '2026-09-23 14:00:00'
+  }
 ]

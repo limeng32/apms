@@ -301,6 +301,28 @@ export const athleteHandlers = [
     return ok('删除成功')
   }),
 
+  // 重入队：离队(1)/退役(2) 恢复在队并重新挂靠主队伍（与后端 rejoinAthlete 同校验口径）
+  route('put', '/apms/athlete/rejoin', (ctx) => {
+    const db = getDb()
+    const b = ctx.body || {}
+    if (b.athleteId == null) return { code: 601, msg: '运动员ID不能为空' }
+    const row = db.athletes.find(a => String(a.athleteId) === String(b.athleteId))
+    if (!row) return { code: 601, msg: '运动员不存在或已删除' }
+    if (!['1', '2'].includes(String(row.status))) {
+      return { code: 601, msg: '该运动员当前为在队状态，无需重入队' }
+    }
+    if (b.primaryTeamId == null) return { code: 601, msg: '在队运动员必须选择主属队伍' }
+    const team = db.depts.find(d => String(d.deptId) === String(b.primaryTeamId))
+    if (!team) return { code: 601, msg: '所选主属队伍不存在或已删除，请重新选择' }
+    if (String(team.deptType) !== '20') return { code: 601, msg: '主属队伍必须选择队伍层级部门' }
+    if (String(team.status) === '1') return { code: 601, msg: '所选主属队伍已停用，请先启用或更换队伍' }
+    row.status = '0'
+    row.primaryTeamId = Number(b.primaryTeamId)
+    row.teamName = team.deptName
+    stampUpdate(row)
+    return ok('操作成功')
+  }),
+
   route('get', '/apms/athlete/:athleteId', (ctx) => {
     const row = getDb().athletes.find(a => String(a.athleteId) === ctx.params.athleteId)
     return row ? detail(decorate(row)) : { code: 601, msg: '队员不存在' }

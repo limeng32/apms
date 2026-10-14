@@ -242,18 +242,28 @@ test('D1', '框架接口：getInfo/getRouters/字典/公告/部门', async () =>
   const { mockDispatch } = await import(MOCK_URL)
   const info = mockDispatch({ method: 'get', path: '/getInfo', query: {}, body: {} })
   assertEq(info.code, 200)
-  assertEq(info.roles[0], 'business_admin')
+  assertEq(info.roles[0], 'super')
   assertEq(info.permissions[0], '*:*:*')
   assertEq(info.user.userName, 'super')
   assert(info.user.userId < 0, '演示 userId 必须为负数，避免与真实账号撞 ID')
 
+  // 与真实 super（role_id=200）2400 分组树一致：6 个顶级分组、10 个 C 页
   const routers = mockDispatch({ method: 'get', path: '/getRouters', query: {}, body: {} })
-  assertEq(routers.data[0].path, '/apms')
-  assertEq(routers.data[0].children.length, 14, '14 个业务子菜单（含 RTP 风险预警）')
-  assert(routers.data[0].children.some(c => c.path === 'rtpWarning'
-    && c.meta.title === 'RTP 风险预警'), '新增 RTP 风险预警菜单')
-  assert(routers.data[0].children.some(c => c.path === 'rtp'
-    && c.meta.title === 'RTP 状态管理'), '旧 RTP 菜单改名为 RTP 状态管理')
+  const groups = routers.data
+  assertEq(groups.length, 6, '六个顶级分组：总览/运动员/测试/健康/分析/系统')
+  assertEq(groups[0].path, '/overview')
+  assertEq(groups.reduce((n, g) => n + g.children.length, 0), 10, '10 个 C 型页面')
+  const flat = groups.flatMap(g => g.children.map(c => `${g.path}/${c.path}`))
+  ;[
+    '/overview/cockpit',
+    '/athletes/roster', '/athletes/growth',
+    '/testings/dispatch', '/testings/combo-dispatch',
+    '/healthcare/alert-center', '/healthcare/medical-care',
+    '/analytics/report-center',
+    '/sysmgr/role-acl', '/sysmgr/org'
+  ].forEach(p => assert(flat.includes(p), `菜单包含 ${p}`))
+  // RTP 状态/风险预警已并入「健康预警中心」合并页，不再有独立 C 菜单
+  assert(!flat.some(p => p.endsWith('/rtp') || p.endsWith('/rtpWarning')), '无独立 RTP C 菜单')
 
   const pos = mockDispatch({ method: 'get', path: '/system/dict/data/type/apms_position', query: {}, body: {} })
   assertEq(pos.data.length, 4)
@@ -351,16 +361,19 @@ test('F1', 'download() 演示态前置拦截（blob 判断在 601 之前，不�
 })
 
 /* ============================ G. db 生命周期 ============================ */
-test('G1', '模块加载即初始化：21 张表齐全、无 undefined', async () => {
+test('G1', '模块加载即初始化：表齐全、无 undefined', async () => {
   const db = await import(src('mock/db'))
   const d = db.getDb()
   const tables = Object.keys(d)
-  assertEq(tables.length, 25, `表数量 ${tables.length}`)
+  assertEq(tables.length, 26, `表数量 ${tables.length}`)
   for (const t of tables) assert(Array.isArray(d[t]), `${t} 必须是数组`)
   assertEq(d.notices.length, 2)
   // depts 与真实接口一致：扁平列表（children 均为空，树由前端构建）
   assertEq(d.depts.length, 6, '部门扁平列表 6 条')
   assert(d.depts.every(x => Array.isArray(x.children) && x.children.length === 0), 'children 必须全部为空数组')
+  // 系统组角色列表：super + 三门户专岗
+  assertEq(d.roles.length, 4, '角色 4 条')
+  assertEq(d.roles[0].roleKey, 'super')
 })
 
 test('G2', 'resetDb 还原 + 与 fixtures 深隔离', async () => {
@@ -1057,7 +1070,7 @@ test('H17', 'RTP 风险预警：双维度筛选/统计/知悉/忽略/采纳单�
   expect200(scan); assertEq(scan.data.withRisk, 0, '全部处置后当日无剩余 ACTIVE')
 })
 
-test('H16', 'strict 模式：14 页面真实请求序列零 MISS', async () => {
+test('H16', 'strict 模式：super 分组页面真实请求序列零 MISS', async () => {
   reset()
   globalThis.__VITE_ENV__.VITE_DEMO_MOCK_STRICT = 'true'
   missLog.length = 0
@@ -1067,7 +1080,7 @@ test('H16', 'strict 模式：14 页面真实请求序列零 MISS', async () => {
     ['get', '/system/dict/data/type/apms_position'],
     ['get', '/system/dict/data/type/apms_athlete_status'],
     ['get', '/system/dept/list'],
-    ['post', '/unlockscreen'],
+    // 锁屏已改为免鉴权纯前端解锁（lock.vue 直接 unlockScreen()），不再有 /unlockscreen 请求
     ['get', '/apms/dashboard/overview'],
     ['get', '/apms/athlete/list?pageNum=1&pageSize=10'],
     ['get', '/apms/athlete/rtpSummary'],
@@ -1108,7 +1121,9 @@ test('H16', 'strict 模式：14 页面真实请求序列零 MISS', async () => {
     ['get', '/apms/medical-record/site-stats?range=12m'],
     ['get', '/apms/medical-record/1'],
     ['get', '/apms/report/list?pageNum=1&pageSize=10'],
-    ['get', '/apms/report/1']
+    ['get', '/apms/report/1'],
+    // 系统组：角色权限管理 + 组织架构（/system/dept/list 已在序列前部）
+    ['get', '/system/role/list?pageNum=1&pageSize=10']
   ]
   // mockDispatch 只收 path/query，序列里的 querystring 先规范化
   for (const [method, raw] of seq) {

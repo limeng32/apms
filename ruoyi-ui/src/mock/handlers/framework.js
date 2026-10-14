@@ -3,7 +3,7 @@
  * 业务模块 handler 见同目录其他文件，由 index.js 汇总。
  */
 import { getInfoBody, apmsRouters, dictMap } from '../fixtures/system'
-import { getDb, route, ok, detail, listData } from '../handle'
+import { getDb, route, ok, detail, listData, paginate } from '../handle'
 
 export const frameworkHandlers = [
   // 身份与菜单（进入演示后守卫首先拉取）
@@ -61,11 +61,34 @@ export const frameworkHandlers = [
       email: '',
       sex: '0',
       avatar: '',
-      roleGroup: '业务管理员',
+      roleGroup: '超级用户',
       postGroup: '',
       admin: false
     },
-    roleGroup: '业务管理员',
+    roleGroup: '超级用户',
     postGroup: ''
+  })),
+
+  // 系统 → 角色权限管理（分页列表；演示只读，写操作由引擎 601 拦截）
+  route('get', '/system/role/list', (ctx) => {
+    const rows = getDb().roles
+    const kw = (ctx.query.roleName || ctx.query.roleKey || '').toString().
+      trim().toLowerCase()
+    const filtered = kw
+      ? rows.filter(r =>
+        String(r.roleName).toLowerCase().includes(kw)
+        || String(r.roleKey).toLowerCase().includes(kw))
+      : rows
+    return paginate(filtered, ctx.query)
+  }),
+  route('get', '/system/role/:roleId', (ctx) => {
+    const row = getDb().roles.find(r => String(r.roleId) === String(ctx.params.roleId))
+    return detail(row || null)
+  }),
+  // 数据权限弹窗的部门树（演示无勾选数据，返回空树即可正常打开）
+  route('get', '/system/role/deptTree/:roleId', () => ({
+    code: 200,
+    msg: '操作成功',
+    data: { checkedKeys: [], depts: [] }
   }))
 ]

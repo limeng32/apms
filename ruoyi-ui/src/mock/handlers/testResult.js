@@ -120,6 +120,80 @@ export const testResultHandlers = [
     ])
   }),
 
+  // 在线网格批量录入：{ taskId?, measureDate, rows: [{ athleteId, cells: [{ indicatorId, value }] }] }
+  // 逐人提交（非逐格）：返回 ImportCommitResult { committed, skipped, failed, failedDetails }
+  route('post', '/apms/test-result/batch-grid', (ctx) => {
+    const b = ctx.body || {}
+    const db = getDb()
+    const rowsIn = Array.isArray(b.rows) ? b.rows : []
+    const measureDate = b.measureDate || null
+    const failedDetails = []
+    const skippedDetails = []
+    let committed = 0
+    let failed = 0
+    let skipped = 0
+    for (const person of rowsIn) {
+      const athlete = db.athletes.find(a => String(a.athleteId) === String(person.athleteId))
+      if (!athlete) {
+        failed++
+        failedDetails.push(`运动员 ${person.athleteId} 不存在`)
+        continue
+      }
+      const cells = (Array.isArray(person.cells) ? person.cells : [])
+        .filter(c => c && c.indicatorId != null && c.value !== '' && c.value != null && c.value !== undefined)
+      if (!cells.length) {
+        skipped++
+        skippedDetails.push(`${athlete.name} 无有效成绩，已跳过`)
+        continue
+      }
+      const task = b.taskId != null ? db.testTasks.find(t => String(t.id) === String(b.taskId)) : null
+      for (const cell of cells) {
+        const indicator = db.indicators?.find(i => String(i.id) === String(cell.indicatorId))
+        const item = b.taskId != null
+          ? db.taskItems.find(i => String(i.taskId) === String(b.taskId)
+            && String(i.indicatorId) === String(cell.indicatorId))
+          : null
+        const payloadRow = {
+          athleteId: athlete.athleteId,
+          taskId: b.taskId != null ? Number(b.taskId) : null,
+          taskItemId: item?.id ?? null,
+          indicatorId: Number(cell.indicatorId),
+          measureDate,
+          dataSource: 'manual'
+        }
+        const row = {
+          ...item ? {
+            taskId: item.taskId, taskName: task?.taskName,
+            itemType: item.itemType, itemSortOrder: item.sortOrder,
+            indicatorId: item.indicatorId, indicatorCode: item.indicatorCode,
+            indicatorName: item.indicatorName, indicatorDirection: item.indicatorDirection
+          } : {},
+          ...indicator ? {
+            itemType: 'INDICATOR', indicatorCode: indicator.code, indicatorName: indicator.name,
+            indicatorDirection: indicator.evaluationDirection, indicatorUnit: indicator.unit
+          } : {},
+          athleteName: athlete.name, athleteGender: athlete.gender, athleteTeam: athlete.teamName,
+          ...payloadRow,
+          values: [{
+            id: nextId(), resultId: null, indicatorId: Number(cell.indicatorId),
+            fieldKey: 'result', isDerived: '0', numericValue: Number(cell.value),
+            textValue: null, unit: indicator?.unit || null
+          }],
+          id: nextId(),
+          isSelected: '1',
+          isValid: '1'
+        }
+        const groupBefore = db.testResults.filter(r => sameGroup(r, row))
+        row.attemptNo = groupBefore.reduce((m, r) => Math.max(m, Number(r.attemptNo) || 0), 0) + 1
+        stampCreate(row)
+        db.testResults.push(row)
+        normalizeGroupSelection(db.testResults, row)
+      }
+      committed++
+    }
+    return detail({ committed, skipped, failed, failedDetails, skippedDetails })
+  }),
+
   route('post', '/apms/test-result', (ctx) => {
     const payload = ctx.body || {}
     // 契约为 AddBody { result, values }；兼容旧的扁平 body

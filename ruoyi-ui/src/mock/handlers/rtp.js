@@ -65,6 +65,76 @@ export const rtpHandlers = [
     return ok('状态已更新')
   }),
 
+  // 批量评估：逐人独立处理、部分成功；返回 RtpBatchResult（口径对齐组合评分批量结果）
+  route('post', '/apms/rtp/batch-update', (ctx) => {
+    const items = Array.isArray(ctx.body?.items) ? ctx.body.items : []
+    if (!items.length) return { code: 601, msg: '评估名单不能为空' }
+    const db = getDb()
+    const results = []
+    // athleteId 去重（同批次重复提交以最后一条为准，与后端一致）
+    const seen = new Set()
+    const uniq = []
+    for (const it of items) {
+      const key = String(it.athleteId)
+      if (it.athleteId == null || seen.has(key)) continue
+      seen.add(key)
+      uniq.push(it)
+    }
+    for (const b of uniq) {
+      if (b.athleteId == null || !b.status) {
+        results.push({ athleteId: b.athleteId ?? null, athleteName: null, status: 'failed', reason: '运动员与状态必填' })
+        continue
+      }
+      if (!['g', 'y', 'r'].includes(String(b.status))) {
+        results.push({ athleteId: Number(b.athleteId), athleteName: null, status: 'failed', reason: '状态值非法' })
+        continue
+      }
+      const athlete = db.athletes.find(a => String(a.athleteId) === String(b.athleteId))
+      const ts = now()
+      const prev = statusOf(b.athleteId)
+      if (prev) {
+        Object.assign(prev, {
+          status: b.status, reason: b.reason ?? prev.reason,
+          trainingLimit: b.trainingLimit ?? prev.trainingLimit,
+          nextReviewDate: b.nextReviewDate ?? prev.nextReviewDate,
+          updatedBy: 'super', updatedTime: ts
+        })
+      } else {
+        db.rtpStatuses.push({
+          id: nextId(),
+          athleteId: Number(b.athleteId),
+          athleteName: athlete?.name ?? b.athleteName ?? null,
+          athleteTeam: athlete?.teamName ?? null,
+          status: b.status,
+          reason: b.reason ?? null,
+          trainingLimit: b.trainingLimit ?? null,
+          nextReviewDate: b.nextReviewDate ?? null,
+          updatedBy: 'super', updatedTime: ts
+        })
+      }
+      db.rtpLogs.push({
+        id: nextId(),
+        athleteId: Number(b.athleteId),
+        athleteName: athlete?.name ?? b.athleteName ?? null,
+        fromStatus: prev?.status ?? null,
+        toStatus: b.status,
+        reason: b.reason ?? null,
+        trainingLimit: b.trainingLimit ?? null,
+        nextReviewDate: b.nextReviewDate ?? null,
+        operatorId: -1, operatorName: 'super', operateTime: ts
+      })
+      if (athlete) athlete.rtpStatus = b.status
+      results.push({ athleteId: Number(b.athleteId), athleteName: athlete?.name ?? null, status: 'success', reason: null })
+    }
+    const successCount = results.filter(r => r.status === 'success').length
+    return detail({
+      total: results.length,
+      successCount,
+      failedCount: results.length - successCount,
+      items: results
+    })
+  }),
+
   route('post', '/apms/rtp/clear/:athleteId', (ctx) => {
     const db = getDb()
     const id = ctx.params.athleteId

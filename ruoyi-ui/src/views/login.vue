@@ -112,9 +112,10 @@ onBeforeUnmount(() => {
   restoreLoginHead()
 })
 
-// 口令正确、enterDemo 完成：守卫检测 roles.length===0 走真实链路拉 mock getInfo/路由
+// 口令正确、enterDemo 完成：守卫检测 roles.length===0 走真实链路拉 mock getInfo/路由。
+// 落地页与真实 super 一致：总览 → 数据驾驶舱（/overview/cockpit）
 function handleDemoSuccess() {
-  router.replace('/apms/dashboard')
+  router.replace('/overview/cockpit')
 }
 
 function reloadPage() {

@@ -666,8 +666,9 @@ const rtpRiskBanner = computed(() => {
 })
 function goRtpWarning() {
   // 抽屉内先关抽屉再跳转（路由切换会卸载花名册页，关闭仅为过渡干净）；页面模式直接跳转
+  // 2400 分组菜单后风险预警并入「健康 → 健康预警中心」合并页
   if (props.embedded) emit('back')
-  router.push('/apms/rtpWarning')
+  router.push('/healthcare/alert-center')
 }
 function rtpLabel(status) {
   const map = { g: '正常参训', y: '限制参训', r: '不建议参训' }
