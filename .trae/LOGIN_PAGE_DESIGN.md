@@ -184,7 +184,7 @@ CREATE TABLE apms_login_config (
   },
   "form": {
     "title": "欢迎回来",
-    "subtitle": "请使用账号登录 {title} 工作台",   // 支持 {title} 占位符
+    "subtitle": "",   // 支持 {title} 占位符
     "usernamePlaceholder": "请输入用户名",
     "passwordPlaceholder": "请输入密码",
     "rememberText": "记住我",
