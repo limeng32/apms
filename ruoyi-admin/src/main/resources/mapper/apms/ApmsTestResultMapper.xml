@@ -48,7 +48,13 @@
                a.name AS a_name, a.gender AS a_gender, d.dept_name,
                ind.code AS ind_code, ind.name AS ind_name, ind.evaluation_direction AS ind_direction, ind.unit AS ind_unit,
                m.code AS mdl_code, m.name AS mdl_name,
-               ti.item_type, ti.sort_order AS item_sort
+               <!-- 成绩类型以结果行自身的 indicator_id/model_id 为权威来源（写入时二者互斥）：
+                    散录（task_item_id 为 NULL）或任务项被删时，JOIN apms_task_item 取不到类型，
+                    会把模型/指标成绩都解析成 NULL。仅当两个归属列都为空（异常历史数据）时才回退任务项类型 -->
+               CASE WHEN r.model_id IS NOT NULL     THEN 'MODEL'
+                    WHEN r.indicator_id IS NOT NULL THEN 'INDICATOR'
+                    ELSE ti.item_type END AS item_type,
+               ti.sort_order AS item_sort
         FROM apms_test_result r
         LEFT JOIN apms_test_task t      ON r.task_id     = t.id
         LEFT JOIN apms_task_item ti    ON r.task_item_id = ti.id
@@ -70,6 +76,13 @@
             <if test="athleteId != null">   AND r.athlete_id = #{athleteId}</if>
             <if test="indicatorId != null"> AND r.indicator_id = #{indicatorId}</if>
             <if test="modelId != null">     AND r.model_id = #{modelId}</if>
+            <!-- 类型筛选：直接按结果行归属列过滤。此前该条件缺失，前端传 itemType=MODEL 被忽略、返回全部成绩 -->
+            <if test="itemType != null and itemType != ''">
+                <choose>
+                    <when test='itemType == "MODEL"'>     AND r.model_id IS NOT NULL</when>
+                    <when test='itemType == "INDICATOR"'> AND r.indicator_id IS NOT NULL</when>
+                </choose>
+            </if>
             <if test="isSelected != null and isSelected != ''"> AND r.is_selected = #{isSelected}</if>
             <if test="measureDate != null"> AND r.measure_date = #{measureDate}</if>
         </where>

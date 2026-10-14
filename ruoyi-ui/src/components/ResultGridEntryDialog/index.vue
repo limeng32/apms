@@ -22,9 +22,9 @@
       <div class="rg-pick-grid">
         <div class="rg-pick-col">
           <div class="rg-pick-head">
-            <b>{{ pickTaskId ? '任务参测队员' : '① 选择队员' }}</b>
+            <b>{{ pickTaskId ? '任务参测队员（全部纳入）' : '① 选择队员' }}</b>
             <span class="rg-pick-count">
-              {{ pickTaskId ? `共 ${displayAthletes.length} 人（已全选）` : `已选 ${pickedAthletes.length} 人` }}
+              {{ pickTaskId ? `共 ${displayAthletes.length} 人` : `已选 ${pickedAthletes.length} 人` }}
             </span>
           </div>
           <div v-if="!pickTaskId" class="rg-pick-filter">
@@ -36,7 +36,7 @@
           </div>
           <el-table ref="athleteTableRef" :data="displayAthletes" row-key="athleteId"
                     height="340" size="small" @selection-change="onAthleteSelection">
-            <el-table-column type="selection" width="42" :selectable="athleteSelectable" reserve-selection/>
+            <el-table-column v-if="!pickTaskId" type="selection" width="42" reserve-selection/>
             <el-table-column label="队员" min-width="120">
               <template #default="{ row }">
                 <span class="rg-aname">{{ row.name }}</span>
@@ -48,27 +48,34 @@
         </div>
         <div class="rg-pick-col">
           <div class="rg-pick-head">
-            <b>{{ pickTaskId ? '任务指标项' : '② 选择指标' }}</b>
+            <b>{{ pickTaskId ? '任务测试项（指标 + 模型，全部纳入）' : '② 选择指标' }}</b>
             <span class="rg-pick-count">
-              {{ pickTaskId ? `共 ${displayIndicators.length} 项（已全选）` : `已选 ${pickedIndicators.length} 项` }}
+              {{ pickTaskId
+                ? `共 ${displayIndicators.length} 项（指标 ${taskLock.indicators.length} · 模型 ${(taskLock.models || []).length}）`
+                : `已选 ${pickedIndicators.length} 项` }}
             </span>
           </div>
           <el-table ref="indicatorTableRef" :data="displayIndicators" row-key="id"
                     height="340" size="small" @selection-change="onIndicatorSelection">
-            <el-table-column type="selection" width="42" :selectable="indicatorSelectable"/>
-            <el-table-column label="指标" min-width="150">
+            <el-table-column v-if="!pickTaskId" type="selection" width="42"/>
+            <el-table-column :label="pickTaskId ? '测试项' : '指标'" min-width="150">
               <template #default="{ row }">
                 <div class="rg-ind-name">{{ row.name }}</div>
                 <div class="rg-ind-sub">
                   <span class="rg-code">{{ row.code }}</span>
-                  <span v-if="row.category" class="rg-cat">{{ row.category }}</span>
+                  <span v-if="row.category" class="rg-cat" :class="{ 'is-model': row.kind === 'model' }">{{ row.category }}</span>
                 </div>
               </template>
             </el-table-column>
             <el-table-column label="单位/方向" width="100">
               <template #default="{ row }">
-                <span class="rg-unit">{{ row.unit || '—' }}</span>
-                <span class="rg-dir">{{ dirShort(row.evaluationDirection) }}</span>
+                <template v-if="row.kind === 'model'">
+                  <span class="rg-dir">模型</span>
+                </template>
+                <template v-else>
+                  <span class="rg-unit">{{ row.unit || '—' }}</span>
+                  <span class="rg-dir">{{ dirShort(row.evaluationDirection) }}</span>
+                </template>
               </template>
             </el-table-column>
           </el-table>
@@ -78,6 +85,18 @@
 
     <!-- ============ 网格录入（任务模式直达；散录选完人/指标后进入） ============ -->
     <div v-if="mode === 'task' || pickedReady" class="rg-grid-wrap" v-show="!submitted">
+      <!-- 维度切换：直接指标 / 模型测试（任务配置了模型项时显示；模型维度一次铺开所有模型） -->
+      <div v-if="gridMode === 'MODEL' || taskModelItems.length" class="rg-dim-bar">
+        <div class="rg-dim-switch">
+          <button type="button" class="rg-dim-btn" :class="{ 'is-active': gridMode === 'INDICATOR' }"
+                  @click="switchDimension('INDICATOR')">直接指标</button>
+          <button type="button" class="rg-dim-btn" :class="{ 'is-active': gridMode === 'MODEL' }"
+                  @click="switchDimension('MODEL')">模型测试（{{ taskModelItems.length }} 个）</button>
+        </div>
+        <span v-if="gridMode === 'MODEL'" class="rg-dim-hint">
+          已铺开全部模型的数值采集项共 {{ columns.length }} 列，按现场实测填写、每人每模型至少 1 格、留空跳过；派生项保存后自动计算
+        </span>
+      </div>
       <div class="rg-grid-tool">
         <label class="rg-tool-item">
           <span class="rg-tool-label">测试日期</span>
@@ -93,18 +112,40 @@
         </span>
       </div>
 
-      <el-alert v-if="modelItemsCount > 0" type="warning" :closable="false" show-icon style="margin-bottom:8px"
-                :title="`任务含 ${modelItemsCount} 个模型测试项（结构化字段/设备采集），不支持网格录入，请用队员行的「录成绩」逐个录入`"/>
+      <el-alert v-if="gridMode === 'INDICATOR' && modelItemsCount > 0" type="info" :closable="false" show-icon style="margin-bottom:8px"
+                :title="`任务另有 ${modelItemsCount} 个模型测试项，可在上方切换到「模型测试」录入；派生字段保存后自动计算`"/>
 
-      <div v-if="!columns.length" class="rg-no-indicator">
-        该任务还没有直接指标测试项，请先在「测试项」Tab 添加指标。
+      <div v-if="!columns.length" class="rg-no-indicator" v-loading="modelLoading">
+        {{ gridMode === 'MODEL'
+          ? '任务模型没有可网格录入的数值型采集字段（可能全为文本/派生项），请用队员行的「录成绩」逐个填写。'
+          : '该任务还没有直接指标测试项，请先在「测试项」Tab 添加指标。' }}
       </div>
-      <div v-else class="rg-table-scroll" v-loading="bestLoading">
+      <div v-else ref="gridScrollRef" class="rg-table-scroll" v-loading="bestLoading || modelLoading">
         <table class="rg-table">
           <thead>
-            <tr>
+            <!-- 模型维度：按模型分组双行表头 -->
+            <template v-if="gridMode === 'MODEL'">
+              <tr>
+                <th class="rg-col-name" rowspan="2">队员</th>
+                <th v-for="g in modelColumnGroups" :key="g.modelId"
+                    class="rg-th-group" :colspan="g.cols.length">{{ g.modelName }}</th>
+              </tr>
+              <tr>
+                <template v-for="g in modelColumnGroups" :key="g.modelId">
+                  <th v-for="c in g.cols" :key="c.key" class="rg-col-input">
+                    <div class="rg-th-name">{{ c.name }}</div>
+                    <div class="rg-th-sub">
+                      <span class="rg-code">{{ c.code }}</span>
+                      <span class="rg-unit">{{ c.unit || '—' }}</span>
+                    </div>
+                  </th>
+                </template>
+              </tr>
+            </template>
+            <!-- 指标维度：单行表头 -->
+            <tr v-else>
               <th class="rg-col-name">队员</th>
-              <th v-for="c in columns" :key="c.indicatorId" class="rg-col-input">
+              <th v-for="c in columns" :key="c.key" class="rg-col-input">
                 <div class="rg-th-name">{{ c.name }}</div>
                 <div class="rg-th-sub">
                   <span class="rg-code">{{ c.code }}</span>
@@ -121,13 +162,13 @@
                 <GenderBadge :gender="row.athleteGender" :size="13"/>
                 <div v-if="row.athleteTeam" class="rg-team">{{ row.athleteTeam }}</div>
               </td>
-              <td v-for="c in columns" :key="c.indicatorId">
+              <td v-for="c in columns" :key="c.key">
                 <input
                   class="rg-cell"
                   :class="cellClass(row, c)"
-                  v-model="row.values[c.indicatorId]"
+                  v-model="row.values[c.key]"
                   inputmode="decimal"
-                  :placeholder="bestText(row.athleteId, c.indicatorId)"
+                  :placeholder="gridMode === 'INDICATOR' ? bestText(row.athleteId, c.indicatorId) : ''"
                 />
               </td>
             </tr>
@@ -161,7 +202,8 @@
           <el-button :disabled="saving" @click="mode === 'free' ? (pickedReady = false) : close()">
             {{ mode === 'free' ? '上一步' : '取消' }}
           </el-button>
-          <el-button type="primary" :loading="saving" :disabled="!columns.length || !personsWithData || hardCount > 0"
+          <el-button type="primary" :loading="saving"
+                     :disabled="!columns.length || !personsWithData || hardCount > 0"
                      @click="submit">提交成绩</el-button>
         </template>
       </template>
@@ -178,6 +220,7 @@ import { listIndicator } from '@/api/apms/indicator'
 import { listAthlete } from '@/api/apms/athlete'
 import { listByTaskMember, batchGridAdd } from '@/api/apms/testResult'
 import { listTestTask, getTestTask } from '@/api/apms/testTask'
+import { listField } from '@/api/apms/testModel'
 import {
   loadRanges, getIndicatorRange, classify, isHard, isWarn, hardMessage, warnMessage
 } from '@/utils/measureRange'
@@ -203,8 +246,14 @@ const taskCtx = reactive({ id: null, name: '' })
 const modelItemsCount = ref(0)
 
 // 网格数据
-const columns = ref([])                // { indicatorId, code, name, unit, direction }
-const gridRows = ref([])               // { athleteId, athleteName, athleteGender, athleteTeam, values:{id:''} }
+const columns = ref([])                // 指标列 {kind:'indicator',indicatorId,...} 或模型列 {kind:'model',fieldId,fieldKey,...}
+const gridRows = ref([])               // { athleteId, athleteName, athleteGender, athleteTeam, values:{列key:''} }
+// 维度：INDICATOR 直接指标 | MODEL 全部模型字段同表
+const gridMode = ref('INDICATOR')
+const taskModelItems = ref([])         // 任务 MODEL 测试项 [{modelId,modelCode,modelName}]
+const indicatorColumns = ref([])       // 任务指标列快照（切回指标时还原）
+const modelColumns = ref([])           // 全部模型数值字段列（扁平，含 modelId）
+const modelLoading = ref(false)
 const measureDate = ref(today())
 const sessionKey = ref('')
 const bestMap = ref({})                // `${athleteId}:${indicatorId}` → 最佳值
@@ -213,6 +262,23 @@ const bestLoading = ref(false)
 // 散录选人/选指标
 const athleteTableRef = ref(null)
 const indicatorTableRef = ref(null)
+const gridScrollRef = ref(null)
+// 表格列从无到有（新任务/维度异步加载完成）时，把横向滚动归位：
+// el-dialog 默认不销毁内容，滚动容器会保留上次任务/维度的 scrollLeft，
+// 新表格打开时左侧队员列看起来就是"被滚走"的一片空白
+watch(columns, (val, old) => {
+  if (val.length && !(old && old.length)) {
+    nextTick(() => {
+      // 列从无到有（新任务/维度异步加载完成）：横纵滚动都归位。
+      // el-dialog 不销毁内容，滚动容器会残留上次的 scrollLeft/scrollTop，
+      // 新表格一打开就是"被滚走一截"的错位状态
+      if (gridScrollRef.value) {
+        gridScrollRef.value.scrollLeft = 0
+        gridScrollRef.value.scrollTop = 0
+      }
+    })
+  }
+})
 const athleteLib = ref([])
 const indicatorLib = ref([])
 const pickedAthletes = ref([])
@@ -233,14 +299,26 @@ const displayAthletes = computed(() => {
   return filteredAthletes.value
 })
 const displayIndicators = computed(() => {
-  if (pickTaskId.value && taskLock.value) return taskLock.value.indicators
+  if (pickTaskId.value && taskLock.value) {
+    // 任务态：指标 + 模型项合并展示，让用户看到任务全部测试内容
+    const ind = taskLock.value.indicators.map(i => ({ ...i, kind: 'indicator', typeLabel: '指标' }))
+    const mdl = (taskLock.value.models || []).map(m => ({
+      id: `M:${m.modelId}`,
+      kind: 'model',
+      typeLabel: '模型',
+      code: m.modelCode,
+      name: m.modelName,
+      category: '模型',
+      unit: '',
+      evaluationDirection: ''
+    }))
+    return [...ind, ...mdl]
+  }
   return indicatorLib.value
 })
-function athleteSelectable() { return !pickTaskId.value }
-function indicatorSelectable() { return !pickTaskId.value }
-// 任务态的勾选由程序全选、忽略手动变更；自由态才写回 picked
-function onAthleteSelection(rows) { if (!pickTaskId.value) pickedAthletes.value = rows }
-function onIndicatorSelection(rows) { if (!pickTaskId.value) pickedIndicators.value = rows }
+// 仅自由态显示勾选列；任务态全员/全项固定纳入，无勾选交互
+function onAthleteSelection(rows) { pickedAthletes.value = rows }
+function onIndicatorSelection(rows) { pickedIndicators.value = rows }
 
 // 切换任务：即时拉取任务详情，重绘两张表并全选；清空则恢复全量自由勾选
 let pickSeq = 0
@@ -284,17 +362,28 @@ watch(pickTaskId, async (id, oldId) => {
           evaluationDirection: it.indicatorDirection || meta.evaluationDirection || ''
         })
       })
+    // 任务模型项（去重）：确认页要展示，网格模型维度要按它们加载字段
+    const modelIds = new Set()
+    const models = []
+    ;(task.items || [])
+      .filter(it => it.itemType === 'MODEL' && it.modelId != null)
+      .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+      .forEach(it => {
+        if (modelIds.has(it.modelId)) return
+        modelIds.add(it.modelId)
+        models.push({
+          modelId: it.modelId,
+          modelCode: it.modelCode || '',
+          modelName: it.modelName || it.modelCode || ('模型#' + it.modelId)
+        })
+      })
     const members = (task.members || []).map(m => ({
       athleteId: m.athleteId,
       name: m.athleteName,
       gender: m.athleteGender,
       primaryTeamName: m.athleteTeam
     }))
-    taskLock.value = { task, members, indicators }
-    await nextTick()
-    // 程序全选（行已禁用取消勾选）
-    displayAthletes.value.forEach(r => athleteTableRef.value?.toggleRowSelection(r, true))
-    displayIndicators.value.forEach(r => indicatorTableRef.value?.toggleRowSelection(r, true))
+    taskLock.value = { task, members, indicators, models }
   } catch (e) {
     if (seq === pickSeq) proxy.$modal.msgError(e?.msg || e?.message || '加载任务详情失败')
   } finally {
@@ -350,12 +439,31 @@ async function buildTaskGrid(task) {
 
   // task.items 来自 getTestTask 详情；task.members 同
   const items = task.items || []
-  modelItemsCount.value = items.filter(it => it.itemType === 'MODEL').length
-  columns.value = items
+  const rawModelItems = items.filter(it => it.itemType === 'MODEL' && it.modelId != null)
+  modelItemsCount.value = rawModelItems.length
+  // 分组表头按模型去重（同一模型可能被任务重复添加，重复会导致字段列翻倍）；
+  // 名称缺失（如模型行已被删除导致 JOIN 为空）时回退编码/占位，避免分组标题整格空白
+  const taskModelMap = new Map()
+  rawModelItems.forEach(it => {
+    if (!taskModelMap.has(it.modelId)) {
+      taskModelMap.set(it.modelId, {
+        modelId: it.modelId,
+        modelCode: it.modelCode || '',
+        modelName: it.modelName || it.modelCode || ('模型#' + it.modelId)
+      })
+    }
+  })
+  taskModelItems.value = [...taskModelMap.values()]
+  gridMode.value = 'INDICATOR'
+  modelColumns.value = []
+
+  indicatorColumns.value = items
     .filter(it => it.itemType === 'INDICATOR' && it.indicatorId != null)
     .map(it => {
       const meta = libMap.get(it.indicatorId) || {}
       return {
+        kind: 'indicator',
+        key: `I:${it.indicatorId}`,
         indicatorId: it.indicatorId,
         code: it.indicatorCode || meta.code || '',
         name: it.indicatorName || meta.name || it.indicatorCode || ('指标#' + it.indicatorId),
@@ -363,6 +471,14 @@ async function buildTaskGrid(task) {
         direction: it.indicatorDirection || meta.evaluationDirection || ''
       }
     })
+  columns.value = indicatorColumns.value
+
+  // 任务没有直接指标、只挂了模型时，直接落到「模型测试」维度，
+  // 否则用户先看到一张空表，必须再手动切一次维度
+  if (!indicatorColumns.value.length && taskModelItems.value.length) {
+    gridMode.value = 'MODEL'
+    columns.value = []
+  }
 
   gridRows.value = (task.members || []).slice(0, MAX_ROWS).map(m => ({
     athleteId: m.athleteId,
@@ -373,6 +489,94 @@ async function buildTaskGrid(task) {
   }))
   pickedReady.value = true
   loadBestValues()
+  // 预加载模型字段，切到「模型测试」时即时呈现（不阻塞指标录入）
+  if (rawModelItems.length) loadAllModelColumns()
+  // 重新建表（如连续打开不同任务）时滚动容器是复用的，强制归零，
+  // 否则沿用上一个任务残留的横纵滚动位置
+  nextTick(() => {
+    if (gridScrollRef.value) {
+      gridScrollRef.value.scrollLeft = 0
+      gridScrollRef.value.scrollTop = 0
+    }
+  })
+}
+
+// ========= 模型维度：一次铺开任务下全部模型的数值字段 =========
+const NUMERIC_TYPES = ['decimal', 'number']
+// 分组表头：[{ modelId, modelName, cols:[列...] }]
+const modelColumnGroups = computed(() => {
+  const groups = []
+  const byId = new Map()
+  modelColumns.value.forEach(c => {
+    if (!byId.has(c.modelId)) {
+      const g = { modelId: c.modelId, modelName: c.modelName || ('模型#' + c.modelId), cols: [] }
+      byId.set(c.modelId, g)
+      groups.push(g)
+    }
+    byId.get(c.modelId).cols.push(c)
+  })
+  return groups
+})
+
+function clearRowValues() {
+  gridRows.value.forEach(r => { r.values = {} })
+}
+
+// 加载任务全部模型的数值型 INPUT 字段（并行），文本/派生字段不进网格
+async function loadAllModelColumns() {
+  if (!taskModelItems.value.length) { modelColumns.value = []; columns.value = []; return }
+  modelLoading.value = true
+  try {
+    const results = await Promise.all(taskModelItems.value.map(m =>
+      listField(m.modelId).then(res => ({ model: m, fields: res.data || [] })).catch(() => ({ model: m, fields: [] }))
+    ))
+    const cols = []
+    results.forEach(({ model, fields }) => {
+      fields
+        .filter(f => f.collectMode !== 'DERIVED' && NUMERIC_TYPES.includes((f.dataType || '').toLowerCase()))
+        .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+        .forEach(f => cols.push({
+          kind: 'model',
+          key: `M:${model.modelId}:${f.id}`,
+          modelId: model.modelId,
+          modelName: model.modelName,
+          fieldId: f.id,
+          fieldKey: f.fieldKey,
+          code: f.fieldKey,
+          name: f.fieldName,
+          unit: f.unit || ''
+        }))
+    })
+    modelColumns.value = cols
+    // 预加载只填充模型列快照；只有当前确实停留在「模型测试」维度时才替换表格列。
+    // 否则用户还在「直接指标」维度时预加载返回，模型字段会窜进指标的单行表头，
+    // 表现为分组行消失、队员列错位等整表错乱。
+    if (gridMode.value === 'MODEL') columns.value = cols
+  } finally {
+    modelLoading.value = false
+  }
+}
+
+function switchDimension(dim) {
+  if (gridMode.value === dim) return
+  clearRowValues()
+  gridMode.value = dim
+  if (dim === 'INDICATOR') {
+    columns.value = indicatorColumns.value
+    loadBestValues()
+  } else {
+    columns.value = modelColumns.value
+    // 尚未加载过（如刚进任务弹窗）则拉取全部模型字段
+    if (!modelColumns.value.length && taskModelItems.value.length) loadAllModelColumns()
+  }
+  // 切换维度后表头列数/行数变化，横纵位置归位，避免首列被残留偏移裁掉、
+  // 或双行表头停留在 sticky 重叠的滚动位置
+  nextTick(() => {
+    if (gridScrollRef.value) {
+      gridScrollRef.value.scrollLeft = 0
+      gridScrollRef.value.scrollTop = 0
+    }
+  })
 }
 
 // ========= 任务模式入口（任务详情抽屉） =========
@@ -402,6 +606,10 @@ async function openFree() {
   columns.value = []
   gridRows.value = []
   modelItemsCount.value = 0
+  taskModelItems.value = []
+  indicatorColumns.value = []
+  modelColumns.value = []
+  gridMode.value = 'INDICATOR'
   taskCtx.id = null
   taskCtx.name = ''
   commitResult.value = { committed: 0, failed: 0, failedDetails: [] }
@@ -458,13 +666,19 @@ const canBuildGrid = computed(() => {
 function buildFreeGrid() {
   taskCtx.id = null
   taskCtx.name = ''
-  columns.value = pickedIndicators.value.map(i => ({
+  gridMode.value = 'INDICATOR'
+  taskModelItems.value = []
+  modelColumns.value = []
+  indicatorColumns.value = pickedIndicators.value.map(i => ({
+    kind: 'indicator',
+    key: `I:${i.id}`,
     indicatorId: i.id,
     code: i.code,
     name: i.name,
     unit: i.unit || '',
     direction: i.evaluationDirection || ''
   }))
+  columns.value = indicatorColumns.value
   gridRows.value = pickedAthletes.value.slice(0, MAX_ROWS).map(a => ({
     athleteId: a.athleteId,
     athleteName: a.name,
@@ -503,12 +717,14 @@ function bestText(athleteId, indicatorId) {
   return v == null ? '' : `最佳 ${v}`
 }
 
-// ========= 实时校验（与单人弹窗口径一致） =========
+// ========= 实时校验 =========
 function cellLevel(row, col) {
-  const raw = row.values[col.indicatorId]
+  const raw = row.values[col.key]
   if (raw === '' || raw == null || String(raw).trim() === '') return ''
   const num = Number(String(raw).trim())
   if (!Number.isFinite(num)) return 'invalid'
+  // 模型字段无范围字典，只做数字校验
+  if (col.kind === 'model') return ''
   const range = getIndicatorRange(col.code)
   if (!range) return ''
   return classify(range, num)
@@ -522,15 +738,16 @@ function cellClass(row, col) {
 function cellHint(row, col) {
   const level = cellLevel(row, col)
   if (!level || level === 'invalid') return ''
+  if (col.kind === 'model') return ''
   const range = getIndicatorRange(col.code)
-  if (isHard(level)) return hardMessage(range, row.values[col.indicatorId])
-  if (isWarn(level)) return warnMessage(range, row.values[col.indicatorId])
+  if (isHard(level)) return hardMessage(range, row.values[col.key])
+  if (isWarn(level)) return warnMessage(range, row.values[col.key])
   return ''
 }
 const filledCells = computed(() => gridRows.value.reduce((s, r) =>
-  s + columns.value.filter(c => String(r.values[c.indicatorId] ?? '').trim() !== '').length, 0))
+  s + columns.value.filter(c => String(r.values[c.key] ?? '').trim() !== '').length, 0))
 const personsWithData = computed(() => gridRows.value.filter(r =>
-  columns.value.some(c => String(r.values[c.indicatorId] ?? '').trim() !== '')).length)
+  columns.value.some(c => String(r.values[c.key] ?? '').trim() !== '')).length)
 const problemCells = computed(() => {
   const out = []
   gridRows.value.forEach(r => columns.value.forEach(c => {
@@ -545,18 +762,25 @@ const warnCells = computed(() => problemCells.value.filter(x => x.kind === 'warn
 
 // ========= 提交 =========
 function buildPayload() {
+  const isModel = gridMode.value === 'MODEL'
   const rows = []
   gridRows.value.forEach(r => {
     const cells = []
     columns.value.forEach(c => {
-      const raw = String(r.values[c.indicatorId] ?? '').trim()
+      const raw = String(r.values[c.key] ?? '').trim()
       if (raw === '') return
-      cells.push({ indicatorId: c.indicatorId, value: Number(raw) })
+      if (isModel) {
+        // 每个 cell 带所属模型 id；后端按模型分组，每模型生成一条 result
+        cells.push({ modelId: c.modelId, fieldId: c.fieldId, fieldKey: c.fieldKey, value: Number(raw) })
+      } else {
+        cells.push({ indicatorId: c.indicatorId, value: Number(raw) })
+      }
     })
     if (cells.length) rows.push({ athleteId: r.athleteId, cells })
   })
   return {
     taskId: taskCtx.id || null,
+    itemType: isModel ? 'MODEL' : 'INDICATOR',
     measureDate: measureDate.value,
     sessionKey: sessionKey.value || null,
     rows
@@ -616,6 +840,10 @@ function reset() {
   pickedIndicators.value = []
   pickTeam.value = null
   pickKeyword.value = ''
+  gridMode.value = 'INDICATOR'
+  taskModelItems.value = []
+  indicatorColumns.value = []
+  modelColumns.value = []
 }
 
 defineExpose({ openForTask, openFree })
@@ -650,6 +878,39 @@ defineExpose({ openForTask, openFree })
 .rg-unit { font-size: 12px; color: $rk-text-2; }
 .rg-dir { margin-left: 6px; font-size: 12px; font-weight: 700; color: $rk-brand-600; }
 
+/* 维度切换条 */
+.rg-dim-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 10px; padding: 8px 10px;
+  border: 1px solid $rk-line; border-radius: 10px; background: #f8faff;
+}
+.rg-dim-switch { display: inline-flex; border: 1px solid $rk-brand-600; border-radius: 8px; overflow: hidden; }
+.rg-dim-btn {
+  border: 0; background: #fff; color: $rk-brand-600;
+  padding: 6px 16px; font-size: 13px; cursor: pointer;
+}
+.rg-dim-btn.is-active { background: $rk-brand-600; color: #fff; }
+.rg-dim-hint { font-size: 12px; color: $rk-text-3; }
+.rg-dim-warn { font-size: 12px; color: $rk-warn; font-weight: 500; }
+.rg-req-star { color: $rk-risk; margin-left: 2px; font-style: normal; }
+/* 模型分组表头（第一行）：左对齐贴第一列，避免 colspan 很宽时居中标题被横向滚动裁出视野。
+   高度必须固定：第二行表头 sticky 的 top 偏移要精确等于本行高度，
+   否则纵向滚动时两行会错位 1px；改高度时两处一起改。 */
+.rg-th-group {
+  background: #eef2ff !important;
+  color: $rk-brand-700;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left !important;
+  vertical-align: middle;
+  border-left: 2px solid #c7d2fe;
+  white-space: nowrap;
+  box-sizing: border-box;
+  height: 38px;
+  padding: 8px 10px !important;
+}
+.rg-cat.is-model { background: #ede9fe; color: #6d28d9; }
+
 .rg-grid-tool { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; }
 .rg-tool-item { display: inline-flex; align-items: center; gap: 6px; }
 .rg-tool-label { font-size: 13px; color: $rk-text-2; white-space: nowrap; }
@@ -669,14 +930,37 @@ defineExpose({ openForTask, openFree })
   position: sticky; top: 0; z-index: 2;
   background: #f7f9fc; padding: 8px 10px; text-align: left; vertical-align: top;
 }
+/* 模型维度双行表头：两行都 sticky 且默认 top:0 时，纵向滚动后第二行会整个
+   盖在第一行（模型分组蓝条消失、表头下方出现白段）。第二行必须下移第一行的高度。
+   指标维度只有一个 tr，:nth-child(2) 不匹配，不受影响。 */
+.rg-table thead tr:nth-child(2) th { top: 38px; }
 .rg-table tbody td { padding: 6px 8px; background: #fff; }
 .rg-table tbody tr:nth-child(even) td { background: #fafbfe; }
-.rg-col-name { position: sticky; left: 0; z-index: 3; min-width: 130px; border-right: 1px solid $rk-line !important; }
-thead .rg-col-name { z-index: 4; background: #f7f9fc !important; }
+.rg-col-name {
+  position: sticky; left: 0; z-index: 3; min-width: 130px;
+  border-right: 1px solid $rk-line !important;
+  vertical-align: middle; /* 双行分组表头 rowspan=2 时文字居中，避免顶部大片空白 */
+}
+/* vertical-align 必须写在 .rg-table thead th 同等级或更高特异性的选择器上：
+   基础表头规则 (0,1,2) 的 vertical-align:top 会压掉普通单类选择器，
+   导致 rowspan=2 时「队员」贴顶、下方留一大块空白。这里用 (0,2,2) 确保生效 */
+.rg-table thead th.rg-col-name {
+  z-index: 4;
+  background: #f7f9fc !important;
+  vertical-align: middle;
+}
 .rg-th-name { font-size: 12px; font-weight: 600; color: $rk-text-1; white-space: nowrap; }
 .rg-th-sub { display: flex; align-items: center; gap: 5px; margin-top: 2px; }
 .rg-col-input { min-width: 108px; }
-.rg-name-cell { background: inherit; }
+/* 正文队员列同样 sticky：只有表头 sticky 时，横向滚动后姓名会被滚走、
+   左下列一片空白（输入框从第二列开始直接顶到最左）。必须不透明背景，
+   否则右侧单元格会从 sticky 列底下透出来 */
+.rg-table tbody td.rg-name-cell {
+  position: sticky; left: 0; z-index: 1;
+  background: #fff;
+  border-right: 1px solid $rk-line;
+}
+.rg-table tbody tr:nth-child(even) td.rg-name-cell { background: #fafbfe; }
 
 .rg-cell {
   width: 92px; height: 32px;

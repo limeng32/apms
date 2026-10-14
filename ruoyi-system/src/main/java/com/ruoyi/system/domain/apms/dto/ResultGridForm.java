@@ -26,6 +26,12 @@ public class ResultGridForm implements Serializable {
     /** 关联任务ID（散录为 null） */
     private Long taskId;
 
+    /** 本次网格录入类型：INDICATOR（默认）/ MODEL */
+    private String itemType;
+
+    /** MODEL 模式下的模型ID（itemType=MODEL 必填） */
+    private Long modelId;
+
     /** 全表统一测试日期 */
     @JsonFormat(pattern = "yyyy-MM-dd")
     private Date measureDate;
@@ -37,6 +43,10 @@ public class ResultGridForm implements Serializable {
 
     public Long getTaskId() { return taskId; }
     public void setTaskId(Long taskId) { this.taskId = taskId; }
+    public String getItemType() { return itemType; }
+    public void setItemType(String itemType) { this.itemType = itemType; }
+    public Long getModelId() { return modelId; }
+    public void setModelId(Long modelId) { this.modelId = modelId; }
     public Date getMeasureDate() { return measureDate; }
     public void setMeasureDate(Date measureDate) { this.measureDate = measureDate; }
     public String getSessionKey() { return sessionKey; }
@@ -58,16 +68,27 @@ public class ResultGridForm implements Serializable {
         public void setCells(List<Cell> cells) { this.cells = cells; }
     }
 
-    /** 一格 = 一个直接指标的本次数值 */
+    /**
+     * 一格：INDICATOR 模式用 indicatorId；MODEL 模式用 modelId + fieldId/fieldKey。
+     */
     public static class Cell implements Serializable {
 
         private static final long serialVersionUID = 1L;
 
         private Long indicatorId;
+        private Long modelId;
+        private Long fieldId;
+        private String fieldKey;
         private BigDecimal value;
 
         public Long getIndicatorId() { return indicatorId; }
         public void setIndicatorId(Long indicatorId) { this.indicatorId = indicatorId; }
+        public Long getModelId() { return modelId; }
+        public void setModelId(Long modelId) { this.modelId = modelId; }
+        public Long getFieldId() { return fieldId; }
+        public void setFieldId(Long fieldId) { this.fieldId = fieldId; }
+        public String getFieldKey() { return fieldKey; }
+        public void setFieldKey(String fieldKey) { this.fieldKey = fieldKey; }
         public BigDecimal getValue() { return value; }
         public void setValue(BigDecimal value) { this.value = value; }
     }

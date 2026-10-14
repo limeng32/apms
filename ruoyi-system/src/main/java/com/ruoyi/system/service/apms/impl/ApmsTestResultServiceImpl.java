@@ -165,9 +165,12 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
         Date measureDate = form.getMeasureDate();
         String sessionKey = StringUtils.trim(form.getSessionKey());
         if (StringUtils.isEmpty(sessionKey)) sessionKey = null;
+        boolean isModel = "MODEL".equals(form.getItemType());
+        Long modelId = form.getModelId();
 
-        // 任务模式：任务数据权限校验 + indicatorId → taskItemId 权威映射
-        Map<Long, Long> taskItemIdIndex = new HashMap<>();
+        // 任务模式：任务数据权限校验 + indicatorId/modelId → taskItemId 权威映射
+        Map<Long, Long> indicatorTaskItemIndex = new HashMap<>();
+        Map<Long, Long> modelTaskItemIndex = new HashMap<>();
         if (taskId != null) {
             ApmsTestTask taskQuery = new ApmsTestTask();
             taskQuery.setId(taskId);
@@ -175,9 +178,48 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
                 throw new ServiceException("任务 " + taskId + " 不存在或不在当前数据权限范围内");
             }
             for (ApmsTaskItem item : taskItemMapper.selectByTaskId(taskId)) {
-                if ("INDICATOR".equals(item.getItemType()) && item.getIndicatorId() != null) {
-                    taskItemIdIndex.put(item.getIndicatorId(), item.getId());
+                if (item.getIndicatorId() != null && "INDICATOR".equals(item.getItemType())) {
+                    indicatorTaskItemIndex.put(item.getIndicatorId(), item.getId());
                 }
+                if (item.getModelId() != null && "MODEL".equals(item.getItemType())) {
+                    modelTaskItemIndex.put(item.getModelId(), item.getId());
+                }
+            }
+        }
+
+        // MODEL 模式（支持多模型同表）：模型白名单 = 任务模型项（任务模式）/ 指定单模型 / 全部非组合模型（散录）；
+        // 字段按 modelId 分组缓存，用于 cell 归属校验
+        Map<Long, ApmsTestModel> gridModelIndex = new HashMap<>();
+        Map<Long, Map<Long, ApmsTestModelField>> gridFieldsByModel = new HashMap<>();
+        if (isModel) {
+            List<ApmsTestModel> scopeModels;
+            if (taskId != null) {
+                scopeModels = new ArrayList<>();
+                for (Long mid : modelTaskItemIndex.keySet()) {
+                    ApmsTestModel m = testModelMapper.selectById(mid);
+                    if (m != null) scopeModels.add(m);
+                }
+            } else if (modelId != null) {
+                ApmsTestModel m = testModelMapper.selectById(modelId);
+                scopeModels = m == null ? Collections.emptyList() : Collections.singletonList(m);
+            } else {
+                // 散录：全部模型，组合模型在下方循环中显式拒绝
+                scopeModels = testModelMapper.selectList(new ApmsTestModel());
+            }
+            for (ApmsTestModel m : scopeModels) {
+                // 组合模型由综合评分模块生成，不进网格；任务模式理论上不会出现，这里统一跳过
+                if ("1".equals(m.getIsCombo())) continue;
+                Map<Long, ApmsTestModelField> fmap = new HashMap<>();
+                for (ApmsTestModelField f : testModelFieldMapper.selectByModelId(m.getId())) {
+                    if (!"DERIVED".equals(f.getCollectMode())) fmap.put(f.getId(), f);
+                }
+                if (!fmap.isEmpty()) {
+                    gridModelIndex.put(m.getId(), m);
+                    gridFieldsByModel.put(m.getId(), fmap);
+                }
+            }
+            if (gridModelIndex.isEmpty()) {
+                throw new ServiceException("没有可用于网格录入的模型字段");
             }
         }
 
@@ -211,60 +253,105 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
                 continue;
             }
             if (rawCells.size() > ResultGridForm.MAX_CELLS_PER_ROW) {
-                addGridFailure(result, who + "：单人指标数不能超过 " + ResultGridForm.MAX_CELLS_PER_ROW);
+                addGridFailure(result, who + "：单人字段数不能超过 " + ResultGridForm.MAX_CELLS_PER_ROW);
                 continue;
-            }
-            // 同队员同指标去重（保留最后一个非空值）；空值格直接跳过（当天未测）
-            Map<Long, BigDecimal> byIndicator = new LinkedHashMap<>();
-            for (ResultGridForm.Cell cell : rawCells) {
-                if (cell == null || cell.getIndicatorId() == null || cell.getValue() == null) continue;
-                byIndicator.put(cell.getIndicatorId(), cell.getValue());
-            }
-            if (byIndicator.isEmpty()) {
-                addGridFailure(result, who + "：没有任何有效成绩");
-                continue;
-            }
-            // 指标归属/存在性校验
-            if (taskId != null) {
-                List<Long> notInTask = byIndicator.keySet().stream()
-                        .filter(id -> !taskItemIdIndex.containsKey(id)).collect(Collectors.toList());
-                if (!notInTask.isEmpty()) {
-                    addGridFailure(result, who + "：" + notInTask.size() + " 个指标不在该任务测试项中，整人未录入");
-                    continue;
-                }
-            } else {
-                boolean badIndicator = false;
-                for (Long indicatorId : byIndicator.keySet()) {
-                    if (indicatorMapper.selectById(indicatorId) == null) {
-                        addGridFailure(result, who + "：指标 " + indicatorId + " 不存在，整人未录入");
-                        badIndicator = true;
-                        break;
-                    }
-                }
-                if (badIndicator) continue;
             }
 
-            // 逐指标构造 add 入参，行内同一事务（任一指标硬限失败 → 该人整行回滚）
-            List<ResultImportItem> items = new ArrayList<>();
-            for (Map.Entry<Long, BigDecimal> e : byIndicator.entrySet()) {
-                Long indicatorId = e.getKey();
-                ApmsTestResult tr = new ApmsTestResult();
-                tr.setAthleteId(athleteId);
-                tr.setTaskId(taskId);
-                tr.setTaskItemId(taskId == null ? null : taskItemIdIndex.get(indicatorId));
-                tr.setMeasureDate(measureDate);
-                tr.setSessionKey(sessionKey);
-                tr.setItemType("INDICATOR");
-                tr.setIndicatorId(indicatorId);
-                tr.setIsValid("1");
-                tr.setIsSelected("1");
-                tr.setDataSource("MANUAL");
-                ApmsTestResultValue tv = new ApmsTestResultValue();
-                tv.setIndicatorId(indicatorId);
-                tv.setFieldKey("result");
-                tv.setIsDerived("0");
-                tv.setNumericValue(e.getValue());
-                items.add(new ResultImportItem(tr, Collections.singletonList(tv)));
+            List<ResultImportItem> items;
+            if (isModel) {
+                // 多模型同表：cells 按各自 modelId 分组（同模型内按字段去重，保留最后值）
+                Map<Long, LinkedHashMap<Long, ResultGridForm.Cell>> byModel = new LinkedHashMap<>();
+                boolean badCell = false;
+                for (ResultGridForm.Cell cell : rawCells) {
+                    if (cell == null || cell.getValue() == null) continue;
+                    Long mid = cell.getModelId() != null ? cell.getModelId() : modelId;
+                    if (mid == null || !gridModelIndex.containsKey(mid)) {
+                        addGridFailure(result, who + "：模型 " + mid + " 不在可录入范围，整人未录入");
+                        badCell = true;
+                        break;
+                    }
+                    Map<Long, ApmsTestModelField> fmap = gridFieldsByModel.get(mid);
+                    ApmsTestModelField f = cell.getFieldId() != null ? fmap.get(cell.getFieldId()) : null;
+                    if (f == null) {
+                        addGridFailure(result, who + "：字段 " + cell.getFieldKey()
+                                + " 不属于模型「" + gridModelIndex.get(mid).getName() + "」或为派生字段，整人未录入");
+                        badCell = true;
+                        break;
+                    }
+                    byModel.computeIfAbsent(mid, k -> new LinkedHashMap<>()).put(f.getId(), cell);
+                }
+                if (badCell) continue;
+                if (byModel.isEmpty()) {
+                    addGridFailure(result, who + "：没有任何有效成绩");
+                    continue;
+                }
+                // 每个模型一条 MODEL result（同一队员一次可产出 YOYO、RSA 等多条）
+                items = new ArrayList<>();
+                for (Map.Entry<Long, LinkedHashMap<Long, ResultGridForm.Cell>> e : byModel.entrySet()) {
+                    Long mid = e.getKey();
+                    Long taskItemId = taskId == null ? null : modelTaskItemIndex.get(mid);
+                    ApmsTestResult tr = baseGridResult(athleteId, taskId, taskItemId, measureDate, sessionKey);
+                    tr.setItemType("MODEL");
+                    tr.setIndicatorId(null);
+                    tr.setModelId(mid);
+                    tr.setGridPartialAllowed(true); // 网格允许每模型只填部分实测字段
+                    List<ApmsTestResultValue> values = new ArrayList<>();
+                    for (ResultGridForm.Cell c : e.getValue().values()) {
+                        ApmsTestResultValue tv = new ApmsTestResultValue();
+                        tv.setModelId(mid);
+                        tv.setFieldId(c.getFieldId());
+                        tv.setFieldKey(c.getFieldKey());
+                        tv.setIsDerived("0");
+                        tv.setNumericValue(c.getValue());
+                        values.add(tv);
+                    }
+                    items.add(new ResultImportItem(tr, values));
+                }
+            } else {
+                // 同队员同指标去重（保留最后一个非空值）；空值格直接跳过（当天未测）
+                Map<Long, BigDecimal> byIndicator = new LinkedHashMap<>();
+                for (ResultGridForm.Cell cell : rawCells) {
+                    if (cell == null || cell.getIndicatorId() == null || cell.getValue() == null) continue;
+                    byIndicator.put(cell.getIndicatorId(), cell.getValue());
+                }
+                if (byIndicator.isEmpty()) {
+                    addGridFailure(result, who + "：没有任何有效成绩");
+                    continue;
+                }
+                // 指标归属/存在性校验
+                if (taskId != null) {
+                    List<Long> notInTask = byIndicator.keySet().stream()
+                            .filter(id -> !indicatorTaskItemIndex.containsKey(id)).collect(Collectors.toList());
+                    if (!notInTask.isEmpty()) {
+                        addGridFailure(result, who + "：" + notInTask.size() + " 个指标不在该任务测试项中，整人未录入");
+                        continue;
+                    }
+                } else {
+                    boolean badIndicator = false;
+                    for (Long indicatorId : byIndicator.keySet()) {
+                        if (indicatorMapper.selectById(indicatorId) == null) {
+                            addGridFailure(result, who + "：指标 " + indicatorId + " 不存在，整人未录入");
+                            badIndicator = true;
+                            break;
+                        }
+                    }
+                    if (badIndicator) continue;
+                }
+                // 逐指标构造 add 入参，行内同一事务（任一指标硬限失败 → 该人整行回滚）
+                items = new ArrayList<>();
+                for (Map.Entry<Long, BigDecimal> e : byIndicator.entrySet()) {
+                    Long indicatorId = e.getKey();
+                    ApmsTestResult tr = baseGridResult(athleteId, taskId,
+                            taskId == null ? null : indicatorTaskItemIndex.get(indicatorId), measureDate, sessionKey);
+                    tr.setItemType("INDICATOR");
+                    tr.setIndicatorId(indicatorId);
+                    ApmsTestResultValue tv = new ApmsTestResultValue();
+                    tv.setIndicatorId(indicatorId);
+                    tv.setFieldKey("result");
+                    tv.setIsDerived("0");
+                    tv.setNumericValue(e.getValue());
+                    items.add(new ResultImportItem(tr, Collections.singletonList(tv)));
+                }
             }
             try {
                 gridRowWriter.writeRow(items);
@@ -274,6 +361,21 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
             }
         }
         return result;
+    }
+
+    /** 网格成绩公共字段（INDICATOR/MODEL 共用） */
+    private ApmsTestResult baseGridResult(Long athleteId, Long taskId, Long taskItemId,
+                                          Date measureDate, String sessionKey) {
+        ApmsTestResult tr = new ApmsTestResult();
+        tr.setAthleteId(athleteId);
+        tr.setTaskId(taskId);
+        tr.setTaskItemId(taskItemId);
+        tr.setMeasureDate(measureDate);
+        tr.setSessionKey(sessionKey);
+        tr.setIsValid("1");
+        tr.setIsSelected("1");
+        tr.setDataSource("MANUAL");
+        return tr;
     }
 
     private void addGridFailure(ImportCommitResult result, String detail) {
@@ -603,10 +705,13 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
             if (!empty) providedFieldIds.add(f.getId());
         }
 
-        for (ApmsTestModelField f : fields) {
-            if ("INPUT".equals(f.getCollectMode()) && "1".equals(f.getIsRequired())
-                    && !providedFieldIds.contains(f.getId())) {
-                throw new ServiceException("「" + f.getFieldName() + "」为必填项");
+        // 单人录入强制模型全部必填字段；网格批量允许只录现场实测的部分字段（仍要求至少一项）
+        if (!result.isGridPartialAllowed()) {
+            for (ApmsTestModelField f : fields) {
+                if ("INPUT".equals(f.getCollectMode()) && "1".equals(f.getIsRequired())
+                        && !providedFieldIds.contains(f.getId())) {
+                    throw new ServiceException("「" + f.getFieldName() + "」为必填项");
+                }
             }
         }
         if (providedFieldIds.isEmpty()) {

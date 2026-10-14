@@ -33,6 +33,15 @@ public class ApmsTestResult extends BaseEntity {
     private String dataSource;
     private String rawPayload;
 
+    /**
+     * 非持久化瞬态标志：网格批量录入模型时允许只提交部分字段（跳过模型"全字段必填"校验）。
+     * 单人录入不走此标志，仍强制全部必填。字段白名单/类型/派生字段禁填等校验不受影响。
+     */
+    private transient boolean gridPartialAllowed;
+
+    public boolean isGridPartialAllowed() { return gridPartialAllowed; }
+    public void setGridPartialAllowed(boolean gridPartialAllowed) { this.gridPartialAllowed = gridPartialAllowed; }
+
     // LEFT JOIN 解析字段
     private String taskName;
     private String athleteName;

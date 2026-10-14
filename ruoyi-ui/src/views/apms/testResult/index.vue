@@ -126,8 +126,8 @@
                       </div>
                     </td>
                     <td class="text-center">
-                      <span class="rk-soft-chip" :class="row.itemType === 'INDICATOR' ? 'is-indicator' : 'is-model'">
-                        {{ row.itemType === 'INDICATOR' ? '指标' : '模型' }}
+                      <span class="rk-soft-chip" :class="typeChipClass(row.itemType)">
+                        {{ typeChipText(row.itemType) }}
                       </span>
                     </td>
                     <td>
@@ -193,8 +193,8 @@
 
           <div class="tr-drawer-body" v-loading="detailLoading">
             <div class="tr-detail-banner">
-              <span class="rk-soft-chip tr-type-lg" :class="current.itemType === 'INDICATOR' ? 'is-indicator' : 'is-model'">
-                {{ current.itemType === 'INDICATOR' ? '指标' : '模型' }}
+              <span class="rk-soft-chip tr-type-lg" :class="typeChipClass(current.itemType)">
+                {{ typeChipText(current.itemType) }}
               </span>
               <div class="tr-banner-info">
                 <div class="tr-banner-title">
@@ -423,6 +423,19 @@ const resultList = ref([])
 const total = ref(0)
 const queryParams = reactive({ pageNum: 1, pageSize: PAGE_SIZE, taskId: null, athleteId: null, itemType: null, isSelected: '1' })
 
+// 类型徽章：严格三态。历史数据 itemType 可能为 null（归属列也为空），
+// 此前 `=== 'INDICATOR' ? 指标 : 模型` 把 null 全部误判成"模型"
+function typeChipClass(t) {
+  if (t === 'INDICATOR') return 'is-indicator'
+  if (t === 'MODEL') return 'is-model'
+  return 'is-unknown'
+}
+function typeChipText(t) {
+  if (t === 'INDICATOR') return '指标'
+  if (t === 'MODEL') return '模型'
+  return '未知'
+}
+
 function getList() {
   loading.value = true
   listTestResult(queryParams).then(res => {
@@ -643,6 +656,8 @@ loadStats()
 
 :deep(.rk-soft-chip.is-indicator) { background: $rk-brand-50; color: $rk-brand-600; }
 :deep(.rk-soft-chip.is-model) { background: #e8f7ee; color: $rk-ok; }
+/* 归属列都为空的异常历史数据：灰色「未知」，绝不能默认染成模型绿 */
+:deep(.rk-soft-chip.is-unknown) { background: #f1f5f9; color: $rk-text-3; }
 
 /* 详情抽屉（teleport 到 body，头部固定、内容独立滚动） */
 .tr-drawer {
