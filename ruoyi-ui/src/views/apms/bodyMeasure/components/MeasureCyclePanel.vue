@@ -191,6 +191,11 @@ defineExpose({ load })
 </script>
 
 <style lang="scss" scoped>
+/* rk-input/rk-select/rk-link/rk-btn 等均定义在 roster-kit；
+   scoped 样式不会从父页面穿透到本组件，必须在组件内显式引入，
+   否则「测量周期」页签内的输入框/下拉/操作链接退化为浏览器原生样式 */
+@use "@/assets/styles/roster-kit.scss" as *;
+
 .mc-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .mc-filter { display: flex; gap: 10px; }
 .mc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }

@@ -1250,10 +1250,13 @@ loadStats()
   padding: 0;
 }
 
-/* ===== 嵌入模式：供合并页堆叠（隐藏页头、归零满铺外壳） ===== */
+/* ===== 嵌入模式：供合并页堆叠（隐藏页头、归零满铺外壳） =====
+   注意：本块为非 scoped 全局样式，不能使用 :deep()（非 scoped 下 :deep
+   选择器无效会导致整条规则被丢弃，内嵌页残留 rk-dash-page 灰底），
+   直接写类名即可。 */
 .app-container.is-embedded {
   padding: 0;
-  :deep(.rk-dash-page) {
+  .rk-dash-page {
     margin: 0;
     padding: 0;
     min-height: 0;

@@ -177,6 +177,36 @@ function renderDonut() {
 }
 
 const GAP_SERIES = '__gap'
+const BAR_R = 6
+
+/**
+ * 一行（队伍）中最右侧「非零」段的 key。
+ * 圆角只能加在真正构成该行右端外缘的那段：某行可能停训(red)=0，
+ * 其末端就是黄色甚至灰色未评估段，不能按系列统一给 red/none 加圆角。
+ */
+function rowLastKey(row, keys) {
+  for (let i = keys.length - 1; i >= 0; i--) {
+    if ((row[keys[i]] || 0) > 0) return keys[i]
+  }
+  return null
+}
+
+/** 构造某个 key 系列的 data 项（含按行动态右圆角）；values 与 rows 对齐 */
+function barDataItems(rows, keys, key, values) {
+  const last = rowLastKey
+  return rows.map((r, ri) => {
+    const v = values[ri]
+    // 扫描动画中右缘可能正落在该段内（部分宽度），也视为行末端，圆角随扫描头移动
+    const rounded = v > 0 && last(r, keys) === key
+    return {
+      value: v,
+      itemStyle: {
+        color: statusColor(key, props.big),
+        borderRadius: rounded ? [0, BAR_R, BAR_R, 0] : [0, 0, 0, 0]
+      }
+    }
+  })
+}
 
 /** 队伍堆叠条：左→右扫描入场（与 donut 同一节奏），透明尾段占位保证堆叠位置不跳动 */
 function playTeamSweep(chart, rows, keys) {
@@ -185,8 +215,7 @@ function playTeamSweep(chart, rows, keys) {
     chart.setOption({
       series: keys.map(key => ({
         name: key, type: 'bar', stack: 'rtp', barWidth: 13,
-        data: rows.map(r => r[key] || 0),
-        itemStyle: { color: statusColor(key, props.big) }
+        data: barDataItems(rows, keys, key, rows.map(r => r[key] || 0))
       })).concat([{
         name: GAP_SERIES, type: 'bar', stack: 'rtp', barWidth: 13,
         silent: true, tooltip: { show: false },
@@ -200,7 +229,8 @@ function playTeamSweep(chart, rows, keys) {
   const tick = (now) => {
     const p = Math.min(1, (now - t0) / SWEEP_MS)
     const eased = 1 - Math.pow(1 - p, 3)
-    const seriesData = keys.map(key => rows.map(() => 0))
+    // 每行当前各段的可见宽度（扫描头之前的部分）
+    const visible = keys.map(() => rows.map(() => 0))
     const gapData = rows.map(() => 0)
     rows.forEach((r, ri) => {
       const total = r._total
@@ -208,20 +238,25 @@ function playTeamSweep(chart, rows, keys) {
       let acc = 0
       keys.forEach((key, ki) => {
         const v = r[key] || 0
-        let visible
-        if (boundary >= acc + v) visible = v
-        else if (boundary > acc) visible = boundary - acc
-        else visible = 0
+        let shown
+        if (boundary >= acc + v) shown = v
+        else if (boundary > acc) shown = boundary - acc
+        else shown = 0
         acc += v
-        seriesData[ki][ri] = visible
+        visible[ki][ri] = shown
       })
       gapData[ri] = Math.max(0, total - boundary)
+    })
+    // 圆角落在「当前可见宽度>0 的最右段」——动画期间即扫描头所在段，结束后即行末段
+    const visibleRows = rows.map((_, ri) => {
+      const o = {}
+      keys.forEach((k, ki) => { o[k] = visible[ki][ri] })
+      return o
     })
     chart.setOption({
       series: keys.map((key, ki) => ({
         name: key, type: 'bar', stack: 'rtp', barWidth: 13,
-        data: seriesData[ki],
-        itemStyle: { color: statusColor(key, props.big) }
+        data: barDataItems(visibleRows, keys, key, visible[ki])
       })).concat([{
         name: GAP_SERIES, type: 'bar', stack: 'rtp', barWidth: 13,
         silent: true, tooltip: { show: false },
@@ -246,8 +281,8 @@ function renderTeam() {
     .sort((a, b) => b._total - a._total)
     .slice(0, 6)
   const axisNames = rows.map(r => r.team && r.team.length > 5 ? r.team.slice(0, 5) + '…' : r.team || '未分组')
-  // 末段（red 或 none）右端圆角
-  const radiusOf = (key) => key === keys[keys.length - 1] ? [0, 6, 6, 0] : [0, 0, 0, 0]
+  // 右圆角按每行实际末段动态计算（见组件级 barDataItems），初始全部为 0，
+  // 入场由 playTeamSweep 的 rAF 扫描驱动，结束时各段圆角就位
   teamChart.setOption({
     animation: false, // 入场由 rAF 扫描驱动
     tooltip: {
@@ -276,8 +311,7 @@ function renderTeam() {
       type: 'bar',
       stack: 'rtp',
       barWidth: 13,
-      data: rows.map(() => 0),
-      itemStyle: { color: statusColor(key, props.big), borderRadius: radiusOf(key) }
+      data: barDataItems(rows, keys, key, rows.map(() => 0))
     })).concat([{
       name: GAP_SERIES,
       type: 'bar',
@@ -323,6 +357,9 @@ onBeforeUnmount(() => {
 </script>
 
 <style lang="scss" scoped>
+/* rk-mono 定义在 roster-kit；scoped 样式不从父页面穿透，组件内需显式引入 */
+@use "@/assets/styles/roster-kit.scss" as *;
+
 .rtp-body { display: flex; flex-direction: column; }
 .rtp-main {
   flex: 1;

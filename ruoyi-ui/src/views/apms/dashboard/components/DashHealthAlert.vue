@@ -85,6 +85,9 @@ function dotClass(l) {
 </script>
 
 <style lang="scss" scoped>
+/* rk-mono 定义在 roster-kit；scoped 样式不从父页面穿透，组件内需显式引入 */
+@use "@/assets/styles/roster-kit.scss" as *;
+
 .ha-body { display: flex; flex-direction: column; }
 .ha-stats {
   flex: none;

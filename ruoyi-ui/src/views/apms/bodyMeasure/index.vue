@@ -13,9 +13,6 @@
                      v-hasPermi="['apms:body:edit']">
             <el-icon><Upload /></el-icon>批量导入
           </el-button>
-          <el-button class="rk-btn" @click="activeTab = 'cycle'">
-            <el-icon><Calendar /></el-icon>测量周期
-          </el-button>
           <el-button type="primary" class="rk-btn rk-btn-primary" @click="showAddDialog"
                      v-hasPermi="['apms:body:edit']">
             <el-icon><Plus /></el-icon>新增测量
@@ -256,7 +253,7 @@ import { list as listMeasures, upsert, delMeasure } from '@/api/apms/bodyMeasure
 import { listAthlete } from '@/api/apms/athlete'
 import { listDept } from '@/api/system/dept'
 import { listCycle } from '@/api/apms/measureCycle'
-import { Plus, RefreshLeft, Calendar, Upload } from '@element-plus/icons-vue'
+import { Plus, RefreshLeft, Upload } from '@element-plus/icons-vue'
 import AthleteMeasureDrawer from './components/AthleteMeasureDrawer.vue'
 import MeasureCyclePanel from './components/MeasureCyclePanel.vue'
 import CycleDetailDialog from './components/CycleDetailDialog.vue'

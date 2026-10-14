@@ -61,6 +61,9 @@ function tone(p) {
 </script>
 
 <style lang="scss" scoped>
+/* rk-mono 定义在 roster-kit；scoped 样式不从父页面穿透，组件内需显式引入 */
+@use "@/assets/styles/roster-kit.scss" as *;
+
 .tp-body { display: flex; flex-direction: column; }
 .tp-list { flex: 1; display: flex; flex-direction: column; gap: 2px; }
 .tp-row {

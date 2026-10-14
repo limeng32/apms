@@ -267,6 +267,10 @@ defineExpose({ open, reload })
 </script>
 
 <style lang="scss" scoped>
+/* 组件内使用了 rk-* 类（表格/输入/链接等），roster-kit 未全局引入，
+   scoped 样式不从父页面穿透，必须在组件内显式引入 */
+@use "@/assets/styles/roster-kit.scss" as *;
+
 /* 批量表格：异常值单元格红底提醒 */
 .cd-cell-abnormal :deep(.el-input-number),
 .cd-cell-abnormal :deep(.el-input__wrapper) { background: #fef2f2; }

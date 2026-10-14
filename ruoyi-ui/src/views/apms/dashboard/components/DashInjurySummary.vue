@@ -131,6 +131,9 @@ onBeforeUnmount(() => {
 </script>
 
 <style lang="scss" scoped>
+/* rk-mono/rk-soft-chip 定义在 roster-kit；scoped 样式不从父页面穿透，组件内需显式引入 */
+@use "@/assets/styles/roster-kit.scss" as *;
+
 .ij-body { display: flex; flex-direction: column; }
 .ij-stats {
   flex: none;
