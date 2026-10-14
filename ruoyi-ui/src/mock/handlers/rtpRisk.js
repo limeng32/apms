@@ -7,8 +7,7 @@ import {
   getDb, route, ok, detail, paginate,
   nextId, now, like
 } from '../handle'
-
-const TODAY = '2026-10-05'
+import { TODAY } from '../clock'
 
 const RULES = [
   { id: 1, ruleCode: 'REVIEW_OVERDUE', ruleName: 'RTP复检已逾期', enabled: '1', kind: 'PROCESS', severity: 0, urgency: 3, forceWarning: '0', weight: 1.00, params: '{}' },

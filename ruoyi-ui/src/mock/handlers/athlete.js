@@ -5,6 +5,7 @@ import {
   getDb, route, ok, detail, pageRows, listData,
   nextId, nextPositiveId, stampCreate, stampUpdate, splitIds, eq, like
 } from '../handle'
+import { ageAtToday, today, nextJanFirst } from '../clock'
 
 /* ============================== Athlete ============================== */
 
@@ -12,16 +13,10 @@ import {
  * 周岁：与后端 SQL TIMESTAMPDIFF(YEAR, birthday, CURDATE()) 同口径。
  * 表单只提交 birthday，age 不落库、由查询端实时计算，因此新增队员的年龄/年龄组
  * 也必须在 mock 读取时派生，否则列表年龄组显示「—」。
+ * 基准日固定为演示时钟锚点（不能用真实 new Date()，否则蓝本队员年龄逐年漂移）。
  */
 function calcAge(birthday) {
-  if (!birthday) return null
-  const b = new Date(String(birthday) + 'T00:00:00')
-  if (isNaN(b.getTime())) return null
-  const now = new Date()
-  let age = now.getFullYear() - b.getFullYear()
-  const m = now.getMonth() - b.getMonth()
-  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--
-  return age
+  return ageAtToday(birthday)
 }
 
 function effectiveAge(row) {
@@ -107,15 +102,8 @@ function ageAtCutoff(birthday, cutoff) {
   return age < 0 ? 0 : age
 }
 
-function nextJanFirstStr() {
-  const now = new Date()
-  const y = (now.getMonth() > 0 || (now.getMonth() === 0 && now.getDate() > 1))
-    ? now.getFullYear() + 1 : now.getFullYear()
-  return y + '-01-01'
-}
-
 function buildPromotionPlan(ctx) {
-  const cutoff = (ctx.body && ctx.body.cutoffDate) || nextJanFirstStr()
+  const cutoff = (ctx.body && ctx.body.cutoffDate) || nextJanFirst()
   const db = getDb()
   // parentId -> Map(bracket -> dept)
   const byParent = new Map()
@@ -370,7 +358,7 @@ export const athleteGroupHandlers = [
       deptId: Number(b.deptId),
       deptName: dept?.deptName || null,
       deptTypeName: typeNameMap[String(dept.deptType)] || '其他',
-      joinDate: b.joinDate || new Date().toISOString().slice(0, 10),
+      joinDate: b.joinDate || today(),
       leaveDate: null,
       status: '0',
       remark: b.remark ?? null
@@ -391,7 +379,7 @@ export const athleteGroupHandlers = [
       && String(g.status) === '0')
     if (!current) return { code: 601, msg: '该运动员当前不在此小组中，可能已离组' }
     current.status = '1'
-    current.leaveDate = ctx.body?.leaveDate || new Date().toISOString().slice(0, 10)
+    current.leaveDate = ctx.body?.leaveDate || today()
     stampUpdate(current)
     return ok('已离开')
   }),

@@ -5,8 +5,9 @@
  */
 import {
   getDb, route, ok, detail, listData,
-  nextId, stampCreate
+  nextId, stampCreate, now
 } from '../handle'
+import { today } from '../clock'
 
 function athleteOf(id) {
   return getDb().athletes.find(a => String(a.athleteId) === String(id))
@@ -143,7 +144,7 @@ export const phvHandlers = [
     const m = getDb().bodyMeasures
       .filter(x => String(x.athleteId) === ctx.params.athleteId && x.height != null && x.weight != null)
       .sort((x, y) => (y.measureDate || '').localeCompare(x.measureDate || ''))[0]
-    const age = decimalAge(a.birthday, new Date().toISOString().slice(0, 10))
+    const age = decimalAge(a.birthday, today())
     return detail({
       athleteId: a.athleteId,
       athleteName: a.name,
@@ -151,7 +152,7 @@ export const phvHandlers = [
       version: a.adultHeightAlgo || 'khamis-roche-v1',
       savedHeight: a.predictedAdultHeight ?? (m && age != null
         ? khamisRoche({ gender: normGender(a.gender), age, height: m.height, weight: m.weight }) : null),
-      calcDate: a.adultHeightCalcDate ?? new Date().toISOString(),
+      calcDate: a.adultHeightCalcDate ?? now(),
       decimalAge: age,
       sourceMeasure: m ? { id: m.id, measureDate: m.measureDate, height: m.height, weight: m.weight } : null
     })
@@ -187,7 +188,7 @@ export const phvHandlers = [
     const row = buildAndSave({
       athleteId: b.athleteId,
       height: b.height, sitHeight: b.sitHeight, weight: b.weight,
-      gender: b.gender, measureDate: b.measureDate || new Date().toISOString().slice(0, 10),
+      gender: b.gender, measureDate: b.measureDate || today(),
       fatherHeight: b.fatherHeight, motherHeight: b.motherHeight,
       extra: { remark: b.remark ?? null }
     })

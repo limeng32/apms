@@ -394,6 +394,22 @@ test('G2', 'resetDb 还原 + 与 fixtures 深隔离', async () => {
   assertEq(b.notices.length, 2, '旧库改动不影响新库')
 })
 
+test('G3', '演示时钟凝固：相对窗口/年龄/时间戳全部锚定 2026-10-05，不随真实日期漂移', async () => {
+  const clk = await import(src('mock/clock'))
+  assertEq(clk.today(), '2026-10-05')
+  assertEq(clk.daysAgo(365), '2025-10-05', '近 365 天窗口固定')
+  assertEq(clk.daysAgo(0), '2026-10-05')
+  assertEq(clk.monthsAgoDate(12), '2025-10-05')
+  assertEq(clk.monthStart(), '2026-10-01')
+  assertEq(clk.nextJanFirst(), '2027-01-01')
+  // 1001 张志远 2009-03-15 生 → 锚点日 17 周岁（不受真实运行日期影响）
+  assertEq(clk.ageAtToday('2009-03-15'), 17)
+  // 2009-11-25 生 → 锚点日尚未过生日，16 周岁
+  assertEq(clk.ageAtToday('2009-11-25'), 16)
+  assert(clk.nowTs().startsWith('2026-10-05 12:00'), '时间戳凝固到锚点')
+  assertEq(clk.nowTs(), '2026-10-05 12:00:01', '时间戳内部逐秒递增')
+})
+
 /* ============================ H. 业务 handler 集成 ============================ */
 const dbMod = await import(src('mock/db'))
 const engine = await import(MOCK_URL)
@@ -895,22 +911,29 @@ test('H11', '医疗：筛选/详情挂附件/附件删除独立于主表删除',
 
 test('H11b', '伤病部位：部位统计聚合/闭环口径/部位筛选/录入校验/路由不错配', async () => {
   reset()
-  // 蓝本 4 条 injury/surgery 均带 bodySite；1014 右膝、1015 左踝其后有康复记录 → 已康复；
-  // 1004 右大腿后、1007 左手腕无后续 rehab/checkup → 活跃（按 recordDate 2024 数据，仅在 all 范围出现）
+  // 蓝本 injury/surgery 部位：
+  // 2024 旧伤 4 部位（THIGH_BACK_R/WRIST_L 活跃旧口径、KNEE_R/ANKLE_L 已康复）+
+  // 近期新增 THIGH_R/ANKLE_R/LOW_BACK（活跃）与 KNEE_R(活跃)/ANKLE_L（injury+rehab 闭环），
+  // range=all 去重后共 7 个部位
   const all = call('get', '/apms/medical-record/site-stats', { range: 'all' })
   expect200(all, 'site-stats 200')
-  assert(Array.isArray(all.data) && all.data.length === 4, `4 个部位聚合，实际 ${all.data.length}`)
+  assert(Array.isArray(all.data) && all.data.length === 7, `7 个部位聚合，实际 ${all.data.length}`)
   const bySite = Object.fromEntries(all.data.map(x => [x.site, x]))
   assertEq(bySite.THIGH_BACK_R.total, 1); assertEq(bySite.THIGH_BACK_R.active, 1, '右大腿后群：无康复记录=活跃')
   assertEq(bySite.WRIST_L.total, 1); assertEq(bySite.WRIST_L.active, 1, '左手腕：活跃')
-  assertEq(bySite.KNEE_R.total, 1); assertEq(bySite.KNEE_R.active, 0, '右膝：有 2024-11-20 康复=已康复')
-  assertEq(bySite.ANKLE_L.total, 1); assertEq(bySite.ANKLE_L.active, 0, '左踝：有 2024-12-01 康复=已康复')
-  // 近 12 个月（mock 以当前日期回看，蓝本 2024 数据全部落在窗口外）
+  // KNEE_R：2024 旧伤 1 条已康复 + 2026-09 手术 1 条未闭环 → total 2、active 1
+  assertEq(bySite.KNEE_R.total, 2); assertEq(bySite.KNEE_R.active, 1, '右膝：一新一旧，仅新伤活跃')
+  // ANKLE_L：2024 旧伤 1 条已康复 + 2026 新伤有康复复评 → total 2、active 0
+  assertEq(bySite.ANKLE_L.total, 2); assertEq(bySite.ANKLE_L.active, 0, '左踝：两条均已康复')
+  assertEq(bySite.LOW_BACK.active, 1, '腰背：近期活跃')
+  // 近 12 个月（mock 以当前日期回看；近期蓝本 4 条活跃伤病的部位）
   const y1 = call('get', '/apms/medical-record/site-stats', { range: '12m' })
-  expect200(y1); assertEq(y1.data.length, 0, '近 12 个月无蓝本伤病')
+  expect200(y1)
+  const y1Active = y1.data.reduce((n, x) => n + x.active, 0)
+  assertEq(y1Active, 4, '近 12 个月活跃 4 例（KNEE_R/THIGH_R/ANKLE_R/LOW_BACK 各 1）')
   // 部位筛选
   const filtered = call('get', '/apms/medical-record/list', { pageSize: '10', bodySite: 'KNEE_R' })
-  expect200(filtered); assert(filtered.rows.length === 1 && filtered.rows.every(r => r.bodySite === 'KNEE_R'), 'bodySite 精确筛选')
+  expect200(filtered); assert(filtered.rows.length === 2 && filtered.rows.every(r => r.bodySite === 'KNEE_R'), 'bodySite 精确筛选 2 条')
   // 精确路由不落到 :id
   expect200(call('get', '/apms/medical-record/site-stats'))
   // 录入校验：损伤无部位 → 601；非伤病类型部位被清空
@@ -918,14 +941,15 @@ test('H11b', '伤病部位：部位统计聚合/闭环口径/部位筛选/录入
     record: { athleteId: 1001, recordType: 'injury', recordDate: '2026-10-05', title: '测试伤' }
   })
   assertEq(noSite.code, 601, '损伤必须选部位')
+  // 用蓝本未占用的部位 ELBOW_R，避免与近期踝扭伤蓝本叠加
   const okAdd = call('post', '/apms/medical-record', {}, {
-    record: { athleteId: 1001, recordType: 'injury', bodySite: 'ANKLE_R', recordDate: '2026-10-05', title: '测试踝扭伤' }
+    record: { athleteId: 1001, recordType: 'injury', bodySite: 'ELBOW_R', recordDate: '2026-10-05', title: '测试网球肘' }
   })
   expect200(okAdd)
-  const added = db().medicals.find(r => r.title === '测试踝扭伤')
-  assertEq(added.bodySite, 'ANKLE_R', 'AddBody.record 正确解包落库')
+  const added = db().medicals.find(r => r.title === '测试网球肘')
+  assertEq(added.bodySite, 'ELBOW_R', 'AddBody.record 正确解包落库')
   const statsAfter = call('get', '/apms/medical-record/site-stats', { range: '12m' }).data
-  assertEq(statsAfter.find(x => x.site === 'ANKLE_R').active, 1, '新伤进入近 12 月活跃统计')
+  assertEq(statsAfter.find(x => x.site === 'ELBOW_R').active, 1, '新伤进入近 12 月活跃统计')
   // 疾病记录带部位也会被清空
   const illness = call('post', '/apms/medical-record', {}, {
     record: { athleteId: 1001, recordType: 'illness', bodySite: 'KNEE_L', recordDate: '2026-10-05', title: '感冒' }
@@ -976,10 +1000,11 @@ test('H13', '归属：多组并存/加入校验/按组离开互不影响', async
   assertEq(call('post', '/apms/athlete-group/leave/1001', {}, { deptId: 204 }).code, 601, '重复离组拒绝')
 })
 
-test('H14', '总览看板：形状与内存聚合正确', async () => {
+test('H14', '总览看板：形状与内存聚合正确（含门面区 5 块）', async () => {
   reset()
   const o = call('get', '/apms/dashboard/overview').data
-  for (const k of ['summary', 'comboScoreRanking', 'indicatorRadar', 'phvScatter', 'taskCompletion', 'teamDistribution']) {
+  for (const k of ['summary', 'comboScoreRanking', 'indicatorRadar', 'phvScatter', 'taskCompletion', 'teamDistribution',
+    'rtpDistribution', 'activeTasks', 'injurySummary', 'phvBands', 'healthAlerts']) {
     assert(k in o, `overview 缺 ${k}`)
   }
   assertEq(o.summary.totalAthletes, 15)
@@ -992,6 +1017,35 @@ test('H14', '总览看板：形状与内存聚合正确', async () => {
   assert(tc.athleteCount >= 1 && tc.resultCount >= 1, '任务完成度聚合')
   const teamHeads = Object.values(o.teamDistribution).reduce((a, b) => a + b, 0)
   assertEq(teamHeads, 15, '队伍分布人数合计')
+
+  // 门面区：RTP 分布（g/y/r/none 合计=在训 15 人；byTeam 桶合计一致）
+  const rtp = o.rtpDistribution
+  assertEq(rtp.total, 15, 'RTP total=在训人数')
+  assertEq(rtp.green + rtp.yellow + rtp.red + rtp.none, 15, '四态合计')
+  const teamSum = rtp.byTeam.reduce((n, t) => n + t.green + t.yellow + t.red + t.none, 0)
+  assertEq(teamSum, 15, 'byTeam 桶合计=在训人数')
+
+  // 门面区：本周活跃任务（任务 1/3 窗口覆盖锚点 2026-10-05）
+  assertEq(o.activeTasks.list.length, 2, '两个本周活跃任务')
+  assert(o.activeTasks.list.every(t => typeof t.progress === 'number'), '进度字段齐全')
+  assert(o.activeTasks.avgProgress > 0, '平均完成率 > 0')
+
+  // 门面区：伤病摘要（4 活跃含本月 1、1 已康复；近 12 月窗口排除 2024 旧伤）
+  assertEq(o.injurySummary.active, 4, '活跃伤病 4 例')
+  assertEq(o.injurySummary.newThisMonth, 1, '本月新发 1 例')
+  assert(o.injurySummary.recovered >= 1, '至少 1 例已康复')
+  assert(o.injurySummary.recent.length > 0 && o.injurySummary.recent.length <= 3, '最近活跃最多 3 条')
+
+  // 门面区：PHV 4 档合计=评估人数；新增两条峰期后窗口人数 >=2
+  const bandSum = o.phvBands.bands.reduce((n, b) => n + b.count, 0)
+  assertEq(bandSum, o.phvBands.total, '4 档合计=评估人数')
+  assert(o.phvBands.windowCount >= 2, '±1 年窗口至少 2 人')
+
+  // 门面区：健康预警=锚点日 ACTIVE 快照（1 WARNING/1 ATTENTION/3 INFO），TOP3 红黄优先
+  assertEq(o.healthAlerts.warning, 1, '红警 1')
+  assertEq(o.healthAlerts.attention, 1, '黄警 1')
+  assert(o.healthAlerts.list.length === 3, 'TOP3 名单')
+  assertEq(o.healthAlerts.list[0].level, 'WARNING', '首位是 WARNING')
 })
 
 test('H15', '子路径不错配：具体路径绝不落到 :param 泛匹配', async () => {

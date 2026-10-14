@@ -7,6 +7,7 @@
  * - 一律 getDb() 取库，不持有表引用；返回标准 RuoYi body（不包 AxiosResponse）。
  */
 import { getDb } from './db'
+import { nowTs } from './clock'
 
 export { getDb }
 
@@ -85,11 +86,12 @@ export function nextPositiveId(rows, idKey, floor = 900000) {
   return max + 1
 }
 
-/** 当前时间戳字符串（YYYY-MM-DD HH:mm:ss，演示用，不追求本地化精确） */
+/**
+ * 当前时间戳字符串（YYYY-MM-DD HH:mm:ss）。
+ * 演示时钟凝固到锚点日（见 clock.js），避免写入记录落在蓝本"未来"导致窗口统计漂移。
+ */
 export function now() {
-  const d = new Date()
-  const p = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  return nowTs()
 }
 
 /** 新增行审计字段（演示操作人固定 super） */

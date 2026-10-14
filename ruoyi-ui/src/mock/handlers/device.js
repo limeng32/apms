@@ -1,7 +1,8 @@
 /**
  * 演示模式 · 设备接入 handler（注册信息仅保存在页面会话内存中，推送成绩真实写入演示库）
  */
-import { getDb, route, ok, detail, listData, nextId, stampCreate } from '../handle'
+import { getDb, route, ok, detail, listData, nextId, stampCreate, now } from '../handle'
+import { today } from '../clock'
 
 // 模拟服务端内存注册表
 const devices = [
@@ -21,7 +22,7 @@ export const deviceHandlers = [
       vendor: b.vendor || '',
       apiKey: 'dk-' + Math.random().toString(16).slice(2, 10) + Date.now().toString(16),
       status: 'ACTIVE',
-      registeredAt: new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-'),
+      registeredAt: now(),
       lastSeenAt: null,
       pushCount: 0
     }
@@ -55,7 +56,7 @@ export const deviceHandlers = [
       indicatorName: indicator.name, indicatorDirection: indicator.evaluationDirection,
       indicatorUnit: indicator.unit,
       sessionKey: b.sessionKey || null,
-      measureDate: b.measureDate || new Date().toISOString().slice(0, 10),
+      measureDate: b.measureDate || today(),
       isValid: '1', isSelected: '1', invalidReason: null,
       dataSource: 'DEVICE:' + dev.deviceCode,
       values: [{
@@ -67,7 +68,7 @@ export const deviceHandlers = [
     }
     stampCreate(row)
     db.testResults.push(row)
-    dev.lastSeenAt = new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
+    dev.lastSeenAt = now()
     dev.pushCount += 1
     return detail({ resultId: row.id, deviceCode: dev.deviceCode, indicatorCode: indicator.code, value: b.value }, '推送成功')
   }),

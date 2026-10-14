@@ -6,6 +6,7 @@ import {
   getDb, route, ok, detail, pageRows,
   nextId, stampCreate, stampUpdate
 } from '../handle'
+import { daysAgo } from '../clock'
 
 function athleteMeta(id) {
   const a = getDb().athletes.find(x => String(x.athleteId) === String(id))
@@ -22,11 +23,10 @@ function isClosed(rec, all) {
     && r.recordDate >= rec.recordDate)
 }
 
-/** 伤病部位分布统计：range=12m（默认）/ all */
+/** 伤病部位分布统计：range=12m（默认）/ all；窗口从演示时钟锚点回看，不随真实日期滑动 */
 function siteStats(range) {
   const rows = getDb().medicals
-  const since = range === 'all' ? null
-    : new Date(Date.now() - 365 * 24 * 3600 * 1000).toISOString().slice(0, 10)
+  const since = range === 'all' ? null : daysAgo(365)
   const map = new Map()
   for (const r of rows) {
     if (!['injury', 'surgery'].includes(r.recordType) || !r.bodySite) continue

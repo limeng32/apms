@@ -6,6 +6,7 @@ import {
   getDb, route, ok, detail, paginate,
   nextId, stampCreate, stampUpdate
 } from '../handle'
+import { today } from '../clock'
 
 function targetMembers(cycle) {
   return getDb().athletes.filter(a => a.status === '0'
@@ -166,7 +167,7 @@ export const measureCycleHandlers = [
       if (b.athleteId == null || isBlank(b)) continue
       const fields = {
         athleteId: b.athleteId,
-        measureDate: b.measureDate || cycle.planStartDate || new Date().toISOString().slice(0, 10),
+        measureDate: b.measureDate || cycle.planStartDate || today(),
         height: b.height ?? null,
         weight: b.weight ?? null,
         sitHeight: b.sitHeight ?? null,
