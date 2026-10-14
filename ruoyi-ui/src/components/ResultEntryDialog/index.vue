@@ -1,5 +1,7 @@
 <template>
   <el-dialog :title="dialogTitle" v-model="visible" width="780px" append-to-body @close="reset">
+    <el-alert v-if="isDemoMode()" type="warning" :closable="false" show-icon style="margin-bottom:12px"
+              title="演示模式：录入的成绩只保存在当前标签页，刷新页面或退出演示后会还原为样本数据，不会写入真实系统。"/>
     <el-form :model="form" label-width="84px" @submit.prevent>
       <el-row :gutter="12">
         <el-col v-if="mode === 'free'" :span="24">
@@ -183,6 +185,7 @@ import { listAthlete } from '@/api/apms/athlete'
 import { listIndicator } from '@/api/apms/indicator'
 import { listField, listTestModel } from '@/api/apms/testModel'
 import { addTestResult, updateTestResult, getTestResult, listByTaskMember, pushDeviceModel } from '@/api/apms/testResult'
+import { isDemoMode } from '@/utils/auth'
 import {
   loadRanges, getIndicatorRange, classify, isHard, isWarn, hardMessage, warnMessage
 } from '@/utils/measureRange'

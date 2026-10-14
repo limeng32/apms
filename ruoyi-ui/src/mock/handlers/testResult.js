@@ -120,11 +120,15 @@ export const testResultHandlers = [
     ])
   }),
 
-  // 在线网格批量录入：{ taskId?, measureDate, rows: [{ athleteId, cells: [{ indicatorId, value }] }] }
-  // 逐人提交（非逐格）：返回 ImportCommitResult { committed, skipped, failed, failedDetails }
+  // 在线网格批量录入（逐人提交，非逐格）
+  // INDICATOR：{ rows:[{ athleteId, cells:[{ indicatorId, value }] }] }，每指标一条 result
+  // MODEL：  { rows:[{ athleteId, cells:[{ modelId, fieldId, fieldKey, value }] }] }，
+  //          cells 按 modelId 分组、同模型多字段合并为一条 result（与后端 batchGridAdd 同契约）
+  // 返回 ImportCommitResult { committed, skipped, failed, failedDetails, skippedDetails }
   route('post', '/apms/test-result/batch-grid', (ctx) => {
     const b = ctx.body || {}
     const db = getDb()
+    const isModel = b.itemType === 'MODEL'
     const rowsIn = Array.isArray(b.rows) ? b.rows : []
     const measureDate = b.measureDate || null
     const failedDetails = []
@@ -132,6 +136,26 @@ export const testResultHandlers = [
     let committed = 0
     let failed = 0
     let skipped = 0
+    const taskId = b.taskId != null ? Number(b.taskId) : null
+    const task = taskId != null ? db.testTasks.find(t => t.id === taskId) : null
+
+    // 任务模式：task_item 权威映射（指标与模型各一张），与后端一致
+    const indicatorItemByIndicator = new Map()
+    const modelItemByModel = new Map()
+    if (taskId != null) {
+      for (const it of db.taskItems || []) {
+        if (Number(it.taskId) !== taskId) continue
+        if (it.itemType === 'INDICATOR' && it.indicatorId != null) {
+          indicatorItemByIndicator.set(Number(it.indicatorId), it)
+        }
+        if (it.itemType === 'MODEL' && it.modelId != null) {
+          modelItemByModel.set(Number(it.modelId), it)
+        }
+      }
+    }
+
+    const hasValue = (v) => v !== '' && v != null && v !== undefined
+
     for (const person of rowsIn) {
       const athlete = db.athletes.find(a => String(a.athleteId) === String(person.athleteId))
       if (!athlete) {
@@ -139,26 +163,118 @@ export const testResultHandlers = [
         failedDetails.push(`运动员 ${person.athleteId} 不存在`)
         continue
       }
-      const cells = (Array.isArray(person.cells) ? person.cells : [])
-        .filter(c => c && c.indicatorId != null && c.value !== '' && c.value != null && c.value !== undefined)
+      // 任务成员归属校验（任务模式）
+      if (taskId != null) {
+        const member = (db.taskMembers || []).find(m =>
+          Number(m.taskId) === taskId && String(m.athleteId) === String(athlete.athleteId))
+        if (!member) {
+          failed++
+          failedDetails.push(`队员「${athlete.name}」：不是该任务的参测队员，未录入`)
+          continue
+        }
+      }
+
+      const rawCells = (Array.isArray(person.cells) ? person.cells : [])
+        .filter(c => c && hasValue(c.value))
+      if (!rawCells.length) {
+        skipped++
+        skippedDetails.push(`${athlete.name} 无有效成绩，已跳过`)
+        continue
+      }
+
+      if (isModel) {
+        // cells 按 modelId 分组（同字段重复时保留最后值）；任一非法 cell → 整人失败
+        const byModel = new Map()
+        let badCell = false
+        for (const cell of rawCells) {
+          const mid = cell.modelId != null ? Number(cell.modelId) : (b.modelId != null ? Number(b.modelId) : null)
+          const model = db.testModels?.find(m => m.id === mid)
+          if (mid == null || !model || model.isCombo === '1') {
+            failed++
+            failedDetails.push(`队员「${athlete.name}」：模型 ${mid} 不在可录入范围，整人未录入`)
+            badCell = true
+            break
+          }
+          if (taskId != null && !modelItemByModel.has(mid)) {
+            failed++
+            failedDetails.push(`队员「${athlete.name}」：模型「${model.name}」不属于该任务，整人未录入`)
+            badCell = true
+            break
+          }
+          // 字段必须属于该模型且非派生（散录/任务同口径）
+          const field = (db.testFields || []).find(f => f.id === Number(cell.fieldId) && Number(f.modelId) === mid)
+          if (!field || field.collectMode === 'DERIVED') {
+            failed++
+            failedDetails.push(`队员「${athlete.name}」：字段 ${cell.fieldKey || cell.fieldId} 不属于模型「${model.name}」或为派生字段，整人未录入`)
+            badCell = true
+            break
+          }
+          const g = byModel.get(mid) || { model, item: modelItemByModel.get(mid) || null, fields: new Map() }
+          g.fields.set(field.id, { cell, field })
+          byModel.set(mid, g)
+        }
+        if (badCell) continue
+        if (!byModel.size) {
+          skipped++
+          skippedDetails.push(`${athlete.name} 无有效成绩，已跳过`)
+          continue
+        }
+        // 每个模型一条 MODEL result（同队员一次可产出多个模型的成绩）
+        for (const g of byModel.values()) {
+          const { model, item, fields } = g
+          const values = [...fields.values()].map(({ cell, field }) => ({
+            id: nextId(), resultId: null,
+            modelId: model.id, fieldId: field.id,
+            fieldKey: field.fieldKey, fieldName: field.fieldName,
+            modelFieldKey: field.fieldKey, modelFieldName: field.fieldName,
+            indicatorId: null, indicatorCode: null, indicatorName: null,
+            isDerived: '0', numericValue: Number(cell.value), textValue: null,
+            unit: field.unit || ''
+          }))
+          const row = {
+            athleteId: athlete.athleteId,
+            athleteName: athlete.name, athleteGender: athlete.gender, athleteTeam: athlete.teamName,
+            taskId, taskName: task?.taskName ?? null,
+            taskItemId: item?.id ?? null,
+            itemType: 'MODEL', itemSortOrder: item?.sortOrder ?? null,
+            indicatorId: null, indicatorCode: null, indicatorName: null,
+            indicatorDirection: null, indicatorUnit: null,
+            modelId: model.id, modelCode: model.code, modelName: model.name,
+            measureDate, sessionKey: b.sessionKey || null,
+            dataSource: 'manual',
+            values,
+            id: nextId(),
+            isSelected: '1',
+            isValid: '1'
+          }
+          const groupBefore = db.testResults.filter(r => sameGroup(r, row))
+          row.attemptNo = groupBefore.reduce((m, r) => Math.max(m, Number(r.attemptNo) || 0), 0) + 1
+          stampCreate(row)
+          db.testResults.push(row)
+          // 模型无评估方向：同组代表记录按最新测量归一（sameGroup 已覆盖 taskItem/散录模型两种组）
+          normalizeGroupSelection(db.testResults, row)
+        }
+        committed++
+        continue
+      }
+
+      // ---- INDICATOR（每指标一条 result）----
+      const cells = rawCells.filter(c => c.indicatorId != null)
       if (!cells.length) {
         skipped++
         skippedDetails.push(`${athlete.name} 无有效成绩，已跳过`)
         continue
       }
-      const task = b.taskId != null ? db.testTasks.find(t => String(t.id) === String(b.taskId)) : null
       for (const cell of cells) {
         const indicator = db.indicators?.find(i => String(i.id) === String(cell.indicatorId))
-        const item = b.taskId != null
-          ? db.taskItems.find(i => String(i.taskId) === String(b.taskId)
-            && String(i.indicatorId) === String(cell.indicatorId))
-          : null
+        const item = indicatorItemByIndicator.get(Number(cell.indicatorId)) || null
         const payloadRow = {
           athleteId: athlete.athleteId,
-          taskId: b.taskId != null ? Number(b.taskId) : null,
+          taskId,
           taskItemId: item?.id ?? null,
           indicatorId: Number(cell.indicatorId),
           measureDate,
+          sessionKey: b.sessionKey || null,
           dataSource: 'manual'
         }
         const row = {
@@ -237,10 +353,31 @@ export const testResultHandlers = [
   }),
 
   route('put', '/apms/test-result', (ctx) => {
-    const row = getDb().testResults.find(r => String(r.id) === String(ctx.body.id))
+    // 契约与 POST 同为 EditBody { result, values }；兼容旧的扁平 body
+    const payload = ctx.body || {}
+    const b = payload.result || payload
+    const vals = Array.isArray(payload.values) ? payload.values : null
+    const row = getDb().testResults.find(r => String(r.id) === String(b.id))
     if (!row) return { code: 601, msg: '结果不存在' }
-    Object.assign(row, ctx.body)
+    // 仅更新后端允许编辑的字段；id/attemptNo 与冗余名/编码等服务端派生字段不可被 body 覆盖
+    const EDITABLE = ['taskId', 'taskItemId', 'athleteId', 'itemType',
+      'indicatorId', 'modelId', 'measureDate', 'sessionKey',
+      'isValid', 'isSelected', 'dataSource', 'remark']
+    for (const k of EDITABLE) {
+      if (Object.prototype.hasOwnProperty.call(b, k)) row[k] = b[k]
+    }
+    // values 原地改值：按 fieldKey 合并，保留既有 valueId/fieldLabel/unit 等元数据；
+    // 新增字段（脏数据兜底）才整条追加
+    if (vals && vals.length) {
+      const oldVals = Array.isArray(row.values) ? row.values : []
+      row.values = vals.map(v => {
+        const old = oldVals.find(o => String(o.fieldKey) === String(v.fieldKey))
+        return old ? { ...old, ...v, valueId: old.valueId } : v
+      })
+    }
     stampUpdate(row)
+    // 数值变了，同组最佳试次（代表记录）按方向/最新重新归一
+    normalizeGroupSelection(getDb().testResults, row)
     return ok('修改成功')
   }),
 

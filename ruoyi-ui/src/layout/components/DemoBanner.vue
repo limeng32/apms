@@ -122,7 +122,33 @@ function exit() {
 }
 
 @media (max-width: 640px) {
-  .demo-banner { bottom: 12px; max-width: calc(100vw - 24px); }
-  .demo-banner-text { white-space: normal; }
+  /* 手机端改为近全宽、左右定位（不再用 left:50%+translateX 居中），
+     允许换行；关键是文本项必须 min-width:0 + flex:1，否则中文 min-content
+     退化为单字宽，文案会被挤成一字一行的竖排、横幅被撑成巨型胶囊 */
+  .demo-banner {
+    bottom: 12px;
+    left: 12px;
+    right: 12px;
+    transform: none;
+    max-width: none;
+    flex-wrap: wrap;
+    row-gap: 6px;
+    padding: 10px 12px;
+    border-radius: 14px;
+  }
+  .demo-banner-icon { align-self: flex-start; margin-top: 2px; }
+  .demo-banner-text {
+    flex: 1 1 0;
+    min-width: 0;
+    white-space: normal;
+    word-break: break-word;
+  }
+  /* 容不下时操作钮落到第二行并靠右 */
+  .demo-banner-exit { margin-left: auto; }
+  /* 定位方式改了，入场/离场动画同步去掉横向位移 */
+  .demo-banner-fade-enter-from,
+  .demo-banner-fade-leave-to {
+    transform: translateY(10px);
+  }
 }
 </style>

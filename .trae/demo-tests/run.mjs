@@ -820,13 +820,134 @@ test('H6f', '结构化采集配置：算法注册表可枚举；RSA 绑定算法
   assertEq(push.code, 401, '设备模型推送永远拒绝')
 })
 
+test('H6g', '修改成绩：EditBody{result:{id,...},values} 原地改值，保留元数据并重算最佳试次', async () => {
+  reset()
+  // 同队员同指标两条散录：55（先）与 57（后，VJUMP 越高越好→57 为最佳）
+  const mk = (v, date, sk) => call('post', '/apms/test-result', {}, {
+    result: {
+      taskId: null, taskItemId: null, athleteId: 1001,
+      itemType: 'INDICATOR', indicatorId: 4, modelId: null,
+      measureDate: date, sessionKey: sk,
+      isValid: '1', isSelected: '1', dataSource: 'MANUAL'
+    },
+    values: [{ indicatorId: 4, fieldKey: 'result', fieldLabel: '结果', unit: 'cm', isDerived: '0', numericValue: v, textValue: null }]
+  })
+  mk(55, '2026-10-01', 'EA')
+  mk(57, '2026-10-03', 'EB')
+  const target = db().testResults.find(r => r.sessionKey === 'EB')
+  const oldValId = target.values[0].valueId
+  assertEq(target.isSelected, '1', '前置：57 为最佳')
+
+  // 契约与前端 ResultEntryDialog 一致：包装体 result.id 在 result 内
+  const upd = call('put', '/apms/test-result', {}, {
+    result: {
+      id: target.id, taskId: null, taskItemId: target.taskItemId ?? null,
+      athleteId: 1001, itemType: 'INDICATOR', indicatorId: 4, modelId: null,
+      measureDate: '2026-10-04', sessionKey: 'EB',
+      isValid: '1', isSelected: '1', dataSource: 'MANUAL'
+    },
+    values: [{ indicatorId: 4, fieldKey: 'result', isDerived: '0', numericValue: 50, textValue: null }]
+  })
+  expect200(upd, '包装体 PUT 不应再报「结果不存在」')
+  const after = db().testResults.find(r => r.id === target.id)
+  assertEq(after.values[0].numericValue, 50, '数值原地更新')
+  assertEq(after.values[0].valueId, oldValId, '保留既有 valueId')
+  assertEq(after.values[0].fieldLabel, '结果', '保留 fieldLabel 元数据')
+  assertEq(after.measureDate, '2026-10-04', '业务字段可改')
+  assertEq(after.indicatorCode, 'VJUMP', '冗余编码不被包装体破坏')
+  // 重算：改成 50 后，55 那条重新当选最佳
+  assertEq(after.isSelected, '0', '原最佳失去代表')
+  assertEq(db().testResults.find(r => r.sessionKey === 'EA').isSelected, '1', '55 重新当选最佳')
+  // 不存在的 id
+  const miss = call('put', '/apms/test-result', {}, { result: { id: 999999 }, values: [] })
+  assertEq(miss.code, 601, '未知 id 仍 601')
+})
+
+test('H6h', '网格录入模型批：cells 按 modelId 合并为一条 MODEL result；任务归属/字段校验；指标批不受影响', async () => {
+  reset()
+  const n0 = db().testResults.length
+
+  // 任务 3（CMJ）：模型 T_TEST(id=3，taskItem id=9)，字段 time=20 / trial_count=21
+  // 队员 1001（张志远，任务成员）一次填两格 → 合并为 1 条 MODEL result
+  const ok = call('post', '/apms/test-result/batch-grid', {}, {
+    taskId: 3, itemType: 'MODEL', measureDate: '2026-10-14', sessionKey: 'S1',
+    rows: [{
+      athleteId: 1001,
+      cells: [
+        { modelId: 3, fieldId: 20, fieldKey: 'time', value: 9.85 },
+        { modelId: 3, fieldId: 21, fieldKey: 'trial_count', value: 2 }
+      ]
+    }]
+  })
+  expect200(ok, '模型网格提交应成功（回归「成功 0 人」）')
+  assertEq(ok.data.committed, 1, '成功 1 人')
+  assertEq(ok.data.failed, 0)
+  const added = db().testResults.find(r => r.athleteId === 1001 && r.itemType === 'MODEL' && r.taskItemId === 9)
+  assert(added, '产出一条挂任务模型项(taskItemId=9)的 MODEL 记录')
+  assertEq(added.modelId, 3)
+  assertEq(added.modelCode, 'T_TEST')
+  assertEq(added.values.length, 2, '同模型两字段合并到同一条 result')
+  const byKey = Object.fromEntries(added.values.map(v => [v.fieldKey, v]))
+  assertEq(byKey.time.numericValue, 9.85)
+  assertEq(byKey.trial_count.numericValue, 2)
+  assertEq(byKey.time.fieldId, 20)
+  assertEq(added.isSelected, '1')
+  assertEq(db().testResults.length, n0 + 1, '仅新增一条（不是每字段一条）')
+
+  // 模型不属于该任务 → 整人失败（RSA modelId=2 不在任务 3 的模型项里）
+  const badModel = call('post', '/apms/test-result/batch-grid', {}, {
+    taskId: 3, itemType: 'MODEL', measureDate: '2026-10-14',
+    rows: [{ athleteId: 1002, cells: [{ modelId: 2, fieldId: 7, fieldKey: 'sprint_1', value: 3.1 }] }]
+  })
+  expect200(badModel); assertEq(badModel.data.failed, 1, '越权模型整人失败')
+  assertEq(badModel.data.committed, 0)
+
+  // 字段不属于模型/派生字段 → 整人失败
+  const badField = call('post', '/apms/test-result/batch-grid', {}, {
+    taskId: 3, itemType: 'MODEL', measureDate: '2026-10-14',
+    rows: [{ athleteId: 1002, cells: [{ modelId: 3, fieldId: 999, fieldKey: 'ghost', value: 1 }] }]
+  })
+  expect200(badField); assertEq(badField.data.failed, 1, '非法字段整人失败')
+
+  // 非任务成员 → 失败
+  const outsider = call('post', '/apms/test-result/batch-grid', {}, {
+    taskId: 3, itemType: 'MODEL', measureDate: '2026-10-14',
+    rows: [{ athleteId: 1014, cells: [{ modelId: 3, fieldId: 20, fieldKey: 'time', value: 10 }] }]
+  })
+  expect200(outsider); assertEq(outsider.data.failed, 1, '非任务成员失败')
+
+  // 散录模型（taskId 为空）：合法模型+字段可提交，taskItemId 为 null
+  const free = call('post', '/apms/test-result/batch-grid', {}, {
+    itemType: 'MODEL', measureDate: '2026-10-14',
+    rows: [{ athleteId: 1001, cells: [{ modelId: 3, fieldId: 20, fieldKey: 'time', value: 9.9 }] }]
+  })
+  expect200(free); assertEq(free.data.committed, 1)
+  const freeRow = db().testResults.find(r => r.athleteId === 1001 && r.itemType === 'MODEL' && r.taskItemId == null)
+  assert(freeRow, '散录模型行 taskItemId=null')
+
+  // 指标批回归：任务 3 的 VJUMP（taskItem id=8）仍正常
+  const ind = call('post', '/apms/test-result/batch-grid', {}, {
+    taskId: 3, itemType: 'INDICATOR', measureDate: '2026-10-14',
+    rows: [{ athleteId: 1001, cells: [{ indicatorId: 4, value: 43.5 }] }]
+  })
+  expect200(ind); assertEq(ind.data.committed, 1, '指标批不受模型改造影响')
+  const indRow = db().testResults.find(r => r.athleteId === 1001 && r.itemType === 'INDICATOR' && r.taskItemId === 8)
+  assert(indRow && indRow.values[0].numericValue === 43.5)
+})
+
 test('H7', '体态测量：data 数组列表/最新/upsert 幂等', async () => {
   reset()
   const list = call('get', '/apms/body-measure/list', {})
   // 蓝本 10 条 + 测量周期并入的记录（fixtures 注释「id 接 11+」），至少 10 条
   expect200(list); assert(Array.isArray(list.data) && list.data.length >= 10, '列表返回 data 数组')
+  // JOIN 派生 athleteAge（TIMESTAMPDIFF 口径，演示时钟锚点）：缺失会让头像年龄组配色全灰
+  assert(list.data.every(r => r.athleteAge != null), '每行都带 athleteAge（头像配色依据）')
+  const row1001 = list.data.find(r => String(r.athleteId) === '1001')
+  assertEq(row1001.athleteAge, 17, '张志远 2009-03-15 → 锚点日 17 周岁')
+  assertEq(row1001.athleteName, '张志远')
   const latest = call('get', '/apms/body-measure/athlete/1001/latest')
   expect200(latest); assert(latest.data && String(latest.data.athleteId) === '1001')
+  assertEq(latest.data.athleteAge, 17, 'latest 出口同样派生 athleteAge')
   const n0 = db().bodyMeasures.length
   const payload = { athleteId: 1001, measureDate: '2026-09-28', height: 176, sitHeight: 90, weight: 66 }
   const u1 = call('post', '/apms/body-measure/upsert', {}, payload)

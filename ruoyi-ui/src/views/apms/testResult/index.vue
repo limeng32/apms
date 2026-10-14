@@ -183,7 +183,11 @@
             <div class="tr-drawer-id">
               <div class="tr-drawer-title">结果详情</div>
               <div class="tr-drawer-sub">
-                {{ current.athleteName }} · <span class="rk-mono">{{ current.indicatorCode || current.modelCode }} #{{ current.id }}</span>
+                {{ current.athleteName }} ·
+                <span class="rk-mono">{{ current.indicatorCode || current.modelCode }}</span>
+                <!-- 演示内存库新记录为负数临时 ID，对用户无意义且易被误认为异常：演示态显示「新记录」 -->
+                <span v-if="Number(current.id) < 0" class="rk-soft-chip" style="margin-left:6px">新记录</span>
+                <span v-else class="rk-mono"> #{{ current.id }}</span>
               </div>
             </div>
             <button type="button" class="tr-drawer-close" @click="detailDrawerVisible = false">

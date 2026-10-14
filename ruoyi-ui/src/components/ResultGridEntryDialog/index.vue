@@ -1,6 +1,6 @@
 <template>
   <el-dialog :title="dialogTitle" v-model="visible" width="920px" append-to-body
-             :close-on-click-modal="false" @closed="reset">
+             class="rg-dialog" :close-on-click-modal="false" @closed="reset">
 
     <!-- ============ 散录模式：选任务（可选）+ 选队员 + 选指标 ============ -->
     <div v-if="mode === 'free' && !pickedReady && !submitted" class="rg-pick" v-loading="pickLoading">
@@ -83,6 +83,10 @@
       </div>
     </div>
 
+    <!-- 演示态：明确告知写入不持久，避免刷新后数据归零被误认为系统故障 -->
+    <el-alert v-if="isDemoMode()" type="warning" :closable="false" show-icon class="rg-demo-alert"
+              title="演示模式：录入的成绩只保存在当前标签页，刷新页面或退出演示后会还原为样本数据，不会写入真实系统。"/>
+
     <!-- ============ 网格录入（任务模式直达；散录选完人/指标后进入） ============ -->
     <div v-if="mode === 'task' || pickedReady" class="rg-grid-wrap" v-show="!submitted">
       <!-- 维度切换：直接指标 / 模型测试（任务配置了模型项时显示；模型维度一次铺开所有模型） -->
@@ -107,13 +111,16 @@
           <el-input v-model="sessionKey" placeholder="如 S1（可选）" style="width:140px"/>
         </label>
         <span class="rg-tool-stat">
-          已填 <b class="rg-mono">{{ filledCells }}</b> 格 · 涉及 <b class="rg-mono">{{ personsWithData }}</b> 人 ·
-          留空自动跳过 · 同项再次提交记为新尝试（attempt，系统自动选最佳）
+          已填 <b class="rg-mono">{{ filledCells }}</b> 格 · 涉及 <b class="rg-mono">{{ personsWithData }}</b> 人
+          <template v-if="modelItemsCount > 0">
+            （指标 {{ indFilledCells }} · 模型 {{ modelFilledCells }}，切换页签不清空，可一次提交）
+          </template>
+          · 留空自动跳过 · 同项再次提交记为新尝试（attempt，系统自动选最佳）
         </span>
       </div>
 
       <el-alert v-if="gridMode === 'INDICATOR' && modelItemsCount > 0" type="info" :closable="false" show-icon style="margin-bottom:8px"
-                :title="`任务另有 ${modelItemsCount} 个模型测试项，可在上方切换到「模型测试」录入；派生字段保存后自动计算`"/>
+                :title="`任务另有 ${modelItemsCount} 个模型测试项：切到上方「模型测试」页签继续填写，本页已填成绩会保留，最后一次提交同时保存两类成绩；派生字段保存后自动计算`"/>
 
       <div v-if="!columns.length" class="rg-no-indicator" v-loading="modelLoading">
         {{ gridMode === 'MODEL'
@@ -180,9 +187,9 @@
 
     <!-- ============ 提交结果 ============ -->
     <div v-if="submitted" class="rg-result">
-      <el-result :icon="commitResult.failed ? 'warning' : 'success'"
-                 :title="commitResult.failed ? '部分队员未录入' : '全部录入成功'"
-                 :sub-title="`成功 ${commitResult.committed} 人 · 失败 ${commitResult.failed} 人`"/>
+      <el-result :icon="resultIcon" :title="resultTitle"
+                 :sub-title="`成功 ${commitResult.committed} 人 · 失败 ${commitResult.failed} 人`
+                   + (commitResult.skipped ? ` · 跳过 ${commitResult.skipped} 人` : '')"/>
       <ul v-if="commitResult.failedDetails?.length" class="rg-fail-list">
         <li v-for="(d, i) in commitResult.failedDetails" :key="i">{{ d }}</li>
       </ul>
@@ -203,7 +210,7 @@
             {{ mode === 'free' ? '上一步' : '取消' }}
           </el-button>
           <el-button type="primary" :loading="saving"
-                     :disabled="!columns.length || !personsWithData || hardCount > 0"
+                     :disabled="(!indicatorColumns.length && !modelColumns.length) || !personsWithData || hardCount > 0"
                      @click="submit">提交成绩</el-button>
         </template>
       </template>
@@ -224,6 +231,7 @@ import { listField } from '@/api/apms/testModel'
 import {
   loadRanges, getIndicatorRange, classify, isHard, isWarn, hardMessage, warnMessage
 } from '@/utils/measureRange'
+import { isDemoMode } from '@/utils/auth'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false }
@@ -240,6 +248,24 @@ watch(visible, v => { if (v !== props.modelValue) emit('update:modelValue', v) }
 loadRanges().catch(() => {})
 
 const MAX_ROWS = 100
+
+/**
+ * 网格行工厂：两个维度的草稿分别存放在 indValues / modelValues，
+ * values 始终指向「当前展示维度」的那个槽——切换页签只换引用、不清空，
+ * 混合任务（指标+模型）可以在同一次弹窗里填完两类成绩后一起提交。
+ */
+function makeGridRow(m) {
+  const indValues = {}
+  return {
+    athleteId: m.athleteId,
+    athleteName: m.athleteName,
+    athleteGender: m.athleteGender,
+    athleteTeam: m.athleteTeam ?? m.primaryTeamName ?? '',
+    values: indValues,
+    indValues,
+    modelValues: {}
+  }
+}
 
 const mode = ref('task')               // task | free
 const taskCtx = reactive({ id: null, name: '' })
@@ -480,13 +506,9 @@ async function buildTaskGrid(task) {
     columns.value = []
   }
 
-  gridRows.value = (task.members || []).slice(0, MAX_ROWS).map(m => ({
-    athleteId: m.athleteId,
-    athleteName: m.athleteName,
-    athleteGender: m.athleteGender,
-    athleteTeam: m.athleteTeam,
-    values: {}
-  }))
+  gridRows.value = (task.members || []).slice(0, MAX_ROWS).map(m => makeGridRow(m))
+  // 任务无直接指标时直接落在模型维度，values 指针也要切到模型草稿槽
+  if (gridMode.value === 'MODEL') gridRows.value.forEach(r => { r.values = r.modelValues })
   pickedReady.value = true
   loadBestValues()
   // 预加载模型字段，切到「模型测试」时即时呈现（不阻塞指标录入）
@@ -517,10 +539,6 @@ const modelColumnGroups = computed(() => {
   })
   return groups
 })
-
-function clearRowValues() {
-  gridRows.value.forEach(r => { r.values = {} })
-}
 
 // 加载任务全部模型的数值型 INPUT 字段（并行），文本/派生字段不进网格
 async function loadAllModelColumns() {
@@ -559,8 +577,12 @@ async function loadAllModelColumns() {
 
 function switchDimension(dim) {
   if (gridMode.value === dim) return
-  clearRowValues()
+  // 切换不清空：当前 values 本身就是对应草稿槽的引用，
+  // 只需把 values 指针换到目标维度的槽，已填成绩原样保留（v-model 直接写在槽对象上）
   gridMode.value = dim
+  gridRows.value.forEach(r => {
+    r.values = dim === 'INDICATOR' ? r.indValues : r.modelValues
+  })
   if (dim === 'INDICATOR') {
     columns.value = indicatorColumns.value
     loadBestValues()
@@ -679,12 +701,11 @@ function buildFreeGrid() {
     direction: i.evaluationDirection || ''
   }))
   columns.value = indicatorColumns.value
-  gridRows.value = pickedAthletes.value.slice(0, MAX_ROWS).map(a => ({
+  gridRows.value = pickedAthletes.value.slice(0, MAX_ROWS).map(a => makeGridRow({
     athleteId: a.athleteId,
     athleteName: a.name,
     athleteGender: a.gender,
-    athleteTeam: a.primaryTeamName || '',
-    values: {}
+    primaryTeamName: a.primaryTeamName || ''
   }))
   pickedReady.value = true
   loadBestValues()
@@ -735,56 +756,109 @@ function cellClass(row, col) {
   if (isWarn(level)) return 'is-warn'
   return ''
 }
-function cellHint(row, col) {
-  const level = cellLevel(row, col)
-  if (!level || level === 'invalid') return ''
+function cellHint(row, col, vals = row.values) {
   if (col.kind === 'model') return ''
+  const level = levelOf(vals, col)
+  if (!level || level === 'invalid') return ''
   const range = getIndicatorRange(col.code)
-  if (isHard(level)) return hardMessage(range, row.values[col.key])
-  if (isWarn(level)) return warnMessage(range, row.values[col.key])
+  if (isHard(level)) return hardMessage(range, vals[col.key])
+  if (isWarn(level)) return warnMessage(range, vals[col.key])
   return ''
 }
-const filledCells = computed(() => gridRows.value.reduce((s, r) =>
-  s + columns.value.filter(c => String(r.values[c.key] ?? '').trim() !== '').length, 0))
+/** 某队员在指定列集合+草稿槽里已填的格数 */
+function filledCountIn(cols, vals) {
+  return cols.filter(c => String(vals[c.key] ?? '').trim() !== '').length
+}
+// 统计覆盖两个维度：停留在任意页签都能看到全部已填，且混合任务一次提交的就是两槽合计
+const indFilledCells = computed(() => gridRows.value.reduce((s, r) =>
+  s + filledCountIn(indicatorColumns.value, r.indValues), 0))
+const modelFilledCells = computed(() => gridRows.value.reduce((s, r) =>
+  s + filledCountIn(modelColumns.value, r.modelValues), 0))
+const filledCells = computed(() => indFilledCells.value + modelFilledCells.value)
 const personsWithData = computed(() => gridRows.value.filter(r =>
-  columns.value.some(c => String(r.values[c.key] ?? '').trim() !== '')).length)
+  filledCountIn(indicatorColumns.value, r.indValues)
+  + filledCountIn(modelColumns.value, r.modelValues) > 0).length)
+
+/** 指定草稿值下的单元格等级（problemCells 跨维度扫描用，模板仍用 cellLevel 读当前槽） */
+function levelOf(vals, col) {
+  const raw = vals[col.key]
+  if (raw === '' || raw == null || String(raw).trim() === '') return ''
+  const num = Number(String(raw).trim())
+  if (!Number.isFinite(num)) return 'invalid'
+  if (col.kind === 'model') return '' // 模型字段无范围字典，只做数字校验
+  const range = getIndicatorRange(col.code)
+  if (!range) return ''
+  return classify(range, num)
+}
 const problemCells = computed(() => {
   const out = []
-  gridRows.value.forEach(r => columns.value.forEach(c => {
-    const level = cellLevel(r, c)
-    if (level === 'invalid' || isHard(level)) out.push({ row: r, col: c, kind: 'hard' })
-    else if (isWarn(level)) out.push({ row: r, col: c, kind: 'warn' })
+  // 指标槽：范围字典分级
+  gridRows.value.forEach(r => indicatorColumns.value.forEach(c => {
+    const level = levelOf(r.indValues, c)
+    if (level === 'invalid' || isHard(level)) out.push({ row: r, col: c, kind: 'hard', vals: r.indValues })
+    else if (isWarn(level)) out.push({ row: r, col: c, kind: 'warn', vals: r.indValues })
+  }))
+  // 模型槽：只查非数字（红框硬错），无合理区间概念
+  gridRows.value.forEach(r => modelColumns.value.forEach(c => {
+    if (levelOf(r.modelValues, c) === 'invalid') {
+      out.push({ row: r, col: c, kind: 'hard', vals: r.modelValues })
+    }
   }))
   return out
 })
 const hardCount = computed(() => problemCells.value.filter(x => x.kind === 'hard').length)
 const warnCells = computed(() => problemCells.value.filter(x => x.kind === 'warn'))
 
+// 提交结果三态：成功 0/失败 0（全部跳过）时不能硬编码「全部录入成功」
+const resultIcon = computed(() => {
+  const c = commitResult.value
+  if (c.failed) return 'warning'
+  if (!c.committed) return 'info'
+  return 'success'
+})
+const resultTitle = computed(() => {
+  const c = commitResult.value
+  if (c.committed && !c.failed) return '全部录入成功'
+  if (c.committed && c.failed) return '部分队员未录入'
+  if (!c.committed && c.failed) return '录入失败'
+  return '没有可录入的成绩' // 0 成功 0 失败（全部跳过）
+})
+
 // ========= 提交 =========
-function buildPayload() {
-  const isModel = gridMode.value === 'MODEL'
-  const rows = []
-  gridRows.value.forEach(r => {
-    const cells = []
-    columns.value.forEach(c => {
-      const raw = String(r.values[c.key] ?? '').trim()
-      if (raw === '') return
-      if (isModel) {
-        // 每个 cell 带所属模型 id；后端按模型分组，每模型生成一条 result
-        cells.push({ modelId: c.modelId, fieldId: c.fieldId, fieldKey: c.fieldKey, value: Number(raw) })
-      } else {
-        cells.push({ indicatorId: c.indicatorId, value: Number(raw) })
-      }
-    })
-    if (cells.length) rows.push({ athleteId: r.athleteId, cells })
-  })
-  return {
+/**
+ * 按维度构造网格提交体（两槽独立）：
+ * 指标批 itemType=INDICATOR、每指标一 cell；模型批 itemType=MODEL、
+ * 每 cell 带 modelId/fieldId/fieldKey，后端按模型分组合并为一条 result。
+ * 只返回有数据的批次——混合任务一次弹窗可同时产生两批。
+ */
+function buildPayloads() {
+  const common = {
     taskId: taskCtx.id || null,
-    itemType: isModel ? 'MODEL' : 'INDICATOR',
     measureDate: measureDate.value,
-    sessionKey: sessionKey.value || null,
-    rows
+    sessionKey: sessionKey.value || null
   }
+  const build = (isModel, cols, valsOf) => {
+    const rows = []
+    gridRows.value.forEach(r => {
+      const cells = []
+      cols.forEach(c => {
+        const raw = String(valsOf(r)[c.key] ?? '').trim()
+        if (raw === '') return
+        if (isModel) {
+          cells.push({ modelId: c.modelId, fieldId: c.fieldId, fieldKey: c.fieldKey, value: Number(raw) })
+        } else {
+          cells.push({ indicatorId: c.indicatorId, value: Number(raw) })
+        }
+      })
+      if (cells.length) rows.push({ athleteId: r.athleteId, cells })
+    })
+    if (!rows.length) return null
+    return { ...common, itemType: isModel ? 'MODEL' : 'INDICATOR', rows }
+  }
+  return [
+    build(false, indicatorColumns.value, r => r.indValues),
+    build(true, modelColumns.value, r => r.modelValues)
+  ].filter(Boolean)
 }
 
 async function submit() {
@@ -792,15 +866,17 @@ async function submit() {
   if (!personsWithData.value) return proxy.$modal.msgWarning('请至少填写一个成绩')
   if (hardCount.value) return proxy.$modal.msgError('存在非数字或超出允许范围的成绩，请修正红框单元格')
 
-  const payload = buildPayload()
+  const payloads = buildPayloads()
+  if (!payloads.length) return proxy.$modal.msgWarning('请至少填写一个成绩')
+  const personCount = new Set(payloads.flatMap(p => p.rows.map(r => r.athleteId))).size
   const warns = warnCells.value
 
   // 仅在存在「超出合理区间」的告警值时二次确认；正常数据点击即提交，避免多余弹窗打断现场录入
   if (warns.length) {
-    const lines = warns.slice(0, 8).map(x => `· ${x.row.athleteName} ${x.col.name}：${cellHint(x.row, x.col)}`)
+    const lines = warns.slice(0, 8).map(x => `· ${x.row.athleteName} ${x.col.name}：${cellHint(x.row, x.col, x.vals)}`)
     const confirmText = `以下 ${warns.length} 个成绩超出合理区间：\n${lines.join('\n')}`
       + `${warns.length > 8 ? `\n…等 ${warns.length} 项` : ''}\n\n`
-      + `将为 ${payload.rows.length} 名队员提交 ${filledCells.value} 项成绩（${payload.measureDate}）。\n`
+      + `将为 ${personCount} 名队员提交 ${filledCells.value} 项成绩（${measureDate.value}）。\n`
       + '同项目再次提交记为新尝试（attempt），系统自动选最佳；留空项目不产生记录。是否继续？'
     try {
       await proxy.$modal.confirm(confirmText, '异常值确认')
@@ -808,12 +884,23 @@ async function submit() {
   }
 
   saving.value = true
+  // 两维度顺序提交、合并 ImportCommitResult（任意一批网络失败则整体提示，不落半成品状态）
+  const merged = { committed: 0, skipped: 0, failed: 0, failedDetails: [], skippedDetails: [] }
   try {
-    const res = await batchGridAdd(payload)
-    commitResult.value = res.data || { committed: 0, failed: 0, failedDetails: [] }
+    for (const payload of payloads) {
+      const res = await batchGridAdd(payload)
+      const d = res.data || {}
+      merged.committed += d.committed || 0
+      merged.skipped += d.skipped || 0
+      merged.failed += d.failed || 0
+      merged.failedDetails.push(...(d.failedDetails || []))
+      merged.skippedDetails.push(...(d.skippedDetails || []))
+    }
+    commitResult.value = merged
     submitted.value = true
-    proxy.$modal.msgSuccess(`已提交：成功 ${commitResult.value.committed || 0} 人`
-      + (commitResult.value.failed ? `，失败 ${commitResult.value.failed} 人（见明细）` : ''))
+    proxy.$modal.msgSuccess(`已提交：成功 ${merged.committed} 人`
+      + (merged.skipped ? `，跳过 ${merged.skipped} 人` : '')
+      + (merged.failed ? `，失败 ${merged.failed} 人（见明细）` : ''))
     emit('success', { taskId: taskCtx.id })
   } catch (e) {
     // 后端校验/系统错误必须可见，不能静默（否则表现为「点了没反应、没入库」）
@@ -851,6 +938,8 @@ defineExpose({ openForTask, openFree })
 
 <style lang="scss" scoped>
 @use "@/assets/styles/roster-kit.scss" as *;
+
+.rg-demo-alert { margin-bottom: 12px; }
 
 .rg-pick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 /* 任务态勾选框锁定（el-checkbox 禁用观感由 :selectable=false 提供，这里只弱化不可改列的光标） */
@@ -986,4 +1075,23 @@ defineExpose({ openForTask, openFree })
   .rg-pick-grid { grid-template-columns: 1fr; }
   .rg-tool-stat { margin-left: 0; width: 100%; }
 }
+</style>
+
+<!-- 非 scoped：el-dialog 经 teleport 挂到 body，需全局命中；类名 rg-dialog 限定作用域 -->
+<style lang="scss">
+/* 弹窗限高：header/footer 常驻可视区，仅 body 内部滚动。
+   修复小高度/1062px 视口下「提交成绩」按钮被挤到屏外、首次点击落空的问题 */
+.rg-dialog.el-dialog {
+  margin: 4vh auto !important;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+.rg-dialog .el-dialog__header { flex: none; }
+.rg-dialog .el-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.rg-dialog .el-dialog__footer { flex: none; }
 </style>
