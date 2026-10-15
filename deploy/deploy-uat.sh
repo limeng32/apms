@@ -228,6 +228,9 @@ do_start() {
     local -a SPRING_ARGS=(
         -jar "${JAR}"
         "--spring.profiles.active=druid,${PROFILE}"
+        # 加载部署脚本生成的外部配置（.uat/config/application.yml，含短信 AK/SK 等）。
+        # 目录位置以 / 结尾；optional: 保证目录缺失时不阻断启动；命令行参数优先级仍高于该文件
+        "--spring.config.additional-location=optional:file:${CONFIGDIR}/"
         "--server.port=${APP_PORT}"
         "--management.server.port=${MGMT_PORT}"
         "--spring.datasource.druid.master.url=jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=false&serverTimezone=GMT%2B8"
@@ -561,7 +564,9 @@ apms.sms.access-key-secret: "${SMS_ACCESS_KEY_SECRET}"
 apms.sms.sign-name: ${SMS_SIGN_NAME}
 apms.sms.template-code: ${SMS_TEMPLATE_CODE}
 EOF
-log "  ✅ ${CONFIGDIR}/application.yml"
+# 内含 DB/Redis 密码与短信 AK/SK：仅运行账号可读，禁止同机其他用户读取
+chmod 600 "${CONFIGDIR}/application.yml"
+log "  ✅ ${CONFIGDIR}/application.yml (权限 600)"
 
 # ===== Step 6: 启动后端 =====
 do_start

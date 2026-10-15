@@ -46,11 +46,12 @@ while [[ ${#} -gt 0 ]]; do
     esac
 done
 
-# ===== 配置（从 env.conf 或硬编码 fallback）=====
-if [ -f /etc/apms/env.conf ]; then
-    set -a; source /etc/apms/env.conf; set +a
+# ===== 配置（唯一配置源 /etc/apms/env.conf，chmod 600；人工维护 DB/Redis/SMS）=====
+ETC_ENV_CONF="/etc/apms/env.conf"
+if [ -f "${ETC_ENV_CONF}" ]; then
+    set -a; source "${ETC_ENV_CONF}"; set +a
 else
-    err "生产部署要求 /etc/apms/env.conf 存在且 chmod 600，当前缺失 → 拒绝部署"
+    err "生产部署要求 ${ETC_ENV_CONF} 存在且 chmod 600，当前缺失 → 拒绝部署"
 fi
 
 # 这些变量允许 fallback（非敏感）
@@ -270,35 +271,41 @@ do_start() {
     log "Java: ${JAVA_BIN} ($("${JAVA_BIN}" -version 2>&1 | head -1))"
     [ -f "${JAR}" ] || err "jar 不存在: ${JAR}"
 
-    # 写 env.conf + start-backend.sh（JAVA_BIN 用 find_java17 实测通过的路径）
-    cat > "${BINDIR}/env.conf" <<EOF
-JAVA_BIN=${JAVA_BIN}
-PROFILE=${PROFILE}
-APP_PORT=${APP_PORT}
-MGMT_PORT=${MGMT_PORT}
-DB_HOST=${DB_HOST}
-DB_PORT=${DB_PORT}
-DB_NAME=${DB_NAME}
-DB_USER=${DB_USER}
-DB_PASS=${DB_PASS}
-REDIS_HOST=${REDIS_HOST}
-REDIS_PORT=${REDIS_PORT}
-REDIS_PASS=${REDIS_PASS}
-REDIS_DB=${REDIS_DB}
-EOF
-    chmod 600 "${BINDIR}/env.conf"
-    log "env.conf 已更新 (chmod 600)"
+    # 唯一配置源是 /etc/apms/env.conf（含人工维护的 DB/Redis/SMS）。
+    # 不再向 ${BINDIR} 写 env.conf 副本：start-backend.sh 直接 source /etc 那份。
+    # 这里只把探测到的 JAVA_BIN 幂等写回 /etc（用户维护的其他行原样保留），
+    # 并清理旧版本遗留在 ${BINDIR}/env.conf 的运行态副本（含密钥，收敛为单份）。
+    if grep -q '^JAVA_BIN=' "${ETC_ENV_CONF}"; then
+        sed -i "s|^JAVA_BIN=.*|JAVA_BIN=${JAVA_BIN}|" "${ETC_ENV_CONF}"
+    else
+        echo "JAVA_BIN=${JAVA_BIN}" >> "${ETC_ENV_CONF}"
+    fi
+    chmod 600 "${ETC_ENV_CONF}"
+    log "${ETC_ENV_CONF} 已确保 JAVA_BIN (chmod 600)"
+    if [ -f "${BINDIR}/env.conf" ]; then
+        rm -f "${BINDIR}/env.conf"
+        log "  已移除旧运行态副本 ${BINDIR}/env.conf（配置统一收敛到 /etc/apms/）"
+    fi
 
     # 生成 start-backend.sh（systemd ExecStart 调这个）
     cat > "${BINDIR}/start-backend.sh" <<'STARTSH'
 #!/usr/bin/env bash
 set -e
 BINDIR="$(cd "$(dirname "$0")" && pwd)"
+# 唯一配置源：/etc/apms/env.conf（chmod 600，人工维护 DB/Redis/SMS；deploy.sh 幂等回写 JAVA_BIN）
+ETC_ENV_CONF="/etc/apms/env.conf"
+[ -f "$ETC_ENV_CONF" ] || { echo "❌ 缺失配置文件 $ETC_ENV_CONF" >&2; exit 1; }
 # shellcheck disable=SC1091
-source "$BINDIR/env.conf"
-# JAVA_BIN 由 deploy.sh 执行 find_java17() 后写入 env.conf
-# 这里必须存在，缺失说明 env.conf 不是最新的（手动重建或重跑 deploy）
-[ -n "$JAVA_BIN" ] || { echo "❌ env.conf 缺失 JAVA_BIN" >&2; exit 1; }
+set -a; source "$ETC_ENV_CONF"; set +a
+# JAVA_BIN 通常由 deploy.sh 写入 /etc/apms/env.conf；缺失时按常见路径兜底探测 17+
+if [ -z "${JAVA_BIN:-}" ]; then
+  for c in /usr/lib/jvm/java-17-openjdk/bin/java /usr/lib/jvm/java-17/bin/java \
+           /usr/lib/jvm/jre-17-openjdk/bin/java /opt/java/bin/java; do
+    if [ -x "$c" ]; then JAVA_BIN="$c"; break; fi
+  done
+  [ -z "${JAVA_BIN:-}" ] && JAVA_BIN="$(command -v java 2>/dev/null || true)"
+fi
+[ -n "${JAVA_BIN:-}" ] && [ -x "$JAVA_BIN" ] || { echo "❌ 找不到 Java 17（请在 $ETC_ENV_CONF 配置 JAVA_BIN）" >&2; exit 1; }
 JAR="$BINDIR/backend/apms.jar"
 LOGDIR="$BINDIR/logs"
 mkdir -p "$LOGDIR"
@@ -308,6 +315,7 @@ exec "$JAVA_BIN" \
   -Druoyi.profile="$BINDIR/backend/uploadPath" \
   -jar "$JAR" \
   --spring.profiles.active=druid,"${PROFILE}" \
+  --spring.config.additional-location=optional:file:"$BINDIR/config"/ \
   --server.port="${APP_PORT}" \
   --management.server.port="${MGMT_PORT}" \
   "--spring.datasource.druid.master.url=jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8" \
@@ -664,7 +672,9 @@ apms.sms.access-key-secret: "${SMS_ACCESS_KEY_SECRET}"
 apms.sms.sign-name: ${SMS_SIGN_NAME}
 apms.sms.template-code: ${SMS_TEMPLATE_CODE}
 EOF
-log "  ✅ ${CONFIGDIR}/application.yml"
+# 内含 DB/Redis 密码与短信 AK/SK：仅运行账号可读，禁止同机其他用户读取
+chmod 600 "${CONFIGDIR}/application.yml"
+log "  ✅ ${CONFIGDIR}/application.yml (权限 600)"
 
 # ===== Step 5: Nginx + TLS 证书 =====
 log "Step 5: 部署 Nginx..."
