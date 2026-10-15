@@ -103,14 +103,15 @@ service.interceptors.response.use(res => {
     }
       return Promise.reject('无效的会话，或者会话已过期，请重新登录。')
     } else if (code === 500) {
-      ElMessage({ message: msg, type: 'error' })
+      if (!res.config?.silent) ElMessage({ message: msg, type: 'error' })
       return Promise.reject(new Error(msg))
     } else if (code === 601) {
-      ElMessage({ message: msg, type: 'warning' })
+      if (!res.config?.silent) ElMessage({ message: msg, type: 'warning' })
       return Promise.reject(new Error(msg))
     } else if (code !== 200) {
-      ElNotification.error({ title: msg })
-      return Promise.reject('error')
+      // res.config.silent=true 时不弹全局通知（如滑块校验失败，由组件在遮罩内自行提示）
+      if (!res.config?.silent) ElNotification.error({ title: msg })
+      return Promise.reject(new Error(msg))
     } else {
       return  Promise.resolve(res.data)
     }
@@ -125,7 +126,9 @@ service.interceptors.response.use(res => {
     } else if (message.includes("Request failed with status code")) {
       message = "系统接口" + message.slice(-3) + "异常"
     }
-    ElMessage({ message: message, type: 'error', duration: 5 * 1000 })
+    if (!error.config || !error.config.silent) {
+      ElMessage({ message: message, type: 'error', duration: 5 * 1000 })
+    }
     return Promise.reject(error)
   }
 )

@@ -47,24 +47,38 @@ import com.ruoyi.common.utils.uuid.IdUtils;
 @Service
 public class SliderCaptchaService {
 
-    /** 背景画布尺寸（前端按实际显示宽度等比缩放后回传，服务端统一按此坐标判定） */
+    /** 背景画布逻辑尺寸（前端按实际显示宽度等比缩放后回传，服务端统一按此坐标判定） */
     public static final int WIDTH = 300;
     public static final int HEIGHT = 128;
+
+    /**
+     * 超采样倍数：先按 2× 物理像素绘制再降采样回逻辑尺寸，
+     * 在 Retina 等高分屏上拼图块/缺口边缘清晰不糊。判定坐标仍用逻辑尺寸。
+     */
+    private static final int SS = 2;
 
     /** 拼图主体边长 / 凸起半径 / 允许误差（像素，画布坐标） */
     private static final int S = 40;
     private static final int R = 9;
     /** 拼图块图像四周留白：描边居中绘制，无留白时外半笔会被图像边界裁掉（底/侧边白线发虚） */
     private static final int PAD = 2;
-    private static final int TOLERANCE = 5;
+    /**
+     * 对齐容差。背景经 JPEG 压缩缺口边缘有约 1px 晕染，加上移动端分数缩放四舍五入，
+     * 5px 在临界位置会误判；放宽到 6px（300 宽画布下随机盲猜命中率约 8%，仍具人机区分度）。
+     */
+    private static final int TOLERANCE = 6;
 
     /** 挑战答案有效期 2 分钟；通过标记有效期 3 分钟（仅用于紧接着的登录请求） */
     private static final int CHALLENGE_TTL_MIN = 2;
     private static final int PASS_TTL_MIN = 3;
 
-    /** 人机判定：拖动时长下限（ms）与轨迹点数下限，过滤瞬移脚本 */
-    private static final long MIN_DURATION_MS = 250;
-    private static final int MIN_POINTS = 6;
+    /**
+     * 真人判定（放宽到不误伤正常用户，瞬移脚本仍可拦）：
+     * 拖动时长下限 120ms——正常人拖 150px 用 120~400ms，旧值 250ms 会误伤干脆的用户；
+     * 轨迹点下限 3——部分触摸板/高分屏 pointermove 触发稀疏，旧值 6 会误判为未拖到位。
+     */
+    private static final long MIN_DURATION_MS = 120;
+    private static final int MIN_POINTS = 3;
 
     @Autowired
     private RedisCache redisCache;
@@ -93,6 +107,10 @@ public class SliderCaptchaService {
 
     /**
      * 生成一次滑块挑战
+     *
+     * <p>全程在 {@link #SS} 倍超采样缓冲上绘制，最后用双线性插值降采样到逻辑尺寸，
+     * 使高分屏（Retina，物理像素约 2×）下拼图块和缺口边缘都清晰、无放大模糊；
+     * 判定坐标/前端缩放仍统一用逻辑尺寸 {@link #WIDTH}×{@link #HEIGHT}。
      */
     public Challenge createChallenge() {
         ThreadLocalRandom rnd = ThreadLocalRandom.current();
@@ -101,51 +119,95 @@ public class SliderCaptchaService {
         int targetY = rnd.nextInt(R + 4, HEIGHT - S - 2);
 
         Shape shape = pieceShape();
-        BufferedImage bg = paintBackground(rnd);
+        // 高分缓冲：背景、块均按 SS 倍绘制，逻辑坐标统一乘以 SS
+        int hw = WIDTH * SS, hh = HEIGHT * SS;
+        int hs = S * SS, hr = R * SS, hpad = PAD * SS;
+        AffineTransform toHi = AffineTransform.getScaleInstance(SS, SS);
 
-        // 拼图块：必须先从「未压暗」的干净背景抠出，再画缺口，否则抠到的是缺口黑影。
-        // 画布四周留 PAD 像素，保证 2px 描边的外半笔不被图像边界裁掉（底部白线清晰）。
-        int pieceSize = S + R + PAD * 2;
-        BufferedImage piece = new BufferedImage(pieceSize, pieceSize, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D pg = piece.createGraphics();
+        // 1) 高分背景（干净，未挖缺口）
+        BufferedImage bg = new BufferedImage(hw, hh, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = bg.createGraphics();
         try {
-            // 块内图形整体偏移 (PAD, R+PAD)：顶部凸起与四周边缘都落在留白之内
-            Shape pieceInImg = AffineTransform.getTranslateInstance(PAD, R + PAD).createTransformedShape(shape);
-            pg.setClip(pieceInImg);
-            // 背景 (targetX,targetY) 映射到块内 (PAD,R+PAD)
-            pg.drawImage(bg, PAD - targetX, R + PAD - targetY, null);
-            pg.setClip(null);
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            paintBackgroundHi(g, rnd, hw, hh);
+        } finally {
+            g.dispose();
+        }
+
+        // 2) 拼图块：先从「未压暗」的干净高分背景抠出（否则抠到缺口黑影）
+        int pieceSizeHi = hs + hr + hpad * 2;
+        BufferedImage pieceHi = new BufferedImage(pieceSizeHi, pieceSizeHi, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D pg = pieceHi.createGraphics();
+        try {
             pg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            pg.setColor(new Color(255, 255, 255, 245));
-            pg.setStroke(new BasicStroke(2.0f));
+            pg.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            pg.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+            // 块内形状在高分坐标整体偏移 (hpad, hr+hpad)
+            Shape pieceLogical = AffineTransform.getTranslateInstance(PAD, R + PAD).createTransformedShape(shape);
+            Shape pieceInImg = toHi.createTransformedShape(pieceLogical);
+            pg.setClip(pieceInImg);
+            // 背景(targetX,targetY)映射到块内(hpad,hr+hpad)，高分坐标直接取高分背景
+            pg.drawImage(bg, hpad - targetX * SS, hr + hpad - targetY * SS, null);
+            pg.setClip(null);
+            pg.setColor(new Color(255, 255, 255, 235));
+            pg.setStroke(new BasicStroke(1.5f * SS));
             pg.draw(pieceInImg);
         } finally {
             pg.dispose();
         }
 
-        // 干净背景抠块完成后，再在背景上挖缺口：暗色压暗 + 白色描边
-        Graphics2D g = bg.createGraphics();
+        // 3) 干净背景抠块完成后，再在高分背景上挖缺口
+        Graphics2D gapG = bg.createGraphics();
         try {
-            Shape gap = AffineTransform.getTranslateInstance(targetX, targetY).createTransformedShape(shape);
-            g.setComposite(AlphaComposite.SrcOver.derive(0.42f));
-            g.setColor(new Color(20, 28, 44));
-            g.fill(gap);
-            g.setComposite(AlphaComposite.SrcOver.derive(0.85f));
-            g.setColor(Color.WHITE);
-            g.setStroke(new BasicStroke(1.4f));
-            g.draw(gap);
+            gapG.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            gapG.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+            Shape gapHi = AffineTransform.getTranslateInstance(targetX * (double) SS, targetY * (double) SS)
+                    .createTransformedShape(toHi.createTransformedShape(shape));
+            gapG.setComposite(AlphaComposite.SrcOver.derive(0.38f));
+            gapG.setColor(new Color(20, 28, 44));
+            gapG.fill(gapHi);
+            gapG.setComposite(AlphaComposite.SrcOver.derive(0.7f));
+            gapG.setColor(Color.WHITE);
+            gapG.setStroke(new BasicStroke(1.2f * SS));
+            gapG.draw(gapHi);
         } finally {
-            g.dispose();
+            gapG.dispose();
         }
+
+        // 4) 降采样到逻辑尺寸（高质量缩放）
+        BufferedImage bgLo = downscale(bg, WIDTH, HEIGHT);
+        int pieceLo = S + R + PAD * 2;
+        BufferedImage piece = downscale(pieceHi, pieceLo, pieceLo);
 
         String uuid = IdUtils.simpleUUID();
         redisCache.setCacheObject(CacheConstants.SLIDER_CAPTCHA_KEY + uuid,
                 Integer.valueOf(targetX), CHALLENGE_TTL_MIN, TimeUnit.MINUTES);
 
         return new Challenge(uuid,
-                "data:image/jpeg;base64," + encodeJpeg(bg),
+                "data:image/jpeg;base64," + encodeJpeg(bgLo),
                 "data:image/png;base64," + encodePng(piece),
                 targetY - R - PAD);
+    }
+
+    /**
+     * 双线性高质量降采样
+     */
+    private BufferedImage downscale(BufferedImage src, int w, int h) {
+        BufferedImage dst = new BufferedImage(w, h,
+                src.getColorModel().hasAlpha() ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB);
+        Graphics2D d = dst.createGraphics();
+        try {
+            d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            d.drawImage(src, 0, 0, w, h, null);
+        } finally {
+            d.dispose();
+        }
+        return dst;
     }
 
     /**
@@ -169,10 +231,10 @@ public class SliderCaptchaService {
         redisCache.deleteObject(key);
 
         if (durationMs != null && durationMs < MIN_DURATION_MS) {
-            throw new ServiceException("拖动速度异常，请按住滑块平稳拖动");
+            throw new ServiceException("拖动太快啦，请按住滑块平稳地拖到缺口处");
         }
         if (points != null && points < MIN_POINTS) {
-            throw new ServiceException("请按住滑块拖动到缺口处完成验证");
+            throw new ServiceException("请按住滑块持续拖动，不要直接点跳");
         }
         if (Math.abs(x - target.intValue()) > TOLERANCE) {
             throw new ServiceException("拼图未对齐缺口，请重试");
@@ -201,16 +263,25 @@ public class SliderCaptchaService {
 
     /* ========================== 绘图 ========================== */
 
-    /** 拼图形状：圆角方块 + 顶部凸起 + 右侧凸起（包围盒 S+R × S+R，原点上方有 R 的凸起） */
+    /**
+     * 拼图形状：圆角方块 + 顶部凸起 + 右侧凸起（包围盒 (S+1)×(S+2)）。
+     * 凸起圆心内收 1~2px 到主体内部，使圆与方块根部是平滑搭接而非 90° 硬肩，
+     * 避免描边在根部出现锯齿状小缺口。
+     */
     private Shape pieceShape() {
         Area a = new Area(new RoundRectangle2D.Float(0, 0, S, S, 9, 9));
-        a.add(new Area(new Ellipse2D.Float(S / 2f - R, -R, 2f * R, 2f * R)));
-        a.add(new Area(new Ellipse2D.Float(S - R, S / 2f - R, 2f * R, 2f * R)));
+        // 顶部凸起：圆心下移 2px，根部没入主体
+        a.add(new Area(new Ellipse2D.Float(S / 2f - R, -R + 2, 2f * R, 2f * R)));
+        // 右侧凸起：圆心左移 1px，根部没入主体（最右点仍被 PAD 留白覆盖：2+S+1+R=52 ≤ 53）
+        a.add(new Area(new Ellipse2D.Float(S - R + 1, S / 2f - R, 2f * R, 2f * R)));
         return a;
     }
 
-    /** 随机运动风背景：双色渐变 + 半透明几何 + 噪点，保证每张挑战图都不同，增加识别难度 */
-    private BufferedImage paintBackground(ThreadLocalRandom rnd) {
+    /**
+     * 随机运动风背景（直接绘制到调用方给定的高分 Graphics 上，尺寸 w×h 已是 SS 倍）。
+     * 所有几何/线宽按 SS 放大；半透明渐变 + 光斑 + 纹理 + 噪点，保证每张挑战图都不同。
+     */
+    private void paintBackgroundHi(Graphics2D g, ThreadLocalRandom rnd, int w, int h) {
         // 运动科技色系（与登录页青蓝调协调）
         Color[][] palettes = {
             { new Color(30, 64, 120), new Color(14, 165, 180) },
@@ -220,18 +291,14 @@ public class SliderCaptchaService {
         };
         Color[] pal = palettes[rnd.nextInt(palettes.length)];
 
-        BufferedImage img = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
-        Graphics2D g = img.createGraphics();
-        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-        g.setPaint(new GradientPaint(0, 0, pal[0], WIDTH, HEIGHT, pal[1]));
-        g.fillRect(0, 0, WIDTH, HEIGHT);
+        g.setPaint(new GradientPaint(0, 0, pal[0], w, h, pal[1]));
+        g.fillRect(0, 0, w, h);
 
-        // 半透明圆形光斑
+        // 半透明圆形光斑（直径/坐标按 SS 放大）
         for (int i = 0; i < 12; i++) {
-            int d = rnd.nextInt(20, 72);
-            int cx = rnd.nextInt(0, WIDTH);
-            int cy = rnd.nextInt(0, HEIGHT);
+            int d = rnd.nextInt(20, 72) * SS;
+            int cx = rnd.nextInt(0, w);
+            int cy = rnd.nextInt(0, h);
             g.setComposite(AlphaComposite.SrcOver.derive(rnd.nextFloat(0.06f, 0.18f)));
             g.setColor(Color.WHITE);
             g.fillOval(cx - d / 2, cy - d / 2, d, d);
@@ -239,28 +306,39 @@ public class SliderCaptchaService {
         // 细斜线/折线，增加图像纹理
         g.setComposite(AlphaComposite.SrcOver.derive(0.10f));
         g.setColor(Color.WHITE);
-        g.setStroke(new BasicStroke(1.2f));
+        g.setStroke(new BasicStroke(1.2f * SS));
         for (int i = 0; i < 7; i++) {
-            int x1 = rnd.nextInt(0, WIDTH);
-            int y1 = rnd.nextInt(0, HEIGHT);
-            g.drawLine(x1, y1, x1 + rnd.nextInt(-60, 60), y1 + rnd.nextInt(-40, 40));
+            int x1 = rnd.nextInt(0, w);
+            int y1 = rnd.nextInt(0, h);
+            g.drawLine(x1, y1, x1 + rnd.nextInt(-60, 60) * SS, y1 + rnd.nextInt(-40, 40) * SS);
         }
-        // 像素噪点
-        for (int i = 0; i < 1400; i++) {
+        // 物理像素噪点：数量按面积(SS²)倍增，降采样后形成细腻颗粒
+        for (int i = 0; i < 1400 * SS * SS; i++) {
             int v = rnd.nextInt(180, 256);
             g.setComposite(AlphaComposite.SrcOver.derive(rnd.nextFloat(0.03f, 0.10f)));
             g.setColor(new Color(v, v, v));
-            g.fillRect(rnd.nextInt(WIDTH), rnd.nextInt(HEIGHT), 1, 1);
+            g.fillRect(rnd.nextInt(w), rnd.nextInt(h), 1, 1);
         }
         g.setComposite(AlphaComposite.SrcOver);
-        g.dispose();
-        return img;
     }
 
+    /**
+     * 背景以高质量 JPEG 编码：缺口白边与高对比描边在默认(~0.75)质量下会产生振铃/晕染，
+     * 视觉上就是一圈粗糙白毛边；0.9 质量体积仍很小（300×128，约 15~25KB），边缘干净。
+     */
     private String encodeJpeg(BufferedImage img) {
         FastByteArrayOutputStream os = new FastByteArrayOutputStream();
         try {
-            ImageIO.write(img, "jpg", os);
+            javax.imageio.ImageWriter writer = ImageIO.getImageWritersByFormatName("jpg").next();
+            javax.imageio.ImageWriteParam param = writer.getDefaultWriteParam();
+            param.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
+            param.setCompressionQuality(0.9f);
+            try (javax.imageio.stream.ImageOutputStream ios = ImageIO.createImageOutputStream(os)) {
+                writer.setOutput(ios);
+                writer.write(null, new javax.imageio.IIOImage(img, null, null), param);
+            } finally {
+                writer.dispose();
+            }
         } catch (IOException e) {
             throw new ServiceException("验证码生成失败");
         }

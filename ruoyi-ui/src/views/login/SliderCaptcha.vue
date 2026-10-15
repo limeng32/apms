@@ -29,16 +29,19 @@
               <el-icon><CircleCheckFilled /></el-icon>
               <span>验证通过</span>
             </div>
-            <button type="button" class="sc-refresh" title="换一张" @click="loadChallenge" aria-label="刷新验证码">
+            <button type="button" class="sc-refresh" title="换一张" @click="manualRefresh" aria-label="刷新验证码">
               <el-icon><Refresh /></el-icon>
             </button>
           </div>
 
-          <!-- 拖拽轨道（pointer events 统一鼠标/触摸；touch-action:none 阻止移动端滚动干扰） -->
+          <!-- 拖拽轨道（pointer events 统一鼠标/触摸；touch-action:none 阻止移动端滚动干扰）。
+               fail 态旧题已锁定，点击轨道任意处立即手动换题（网络失败时的兜底入口） -->
           <div
             ref="trackRef"
             class="sc-track"
+            :class="{ 'is-fail-clickable': state === 'fail' }"
             @pointerdown="onDown"
+            @click="onTrackClick"
           >
             <div class="sc-track-fill" :style="{ width: dragX + HANDLE_SIZE + 'px' }"></div>
             <span class="sc-track-tip">{{ tipText }}</span>
@@ -55,6 +58,16 @@
               </svg>
             </div>
           </div>
+          <!-- 局部错误条：与模态同层（z-index 高于背景遮罩），不被 backdrop blur 糊住 -->
+          <transition name="sc-err-fade">
+            <div v-if="failMsg" class="sc-error">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>
+              </svg>
+              <span>{{ failMsg }}</span>
+            </div>
+          </transition>
         </div>
       </div>
     </div>
@@ -86,8 +99,10 @@ const handleRef = ref(null)
 
 const challenge = reactive({ uuid: '', img: '', sliderImg: '', pieceY: 0, width: 300, height: 128 })
 // idle=待拖动 dragging=拖动中 checking=服务端校验 success=通过 fail=失败 loading=加载图
-const state = ref('loading')
+const state = ref('idle')
 const checking = ref(false)
+// 局部错误文案（校验失败/网络失败时在模态内清晰展示，替代会被遮罩糊住的全局通知）
+const failMsg = ref('')
 
 // 手柄固定 40px（轨道 42px），不随画布缩放，避免比轨道还高、两端错位
 const HANDLE_SIZE = 40
@@ -125,7 +140,7 @@ const tipText = computed(() => {
     case 'dragging': return ''
     case 'checking': return '校验中…'
     case 'success': return '验证通过'
-    case 'fail': return '验证失败，正在换一张…'
+    case 'fail': return '验证失败，即将换一张（或点击此处立即刷新）'
     default: return '按住滑块向右拖动，完成拼图'
   }
 })
@@ -141,14 +156,20 @@ function onResize() { if (visible.value) calcScale() }
 let alive = true
 // 当前挑战是否已被服务端消费（校验成功/失败后一次性答案即失效，需换新题）
 let consumed = false
+// 拉题请求序号：丢弃过期响应，杜绝「自动换题 + 手动刷新」并发导致的 uuid/图错配
+let loadSeq = 0
 
 async function loadChallenge() {
   if (!alive) return
+  const seq = ++loadSeq
+  // 任何途径换题都先取消挂起的自动重试，避免叠加多个定时器
+  clearTimeout(retryTimer)
   state.value = 'loading'
+  failMsg.value = ''
   resetPosition()
   try {
     const res = await getSliderCaptcha()
-    if (!alive) return
+    if (!alive || seq !== loadSeq) return // 已有更新的请求，丢弃过期响应
     enabled.value = res.sliderEnabled === true
     emit('enabled-change', enabled.value)
     if (!enabled.value) return
@@ -163,12 +184,23 @@ async function loadChallenge() {
     requestAnimationFrame(calcScale)
     state.value = 'idle'
   } catch (e) {
-    enabled.value = true
-    emit('enabled-change', true)
+    if (!alive || seq !== loadSeq) return
+    // 网络/服务异常：保留旧图不清屏，置 fail 并提示点击重试（右上角刷新或点轨道）
+    failMsg.value = '验证码加载失败，请点击右上角刷新重试'
     state.value = 'fail'
-    challenge.img = ''
-    challenge.sliderImg = ''
+    consumed = true
   }
+}
+
+// 手动刷新（右上角按钮）：清掉自动重试定时器后立即换题
+function manualRefresh() {
+  clearTimeout(retryTimer)
+  loadChallenge()
+}
+
+// fail 态点击轨道：立即换题（正常拖动的 click 不触发，因为成功拖拱乐于 idle/checking 态）
+function onTrackClick() {
+  if (state.value === 'fail') manualRefresh()
 }
 
 // 后端开关（挂载时由首次 loadChallenge 探测）
@@ -185,9 +217,13 @@ function maxDrag() {
 }
 
 function onDown(e) {
-  if (state.value === 'success' || checking.value || state.value === 'loading') return
-  if (!challenge.uuid) return
+  // 旧题已消费（校验完/等待换题）、加载中、成功、校验中：一律禁止起拖，
+  // 否则失败后 1.6s 内拖的是后端已删除的旧 uuid，必报「验证已失效」并叠加失败
+  if (checking.value) return
+  if (['success', 'loading', 'fail'].includes(state.value)) return
+  if (consumed || !challenge.uuid) return
   dragging = true
+  failMsg.value = ''
   startX = e.clientX
   startDrag = dragX.value
   startTime = Date.now()
@@ -241,8 +277,12 @@ async function onUp() {
     checking.value = false
     state.value = 'fail'
     consumed = true
-    // 失败抖动后换新挑战（一次性答案已被服务端消费）
-    retryTimer = setTimeout(loadChallenge, 900)
+    // 手柄/拼图块立即回到起点，避免停在错误位置；旧题已锁定不可再拖（onDown 拦截 fail）
+    resetPosition()
+    // 局部清晰提示（silent 请求已抑制全局通知）；取后端业务文案，兜底通用提示
+    failMsg.value = (err && err.message) ? err.message : '验证失败，请重试'
+    // 失败抖动后换新挑战（一次性答案已被服务端消费）；延迟足够看清错误条
+    retryTimer = setTimeout(loadChallenge, 1600)
   }
 }
 
@@ -437,6 +477,25 @@ onBeforeUnmount(() => {
   touch-action: none;
   cursor: pointer;
 }
+/* fail 态旧题锁定，轨道作为「点击换一张」的兜底热区 */
+.sc-track.is-fail-clickable { cursor: pointer; }
+/* 局部错误条：模态内部同层，实色不透明、白底红字，绝不被背景遮罩虚化 */
+.sc-error {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  font-size: 12.5px;
+  line-height: 1.5;
+  svg { width: 15px; height: 15px; flex: none; }
+}
+.sc-err-fade-enter-active, .sc-err-fade-leave-active { transition: opacity .18s ease, transform .18s ease; }
+.sc-err-fade-enter-from, .sc-err-fade-leave-to { opacity: 0; transform: translateY(-3px); }
 .sc-track-fill {
   position: absolute;
   left: 0;

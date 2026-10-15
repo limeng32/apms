@@ -115,6 +115,8 @@ export function checkSliderCaptcha(data) {
   return request({
     url: '/captcha/slider/check',
     headers: { isToken: false, repeatSubmit: false },
+    // silent：失败不弹全局通知，由滑块组件在遮罩内自行提示（全局通知层级低会被遮罩毛玻璃糊住）
+    silent: true,
     method: 'post',
     data
   })
