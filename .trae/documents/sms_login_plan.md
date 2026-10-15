@@ -1,5 +1,14 @@
 # 手机短信登录 实施计划
 
+> **修订 2026-10-15（v0.0.9-261015154949）**：应业务需要放开「一个手机号只能绑一个账号」。
+> 新规则（用户已确认）：同一自然人可持多个角色账号，一个手机号允许绑定多个账号；
+> 每账号仍最多 3 个号、账号内号码不重复。唯一索引由 `uk_phonenumber` 改为
+> `uk_user_phone(user_id, phonenumber)`（patch-0.0.9-261015154949.sql）。
+> 短信登录链路相应变为：验码通过 → 1 个活跃账号直接登录；多个活跃账号时下发
+> 一次性选择令牌（Redis `sms:select:`，5 分钟，GETDEL 原子消费）+ 账号候选列表，
+> 前端选择后调 `POST /login/sms/select {selectToken, userId}` 兑换 token。
+> 历史上因全局唯一未迁移的同号其他账号不补迁，由本人自助绑定。
+
 ## 一、需求与已确认决策
 
 基于阿里云短信服务（签名「北京康耐特体育」、模板 `SMS_512565975`）新增「手机号 + 短信验证码」登录方式，与现有账号密码登录并列，作为登录卡片内的第二个 tab。
@@ -95,6 +104,7 @@
   - 常量：间隔 60s、单号日 10 条、单 IP 日 50 条、码 5 分钟、错 5 次、6 位数字；
   - 验证码生成：静态单例 `java.security.SecureRandom`（禁止 ThreadLocalRandom/Math.random），`100000 + secureRandom.nextInt(900000)`；
   - `sendCode(phone, scene, ip, sliderUuid)`：开关 → 正则`^1[3-9]\d{9}$` → consumePass → 场景校验（login：绑定存在；bind：号码未被占 + userId 绑定数<3）→ 频控四查（StringRedisTemplate，日 key TTL 至次日 0 点）→ **Lua 脚本 A 写码（SET code EX 300 + DEL err，一次往返，发新码即清零旧错误计数）** → 调阿里云发送；**发送异常时删除 code/err/ttl 三个 key**（用户收不到的码不得残留；日计数保留计费），异常照常抛出；
+  - 60 秒间隔与手机号/IP 日计数的“检查 + 占位/递增”必须 Redis 原子完成（Lua 或 SET NX + 原子计数），禁止先查后加；
   - **校验消费用 Lua 脚本 B 原子完成（StringRedisTemplate + DefaultRedisScript）**，杜绝并发两次都校验成功：
     ```lua
     -- KEYS[1]=codeKey  KEYS[2]=errKey   ARGV[1]=input  ARGV[2]=maxErr  ARGV[3]=errTtlSec
@@ -208,7 +218,7 @@
 - `npm run build:prod` 通过；GetDiagnostics 0 诊断；现有桩测全绿 + 为 SmsCodeService 补桩测（SecureRandom 码生成、Lua 返回值映射、频控分支、发送失败回滚、bind 并发抢占）。
 - **安全专项验证**：
   1. 同一验证码并发两次调 `/login/sms`（curl 并发）：恰好一次成功、第二次报已失效；成功后 Redis 中 code/err 均不存在；
-  2. 连续错码第 5 次后码立即作废（即使第 5 次输入的是正确码也拒绝，需重新获取）；重新获取后旧错误计数清零；
+  2. 前 4 次错误后，第 5 次输入正确应成功；连续第 5 次输入错误后验证码立即作废，之后即使输入原正确验证码也拒绝；
   3. 阿里云发送失败（故意配错 AK）后 Redis 无 code 残留、60s 间隔 key 也已释放可立即重试；
   4. 在 `sys.login.blackIPList` 配置当前 IP：密码登录与短信登录同时被拦；移除后均恢复；
   5. 确认 `/sms/code` 注解编译后为 `LimitType.IP`（检查源码与限流 key 实际带 IP）；
