@@ -73,6 +73,9 @@ public class SysUserServiceImpl implements ISysUserService
     private ISysDeptService deptService;
 
     @Autowired
+    private com.ruoyi.system.service.apms.IApmsUserPhoneService apmsUserPhoneService;
+
+    @Autowired
     protected Validator validator;
 
     /**
@@ -277,6 +280,29 @@ public class SysUserServiceImpl implements ISysUserService
         insertUserPost(user);
         // 新增用户与角色管理
         insertUserRole(user);
+        return rows;
+    }
+
+    /**
+     * 新增用户并在同一事务绑定登录手机号（管理员建号免验证码场景）。
+     *
+     * <p>调用前由 Controller 保证「密码、登录手机号至少一项」且密码已加密、手机号格式合法。
+     * 绑定走 {@code bindPhone} 的行锁上限/账号内唯一逻辑；任一失败整体回滚。
+     *
+     * @param user          已加密密码的用户
+     * @param loginPhonenumber 登录手机号（可空=纯密码账号）
+     * @param operator      操作人
+     */
+    @Override
+    @Transactional
+    public int insertUserWithPhone(SysUser user, String loginPhonenumber, String operator)
+    {
+        int rows = insertUser(user);
+        if (StringUtils.isNotEmpty(loginPhonenumber))
+        {
+            // user.getUserId() 由 mybatis useGeneratedKeys 回填；bindPhone 行锁保证一致
+            apmsUserPhoneService.bindPhone(user.getUserId(), loginPhonenumber, operator);
+        }
         return rows;
     }
 
@@ -597,7 +623,8 @@ public class SysUserServiceImpl implements ISysUserService
                 if (StringUtils.isNull(u))
                 {
                     BeanValidators.validateWithException(validator, user);
-                    deptService.checkDeptDataScope(user.getDeptId());
+                    // 新建：必须在操作者「本部门及以下」范围内，防止 Excel 跨组织建号
+                    deptService.checkDeptManageScope(user.getDeptId());
                     String password = configService.selectConfigByKey("sys.user.initPassword");
                     user.setPassword(SecurityUtils.encryptPassword(password));
                     user.setCreateBy(operName);
@@ -610,7 +637,8 @@ public class SysUserServiceImpl implements ISysUserService
                     BeanValidators.validateWithException(validator, user);
                     checkUserAllowed(u);
                     checkUserDataScope(u.getUserId());
-                    deptService.checkDeptDataScope(user.getDeptId());
+                    // 更新行的归属部门以库内现值为准（下一行覆盖），此处校验现值不越权
+                    deptService.checkDeptManageScope(u.getDeptId());
                     user.setUserId(u.getUserId());
                     user.setDeptId(u.getDeptId());
                     user.setUpdateBy(operName);

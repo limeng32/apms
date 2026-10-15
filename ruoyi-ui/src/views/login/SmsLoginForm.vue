@@ -74,8 +74,6 @@
       </el-input>
     </el-form-item>
 
-    <div class="sms-tip">未注册或未绑定手机号的账号请使用账号密码登录</div>
-
     <el-form-item style="width:100%;">
       <el-button
         :loading="loading"
@@ -96,6 +94,20 @@
         <span v-else>登录中…</span>
       </el-button>
     </el-form-item>
+
+    <!-- 一键体验入口：与账号密码表单同位（登录按钮下方）、同弹窗链路 -->
+    <div v-if="demoEntry" class="lf-demo-entry">
+      <el-button link type="primary" class="lf-demo-btn" @click="emit('demo')">
+        一键体验演示环境
+        <svg
+          class="lf-demo-arrow" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+        </svg>
+      </el-button>
+    </div>
   </el-form>
 </template>
 
@@ -114,9 +126,11 @@ import { sendSmsCode } from '@/api/login'
 
 const props = defineProps({
   /** 登录请求中（按钮 loading） */
-  loading: { type: Boolean, default: false }
+  loading: { type: Boolean, default: false },
+  /** 是否展示「一键体验演示环境」入口（仅业务域真实登录页传入，env 可关） */
+  demoEntry: { type: Boolean, default: false }
 })
-const emit = defineEmits(['submit', 'need-slider', 'select'])
+const emit = defineEmits(['submit', 'need-slider', 'select', 'demo'])
 
 const RESEND_SECONDS = 60
 const formRef = ref(null)
@@ -334,11 +348,18 @@ defineExpose({ requestSend, showAccounts, backToForm })
   }
 }
 
-.sms-tip {
-  margin: -4px 0 18px;
-  font-size: 11.5px;
-  color: var(--login-text-2);
+/* 一键体验入口：与账号密码表单同款 */
+.lf-demo-entry {
+  display: flex;
+  justify-content: center;
+  margin-top: 6px;
 }
+.lf-demo-btn {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 8px;
+}
+.lf-demo-arrow { width: 14px; height: 14px; flex: none; margin-left: 2px; }
 
 /* 登录按钮与账号表单同款（含根节点渐变形态 .btn-gradient-on .lf-submit） */
 .lf-submit-label {

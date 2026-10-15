@@ -1,5 +1,5 @@
 <template>
-  <LoginRenderer :config="loginThemeStore.config">
+  <LoginRenderer :config="loginThemeStore.config" @logo-click="onLogoSecretTap">
     <!-- 登录表单：纯展示组件 LoginFormFields，业务逻辑在本文件 -->
     <template #form>
       <!-- storage-error：浏览器存储不可用，演示与普通登录均暂停，阻断页 -->
@@ -10,8 +10,8 @@
         <el-button type="primary" @click="reloadPage">重新检测</el-button>
       </div>
       <template v-else>
-        <!-- 登录方式切换：仅后端开启短信登录（smsEnabled）时出现；演示站无后端恒为 false -->
-        <div v-if="smsEnabled" class="login-mode-tabs">
+        <!-- 登录方式切换：短信开启且主 Logo 后门已解锁时才出现（未解锁只呈现短信登录单形态） -->
+        <div v-if="smsEnabled && accountUnlocked" class="login-mode-tabs">
           <button type="button"
                   :class="{ 'is-active': activeTab === 'account' }"
                   @click="activeTab = 'account'">账号登录</button>
@@ -20,7 +20,7 @@
                   @click="activeTab = 'sms'">短信登录</button>
         </div>
         <LoginFormFields
-          v-show="!smsEnabled || activeTab === 'account'"
+          v-show="!smsEnabled || (accountUnlocked && activeTab === 'account')"
           ref="loginFieldsRef"
           v-model="loginForm"
           :config="loginThemeStore.config"
@@ -34,9 +34,11 @@
           v-show="smsEnabled && activeTab === 'sms'"
           ref="smsFormRef"
           :loading="loading"
+          :demo-entry="demoEnabled"
           @submit="onSmsSubmit"
           @need-slider="onSmsNeedSlider"
           @select="onSmsSelectAccount"
+          @demo="demoDialogVisible = true"
         />
       </template>
     </template>
@@ -84,7 +86,38 @@ const smsFormRef = ref(null)
 
 // 登录方式 tab（账号/短信）；短信 tab 是否可选由后端 smsEnabled 决定（loadConfig 后响应式更新）
 const smsEnabled = computed(() => loginThemeStore.smsEnabled === true)
-const activeTab = ref('account')
+// 账号密码入口隐藏后门：默认只呈现短信登录，1.5s 内连续点击主 Logo 6 次才解锁。
+// 状态仅存内存，不持久化——刷新/重新进入登录页即恢复隐藏（accountUnlocked 归 false）。
+const BACKDOOR_TAP_REQUIRED = 6
+const BACKDOOR_WINDOW_MS = 1500
+const accountUnlocked = ref(false)
+// 初始 tab 必须读 store 当前值：App.vue/lock.vue 可能在本组件挂载前就已 loadConfig
+// （锁屏页「返回登录」走 router.push 而非整页刷新，store 中 smsEnabled 已为 true）。
+// 若恒初始化为 account，watch 又只在变化时触发，会出现账号/短信两个表单同时 v-show=false 的空白页。
+const activeTab = ref(smsEnabled.value ? 'sms' : 'account')
+const logoTapTimes = []
+function onLogoSecretTap() {
+  if (accountUnlocked.value || !smsEnabled.value) return
+  const now = Date.now()
+  while (logoTapTimes.length && now - logoTapTimes[0] > BACKDOOR_WINDOW_MS) {
+    logoTapTimes.shift()
+  }
+  logoTapTimes.push(now)
+  if (logoTapTimes.length >= BACKDOOR_TAP_REQUIRED) {
+    logoTapTimes.length = 0
+    accountUnlocked.value = true
+    activeTab.value = 'account'
+  }
+}
+// 配置到达：短信开启且未解锁时默认落在短信 tab；短信关闭（如演示站）回到账号形态。
+// immediate：组件在 store 已加载后再挂载时（SPA 内回到 /login）也能立即对齐，不依赖 false→true 的变化
+watch(smsEnabled, (on) => {
+  if (on && !accountUnlocked.value) {
+    activeTab.value = 'sms'
+  } else if (!on) {
+    activeTab.value = 'account'
+  }
+}, { immediate: true })
 
 // 真人滑块拼图：enabled=后端开关；sliderUuid=本次通过标识（登录前必须持有）
 const sliderRef = ref(null)

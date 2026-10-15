@@ -1,5 +1,8 @@
 package com.ruoyi.web.controller.system;
 
+import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -91,6 +94,12 @@ public class SysUserController extends BaseController
     @PostMapping("/importData")
     public AjaxResult importData(MultipartFile file, boolean updateSupport) throws Exception
     {
+        // 导入的新用户统一使用初始密码，部门管理员无法按「手机号建号、不指定密码」策略建号，
+        // 故禁止其导入，避免产生可密码登录或无法登录的账号；请走「新增用户」逐个建号
+        if (!SecurityUtils.isAdmin())
+        {
+            return error("部门管理员不支持批量导入，请通过「新增用户」填写登录手机号逐个创建");
+        }
         ExcelUtil<SysUser> util = new ExcelUtil<SysUser>(SysUser.class);
         List<SysUser> userList = util.importExcel(file.getInputStream());
         String operName = getUsername();
@@ -137,7 +146,7 @@ public class SysUserController extends BaseController
     public AjaxResult add(@Validated @RequestBody SysUser user)
     {
         managedBoundary.assertRolesManageable(user.getRoleIds(), Access.GRANT);
-        deptService.checkDeptDataScope(user.getDeptId());
+        deptService.checkDeptManageScope(user.getDeptId());
         roleService.checkRoleDataScope(user.getRoleIds());
         if (!userService.checkUserNameUnique(user))
         {
@@ -151,9 +160,66 @@ public class SysUserController extends BaseController
         {
             return error("新增用户'" + user.getUserName() + "'失败，邮箱账号已存在");
         }
+        // 凭证策略：
+        //  - 平台管理员(userId=1)：密码与登录手机号至少一项，可按传统账号密码建号；
+        //  - 其他管理员（super 等）：禁止指定密码（前端传了也忽略），必须填登录手机号，
+        //    系统生成 32 位随机强密码占位，账号初始只能短信登录，需要密码时联系平台管理员。
+        boolean platformAdmin = SecurityUtils.isAdmin();
+        String rawPassword = platformAdmin ? user.getPassword() : null;
+        String loginPhone = StringUtils.trim(user.getLoginPhonenumber());
+        boolean hasPassword = StringUtils.isNotEmpty(rawPassword);
+        boolean hasLoginPhone = StringUtils.isNotEmpty(loginPhone);
+        if (!platformAdmin && !hasLoginPhone)
+        {
+            return error("请填写登录手机号（部门管理员创建的账号仅支持短信登录）");
+        }
+        if (platformAdmin && !hasPassword && !hasLoginPhone)
+        {
+            return error("登录密码与登录手机号至少填写一项");
+        }
+        if (hasLoginPhone && !loginPhone.matches("^1[3-9]\\d{9}$"))
+        {
+            return error("请输入正确的登录手机号");
+        }
+        if (!hasPassword)
+        {
+            // 无显式密码（平台管理员仅手机号建号 / 部门管理员强制路径）：
+            // 生成 32 位随机强密码并 BCrypt 加密，明文不返回、不记日志
+            rawPassword = generateRandomPassword();
+        }
         user.setCreateBy(getUsername());
-        user.setPassword(SecurityUtils.encryptPassword(user.getPassword()));
-        return toAjax(userService.insertUser(user));
+        user.setPassword(SecurityUtils.encryptPassword(rawPassword));
+        return toAjax(userService.insertUserWithPhone(user, hasLoginPhone ? loginPhone : null, getUsername()));
+    }
+
+    /**
+     * 生成 32 位随机强密码（SecureRandom，大小写字母+数字并保证三类覆盖）。
+     * 明文仅用于本次 BCrypt 加密，禁止出现在返回值与日志中。
+     */
+    private String generateRandomPassword()
+    {
+        final String upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        final String lower = "abcdefghijklmnopqrstuvwxyz";
+        final String digit = "0123456789";
+        final String all = upper + lower + digit;
+        SecureRandom random = new SecureRandom();
+        List<Character> chars = new ArrayList<>(32);
+        // 先保证大写、小写、数字各至少一位
+        chars.add(upper.charAt(random.nextInt(upper.length())));
+        chars.add(lower.charAt(random.nextInt(lower.length())));
+        chars.add(digit.charAt(random.nextInt(digit.length())));
+        for (int i = 3; i < 32; i++)
+        {
+            chars.add(all.charAt(random.nextInt(all.length())));
+        }
+        // 打乱，避免前三位类别位置固定
+        Collections.shuffle(chars, random);
+        StringBuilder sb = new StringBuilder(32);
+        for (Character c : chars)
+        {
+            sb.append(c.charValue());
+        }
+        return sb.toString();
     }
 
     /**
@@ -173,7 +239,7 @@ public class SysUserController extends BaseController
         {
             return error("当前用户不能停用");
         }
-        deptService.checkDeptDataScope(user.getDeptId());
+        deptService.checkDeptManageScope(user.getDeptId());
         roleService.checkRoleDataScope(user.getRoleIds());
         if (!userService.checkUserNameUnique(user))
         {
@@ -244,12 +310,20 @@ public class SysUserController extends BaseController
 
     /**
      * 重置密码
+     *
+     * 仅平台内置管理员(userId=1)可重置他人密码；super 等部门管理员创建的账号
+     * 走短信登录体系，无权设置/重置密码（个人中心凭旧密码改自己密码不受此限制）。
+     * 硬闸在 Controller，不依赖前端按钮显隐或权限点是否已回收。
      */
     @PreAuthorize("@ss.hasPermi('system:user:resetPwd')")
     @Log(title = "用户管理", businessType = BusinessType.UPDATE)
     @PutMapping("/resetPwd")
     public AjaxResult resetPwd(@RequestBody SysUser user)
     {
+        if (!SecurityUtils.isAdmin())
+        {
+            return error("仅平台管理员可重置密码；该账号可使用短信验证码登录");
+        }
         managedBoundary.assertUserManageable(user.getUserId(), Access.WRITE);
         userService.checkUserAllowed(user);
         userService.checkUserDataScope(user.getUserId());

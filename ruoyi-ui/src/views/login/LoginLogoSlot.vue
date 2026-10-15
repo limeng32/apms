@@ -4,6 +4,7 @@
     :class="{ 'logo-draggable': draggable, 'is-bitmap': bitmap }"
     :style="slotStyle"
     @pointerdown="emit('logo-pointerdown', $event)"
+    @click="emit('logo-click')"
   >
     <!-- 定制盾牌（默认） -->
     <svg v-if="logo.type === 'builtin' && builtinName === 'shield'" viewBox="0 0 40 46" fill="none">
@@ -43,7 +44,7 @@ const props = defineProps({
   /** 设计器预览：允许直接拖拽调整 offset */
   draggable: { type: Boolean, default: false }
 })
-const emit = defineEmits(['logo-pointerdown'])
+const emit = defineEmits(['logo-pointerdown', 'logo-click'])
 
 const builtinName = computed(() =>
   BUILTIN_LOGO_VALUES.includes(props.logo.value) ? props.logo.value : 'shield')

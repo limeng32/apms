@@ -43,13 +43,28 @@ public class SmsController
     @PostMapping("/sms/code")
     public AjaxResult sendCode(@RequestBody SmsSendBody body)
     {
+        String scene = body.getScene();
+        if (SmsCodeService.SCENE_ADMIN_BIND.equals(scene))
+        {
+            // 管理员给目标用户代绑发码：必须登录、必须指定目标用户；平台管理员免码不走这里
+            // （admin 用免码绑定接口），故此分支实际服务 super 等部门管理员。
+            if (body.getTargetUserId() == null)
+            {
+                return AjaxResult.error("未指定目标用户");
+            }
+            SecurityUtils.getUserId();
+            smsCodeService.sendCodeForAdminBind(body.getTargetUserId(), body.getPhonenumber(),
+                    IpUtils.getIpAddr(), body.getSliderUuid());
+            return AjaxResult.success("验证码已发送");
+        }
+
         Long userId = null;
-        if (SmsCodeService.SCENE_BIND.equals(body.getScene()))
+        if (SmsCodeService.SCENE_BIND.equals(scene))
         {
             // 路径匿名放行，但 JWT 过滤器仍会解析有效 token；无登录态时 getUserId 抛 401 语义异常
             userId = SecurityUtils.getUserId();
         }
-        smsCodeService.sendCode(body.getPhonenumber(), body.getScene(), userId,
+        smsCodeService.sendCode(body.getPhonenumber(), scene, userId,
                 IpUtils.getIpAddr(), body.getSliderUuid());
         return AjaxResult.success("验证码已发送");
     }

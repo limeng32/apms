@@ -45,6 +45,7 @@
               :class="['brand-logo-slot', 'lc-logo', { 'logo-draggable': logoDraggable, 'logo-bitmap': logoBitmap }]"
               :style="logoStyle"
               @pointerdown="onLogoPointerDown"
+              @click="onLogoSecretTap"
             >
               <svg v-if="logo.type === 'builtin' && builtinName === 'shield'" viewBox="0 0 40 46" fill="none">
                 <path d="M20 1.5L37 7v13c0 12-7.5 19-17 24C10.5 39 3 32 3 20V7l17-5.5z"
@@ -68,7 +69,7 @@
             <!-- 移动端 logo 槽：桌面隐藏（logo 在卡外品牌区），手机上 logo 收入白卡，
                  nosc 等黑色字样位图落在白底上清晰可见；支持设计器拖拽 -->
             <div class="lc-card-logo">
-              <LoginLogoSlot :logo="logo" :draggable="logoDraggable" @logo-pointerdown="onLogoPointerDown" />
+              <LoginLogoSlot :logo="logo" :draggable="logoDraggable" @logo-pointerdown="onLogoPointerDown" @logo-click="onLogoSecretTap" />
             </div>
             <div class="lf-title" v-if="!hideCardHeader">{{ cfg.form.title }}</div>
             <div class="lf-subtitle" v-if="!hideCardHeader">{{ interpolate(cfg.form.subtitle, tplCtx) }}</div>
@@ -121,6 +122,7 @@
               :class="['brand-logo-slot', 'lc-logo', { 'logo-draggable': logoDraggable, 'logo-bitmap': logoBitmap }]"
               :style="logoStyle"
               @pointerdown="onLogoPointerDown"
+              @click="onLogoSecretTap"
             >
               <svg v-if="logo.type === 'builtin' && builtinName === 'shield'" viewBox="0 0 40 46" fill="none">
                 <path d="M20 1.5L37 7v13c0 12-7.5 19-17 24C10.5 39 3 32 3 20V7l17-5.5z"
@@ -144,7 +146,7 @@
             <!-- 移动端 logo 槽：桌面隐藏（logo 在卡外品牌区），手机上 logo 收入白卡，
                  nosc 等黑色字样位图落在白底上清晰可见；支持设计器拖拽 -->
             <div class="lc-card-logo">
-              <LoginLogoSlot :logo="logo" :draggable="logoDraggable" @logo-pointerdown="onLogoPointerDown" />
+              <LoginLogoSlot :logo="logo" :draggable="logoDraggable" @logo-pointerdown="onLogoPointerDown" @logo-click="onLogoSecretTap" />
             </div>
             <div class="lf-title" v-if="!hideCardHeader">{{ cfg.form.title }}</div>
             <div class="lf-subtitle" v-if="!hideCardHeader">{{ interpolate(cfg.form.subtitle, tplCtx) }}</div>
@@ -186,6 +188,7 @@
           :class="{ 'logo-draggable': logoDraggable, 'logo-bitmap': logoBitmap }"
           :style="logoStyle"
           @pointerdown="onLogoPointerDown"
+          @click="onLogoSecretTap"
         >
           <!-- 定制盾牌（默认） -->
           <svg v-if="logo.type === 'builtin' && builtinName === 'shield'" viewBox="0 0 40 46" fill="none">
@@ -329,7 +332,7 @@ const props = defineProps({
    */
   showcase: { type: Boolean, default: false }
 })
-const emit = defineEmits(['logo-offset'])
+const emit = defineEmits(['logo-offset', 'logo-click'])
 
 /* ============ 设备判定（auto 时响应真机视口变化） ============ */
 const MOBILE_QUERY = '(max-width: 900px)'
@@ -453,6 +456,12 @@ const clientLogoEnabled = computed(() => clientLogo.value.enabled !== false
 // 客户方 logo 槽拖拽事件由 LoginLogoSlot 转发；target 区分写入哪个配置根
 function onClientLogoPointerDown(e) {
   onLogoPointerDown(e, 'client')
+}
+
+// 主 Logo 点击透传：登录页用于「连点 6 次解锁账号密码入口」后门；
+// 设计器等其他使用方不监听该事件即无任何副作用（客户方 logo 不挂此事件）
+function onLogoSecretTap() {
+  emit('logo-click')
 }
 
 let dragState = null

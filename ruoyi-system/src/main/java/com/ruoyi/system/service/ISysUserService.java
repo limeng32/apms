@@ -114,6 +114,17 @@ public interface ISysUserService
     public int insertUser(SysUser user);
 
     /**
+     * 新增用户并在同一事务绑定登录手机号（管理员建号免验证码场景）。
+     * 调用前由 Controller 保证「密码、登录手机号至少一项」且密码已加密、手机号格式合法。
+     *
+     * @param user 已加密密码的用户
+     * @param loginPhonenumber 登录手机号（可空=纯密码账号）
+     * @param operator 操作人
+     * @return 结果
+     */
+    public int insertUserWithPhone(SysUser user, String loginPhonenumber, String operator);
+
+    /**
      * 注册用户信息
      * 
      * @param user 用户信息

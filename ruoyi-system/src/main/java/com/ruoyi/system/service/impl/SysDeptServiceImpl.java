@@ -223,6 +223,45 @@ public class SysDeptServiceImpl implements ISysDeptService
     }
 
     /**
+     * 「本部门及以下」硬闸：即使角色数据范围为「全部数据」，非平台管理员也只能
+     * 把用户放进本人所属部门或其子孙部门。先过既有数据范围校验（自定义/本部门等
+     * 配置继续生效），再叠加子树天花板，两层取交集。
+     */
+    @Override
+    public void checkDeptManageScope(Long deptId)
+    {
+        if (SecurityUtils.isAdmin() || StringUtils.isNull(deptId))
+        {
+            return;
+        }
+        // 第一层：角色配置的数据范围（全部数据时此层恒过，交由第二层收紧）
+        checkDeptDataScope(deptId);
+        Long ownDeptId = SecurityUtils.getLoginUser().getUser().getDeptId();
+        if (ownDeptId == null)
+        {
+            throw new ServiceException("当前账号未归属部门，无法在其他部门创建用户");
+        }
+        SysDept target = deptMapper.selectDeptById(deptId);
+        if (target == null)
+        {
+            throw new ServiceException("目标部门不存在，无法创建用户");
+        }
+        // 本部门本身
+        if (ownDeptId.equals(target.getDeptId()))
+        {
+            return;
+        }
+        // 子孙部门：ancestors 形如 "0,100" 或 "0,100,101"（首尾无逗号），
+        // 包裹逗号后匹配，避免 100 误命中 1001，同时兼容直属子部门（末位无尾逗号）
+        String ancestors = target.getAncestors();
+        if (ancestors != null && ("," + ancestors + ",").contains("," + ownDeptId + ","))
+        {
+            return;
+        }
+        throw new ServiceException("只能在自己所管理部门及其下级部门创建用户");
+    }
+
+    /**
      * 新增保存部门信息
      * 
      * @param dept 部门信息

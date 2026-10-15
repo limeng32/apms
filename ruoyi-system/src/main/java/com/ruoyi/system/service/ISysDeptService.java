@@ -107,6 +107,18 @@ public interface ISysDeptService
     public void checkDeptDataScope(Long deptId);
 
     /**
+     * 校验目标部门是否在当前登录人的「本部门及以下」管理范围内。
+     *
+     * <p>客户侧管理员（如 super）即使角色数据范围配置为「全部数据」，
+     * 创建/编辑/导入用户时也只能把用户放在本人所属部门及其子部门内，
+     * 防止跨客户组织建号。平台管理员(userId=1)全放行；deptId 为空时不校验
+     * （与 {@link #checkDeptDataScope(Long)} 口径一致，由调用方/表单约束必填）。
+     *
+     * @param deptId 目标部门id
+     */
+    public void checkDeptManageScope(Long deptId);
+
+    /**
      * 新增保存部门信息
      * 
      * @param dept 部门信息

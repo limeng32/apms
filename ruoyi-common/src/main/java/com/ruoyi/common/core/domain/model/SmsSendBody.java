@@ -19,7 +19,13 @@ public class SmsSendBody
     /** 手机号（11 位大陆手机号） */
     private String phonenumber;
 
-    /** 滑块拼图验证通过标识（滑块开关开启时必传，服务端一次性消费） */
+    /**
+     * scene=adminbind 时必填：被代绑手机号的目标用户 ID（由登录的部门管理员操作）。
+     * login / bind 场景忽略此字段。
+     */
+    private Long targetUserId;
+
+    /** 滑块拼图通过标识（开启滑块时必传，一次性消费，服务端安全闸） */
     private String sliderUuid;
 
     public String getScene()
@@ -30,6 +36,16 @@ public class SmsSendBody
     public void setScene(String scene)
     {
         this.scene = scene;
+    }
+
+    public Long getTargetUserId()
+    {
+        return targetUserId;
+    }
+
+    public void setTargetUserId(Long targetUserId)
+    {
+        this.targetUserId = targetUserId;
     }
 
     public String getPhonenumber()

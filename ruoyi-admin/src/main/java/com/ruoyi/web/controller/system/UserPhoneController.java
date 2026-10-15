@@ -13,9 +13,12 @@ import com.ruoyi.common.annotation.Log;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.domain.entity.SysUser;
+import com.ruoyi.common.core.domain.model.AdminPhoneBindBody;
 import com.ruoyi.common.core.domain.model.SmsBindBody;
 import com.ruoyi.common.enums.BusinessType;
+import com.ruoyi.common.enums.UserStatus;
 import com.ruoyi.common.utils.SecurityUtils;
+import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.framework.web.service.ManagedBoundary;
 import com.ruoyi.framework.web.service.ManagedBoundary.Access;
 import com.ruoyi.framework.sms.SmsCodeService;
@@ -126,9 +129,60 @@ public class UserPhoneController extends BaseController
             return error("绑定记录不存在");
         }
         Long userId = record.getUserId();
-        managedBoundary.assertUserManageable(userId, Access.WRITE);
+        managedBoundary.assertPhoneManageable(userId, Access.WRITE);
         userService.checkUserAllowed(new SysUser(userId));
         userService.checkUserDataScope(userId);
         return toAjax(userPhoneService.unbindById(id));
+    }
+
+    /**
+     * 管理员给指定用户绑定登录手机号：
+     * <ul>
+     *   <li>平台管理员 userId=1：免短信验证码，直接绑定（最高信任，全程审计）；</li>
+     *   <li>其他管理员（super）：必须带 adminbind 场景验证码，且目标用户经
+     *       数据范围 + portal 角色门禁（在 verifyForAdminBind 内复核）。</li>
+     * </ul>
+     */
+    @Log(title = "登录手机号-管理员代绑", businessType = BusinessType.INSERT)
+    @PreAuthorize("@ss.hasPermi('system:user:edit')")
+    @PostMapping("/system/user/phone/bind")
+    public AjaxResult adminBind(@RequestBody AdminPhoneBindBody body)
+    {
+        Long targetUserId = body.getUserId();
+        String phone = body.getPhonenumber();
+        if (targetUserId == null || StringUtils.isEmpty(phone))
+        {
+            return error("用户与手机号不能为空");
+        }
+        if (!phone.matches("^1[3-9]\\d{9}$"))
+        {
+            return error("请输入正确的手机号");
+        }
+
+        if (SecurityUtils.isAdmin())
+        {
+            // 平台管理员：免码。仍走手机号门禁（admin 全放行）+ 目标用户存在性
+            managedBoundary.assertPhoneManageable(targetUserId, Access.WRITE);
+            SysUser target = userService.selectUserById(targetUserId);
+            if (target == null || UserStatus.DELETED.getCode().equals(target.getDelFlag()))
+            {
+                return error("目标账号不存在");
+            }
+            userPhoneService.bindPhone(targetUserId, phone, SecurityUtils.getUsername());
+        }
+        else
+        {
+            // 部门管理员：一次性消费验证码，内部复核门禁/数据范围/portal/上限/重复
+            if (StringUtils.isEmpty(body.getCode()))
+            {
+                return error("请输入短信验证码");
+            }
+            smsCodeService.verifyForAdminBind(targetUserId, phone, body.getCode().trim());
+            userPhoneService.bindPhone(targetUserId, phone, SecurityUtils.getUsername());
+        }
+
+        AjaxResult ajax = AjaxResult.success("绑定成功", userPhoneService.selectByUserId(targetUserId));
+        ajax.put("maxCount", ApmsUserPhone.MAX_PER_USER);
+        return ajax;
     }
 }

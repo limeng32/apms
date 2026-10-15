@@ -58,6 +58,22 @@ public class SysUser extends BaseEntity
     /** 密码 */
     private String password;
 
+    /**
+     * 登录手机号（仅用于「新建用户时直接绑定 apms_user_phone」的入参，不映射 sys_user 列）。
+     * 与历史联系字段 phonenumber 区分；新建时密码与本字段至少提供一项。
+     */
+    private transient String loginPhonenumber;
+
+    public String getLoginPhonenumber()
+    {
+        return loginPhonenumber;
+    }
+
+    public void setLoginPhonenumber(String loginPhonenumber)
+    {
+        this.loginPhonenumber = loginPhonenumber;
+    }
+
     /** 账号状态（0正常 1停用） */
     @Excel(name = "账号状态", readConverterExp = "0=正常,1=停用")
     private String status;

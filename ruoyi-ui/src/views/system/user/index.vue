@@ -17,7 +17,7 @@
             <el-button v-if="ids.length" plain class="rk-btn rk-btn-danger" @click="handleDelete()" v-hasPermi="['system:user:remove']">
               <el-icon><Delete /></el-icon>已选 {{ ids.length }} 人 · 删除
             </el-button>
-            <el-button plain class="rk-btn" @click="handleImport" v-hasPermi="['system:user:import']">
+            <el-button v-if="isPlatformAdmin" plain class="rk-btn" @click="handleImport" v-hasPermi="['system:user:import']">
               <el-icon><Upload /></el-icon>导入
             </el-button>
             <el-button plain class="rk-btn" @click="handleExport" v-hasPermi="['system:user:export']">
@@ -176,7 +176,7 @@
                             <button
                               type="button"
                               class="rk-menu-item"
-                              v-if="!isProtectedUser(row)"
+                              v-if="isPlatformAdmin && !isProtectedUser(row)"
                               @click="onMenu(row, 'resetPwd')"
                               v-hasPermi="['system:user:resetPwd']"
                             ><el-icon><Key /></el-icon>重置密码</button>
@@ -258,16 +258,33 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-row>
+        <el-row v-if="form.userId == undefined">
           <el-col :span="12">
-            <el-form-item v-if="form.userId == undefined" label="用户名称" prop="userName">
+            <el-form-item label="用户名称" prop="userName">
               <el-input v-model="form.userName" placeholder="请输入用户名称" maxlength="30" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item v-if="form.userId == undefined" label="用户密码" prop="password" :rules="pwdValidator">
-              <el-input v-model="form.password" placeholder="请输入用户密码" type="password" maxlength="20" show-password />
+            <el-form-item label="登录手机号" prop="loginPhonenumber" :required="!isPlatformAdmin">
+              <el-input v-model="form.loginPhonenumber" placeholder="用于短信登录的 11 位手机号" maxlength="11"
+                        @input="form.loginPhonenumber = (form.loginPhonenumber || '').replace(/\D/g, '')" />
             </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row v-if="form.userId == undefined">
+          <el-col :span="12">
+            <el-form-item label="用户密码" v-if="isPlatformAdmin" prop="password" :rules="createPwdRules">
+              <el-input v-model="form.password" placeholder="留空则仅可短信登录（需填登录手机号）" type="password" maxlength="20" show-password />
+            </el-form-item>
+            <el-form-item v-else label="登录方式">
+              <span class="um-sms-only">仅短信登录</span>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <div class="form-tip um-cred-tip">
+              <template v-if="isPlatformAdmin">密码与登录手机号至少填写一项；仅填手机号时系统生成随机强密码，账号初始只能短信登录，管理员重置密码后方可密码登录。</template>
+              <template v-else>部门管理员创建的账号仅支持短信登录，系统将生成随机密码且不可指定；如需密码登录，请联系平台管理员重置。</template>
+            </div>
           </el-col>
         </el-row>
         <el-row>
@@ -355,6 +372,8 @@ function checkRowSelectable(row) {
 }
 const isPlatformAdmin = computed(() => useUserStore().roles.includes('admin'))
 const currentUserId = computed(() => useUserStore().id)
+/** 当前登录人归属部门：非平台管理员的部门树/新建用户部门只允许在本部门及以下（与后端 checkDeptManageScope 同口径） */
+const currentDeptId = computed(() => useUserStore().deptId)
 /** 状态开关保护：超级管理员(userId=1)恒不可停用；任何人不可停用自己（与后端 checkUserAllowed/自停用口径一致） */
 function isStatusProtected(row) {
   return !!row && (row.userId === 1 || row.userId === currentUserId.value)
@@ -387,7 +406,6 @@ const title = ref("")
 const dateRange = ref([])
 const deptOptions = ref(undefined)
 const enabledDeptOptions = ref(undefined)
-const initPassword = ref(undefined)
 const postOptions = ref([])
 const roleOptions = ref([])
 const openMenuId = ref(null)
@@ -417,11 +435,35 @@ const data = reactive({
     userName: [{ required: true, message: "用户名称不能为空", trigger: "blur" }, { min: 2, max: 20, message: "用户名称长度必须介于 2 和 20 之间", trigger: "blur" }],
     nickName: [{ required: true, message: "用户昵称不能为空", trigger: "blur" }],
     email: [{ type: "email", message: "请输入正确的邮箱地址", trigger: ["blur", "change"] }],
-    phonenumber: [{ pattern: /^1[3|4|5|6|7|8|9][0-9]\d{8}$/, message: "请输入正确的手机号码", trigger: "blur" }]
+    phonenumber: [{ pattern: /^1[3|4|5|6|7|8|9][0-9]\d{8}$/, message: "请输入正确的手机号码", trigger: "blur" }],
+    loginPhonenumber: [
+      { validator: validateCredentialAtLeastOne, trigger: "blur" },
+      { pattern: /^1[3-9]\d{9}$/, message: "请输入正确的手机号码", trigger: ["blur", "change"] }
+    ]
   }
 })
 
 const { queryParams, form, rules } = toRefs(data)
+
+/** 新建用户：平台管理员需密码/手机号至少一项；部门管理员禁止指定密码，手机号必填（后端同口径硬校验） */
+function validateCredentialAtLeastOne(rule, value, callback) {
+  const pwd = form.value.password || ''
+  const phone = (form.value.loginPhonenumber || '').trim()
+  if (!isPlatformAdmin.value) {
+    if (!phone) return callback(new Error('请填写登录手机号'))
+    return callback()
+  }
+  if (!pwd && !phone) {
+    return callback(new Error('登录密码与登录手机号至少填写一项'))
+  }
+  callback()
+}
+/** 新建用户密码规则：可空（交叉校验保证至少一项凭证）；填写时仍受长度与字符强度约束 */
+const createPwdRules = computed(() => [
+  { validator: validateCredentialAtLeastOne, trigger: 'blur' },
+  { min: 6, max: 20, message: '密码长度必须介于 6 和 20 之间', trigger: 'blur' },
+  pwdValidator.value.find(r => r.pattern)
+].filter(Boolean))
 
 /* ===== 花名册风格展示辅助 ===== */
 const AVATAR_COLORS = ['#3B82F6', '#8B5CF6', '#06B6D4', '#22C55E', '#F59E0B', '#EF4444', '#EC4899', '#14B8A6']
@@ -568,9 +610,31 @@ function getList() {
 /** 查询部门下拉树结构 */
 function getDeptTree() {
   deptTreeSelect().then(response => {
-    deptOptions.value = response.data
-    enabledDeptOptions.value = filterDisabledDept(JSON.parse(JSON.stringify(response.data)))
+    const scoped = cropTreeToOwnDept(response.data)
+    deptOptions.value = scoped
+    enabledDeptOptions.value = filterDisabledDept(JSON.parse(JSON.stringify(scoped)))
   })
+}
+
+/**
+ * 非平台管理员：部门树裁剪为本人所属部门及其子树（客户侧管理员隔离，
+ * 后端 checkDeptManageScope 为最终硬闸，此处仅做 UI 收敛，避免选了被拒）。
+ * 平台管理员/未取到归属部门时返回空树（不猜测可见范围）。
+ */
+function cropTreeToOwnDept(list) {
+  if (isPlatformAdmin.value) return list
+  const rootId = currentDeptId.value
+  if (!rootId) return []
+  const walk = (nodes) => {
+    for (const n of nodes || []) {
+      if (n.id === rootId) return JSON.parse(JSON.stringify(n))
+      const hit = walk(n.children)
+      if (hit) return hit
+    }
+    return null
+  }
+  const root = walk(list)
+  return root ? [root] : []
 }
 
 /** 过滤禁用的部门 */
@@ -665,8 +729,12 @@ function handleAuthRole(row) {
   router.push("/system/user-auth/role/" + userId)
 }
 
-/** 重置密码按钮操作 */
+/** 重置密码按钮操作（仅平台管理员入口可见；硬闸在后端） */
 function handleResetPwd(row) {
+  if (!isPlatformAdmin.value) {
+    proxy.$modal.msgWarning('仅平台管理员可重置密码，该账号可使用短信验证码登录')
+    return
+  }
   proxy.$prompt(`请输入「${row.userName}」的新密码`, "重置密码", {
     confirmButtonText: "确定",
     cancelButtonText: "取消",
@@ -697,6 +765,7 @@ function reset() {
     userName: undefined,
     nickName: undefined,
     password: undefined,
+    loginPhonenumber: undefined,
     phonenumber: undefined,
     email: undefined,
     sex: undefined,
@@ -722,7 +791,6 @@ function handleAdd() {
     roleOptions.value = response.roles
     open.value = true
     title.value = "新增用户"
-    form.value.password = initPassword.value
   })
 }
 
@@ -766,9 +834,6 @@ function submitForm() {
 onMounted(() => {
   getDeptTree()
   getList()
-  proxy.getConfigKey("sys.user.initPassword").then(response => {
-    initPassword.value = response.msg
-  })
 })
 </script>
 
@@ -791,6 +856,20 @@ onMounted(() => {
   font-size: 12px;
   line-height: 1.4;
   color: var(--el-text-color-secondary);
+}
+.um-cred-tip {
+  padding-top: 2px;
+  line-height: 1.6;
+}
+.um-sms-only {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
 }
 
 /* 筛选条内 Element 组件收敛到 32px/10px 圆角 */

@@ -20,16 +20,21 @@ export function login(username, password, code, uuid, sliderUuid) {
   })
 }
 
-// 发送短信验证码（scene: login=短信登录（匿名），bind=个人中心绑定新号（必须带登录 token）。
-// 不设 isToken:false：未登录时本就无 token 可带；bind 场景由拦截器自动附上 Authorization）
-export function sendSmsCode(phonenumber, scene, sliderUuid) {
+// 发送短信验证码（scene: login=短信登录（匿名），bind=个人中心绑定新号（必须带登录 token），
+// adminbind=部门管理员给目标用户代绑发码（必须带 token 且传 targetUserId）。
+// 不设 isToken:false：未登录时本就无 token 可带；bind/adminbind 场景由拦截器自动附上 Authorization）
+export function sendSmsCode(phonenumber, scene, sliderUuid, targetUserId) {
+  const data = { phonenumber, scene, sliderUuid }
+  if (targetUserId !== undefined && targetUserId !== null) {
+    data.targetUserId = targetUserId
+  }
   return request({
     url: '/sms/code',
     headers: {
       repeatSubmit: false
     },
     method: 'post',
-    data: { phonenumber, scene, sliderUuid }
+    data
   })
 }
 

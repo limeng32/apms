@@ -10,6 +10,7 @@ import com.ruoyi.common.core.domain.entity.SysUser;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.SecurityUtils;
 import com.ruoyi.system.service.ISysRoleService;
+import com.ruoyi.system.service.ISysUserService;
 
 /**
  * 客户侧可管理对象统一门禁（D10）。
@@ -30,6 +31,48 @@ public class ManagedBoundary
 
     @Autowired
     private ISysRoleService roleService;
+
+    @Autowired
+    private ISysUserService userService;
+
+    /**
+     * 手机号管理门禁（绑定/解绑他人账号的登录手机号）。
+     *
+     * <p>规则：
+     * <ul>
+     *   <li>平台管理员(userId=1)：可对任意用户绑/解绑，免短信验证码（调用方据此走免码分支）；</li>
+     *   <li>其他操作者（如 super/role_key=super）：目标用户必须在自己的数据范围内，
+     *       且目标用户至少拥有一个 portal_* 专岗角色，否则拒绝。
+     *       绑定是否还需短信验证码由调用方按"绑要码、解绑不要码"另行处理。</li>
+     * </ul>
+     * 注：数据范围用 {@link ISysUserService#checkUserDataScope}（越权抛异常）；
+     * 平台保留账号(userId=1)另由 SysUserService.checkUserAllowed 在解绑链路兜底。
+     *
+     * @param targetUserId 被管理手机号所属用户
+     * @param op           READ/WRITE/DELETE（语义同其他门禁，仅用于日志/异常文案）
+     */
+    public void assertPhoneManageable(Long targetUserId, Access op)
+    {
+        if (targetUserId == null)
+        {
+            throw new ServiceException("未指定用户");
+        }
+        if (isPlatformAdmin())
+        {
+            return;
+        }
+        // 数据范围：不在本部门数据范围即抛异常
+        userService.checkUserDataScope(targetUserId);
+        // 角色范围：非平台管理员只能管理 portal_* 专岗用户
+        List<SysRole> roles = roleService.selectRolesByUserId(targetUserId);
+        boolean hasPortal = roles != null && roles.stream()
+                .map(SysRole::getRoleKey)
+                .anyMatch(DelegationConstants::isPortalRole);
+        if (!hasPortal)
+        {
+            throw new ServiceException("仅可管理本部门专岗角色用户的登录手机号");
+        }
+    }
 
     /**
      * 校验单个用户可触达

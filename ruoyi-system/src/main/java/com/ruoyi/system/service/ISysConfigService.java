@@ -50,6 +50,16 @@ public interface ISysConfigService
     public boolean selectSmsLoginEnabled();
 
     /**
+     * 是否允许平台内置管理员（userId=1）通过账号密码登录。
+     * key sys.login.adminPasswordEnabled，默认 true（缺省放行，避免升级即锁死管理员）。
+     * 登录页默认只暴露短信入口、密码入口为隐藏后门；关闭后即使调出后门，
+     * userId=1 仍无法密码登录（其他有密码账号不受影响）。
+     *
+     * @return true允许（默认），false拒绝
+     */
+    public boolean selectAdminPasswordLoginEnabled();
+
+    /**
      * 查询参数配置列表
      * 
      * @param config 参数配置信息

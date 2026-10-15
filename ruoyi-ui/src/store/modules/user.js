@@ -11,6 +11,7 @@ const useUserStore = defineStore(
     state: () => ({
       token: getToken(),
       id: '',
+      deptId: null,
       name: '',
       nickName: '',
       roles: [],
@@ -80,6 +81,7 @@ const useUserStore = defineStore(
               this.roles = ['ROLE_DEFAULT']
             }
             this.id = user.userId
+            this.deptId = user.deptId ?? null
             this.name = user.userName
             this.nickName = user.nickName
             this.portalMode = res.portalMode === true

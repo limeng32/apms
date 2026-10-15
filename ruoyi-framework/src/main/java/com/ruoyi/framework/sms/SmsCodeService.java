@@ -9,11 +9,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
+
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.constant.CacheConstants;
 import com.ruoyi.common.core.domain.entity.SysUser;
@@ -44,15 +46,17 @@ import com.ruoyi.system.service.apms.IApmsUserPhoneService;
 @Service
 public class SmsCodeService
 {
-    /** 场景：短信登录 */
+    /** 场景：登录验证码 */
     public static final String SCENE_LOGIN = "login";
     /** 场景：个人中心绑定新手机号 */
     public static final String SCENE_BIND = "bind";
+    /** 场景：管理员给数据范围内专岗用户代绑新手机号（super 需验证码；admin 走免码接口不发码） */
+    public static final String SCENE_ADMIN_BIND = "adminbind";
 
     /** 重发间隔（秒） */
     private static final int RESEND_SECONDS = 60;
     /** 同一手机号每日发送上限（login+bind 合计） */
-    private static final int MAX_PER_PHONE_PER_DAY = 10;
+    private static final int MAX_PER_PHONE_PER_DAY = 30;
     /** 同一 IP 每日发送上限 */
     private static final int MAX_PER_IP_PER_DAY = 50;
     /** 验证码有效期（秒） */
@@ -112,6 +116,9 @@ public class SmsCodeService
 
     @Autowired
     private ISysUserService userService;
+
+    @Autowired
+    private com.ruoyi.framework.web.service.ManagedBoundary managedBoundary;
 
     @Autowired
     private AliyunSmsSender smsSender;
@@ -181,6 +188,16 @@ public class SmsCodeService
             }
         }
 
+        // ===== 频控 + 生成 + 发送（公共段，按场景隔离 key） =====
+        dispatchSms(scene, phone, ip);
+    }
+
+    /**
+     * 频控（60s 间隔/单号日上限/IP 日上限，全部 Redis 原子）→ SecureRandom 生成码
+     * → Lua 原子写码清错 → 发送；发送失败回滚 code/err/ttl 允许立即重试。
+     */
+    private void dispatchSms(String scene, String phone, String ip)
+    {
         // ===== 频控（全部 Redis 原子操作，禁止先查后加） =====
         String day = LocalDate.now().format(DAY_FMT);
         String ttlKey = CacheConstants.SMS_TTL_KEY + scene + ":" + phone;
@@ -386,6 +403,75 @@ public class SmsCodeService
             throw new ServiceException("请输入正确的手机号");
         }
         consumeOrThrow(SCENE_BIND, phone, input);
+    }
+
+    /**
+     * 管理员（super）给数据范围内专岗用户代绑新手机号——发码。
+     *
+     * <p>与本人 bind 的区别：绑定目标是 {@code targetUserId} 而非自己；发码前强制过
+     * 手机号管理门禁（admin 全放行不会走到这——admin 走免码接口；super 校验数据范围+portal）。
+     *
+     * @param targetUserId 被绑定用户
+     * @param phone        新手机号
+     */
+    public void sendCodeForAdminBind(Long targetUserId, String phone, String ip, String sliderUuid)
+    {
+        if (!configService.selectSmsLoginEnabled())
+        {
+            throw new ServiceException("短信登录未开启");
+        }
+        if (StringUtils.isEmpty(phone) || !PHONE_PATTERN.matcher(phone).matches())
+        {
+            throw new ServiceException("请输入正确的手机号");
+        }
+        // 人机校验
+        if (configService.selectSliderCaptchaEnabled()
+                && !sliderCaptchaService.consumePass(sliderUuid))
+        {
+            throw new ServiceException("请先完成滑块安全验证");
+        }
+        // 门禁：admin 直接放行；super 必须数据范围内 + portal 角色
+        managedBoundary.assertPhoneManageable(targetUserId,
+                com.ruoyi.framework.web.service.ManagedBoundary.Access.WRITE);
+        // 目标账号上限 / 账号内重复
+        assertBindable(targetUserId, phone);
+
+        dispatchSms(SCENE_ADMIN_BIND, phone, ip);
+    }
+
+    /**
+     * 管理员代绑——校验并一次性消费 adminbind 验证码，并再次复核门禁与可绑定性
+     * （防止发码后目标用户被改角色/挪部门导致的越权窗口）。通过后由 Controller 落库。
+     */
+    public void verifyForAdminBind(Long targetUserId, String phone, String input)
+    {
+        if (StringUtils.isEmpty(phone) || !PHONE_PATTERN.matcher(phone).matches())
+        {
+            throw new ServiceException("请输入正确的手机号");
+        }
+        if (targetUserId == null)
+        {
+            throw new ServiceException("未指定目标用户");
+        }
+        consumeOrThrow(SCENE_ADMIN_BIND, phone, input);
+        managedBoundary.assertPhoneManageable(targetUserId,
+                com.ruoyi.framework.web.service.ManagedBoundary.Access.WRITE);
+        assertBindable(targetUserId, phone);
+    }
+
+    /** 目标账号绑定数上限 + 账号内号码不重复（不限制跨账号一号多绑） */
+    private void assertBindable(Long userId, String phone)
+    {
+        if (userPhoneService.countByUserId(userId) >= ApmsUserPhone.MAX_PER_USER)
+        {
+            throw new ServiceException("该账号绑定手机号已达上限（" + ApmsUserPhone.MAX_PER_USER + " 个）");
+        }
+        boolean boundToTarget = userPhoneService.selectListByPhone(phone).stream()
+                .anyMatch(b -> userId.equals(b.getUserId()));
+        if (boundToTarget)
+        {
+            throw new ServiceException("该手机号已绑定在此账号，无需重复绑定");
+        }
     }
 
     /**

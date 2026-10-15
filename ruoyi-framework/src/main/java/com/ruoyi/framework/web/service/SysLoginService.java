@@ -108,6 +108,15 @@ public class SysLoginService
         }
         AsyncManager.me().execute(AsyncFactory.recordLogininfor(username, Constants.LOGIN_SUCCESS, MessageUtils.message("user.login.success")));
         LoginUser loginUser = (LoginUser) authentication.getPrincipal();
+        // 平台内置管理员(userId=1)密码登录开关：认证通过后、签 token 前判定。
+        // 只认 userId 而非 userName——用户名即使被改或出现同名普通账号也不会误判。
+        if (Long.valueOf(1L).equals(loginUser.getUserId())
+                && !configService.selectAdminPasswordLoginEnabled())
+        {
+            AsyncManager.me().execute(
+                    AsyncFactory.recordLogininfor(username, Constants.LOGIN_FAIL, "管理员密码登录已关闭"));
+            throw new ServiceException("管理员密码登录已关闭，请使用短信登录或联系系统管理员");
+        }
         recordLoginInfo(loginUser.getUserId());
         // 生成token
         return tokenService.createToken(loginUser);

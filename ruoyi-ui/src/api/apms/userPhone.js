@@ -40,3 +40,13 @@ export function adminUnbindPhone(id) {
     method: 'delete'
   })
 }
+
+// 管理员：给目标用户代绑登录手机号
+// 平台管理员（userId=1）免短信验证码，code 可空；部门管理员必须传 adminbind 场景收到的 6 位验证码
+export function adminBindPhone(userId, phonenumber, code) {
+  return request({
+    url: '/system/user/phone/bind',
+    method: 'post',
+    data: { userId, phonenumber, code }
+  })
+}

@@ -122,6 +122,21 @@ public class SysConfigServiceImpl implements ISysConfigService
     }
 
     /**
+     * 管理员密码登录开关：缺省/非法值默认放行（true），仅显式配置为 false 才关闭。
+     * 与短信开关相反——这是"关闭高危入口"的开关，缺省不能把管理员锁在门外。
+     */
+    @Override
+    public boolean selectAdminPasswordLoginEnabled()
+    {
+        String v = selectConfigByKey("sys.login.adminPasswordEnabled");
+        if (StringUtils.isEmpty(v))
+        {
+            return true;
+        }
+        return Convert.toBool(v, true);
+    }
+
+    /**
      * 查询参数配置列表
      * 
      * @param config 参数配置信息
