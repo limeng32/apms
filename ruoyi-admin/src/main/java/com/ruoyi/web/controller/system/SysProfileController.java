@@ -71,7 +71,8 @@ public class SysProfileController extends BaseController
         SysUser currentUser = loginUser.getUser();
         currentUser.setNickName(user.getNickName());
         currentUser.setEmail(user.getEmail());
-        currentUser.setPhonenumber(user.getPhonenumber());
+        // 手机号不在基本资料维护：登录手机号由 apms_user_phone + 个人中心「登录手机号」tab 管理，
+        // 此处禁止用入参覆盖 sys_user.phonenumber（即使绕过页面传入也忽略）
         currentUser.setSex(user.getSex());
         // 归属部门：仅超级管理员可在个人中心修改自己的部门（如挂到根部门），
         // 其他账号即使绕过页面传入 deptId 也直接忽略
@@ -88,10 +89,6 @@ public class SysProfileController extends BaseController
             }
             currentUser.setDeptId(user.getDeptId());
             currentUser.setDept(dept);
-        }
-        if (StringUtils.isNotEmpty(user.getPhonenumber()) && !userService.checkPhoneUnique(currentUser))
-        {
-            return error("修改用户'" + loginUser.getUsername() + "'失败，手机号码已存在");
         }
         if (StringUtils.isNotEmpty(user.getEmail()) && !userService.checkEmailUnique(currentUser))
         {
