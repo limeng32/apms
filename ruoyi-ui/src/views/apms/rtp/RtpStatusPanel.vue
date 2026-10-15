@@ -1,10 +1,10 @@
 <template>
-  <section class="rtp-panel">
+  <section class="rtp-panel" :class="{ 'is-touch-device': isCoarsePointer }">
     <div class="ha-section-head">
       <h2 class="ha-section-title">RTP 状态管理</h2>
       <p class="ha-section-sub">
         全队 {{ summary.total }} 人 · 已评估 {{ summary.green + summary.yellow + summary.red }} 人 ·
-        点击卡片查看详情与变更时间线<template v-if="canEdit"> · 拖拽卡片更新状态</template>
+        点击卡片查看详情与变更时间线<template v-if="canEdit && !isCoarsePointer"> · 拖拽卡片更新状态</template><template v-else-if="canEdit"> · 点卡片「改状态」更新状态</template>
       </p>
     </div>
 
@@ -52,9 +52,17 @@
     <div v-if="canEdit && !guideHidden" class="rt-guide-bar">
       <el-icon class="rt-guide-ic"><Pointer /></el-icon>
       <div class="rt-guide-text">
-        <b>更新 RTP 状态有两种方式：</b>
-        ① 将队员卡片<b>拖拽</b>到下方对应状态列（红/黄/绿），确认后生效；
-        ② <b>点击卡片</b>查看详情并选择状态，或直接点卡片右上角的「改状态」。
+        <template v-if="isCoarsePointer">
+          <!-- 触屏设备不启用原生拖拽：iOS Safari 会把拖拽文本（队员ID）带去搜索引擎 -->
+          <b>手机/平板更新 RTP 状态：</b>
+          点队员卡片上的<b>「改状态」</b>选择红/黄/绿，或<b>点击卡片</b>在详情中调整；
+          也可用顶部「批量评估」。
+        </template>
+        <template v-else>
+          <b>更新 RTP 状态有两种方式：</b>
+          ① 将队员卡片<b>拖拽</b>到下方对应状态列（红/黄/绿），确认后生效；
+          ② <b>点击卡片</b>查看详情并选择状态，或直接点卡片右上角的「改状态」。
+        </template>
         <button type="button" class="rt-guide-replay" @click="startTour">再看一次引导</button>
       </div>
       <button type="button" class="rt-guide-close" title="不再提示" @click="hideGuide">
@@ -109,7 +117,7 @@
             :key="row.athleteId"
             class="rk-kanban-card"
             :class="{ 'is-dragging': dragId === row.athleteId, 'is-readonly': !canEdit }"
-            :draggable="canEdit"
+            :draggable="canEdit && !isCoarsePointer"
             @dragstart="onDragStart(row, $event)"
             @dragend="onDragEnd"
             @click="openDrawer(row)"
@@ -305,7 +313,9 @@
          注意：element-plus 2.13 的 el-tour 不支持 :steps 属性，必须用 el-tour-step 插槽声明步骤，
          否则内容浮层为空（只剩遮罩+白条）并锁住全屏 -->
     <el-tour v-model="tourOpen" @close="finishTour" @finish="finishTour">
+      <!-- 触屏端不教拖拽（iOS Safari 不支持，已禁用）：只播点击操作这一步 -->
       <el-tour-step
+        v-if="!isCoarsePointer"
         target=".rk-kanban-col.tone-red .rk-kanban-head"
         title="方式①：拖拽更新状态"
         description="按住任意队员卡片，拖到红/黄/绿任一状态列，松开后在确认框中点确定即完成变更。"
@@ -314,9 +324,11 @@
       <el-tour-step
         v-if="fullList.length"
         target=".rk-kanban-card"
-        title="方式②：点击操作"
-        description="点击卡片可查看详情与变更时间线；不习惯拖拽时，点卡片右上角「改状态」即可直接选择状态。"
-        placement="right"
+        :title="isCoarsePointer ? '如何更新状态' : '方式②：点击操作'"
+        :description="isCoarsePointer
+          ? '点队员卡片右上角「改状态」即可选择红/黄/绿；也可点击卡片查看详情与变更时间线，或用顶部「批量评估」。'
+          : '点击卡片可查看详情与变更时间线；不习惯拖拽时，点卡片右上角「改状态」即可直接选择状态。'"
+        :placement="isCoarsePointer ? 'bottom' : 'right'"
       />
     </el-tour>
 
@@ -489,15 +501,40 @@ watch(filteredList, () => {
 function resetFilter() { filters.deptId = null; filters.keyword = '' }
 
 // ========= 拖拽（弹确认后落库；清除走 clearStatus，其余走 updateStatus） =========
+// 触屏（手机/平板）不启用 HTML5 拖拽：iOS Safari 对 draggable 支持不完整，
+// 松手未命中投放区时会把 dataTransfer 里的文本（运动员ID）带去系统搜索/查词典页，
+// 表现为"报错并跳到搜索 ID 的页面"。触屏改用卡片上的「改状态」点击交互。
+//
+// 检测必须双保险：
+// ① (pointer: coarse)：iPhone / 安卓默认模式命中；
+// ② iPadOS 的 Safari 默认「请求桌面网站」、iPhone 也可对单站开启该模式，此时浏览器
+//    伪装成 Mac：pointer 上报 fine、hover 上报 hover、UA 是 Macintosh，①完全失效；
+//    该模式下唯一稳定的触屏特征是 navigator.maxTouchPoints > 0 且支持 touch 事件。
+//    （触屏笔记本同样命中，但 HTML5 拖放在触屏上本就不工作，点击交互不受影响。）
+function detectCoarsePointer() {
+  if (typeof window === 'undefined') return false
+  if (typeof window.matchMedia === 'function'
+      && window.matchMedia('(pointer: coarse)').matches) {
+    return true
+  }
+  return typeof navigator !== 'undefined'
+    && (navigator.maxTouchPoints || 0) > 0
+    && ('ontouchstart' in window)
+}
+const isCoarsePointer = detectCoarsePointer()
 const dragId = ref(null)
 const dragOverKey = ref(null)
 
 function onDragStart(row, ev) {
-  if (!canEdit) { ev.preventDefault(); return }
+  // 双保险：正常情况下触屏卡片 draggable=false 不会触发本事件；
+  // 个别浏览器（桌面网站模式伪装、厂商 ROM）判定可能不一致，再拦一次
+  if (!canEdit || isCoarsePointer) { ev.preventDefault(); return }
   dragId.value = row.athleteId
   if (ev.dataTransfer) {
     ev.dataTransfer.effectAllowed = 'move'
-    ev.dataTransfer.setData('text/plain', String(row.athleteId))
+    // 不用 text/plain：iOS Safari 在拖拽未命中投放区时会把纯文本载荷（运动员ID）
+    // 当搜索词跳系统搜索/查词典页。投放逻辑只依赖闭包 dragId，不读载荷
+    try { ev.dataTransfer.setData('application/x-apms-athlete', String(row.athleteId)) } catch (e) { /* 忽略 */ }
   }
 }
 function onDragEnd() {
@@ -698,7 +735,14 @@ function hideGuide() {
 }
 
 const tourOpen = ref(false)
-function startTour() { tourOpen.value = true }
+/** 是否有可播放的步骤：触屏端只剩「点击操作」一步，依赖看板至少有一张卡片 */
+function tourHasSteps() {
+  return !isCoarsePointer || fullList.value.length > 0
+}
+function startTour() {
+  if (!tourHasSteps()) return // 无步骤时打开 el-tour 会只剩遮罩锁住全屏
+  tourOpen.value = true
+}
 function finishTour() {
   tourOpen.value = false
   localStorage.setItem(TOUR_DONE_KEY, '1')
@@ -708,6 +752,7 @@ let tourTried = false
 watch(loading, (v) => {
   if (!v && canEdit && !tourTried && localStorage.getItem(TOUR_DONE_KEY) !== '1') {
     tourTried = true
+    if (!tourHasSteps()) return
     nextTick(() => setTimeout(() => { tourOpen.value = true }, 250))
   }
 })
@@ -836,9 +881,27 @@ loadAll()
 .rt-card-set-caret { font-size: 11px; }
 /* 给右侧入口让位后，姓名仍可正常省略号截断 */
 .rk-kanban-card-top .rk-kanban-card-name { min-width: 0; flex: 1; }
-/* 触摸设备无 hover：常显，保证平板上入口可见 */
+/* 触摸设备无 hover：常显，保证平板上入口可见；
+   同时禁用卡片长按系统菜单/选词（配合 draggable 关闭，避免 iOS 长按跳搜索） */
 @media (hover: none) {
   .rt-card-set { opacity: 1; }
+  .rk-kanban-card,
+  .rt-name-chip {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+/* JS 检测兜底：iPadOS / iPhone 开启「请求桌面网站」后会上报 hover:hover、pointer:fine，
+   上面的媒体查询不命中；改用根节点 class，保证「改状态」入口常显、长按不出系统菜单 */
+.rtp-panel.is-touch-device {
+  .rt-card-set { opacity: 1; }
+  .rk-kanban-card,
+  .rt-name-chip {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
 }
 
 /* ===== 列折叠（正常参训/未评估：人数多，默认只显姓氏首字） ===== */
