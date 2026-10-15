@@ -71,7 +71,7 @@
 ### 4.2 后端 - common
 
 - `constant/CacheConstants.java`：新增
-  `SMS_CODE_KEY="sms:code:"`、`SMS_ERR_KEY="sms:err:"`、`SMS_TTL_KEY="sms:ttl:"`、`SMS_DAY_KEY="sms:day:"`、`SMS_IPDAY_KEY="sms:ipday:"`（key 内带 scene/phone/日期维度）。
+  `SMS_CODE_KEY="sms:code:"`、`SMS_ERR_KEY="sms:err:"`、`SMS_TTL_KEY="sms:ttl:"`、`SMS_DAY_KEY="sms:day:"`、`SMS_IPDAY_KEY="sms:ipday:"`（key 内带 phone/日期维度）。
 - 新建 `core/domain/model/SmsSendBody`：phonenumber、scene、sliderUuid。
 - 新建 `core/domain/model/SmsLoginBody`：phonenumber、code。
 
@@ -79,8 +79,12 @@
 
 - 新建 `domain/apms/ApmsUserPhone.java`：id、userId、phonenumber + 审计字段。
 - 新建 `mapper/apms/ApmsUserPhoneMapper.java` + `resources/mapper/apms/ApmsUserPhoneMapper.xml`：
-  `selectByUserId`、`selectByPhone`、`countByUserId`、`insertApmsUserPhone`、`deleteApmsUserPhoneById`。
-- 新建 `service/apms/IApmsUserPhoneService.java` + `impl/ApmsUserPhoneServiceImpl.java`。
+  `selectByUserId`、`selectById`、`selectByPhone`、`countByUserId`、`insertApmsUserPhone`、`deleteApmsUserPhoneById`、**`deleteByUserId(Long)` / `deleteByUserIds(Long[])`（用户删除链路同事务清理，见下）**。
+- `mapper/system/SysUserMapper.java` + XML：新增 `selectUserByIdForUpdate`（`SELECT user_id FROM sys_user WHERE user_id=#{userId} AND del_flag='0' FOR UPDATE`，绑定事务锁用户行用）。
+- 新建 `service/apms/IApmsUserPhoneService.java` + `impl/ApmsUserPhoneServiceImpl.java`：
+  - `bindPhone(userId, phone)` 加 `@Transactional`：**先 `selectUserByIdForUpdate` 锁该用户行 → `countByUserId < 3` → insert**（同一账号并发绑定串行化，杜绝 2+2=4）；`uk_phonenumber` 冲突抛 `DuplicateKeyException` 时转友好提示「手机号已被其他账号绑定」；
+  - `unbindOwn(userId, id)`（归属校验）、`unbindByAdmin(id)`（Controller 完成越权校验后调用）。
+- **用户删除链路清理（P0，防删除后号码永久占坑）**：`SysUserServiceImpl` 注入 `ApmsUserPhoneMapper`，在已有的 `deleteUserById` / `deleteUserByIds`（两者均 `@Transactional`）中与角色/岗位关联清理同位置追加 `deleteByUserId` / `deleteByUserIds`，逻辑删除（del_flag='2'）提交即释放号码；不新增独立清理任务。
 - `ISysConfigService` / `SysConfigServiceImpl`：`selectSmsEnabled()`（key `sys.account.smsLoginEnabled`，缺省 false）。
 
 ### 4.4 后端 - framework / admin
@@ -109,7 +113,7 @@
     ```
     返回约定：`0` 成功 / `-1` 无码（过期/已使用）/ `n>=5` 已作废 / `1..4` 错误（提示剩余 `5-n` 次）。Service 层映射为三种 ServiceException；
   - `verifyForLogin(phone, input)`：脚本 B → 成功后绑定表查 userId → 查 SysUser 并校验删除/停用 → 返回 SysUser；
-  - `verifyForBind(userId, phone, input)`：脚本 B → 成功后再验号码未被占 + 绑定数<3（防止发码后被并发抢占），由绑定服务落库。
+  - `verifyForBind(userId, phone, input)`：脚本 B 校验消费（只验码与场景，不做数量/占用判定），通过后由 Controller 调 `IApmsUserPhoneService.bindPhone` 在行锁事务内完成最终数量/唯一约束判定；竞态失败（已满/被抢）时验证码已一次性消费，前端提示重新获取。
 - `framework/web/service/SysLoginService.java`：
   - 新增 `checkLoginIp()`：把现有 `loginPreCheck()` 末尾的 `sys.login.blackIPList` 校验（含 AsyncFactory 失败日志 + BlackListException）原样抽出；`loginPreCheck()` 改为调用它，**密码登录行为零变化**；
   - 新增 `loginBySms(phone, code)`：先 `checkLoginIp()` → `smsCodeService.verifyForLogin` 拿 user → AsyncFactory 成功/失败日志（手机号）→ recordLoginInfo → createLoginUser → createToken；不触密码、不触 AuthenticationManager。
@@ -117,7 +121,10 @@
   - `@RateLimiter(time = 60, count = 10, limitType = LimitType.IP)` 必须显式写全（若依 DEFAULT 模式 key 不带 IP，漏写会退化为全站合计每分钟 10 次）；
   - `POST /sms/code`（bind 场景从 SecurityUtils 取 userId，匿名场景缺失即拒）、`POST /login/sms`；
   - `/sms/code` 与 `/login/sms` 两个匿名路径都加进 SecurityConfig 白名单。
-- `admin/controller/system/UserPhoneController.java`（新建）：个人中心三个 + 管理员两个接口（共 5 个，按权限/路径区分；个人中心接口从 LoginUser 取 userId 防越权）。
+- `admin/controller/system/UserPhoneController.java`（新建，路径与权限严格对齐现有 `SysUserController` 范式）：
+  - 个人中心（`/system/user/profile/phone`）：GET list（从 LoginUser 取 userId）、POST bind、DELETE unbind/{id}（Service 内强制归属校验，只认本人 userId，防越权）；
+  - 管理员查看 `GET /system/user/phone/list/{userId}`：`@PreAuthorize("@ss.hasPermi('system:user:list')")` + **先 `managedBoundary.assertUserManageable(userId, Access.READ)` 再 `userService.checkUserDataScope(userId)`**，两闸全过才查列表；
+  - 管理员强制解绑 `DELETE /system/user/phone/unbind/{id}`：`@PreAuthorize("@ss.hasPermi('system:user:edit')")` + `@Log(title="登录手机号", businessType=DELETE)`；**必须先按绑定 id 查出记录拿到所属 userId，再依次 `assertUserManageable(userId, Access.WRITE)` + `checkUserAllowed(new SysUser(userId))`（禁止操作超级管理员，与删除/重置密码同口径）+ `checkUserDataScope(userId)`，全部通过才删除**——禁止拿前端传入的 userId 做校验，防止手工构造 id 越权操作数据范围外/平台保留账号。
 - `framework/config/SecurityConfig.java`：permitAll 加 `/sms/code`、`/login/sms`。
 - `admin/controller/apms/ApmsLoginConfigController.java`：返回 map 追加 `smsEnabled`。
 
@@ -187,7 +194,9 @@
 - 日计数 key 跨场景共用（同一手机每天总量 10 条）；码 key 带 scene，登录码不能用于绑定、反之亦然。
 - **验证码安全（强约束）**：SecureRandom 生成；写码与清错计数、比较与消费均走 Redis Lua 单脚本原子完成；成功即一次性消费，禁止先 GET 比对再 DEL 的两步写法（并发下可重放）；阿里云发送失败必须回滚删除刚写的 code。
 - **安全闸复用**：IP 黑名单必须抽公共方法，密码登录原逻辑零改动，短信登录显式调用；发码注解必须带 `limitType = LimitType.IP`（代码评审重点检查项）。
-- 个人中心/管理员两个写接口均做归属与权限校验：解绑本人只认自己 userId；管理员走 `@PreAuthorize` 且操作记操作日志（@Log）。
+- 个人中心写接口在 Service 层强制归属校验（解绑只认 LoginUser 的 userId，不信任前端任何 id）；管理员写接口必须过 ManagedBoundary + 数据范围 + checkUserAllowed 三闸，且先查绑定记录反查 userId（P0）。
+- 用户逻辑删除必须同事务清绑定（P0）：号码随 del_flag='2' 立即释放可被重新绑定，无后台清理任务、无残留窗口。
+- 绑定数量上限靠「sys_user 行锁 + 事务内 count」保证，手机号全局唯一靠 uk 索引兜底；不引入分布式锁（P0）。
 - 管理员强制解绑不影响该账号已签发的在线 token。
 - 登录日志用户名记手机号，与现有明文记录口径一致。
 - 绑定/解绑不做密码再校验（已登录态 + 绑定需短信验权）；如需更高安全等级，后续可加。
@@ -202,7 +211,10 @@
   2. 连续错码第 5 次后码立即作废（即使第 5 次输入的是正确码也拒绝，需重新获取）；重新获取后旧错误计数清零；
   3. 阿里云发送失败（故意配错 AK）后 Redis 无 code 残留、60s 间隔 key 也已释放可立即重试；
   4. 在 `sys.login.blackIPList` 配置当前 IP：密码登录与短信登录同时被拦；移除后均恢复；
-  5. 确认 `/sms/code` 注解编译后为 `LimitType.IP`（检查源码与限流 key 实际带 IP）。
+  5. 确认 `/sms/code` 注解编译后为 `LimitType.IP`（检查源码与限流 key 实际带 IP）；
+  6. **越权 P0**：用仅有本部门数据权限的业务管理员 token，手工 `GET /system/user/phone/list/{范围外userId}` 与 `DELETE /system/user/phone/unbind/{超管绑定id}`：均被拒绝（403/错误），列表不泄漏、绑定不删除；
+  7. **删除释放 P0**：删除一个已绑定手机号的账号后，`apms_user_phone` 中其记录同事务消失；该手机号可立即被另一账号绑定；
+  8. **绑定上限 P0**：账号已有 2 个号码时并发发起两个不同新号的绑定请求（均已各自收码），结果恰好成功 1 个、另一个提示已达上限，总数恒为 3。
 - 联调（用户本人执行，AK/SK 与真实短信不经手 Agent）：
   1. 执行 patch（先跑注释中的冲突/核对 SQL），env.conf 配 AK/SK，sys_config 开关置 true；
   2. 登录页：滑块→收码→登录；错码/过期/未绑定/停用/频控各异常路径；
@@ -218,5 +230,8 @@
 - **短信资损**：滑块 + 四级频控 + IP 注解限流 + 服务端开关熔断 + login 场景无绑定不发码/bind 场景已占用不发码。
 - **迁移重复号码**：唯一索引 + MIN(user_id) 归并，补丁附排查/核对 SQL，执行前后可验；被跳过账号可登录后自助绑定其它号码。
 - **phonenumber 脏数据**：正则+空串过滤；登录时一个 phone 唯一约束保证恰好一条绑定。
+- **管理员越权（P0）**：仅加 `@PreAuthorize` 不够，必须与 SysUserController 同范式执行 ManagedBoundary.assertUserManageable + checkUserDataScope；解绑先按绑定 id 反查 userId 再校验，并加 checkUserAllowed 拦超管；验证含手工构造 id 的越权用例。
+- **删除账号号码占坑（P0）**：逻辑删除不动物理数据但唯一索引仍在，必须在 deleteUserById(s) 同事务删绑定，否则号码永久无法再绑；已纳入删除链路。
+- **绑定数并发超限（P0）**：count-then-insert 竞态可突破 3 个上限；绑定事务首句对 sys_user 行 `SELECT ... FOR UPDATE` 串行化，跨号并发由 uk_phonenumber 兜底。
 - **模板/签名异常**：错误码翻译 + 日志原始信息，不影响密码登录主链路。
 - **演示站误显**：tab 只依赖公开配置布尔值，无后端必回退隐藏；个人中心新接口补只读 mock。
