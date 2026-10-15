@@ -9,11 +9,12 @@
 已与用户确认的六项决策：
 
 1. **账号准入**：仅绑定表中存在且账号状态正常的手机号可登录；未绑定、账号停用/已删除一律拒绝，**不自动开户**。
-2. **防刷**：点「获取验证码」前强制通过现有拼图滑块；叠加同号 60 秒 1 条 / 每天 10 条（登录+绑定合计）、同 IP 每天 50 条、验证码错 5 次作废。
+2. **防刷**：点「获取验证码」前强制通过现有拼图滑块；叠加同号 60 秒 1 条 / 每天 10 条（登录+绑定合计）、同 IP 每天 50 条、验证码错 5 次作废。**验证码一次性消费**：校验成功必须原子删除验证码与错误计数（Lua 完成「比较→消费」，杜绝 5 分钟内并发重放换多个 token）；阿里云发送失败时同步删除刚写入的验证码（用户收不到的码不得残留）。
 3. **凭证存放**：AccessKeyId/Secret 走服务器 `env.conf`（chmod 600，不进 git），部署脚本生成外部 `application.yml` 扁平属性；源码内只留空占位。签名/模板号非敏感，写源码 yml 默认值。
 4. **演示站 aoti.apms.top**（纯前端 mock、无后端）：登录页自动隐藏短信 tab——tab 显示由 `GET /login/config` 返回的 `smsEnabled` 驱动（默认 false），演示站接口失败静默回退默认。同一 dist 同时服务两站，无需构建开关。
 5. **绑定入口：两边都要**。个人中心自助管理（添加必须输入新号码收到的短信验证码验证所有权，可自行解绑，满 3 个不可再加）；管理员在用户管理页可查看每个账号的绑定号码并强制解绑（管理员不可直接添加，添加只能本人收码完成）。
 6. **历史数据**：新建绑定表为短信登录唯一依据；补丁把现有 `sys_user.phonenumber` 迁移为每个账号的首个绑定号；`sys_user.phonenumber` 字段保留，语义改为「联系手机号」（资料用途），现有用户管理/个人资料表单不动。
+7. **安全对齐**：短信登录不得绕过密码登录已有的安全闸——`sys.login.blackIPList` IP 黑名单抽成 `checkLoginIp()` 供两种登录共用；发码接口的 `@RateLimiter` 必须显式 `limitType = LimitType.IP`（DEFAULT 模式 key 不带 IP，会变成全站合计限额）。
 
 ## 二、仓库调研结论
 
@@ -88,18 +89,41 @@
 - `framework/sms/AliyunSmsSender.java`（新建）：Client 单例懒加载（AK 空不初始化，发送报「短信登录未配置」）；`send(phone, code)` 用 fastjson2 拼 `{"code":"..."}`；`isv.BUSINESS_LIMIT_CONTROL`→频率超限、`isv.AMOUNT_NOT_ENOUGH`→余额不足、其余→服务配置异常（原始 Code/Message 仅日志）。
 - `framework/sms/SmsCodeService.java`（新建）：
   - 常量：间隔 60s、单号日 10 条、单 IP 日 50 条、码 5 分钟、错 5 次、6 位数字；
-  - `sendCode(phone, scene, ip, sliderUuid)`：开关 → 正则`^1[3-9]\d{9}$` → consumePass → 场景校验（login：绑定存在；bind：号码未被占 + userId 绑定数<3）→ 频控四查（StringRedisTemplate，日 key TTL 至次日 0 点）→ 生成存码 → 发送（失败删间隔 key 允许立刻重试，日计数保留）；
-  - `verifyForLogin(phone, input)`：码/错次校验 → 绑定表查 userId → 查 SysUser 并校验删除/停用 → 返回 SysUser；
-  - `verifyForBind(userId, phone, input)`：码/错次校验 + 号码未被占 + 数量<3，通过后由绑定服务落库。
-- `framework/web/service/SysLoginService.java`：新增 `loginBySms(phone, code)`（成功/失败 AsyncFactory 登录日志、recordLoginInfo、createLoginUser、createToken）。
-- `admin/controller/common/SmsController.java`（新建）：`POST /sms/code`（bind 场景从 SecurityUtils 取 userId）、`POST /login/sms`。
+  - 验证码生成：静态单例 `java.security.SecureRandom`（禁止 ThreadLocalRandom/Math.random），`100000 + secureRandom.nextInt(900000)`；
+  - `sendCode(phone, scene, ip, sliderUuid)`：开关 → 正则`^1[3-9]\d{9}$` → consumePass → 场景校验（login：绑定存在；bind：号码未被占 + userId 绑定数<3）→ 频控四查（StringRedisTemplate，日 key TTL 至次日 0 点）→ **Lua 脚本 A 写码（SET code EX 300 + DEL err，一次往返，发新码即清零旧错误计数）** → 调阿里云发送；**发送异常时删除 code/err/ttl 三个 key**（用户收不到的码不得残留；日计数保留计费），异常照常抛出；
+  - **校验消费用 Lua 脚本 B 原子完成（StringRedisTemplate + DefaultRedisScript）**，杜绝并发两次都校验成功：
+    ```lua
+    -- KEYS[1]=codeKey  KEYS[2]=errKey   ARGV[1]=input  ARGV[2]=maxErr  ARGV[3]=errTtlSec
+    local stored = redis.call('GET', KEYS[1])
+    if stored == false then return -1 end          -- 无码：过期/未发送/已消费
+    if stored == ARGV[1] then
+      redis.call('DEL', KEYS[1], KEYS[2])          -- 成功：一次性消费，码与错误计数同删
+      return 0
+    end
+    local n = redis.call('INCR', KEYS[2])          -- 失败：原子 INCR
+    redis.call('EXPIRE', KEYS[2], ARGV[3])
+    if n >= tonumber(ARGV[2]) then
+      redis.call('DEL', KEYS[1])                   -- 第 5 次错误：验证码当场作废
+    end
+    return n                                       -- 返回第几次错误（供剩余次数提示）
+    ```
+    返回约定：`0` 成功 / `-1` 无码（过期/已使用）/ `n>=5` 已作废 / `1..4` 错误（提示剩余 `5-n` 次）。Service 层映射为三种 ServiceException；
+  - `verifyForLogin(phone, input)`：脚本 B → 成功后绑定表查 userId → 查 SysUser 并校验删除/停用 → 返回 SysUser；
+  - `verifyForBind(userId, phone, input)`：脚本 B → 成功后再验号码未被占 + 绑定数<3（防止发码后被并发抢占），由绑定服务落库。
+- `framework/web/service/SysLoginService.java`：
+  - 新增 `checkLoginIp()`：把现有 `loginPreCheck()` 末尾的 `sys.login.blackIPList` 校验（含 AsyncFactory 失败日志 + BlackListException）原样抽出；`loginPreCheck()` 改为调用它，**密码登录行为零变化**；
+  - 新增 `loginBySms(phone, code)`：先 `checkLoginIp()` → `smsCodeService.verifyForLogin` 拿 user → AsyncFactory 成功/失败日志（手机号）→ recordLoginInfo → createLoginUser → createToken；不触密码、不触 AuthenticationManager。
+- `admin/controller/common/SmsController.java`（新建）：
+  - `@RateLimiter(time = 60, count = 10, limitType = LimitType.IP)` 必须显式写全（若依 DEFAULT 模式 key 不带 IP，漏写会退化为全站合计每分钟 10 次）；
+  - `POST /sms/code`（bind 场景从 SecurityUtils 取 userId，匿名场景缺失即拒）、`POST /login/sms`；
+  - `/sms/code` 与 `/login/sms` 两个匿名路径都加进 SecurityConfig 白名单。
 - `admin/controller/system/UserPhoneController.java`（新建）：个人中心三个 + 管理员两个接口（共 5 个，按权限/路径区分；个人中心接口从 LoginUser 取 userId 防越权）。
 - `framework/config/SecurityConfig.java`：permitAll 加 `/sms/code`、`/login/sms`。
 - `admin/controller/apms/ApmsLoginConfigController.java`：返回 map 追加 `smsEnabled`。
 
 ### 4.5 SQL 补丁（只写文件，用户本人执行）
 
-`patches/patch-0.0.8-<时间戳>.sql`（新建）：
+`patches/patch-0.0.9-<时间戳>.sql`（新建）：
 1. 建表：
    ```sql
    CREATE TABLE apms_user_phone (
@@ -142,7 +166,7 @@
 
 ### 4.7 版本
 
-`pom.xml` 的 `apms.version` → `0.0.8-<实现时时间戳>`（定版再去时间戳）。
+`pom.xml` 的 `apms.version` → `0.0.9-<实现时时间戳>`（定版再去时间戳）。
 
 ## 五、实施顺序
 
@@ -161,6 +185,8 @@
 - 模板必须为验证码类型且审核通过；变量按 `${code}`，不符只改 `apms.sms.code-param`。
 - Client 单例懒加载，AK 为空不阻断应用启动，仅短信接口报错。
 - 日计数 key 跨场景共用（同一手机每天总量 10 条）；码 key 带 scene，登录码不能用于绑定、反之亦然。
+- **验证码安全（强约束）**：SecureRandom 生成；写码与清错计数、比较与消费均走 Redis Lua 单脚本原子完成；成功即一次性消费，禁止先 GET 比对再 DEL 的两步写法（并发下可重放）；阿里云发送失败必须回滚删除刚写的 code。
+- **安全闸复用**：IP 黑名单必须抽公共方法，密码登录原逻辑零改动，短信登录显式调用；发码注解必须带 `limitType = LimitType.IP`（代码评审重点检查项）。
 - 个人中心/管理员两个写接口均做归属与权限校验：解绑本人只认自己 userId；管理员走 `@PreAuthorize` 且操作记操作日志（@Log）。
 - 管理员强制解绑不影响该账号已签发的在线 token。
 - 登录日志用户名记手机号，与现有明文记录口径一致。
@@ -170,7 +196,13 @@
 ## 七、验证
 
 - `mvn clean package` 通过；dependency:tree 确认 aliyun/tea 依赖无冲突。
-- `npm run build:prod` 通过；GetDiagnostics 0 诊断；现有桩测全绿 + 为 SmsCodeService 频控/校验补桩测（若前端 mock 变更涉及既有用例则同步更新）。
+- `npm run build:prod` 通过；GetDiagnostics 0 诊断；现有桩测全绿 + 为 SmsCodeService 补桩测（SecureRandom 码生成、Lua 返回值映射、频控分支、发送失败回滚、bind 并发抢占）。
+- **安全专项验证**：
+  1. 同一验证码并发两次调 `/login/sms`（curl 并发）：恰好一次成功、第二次报已失效；成功后 Redis 中 code/err 均不存在；
+  2. 连续错码第 5 次后码立即作废（即使第 5 次输入的是正确码也拒绝，需重新获取）；重新获取后旧错误计数清零；
+  3. 阿里云发送失败（故意配错 AK）后 Redis 无 code 残留、60s 间隔 key 也已释放可立即重试；
+  4. 在 `sys.login.blackIPList` 配置当前 IP：密码登录与短信登录同时被拦；移除后均恢复；
+  5. 确认 `/sms/code` 注解编译后为 `LimitType.IP`（检查源码与限流 key 实际带 IP）。
 - 联调（用户本人执行，AK/SK 与真实短信不经手 Agent）：
   1. 执行 patch（先跑注释中的冲突/核对 SQL），env.conf 配 AK/SK，sys_config 开关置 true；
   2. 登录页：滑块→收码→登录；错码/过期/未绑定/停用/频控各异常路径；
