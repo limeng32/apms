@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import com.ruoyi.common.constant.CacheConstants;
 import com.ruoyi.common.constant.Constants;
 import com.ruoyi.common.constant.UserConstants;
+import com.ruoyi.common.core.domain.entity.SysUser;
 import com.ruoyi.common.core.domain.model.LoginUser;
 import com.ruoyi.common.core.redis.RedisCache;
 import com.ruoyi.common.exception.ServiceException;
@@ -25,6 +26,9 @@ import com.ruoyi.common.utils.ip.IpUtils;
 import com.ruoyi.framework.manager.AsyncManager;
 import com.ruoyi.framework.manager.factory.AsyncFactory;
 import com.ruoyi.framework.security.context.AuthenticationContextHolder;
+import com.ruoyi.framework.sms.SmsCodeService;
+import com.ruoyi.framework.sms.SmsLoginOutcome;
+import com.ruoyi.framework.sms.SmsLoginVerifyResult;
 import com.ruoyi.system.service.ISysConfigService;
 import com.ruoyi.system.service.ISysUserService;
 
@@ -53,6 +57,12 @@ public class SysLoginService
 
     @Autowired
     private com.ruoyi.framework.captcha.SliderCaptchaService sliderCaptchaService;
+
+    @Autowired
+    private SmsCodeService smsCodeService;
+
+    @Autowired
+    private UserDetailsServiceImpl userDetailsService;
 
     /**
      * 登录验证
@@ -104,7 +114,71 @@ public class SysLoginService
     }
 
     /**
-     * 校验验证码（滑块拼图 与 字符/算术验证码 二选一）
+     * 短信验证码登录（不经过密码与 AuthenticationManager）
+     *
+     * <p>安全闸与密码登录保持一致：先过 IP 黑名单，再由 {@link SmsCodeService}
+     * 原子消费验证码。手机号仅绑定 1 个活跃账号时直接颁发 token；绑定多个时返回
+     * 账号候选与一次性选择令牌，由 {@link #loginBySmsSelect} 完成兑换。
+     *
+     * @return 单账号场景携带 token；多账号场景携带 selectToken + accounts
+     */
+    public SmsLoginOutcome loginBySms(String phonenumber, String code)
+    {
+        // 与密码登录同一道 IP 黑名单，禁止短信通道绕过封禁
+        checkLoginIp(phonenumber);
+
+        SmsLoginVerifyResult verify;
+        try
+        {
+            verify = smsCodeService.verifyForLogin(phonenumber, code);
+        }
+        catch (ServiceException e)
+        {
+            AsyncManager.me().execute(
+                    AsyncFactory.recordLogininfor(phonenumber, Constants.LOGIN_FAIL, e.getMessage()));
+            throw e;
+        }
+
+        if (verify.isSingle())
+        {
+            SysUser user = verify.getUser();
+            AsyncManager.me().execute(
+                    AsyncFactory.recordLogininfor(user.getUserName(), Constants.LOGIN_SUCCESS,
+                            MessageUtils.message("user.login.success")));
+            LoginUser loginUser = (LoginUser) userDetailsService.createLoginUser(user);
+            recordLoginInfo(loginUser.getUserId());
+            return SmsLoginOutcome.single(tokenService.createToken(loginUser));
+        }
+        // 多账号：选择哪个账号登录由用户二次确认，此刻不记登录成功、不颁发 token
+        return SmsLoginOutcome.multi(verify.getSelectToken(), verify.getAccounts());
+    }
+
+    /**
+     * 多账号短信登录的账号选择兑换：选择令牌一次性消费后为所选账号颁发 token。
+     */
+    public String loginBySmsSelect(String selectToken, Long userId)
+    {
+        checkLoginIp("sms-select:" + userId);
+        SysUser user;
+        try
+        {
+            user = smsCodeService.exchangeSelectToken(selectToken, userId);
+        }
+        catch (ServiceException e)
+        {
+            AsyncManager.me().execute(
+                    AsyncFactory.recordLogininfor(String.valueOf(userId), Constants.LOGIN_FAIL, e.getMessage()));
+            throw e;
+        }
+        AsyncManager.me().execute(
+                AsyncFactory.recordLogininfor(user.getUserName(), Constants.LOGIN_SUCCESS,
+                        MessageUtils.message("user.login.success")));
+        LoginUser loginUser = (LoginUser) userDetailsService.createLoginUser(user);
+        recordLoginInfo(loginUser.getUserId());
+        return tokenService.createToken(loginUser);
+    }
+
+    /**
      *
      * @param username   用户名
      * @param code       字符验证码
@@ -170,11 +244,22 @@ public class SysLoginService
             AsyncManager.me().execute(AsyncFactory.recordLogininfor(username, Constants.LOGIN_FAIL, MessageUtils.message("user.password.not.match")));
             throw new UserPasswordNotMatchException();
         }
-        // IP黑名单校验
+        // IP黑名单校验（密码登录与短信登录共用同一道闸，见 checkLoginIp）
+        checkLoginIp(username);
+    }
+
+    /**
+     * 登录 IP 黑名单校验（sys.login.blackIPList）。
+     * 从 {@link #loginPreCheck} 抽出，供密码登录与短信登录共用，避免短信通道绕过封禁。
+     *
+     * @param loginPrincipal 登录主体（用户名或手机号），仅用于登录日志
+     */
+    public void checkLoginIp(String loginPrincipal)
+    {
         String blackStr = configService.selectConfigByKey("sys.login.blackIPList");
         if (IpUtils.isMatchedIp(blackStr, IpUtils.getIpAddr()))
         {
-            AsyncManager.me().execute(AsyncFactory.recordLogininfor(username, Constants.LOGIN_FAIL, MessageUtils.message("login.blocked")));
+            AsyncManager.me().execute(AsyncFactory.recordLogininfor(loginPrincipal, Constants.LOGIN_FAIL, MessageUtils.message("login.blocked")));
             throw new BlackListException();
         }
     }

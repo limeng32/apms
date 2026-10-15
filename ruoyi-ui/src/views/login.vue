@@ -9,17 +9,36 @@
         <p class="storage-blocked-text">演示与登录均已暂停，请恢复本地存储（sessionStorage）后刷新页面</p>
         <el-button type="primary" @click="reloadPage">重新检测</el-button>
       </div>
-      <LoginFormFields
-        v-else
-        ref="loginFieldsRef"
-        v-model="loginForm"
-        :config="loginThemeStore.config"
-        :loading="loading"
-        :demo-entry="demoEnabled"
-        @submit="handleLogin"
-        @forgot="handleForgot"
-        @demo="demoDialogVisible = true"
-      />
+      <template v-else>
+        <!-- 登录方式切换：仅后端开启短信登录（smsEnabled）时出现；演示站无后端恒为 false -->
+        <div v-if="smsEnabled" class="login-mode-tabs">
+          <button type="button"
+                  :class="{ 'is-active': activeTab === 'account' }"
+                  @click="activeTab = 'account'">账号登录</button>
+          <button type="button"
+                  :class="{ 'is-active': activeTab === 'sms' }"
+                  @click="activeTab = 'sms'">短信登录</button>
+        </div>
+        <LoginFormFields
+          v-show="!smsEnabled || activeTab === 'account'"
+          ref="loginFieldsRef"
+          v-model="loginForm"
+          :config="loginThemeStore.config"
+          :loading="loading"
+          :demo-entry="demoEnabled"
+          @submit="handleLogin"
+          @forgot="handleForgot"
+          @demo="demoDialogVisible = true"
+        />
+        <SmsLoginForm
+          v-show="smsEnabled && activeTab === 'sms'"
+          ref="smsFormRef"
+          :loading="loading"
+          @submit="onSmsSubmit"
+          @need-slider="onSmsNeedSlider"
+          @select="onSmsSelectAccount"
+        />
+      </template>
     </template>
   </LoginRenderer>
 
@@ -41,6 +60,7 @@ import { WarningFilled } from '@element-plus/icons-vue'
 import useUserStore from '@/store/modules/user'
 import LoginRenderer from './login/LoginRenderer.vue'
 import LoginFormFields from './login/LoginFormFields.vue'
+import SmsLoginForm from './login/SmsLoginForm.vue'
 import SliderCaptcha from './login/SliderCaptcha.vue'
 import DemoPassDialog from './login/DemoPassDialog.vue'
 import useLoginThemeStore from '@/store/modules/loginTheme'
@@ -60,19 +80,30 @@ const demoDialogVisible = ref(false)
 const sessionState = ref(readDemoSessionState().state)
 
 const loginFieldsRef = ref(null)
+const smsFormRef = ref(null)
+
+// 登录方式 tab（账号/短信）；短信 tab 是否可选由后端 smsEnabled 决定（loadConfig 后响应式更新）
+const smsEnabled = computed(() => loginThemeStore.smsEnabled === true)
+const activeTab = ref('account')
 
 // 真人滑块拼图：enabled=后端开关；sliderUuid=本次通过标识（登录前必须持有）
 const sliderRef = ref(null)
 const sliderEnabled = ref(false)
 const sliderUuid = ref('')
+// 滑块通过后继续的挂起动作：password=账号密码登录，smsCode=发送短信验证码
+const pendingSliderAction = ref('password')
 function onSliderEnabledChange(enabled) {
   sliderEnabled.value = enabled
   if (!enabled) sliderUuid.value = ''
 }
 function onSliderVerified(uuid) {
   sliderUuid.value = uuid
-  // 模态框流程：滑块通过后自动发起登录（模态约 0.4s 后自行收起）
-  doLogin()
+  // 模态框流程：滑块通过后按挂起动作继续（模态约 0.4s 后自行收起）
+  if (pendingSliderAction.value === 'smsCode') {
+    smsFormRef.value && smsFormRef.value.requestSend(uuid)
+  } else {
+    doLogin()
+  }
 }
 
 const loginForm = ref({
@@ -136,6 +167,7 @@ function handleLogin() {
     Cookies.remove("password")
     // 滑块开启：先弹出验证模态，通过后由 onSliderVerified 调 doLogin
     if (sliderEnabled.value) {
+      pendingSliderAction.value = 'password'
       sliderRef.value && sliderRef.value.open()
       return
     }
@@ -143,18 +175,69 @@ function handleLogin() {
   })
 }
 
+/**
+ * 短信表单点「获取验证码」：滑块开启先弹模态（通过后由 onSliderVerified 回调
+ * 短信表单的 requestSend）；关闭则直接放行发码
+ */
+function onSmsNeedSlider() {
+  if (sliderEnabled.value) {
+    pendingSliderAction.value = 'smsCode'
+    sliderRef.value && sliderRef.value.open()
+  } else {
+    smsFormRef.value && smsFormRef.value.requestSend(undefined)
+  }
+}
+
+/** 短信表单提交：发码前已过过人机校验，这里直接登录，不再弹滑块 */
+function onSmsSubmit(payload) {
+  loading.value = true
+  userStore.loginBySms(payload).then(res => {
+    if (res.token) {
+      // 单账号：已直接登录
+      afterLoginSuccess()
+      return
+    }
+    if (res.selectToken) {
+      // 多账号：停止 loading，弹账号选择（选择令牌 5 分钟一次性）
+      loading.value = false
+      smsFormRef.value && smsFormRef.value.showAccounts(res.accounts, res.selectToken)
+      return
+    }
+    loading.value = false
+  }).catch(() => {
+    loading.value = false
+  })
+}
+
+/** 多账号：用户选定账号后凭选择令牌兑换登录 */
+function onSmsSelectAccount(payload) {
+  loading.value = true
+  userStore.selectSmsAccount(payload).then(() => {
+    afterLoginSuccess()
+  }).catch(() => {
+    loading.value = false
+    // 令牌一次性/过期等失败：回到验证码步骤，提示已由全局拦截器给出
+    smsFormRef.value && smsFormRef.value.backToForm()
+  })
+}
+
+/** 登录成功后的统一跳转（账号/短信共用） */
+function afterLoginSuccess() {
+  const query = route.query
+  const otherQueryParams = Object.keys(query).reduce((acc, cur) => {
+    if (cur !== "redirect") {
+      acc[cur] = query[cur]
+    }
+    return acc
+  }, {})
+  router.push({ path: redirect.value || "/", query: otherQueryParams })
+}
+
 /** 实际发起登录（普通登录直接调；滑块通过后由 onSliderVerified 调） */
 function doLogin() {
   loading.value = true
   userStore.login({ ...loginForm.value, sliderUuid: sliderUuid.value || undefined }).then(() => {
-    const query = route.query
-    const otherQueryParams = Object.keys(query).reduce((acc, cur) => {
-      if (cur !== "redirect") {
-        acc[cur] = query[cur]
-      }
-      return acc
-    }, {})
-    router.push({ path: redirect.value || "/", query: otherQueryParams })
+    afterLoginSuccess()
   }).catch(() => {
     loading.value = false
     // 登录失败：滑块通过标记已被服务端消费，下次点登录会重新弹窗换新题
@@ -185,6 +268,39 @@ getCookie()
 </script>
 
 <style lang='scss' scoped>
+/* 账号登录 / 短信登录 切换条 */
+.login-mode-tabs {
+  display: flex;
+  gap: 22px;
+  margin: 22px 2px 0;
+  border-bottom: 1px solid var(--login-border);
+}
+.login-mode-tabs button {
+  position: relative;
+  padding: 0 2px 10px;
+  border: none;
+  background: none;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--login-text-2);
+  cursor: pointer;
+  transition: color .15s ease;
+  &.is-active {
+    color: var(--login-link);
+    font-weight: 600;
+    &::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -1px;
+      height: 2px;
+      border-radius: 2px;
+      background: var(--login-link);
+    }
+  }
+}
+
 /* storage-error 阻断页（替换整个表单区） */
 .storage-blocked {
   margin-top: 30px;

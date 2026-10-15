@@ -162,6 +162,12 @@
                           <div v-if="openMenuId === row.userId" class="rk-menu-pop">
                             <button
                               type="button"
+                              class="rk-menu-item"
+                              @click="onMenu(row, 'phones')"
+                              v-hasPermi="['system:user:list']"
+                            ><el-icon><Iphone /></el-icon>登录手机号</button>
+                            <button
+                              type="button"
                               class="rk-menu-item is-danger"
                               v-if="!isProtectedUser(row)"
                               @click="onMenu(row, 'delete')"
@@ -315,6 +321,9 @@
 
     <!-- 用户详情抽屉 -->
     <user-view-drawer ref="userViewRef" />
+
+    <!-- 管理员：登录手机号查看/强制解绑 -->
+    <user-phone-admin-dialog v-model="phoneDialogVisible" :user="phoneTarget" />
     <!-- 用户导入对话框 -->
     <excel-import-dialog ref="importUserRef" title="用户导入" action="/system/user/importData" template-action="/system/user/importTemplate" template-file-name="user_template" update-support-label="是否更新已经存在的用户数据" @success="getList" />
   </div>
@@ -324,9 +333,10 @@
 import TreePanel from "@/components/TreePanel"
 import ExcelImportDialog from "@/components/ExcelImportDialog"
 import UserViewDrawer from "./view"
+import UserPhoneAdminDialog from "./UserPhoneAdminDialog.vue"
 import { usePasswordRule } from "@/utils/passwordRule"
 import { changeUserStatus, listUser, resetUserPwd, delUser, getUser, updateUser, addUser, deptTreeSelect } from "@/api/system/user"
-import { Plus, RefreshLeft, MoreFilled, ArrowLeft, ArrowRight, Upload, Download, Edit, Delete, Key, CircleCheck, Lock, Close } from '@element-plus/icons-vue'
+import { Plus, RefreshLeft, MoreFilled, ArrowLeft, ArrowRight, Upload, Download, Edit, Delete, Key, CircleCheck, Lock, Close, Iphone } from '@element-plus/icons-vue'
 
 import useUserStore from "@/store/modules/user"
 
@@ -527,6 +537,15 @@ function onMenu(row, action) {
   if (action === 'delete') handleDelete(row)
   else if (action === 'resetPwd') handleResetPwd(row)
   else if (action === 'authRole') handleAuthRole(row)
+  else if (action === 'phones') handlePhones(row)
+}
+
+/** 管理员：查看/强制解绑该账号的登录手机号 */
+const phoneDialogVisible = ref(false)
+const phoneTarget = ref(null)
+function handlePhones(row) {
+  phoneTarget.value = row
+  phoneDialogVisible.value = true
 }
 
 /** 查询用户列表 */

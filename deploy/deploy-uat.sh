@@ -90,6 +90,14 @@ PUBLIC_HOST="${PUBLIC_HOST:-localhost:${NGINX_LISTEN}}"
 [ -n "${DB_PASS}" ] || err "env.conf 缺失 DB_PASS，拒绝部署（禁止 fallback）"
 [ -n "${REDIS_PASS+x}" ] || err "env.conf 缺失 REDIS_PASS（可空但必须声明），拒绝部署"
 
+# 阿里云短信：AK/SK 可空（留空=不启用短信登录，功能开关还受 sys_config 控制），但四个变量必须显式声明
+[ -n "${SMS_ACCESS_KEY_ID+x}" ]     || err "env.conf 缺失 SMS_ACCESS_KEY_ID（可空但必须声明），拒绝部署"
+[ -n "${SMS_ACCESS_KEY_SECRET+x}" ] || err "env.conf 缺失 SMS_ACCESS_KEY_SECRET（可空但必须声明），拒绝部署"
+[ -n "${SMS_SIGN_NAME+x}" ]         || err "env.conf 缺失 SMS_SIGN_NAME（可空但必须声明），拒绝部署"
+[ -n "${SMS_TEMPLATE_CODE+x}" ]     || err "env.conf 缺失 SMS_TEMPLATE_CODE（可空但必须声明），拒绝部署"
+SMS_SIGN_NAME="${SMS_SIGN_NAME:-北京康耐特体育}"
+SMS_TEMPLATE_CODE="${SMS_TEMPLATE_CODE:-SMS_512565975}"
+
 # ⚠️ 密码里可能有 !#$ 等特殊字符，必须用函数形式避免 bash 解释
 # ${1+"${@}"} 兼容 macOS 自带 bash 3.2：set -u 下无参调用时裸 "${@}" 会报 unbound variable
 mysql_cli() { mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" --password="${DB_PASS}" "${DB_NAME}" ${1+"${@}"}; }
@@ -546,6 +554,12 @@ spring.data.redis.database: ${REDIS_DB}
 spring.data.redis.host: ${REDIS_HOST}
 spring.data.redis.port: ${REDIS_PORT}
 spring.data.redis.password: "${REDIS_PASS}"
+
+# 阿里云短信 — AK/SK 由 env.conf 注入；留空时发短信接口报错（不阻断启动），功能另受 sys_config 开关控制
+apms.sms.access-key-id: ${SMS_ACCESS_KEY_ID}
+apms.sms.access-key-secret: "${SMS_ACCESS_KEY_SECRET}"
+apms.sms.sign-name: ${SMS_SIGN_NAME}
+apms.sms.template-code: ${SMS_TEMPLATE_CODE}
 EOF
 log "  ✅ ${CONFIGDIR}/application.yml"
 

@@ -170,3 +170,16 @@ xss:
   excludes: /system/notice,/system/login/config
   # 匹配链接
   urlPatterns: /system/*,/monitor/*,/tool/*
+
+# 阿里云短信登录配置
+# 敏感凭证（AK/SK）禁止写入本文件：由部署服务器 env.conf 注入（外部 config/application.yml 扁平覆盖）。
+# 功能总开关在 sys_config: sys.account.smsLoginEnabled（缺省关闭）；AK/SK 为空时发短信直接报错，不影响应用启动。
+apms:
+  sms:
+    access-key-id: ""
+    access-key-secret: ""
+    sign-name: 北京康耐特体育
+    template-code: SMS_512565975
+    endpoint: dysmsapi.aliyuncs.com
+    # 验证码模板变量名（阿里云控制台模板中 ${code} 的 code；模板变量不同只改这里）
+    code-param: code

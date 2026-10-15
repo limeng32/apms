@@ -42,6 +42,14 @@ public interface ISysConfigService
     public boolean selectSliderCaptchaEnabled();
 
     /**
+     * 手机短信登录开关（sys.account.smsLoginEnabled，默认关闭）。
+     * 开启前需在 env.conf 配置阿里云短信 AK/SK；关闭后发码/短信登录接口全部拒绝。
+     *
+     * @return true开启，false关闭
+     */
+    public boolean selectSmsLoginEnabled();
+
+    /**
      * 查询参数配置列表
      * 
      * @param config 参数配置信息

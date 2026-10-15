@@ -52,6 +52,9 @@
                   <el-tab-pane label="基本资料" name="userinfo">
                      <userInfo :user="state.user" @saved="getUser" />
                   </el-tab-pane>
+                  <el-tab-pane label="登录手机号" name="userphone">
+                     <UserPhonePanel />
+                  </el-tab-pane>
                   <el-tab-pane label="修改密码" name="resetPwd">
                      <resetPwd />
                   </el-tab-pane>
@@ -65,6 +68,7 @@
 <script setup name="Profile">
 import userInfo from "./userInfo"
 import resetPwd from "./resetPwd"
+import UserPhonePanel from "./UserPhonePanel.vue"
 import { getUserProfile } from "@/api/system/user"
 import useUserStore from "@/store/modules/user"
 

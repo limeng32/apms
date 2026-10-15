@@ -138,8 +138,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 	</select>
 	
 	<select id="selectUserById" parameterType="Long" resultMap="SysUserResult">
-		<include refid="selectUserVo"/>
+	    <include refid="selectUserVo"/>
 		where u.user_id = #{userId}
+	</select>
+
+	<!-- 绑定手机号事务内锁定用户行，防同一账号并发绑定突破 3 个上限；必须在事务中调用 -->
+	<select id="lockUserByIdForUpdate" parameterType="Long" resultType="Long">
+		SELECT user_id FROM sys_user
+		WHERE user_id = #{userId} AND del_flag = '0'
+		FOR UPDATE
 	</select>
 	
 	<select id="checkUserNameUnique" parameterType="String" resultMap="SysUserResult">

@@ -99,9 +99,10 @@ public class SecurityConfig
             // 注解标记允许匿名访问的url
             .authorizeHttpRequests((requests) -> {
                 permitAllUrl.getUrls().forEach(url -> requests.requestMatchers(url).permitAll());
-                // 对于登录login 注册register 验证码captchaImage 滑块验证码 允许匿名访问
+                // 对于登录login 注册register 验证码captchaImage 滑块验证码 短信发码/短信登录 允许匿名访问
                 requests.requestMatchers("/login", "/register", "/captchaImage",
-                        "/captcha/slider", "/captcha/slider/check", "/apms/version").permitAll()
+                        "/captcha/slider", "/captcha/slider/check", "/apms/version",
+                        "/sms/code", "/login/sms", "/login/sms/select").permitAll()
                     // 登录页配置：仅 GET 匿名可读（按方法精确放行，写接口仍需鉴权）
                     .requestMatchers(HttpMethod.GET, "/login/config").permitAll()
                     // Actuator 健康检查（management 端口）

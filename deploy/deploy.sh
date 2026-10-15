@@ -73,6 +73,14 @@ PUBLIC_HOST="${PUBLIC_HOST:-39.97.246.69}"
 # REDIS_PASS 可以留空（表示无密码），但变量必须显式声明
 [ -n "${REDIS_PASS+x}" ] || err "env.conf 缺失 REDIS_PASS（可空但必须声明），拒绝部署"
 
+# 阿里云短信：AK/SK 可空（留空=不启用短信登录，功能开关还受 sys_config 控制），但四个变量必须显式声明
+[ -n "${SMS_ACCESS_KEY_ID+x}" ]     || err "env.conf 缺失 SMS_ACCESS_KEY_ID（可空但必须声明），拒绝部署"
+[ -n "${SMS_ACCESS_KEY_SECRET+x}" ] || err "env.conf 缺失 SMS_ACCESS_KEY_SECRET（可空但必须声明），拒绝部署"
+[ -n "${SMS_SIGN_NAME+x}" ]         || err "env.conf 缺失 SMS_SIGN_NAME（可空但必须声明），拒绝部署"
+[ -n "${SMS_TEMPLATE_CODE+x}" ]     || err "env.conf 缺失 SMS_TEMPLATE_CODE（可空但必须声明），拒绝部署"
+SMS_SIGN_NAME="${SMS_SIGN_NAME:-北京康耐特体育}"
+SMS_TEMPLATE_CODE="${SMS_TEMPLATE_CODE:-SMS_512565975}"
+
 PIDFILE="${BINDIR}/APPID"
 UPLOAD="${BINDIR}/upload"
 BACKUP="${BINDIR}/backup"
@@ -649,6 +657,12 @@ spring.data.redis.database: ${REDIS_DB}
 spring.data.redis.host: ${REDIS_HOST}
 spring.data.redis.port: ${REDIS_PORT}
 spring.data.redis.password: "${REDIS_PASS}"
+
+# 阿里云短信 — AK/SK 由 env.conf 注入；留空时发短信接口报错（不阻断启动），功能另受 sys_config 开关控制
+apms.sms.access-key-id: ${SMS_ACCESS_KEY_ID}
+apms.sms.access-key-secret: "${SMS_ACCESS_KEY_SECRET}"
+apms.sms.sign-name: ${SMS_SIGN_NAME}
+apms.sms.template-code: ${SMS_TEMPLATE_CODE}
 EOF
 log "  ✅ ${CONFIGDIR}/application.yml"
 

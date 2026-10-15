@@ -15,6 +15,8 @@ const useLoginThemeStore = defineStore(
   {
     state: () => ({
       config: cloneDefaults(),
+      /** 手机短信登录开关（后端 sys_config；无后端的演示站恒为 false，自动隐藏 tab） */
+      smsEnabled: false,
       loading: false
     }),
     actions: {
@@ -22,10 +24,11 @@ const useLoginThemeStore = defineStore(
         if (this.loading) return
         this.loading = true
         try {
-          const data = await getPublicLoginConfig()
-          this.config = mergeWithDefaults(data)
+          const res = await getPublicLoginConfig()
+          this.config = mergeWithDefaults(res.config)
+          this.smsEnabled = res.smsEnabled === true
         } catch (e) {
-          // 静默：首帧已是默认配置，不弹错误、不抛出
+          // 静默：首帧已是默认配置，不弹错误、不抛出；smsEnabled 保持 false
         } finally {
           this.loading = false
         }

@@ -29,6 +29,7 @@ import com.ruoyi.system.mapper.SysRoleMapper;
 import com.ruoyi.system.mapper.SysUserMapper;
 import com.ruoyi.system.mapper.SysUserPostMapper;
 import com.ruoyi.system.mapper.SysUserRoleMapper;
+import com.ruoyi.system.mapper.apms.ApmsUserPhoneMapper;
 import com.ruoyi.system.service.ISysConfigService;
 import com.ruoyi.system.service.ISysDeptService;
 import com.ruoyi.system.service.ISysUserService;
@@ -57,6 +58,13 @@ public class SysUserServiceImpl implements ISysUserService
 
     @Autowired
     private SysUserPostMapper userPostMapper;
+
+    /**
+     * 登录手机号绑定：用户逻辑删除（del_flag='2'）后，绑定关系同事务清理，
+     * 释放被 uk_phonenumber 占用的号码，供其他账号重新绑定。
+     */
+    @Autowired
+    private ApmsUserPhoneMapper apmsUserPhoneMapper;
 
     @Autowired
     private ISysConfigService configService;
@@ -532,6 +540,8 @@ public class SysUserServiceImpl implements ISysUserService
         userRoleMapper.deleteUserRoleByUserId(userId);
         // 删除用户与岗位表
         userPostMapper.deleteUserPostByUserId(userId);
+        // 删除登录手机号绑定（同事务释放号码）
+        apmsUserPhoneMapper.deleteByUserId(userId);
         return userMapper.deleteUserById(userId);
     }
 
@@ -554,6 +564,8 @@ public class SysUserServiceImpl implements ISysUserService
         userRoleMapper.deleteUserRole(userIds);
         // 删除用户与岗位关联
         userPostMapper.deleteUserPost(userIds);
+        // 删除登录手机号绑定（同事务释放号码）
+        apmsUserPhoneMapper.deleteByUserIds(userIds);
         return userMapper.deleteUserByIds(userIds);
     }
 

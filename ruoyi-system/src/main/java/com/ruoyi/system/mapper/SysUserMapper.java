@@ -46,11 +46,21 @@ public interface SysUserMapper
 
     /**
      * 通过用户ID查询用户
-     * 
+     *
      * @param userId 用户ID
      * @return 用户对象信息
      */
     public SysUser selectUserById(Long userId);
+
+    /**
+     * 对用户行加排他锁（SELECT ... FOR UPDATE）。
+     * 仅用于「绑定登录手机号」事务：串行化同一账号的并发绑定，保证每账号最多 3 个。
+     * 必须在事务内调用；用户不存在（含已删除）返回 null。
+     *
+     * @param userId 用户ID
+     * @return 用户ID（非空即锁成功）；null=用户不存在
+     */
+    public Long lockUserByIdForUpdate(Long userId);
 
     /**
      * 新增用户信息

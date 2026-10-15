@@ -108,6 +108,20 @@ public class SysConfigServiceImpl implements ISysConfigService
     }
 
     /**
+     * 短信登录开关：参数缺失/非法值均按关闭处理（fail-closed）
+     */
+    @Override
+    public boolean selectSmsLoginEnabled()
+    {
+        String smsEnabled = selectConfigByKey("sys.account.smsLoginEnabled");
+        if (StringUtils.isEmpty(smsEnabled))
+        {
+            return false;
+        }
+        return Convert.toBool(smsEnabled);
+    }
+
+    /**
      * 查询参数配置列表
      * 
      * @param config 参数配置信息

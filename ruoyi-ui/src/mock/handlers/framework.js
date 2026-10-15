@@ -90,5 +90,22 @@ export const frameworkHandlers = [
     code: 200,
     msg: '操作成功',
     data: { checkedKeys: [], depts: [] }
+  })),
+
+  // 登录手机号绑定（短信登录功能；演示站仅只读展示，bind/unbind 写操作由引擎 601 拦截）
+  route('get', '/system/user/profile/phone/list', () => ({
+    code: 200,
+    msg: '操作成功',
+    maxCount: 3,
+    data: [
+      { id: -9001, userId: -1, phonenumber: '13800138000', createTime: '2026-10-01 09:30:00' }
+    ]
+  })),
+  // 管理员侧查看任意账号的绑定（演示无真实绑定，返回空列表）
+  route('get', '/system/user/phone/list/:userId', () => ({
+    code: 200,
+    msg: '操作成功',
+    maxCount: 3,
+    data: []
   }))
 ]

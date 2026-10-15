@@ -1,7 +1,7 @@
 import router from '@/router'
 import cache from '@/plugins/cache'
 import { ElMessageBox, } from 'element-plus'
-import { login, logout, getInfo } from '@/api/login'
+import { login, smsLogin, smsLoginSelect, logout, getInfo } from '@/api/login'
 import { getToken, setToken, removeToken, isDemoMode, clearDemoSession } from '@/utils/auth'
 import useLockStore from '@/store/modules/lock'
 
@@ -28,6 +28,37 @@ const useUserStore = defineStore(
         const sliderUuid = userInfo.sliderUuid
         return new Promise((resolve, reject) => {
           login(username, password, code, uuid, sliderUuid).then(res => {
+            setToken(res.token)
+            this.token = res.token
+            useLockStore().unlockScreen()
+            resolve()
+          }).catch(error => {
+            reject(error)
+          })
+        })
+      },
+      // 短信验证码登录：单账号后端直接发 token；多账号返回 selectToken+accounts，
+      // 由调用方弹出账号选择后再走 selectSmsAccount
+      loginBySms(userInfo) {
+        const phonenumber = userInfo.phonenumber.trim()
+        const code = userInfo.code.trim()
+        return new Promise((resolve, reject) => {
+          smsLogin(phonenumber, code).then(res => {
+            if (res.token) {
+              setToken(res.token)
+              this.token = res.token
+              useLockStore().unlockScreen()
+            }
+            resolve(res)
+          }).catch(error => {
+            reject(error)
+          })
+        })
+      },
+      // 多账号短信登录：凭一次性选择令牌兑换所选账号的 token
+      selectSmsAccount(payload) {
+        return new Promise((resolve, reject) => {
+          smsLoginSelect(payload.selectToken, payload.userId).then(res => {
             setToken(res.token)
             this.token = res.token
             useLockStore().unlockScreen()

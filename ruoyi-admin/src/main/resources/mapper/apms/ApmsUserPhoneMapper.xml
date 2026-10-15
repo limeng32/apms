@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsUserPhoneMapper">
+
+    <resultMap id="ApmsUserPhoneResult" type="com.ruoyi.system.domain.apms.ApmsUserPhone">
+        <id     property="id"          column="id"/>
+        <result property="userId"      column="user_id"/>
+        <result property="phonenumber" column="phonenumber"/>
+        <result property="createBy"    column="create_by"/>
+        <result property="createTime"  column="create_time"/>
+        <result property="updateBy"    column="update_by"/>
+        <result property="updateTime"  column="update_time"/>
+    </resultMap>
+
+    <sql id="selectApmsUserPhoneVo">
+        SELECT id, user_id, phonenumber, create_by, create_time, update_by, update_time
+        FROM apms_user_phone
+    </sql>
+
+    <!-- 某账号的全部绑定号码（按绑定时间升序，最早绑定=主号） -->
+    <select id="selectByUserId" parameterType="Long" resultMap="ApmsUserPhoneResult">
+        <include refid="selectApmsUserPhoneVo"/>
+        WHERE user_id = #{userId}
+        ORDER BY create_time ASC, id ASC
+    </select>
+
+    <!-- 按绑定主键查询 -->
+    <select id="selectById" parameterType="Long" resultMap="ApmsUserPhoneResult">
+        <include refid="selectApmsUserPhoneVo"/>
+        WHERE id = #{id}
+    </select>
+
+    <!-- 按手机号查询全部绑定（一个手机号可绑多个账号；账号选择列表按 user_id 升序稳定展示） -->
+    <select id="selectListByPhone" parameterType="String" resultMap="ApmsUserPhoneResult">
+        <include refid="selectApmsUserPhoneVo"/>
+        WHERE phonenumber = #{phonenumber}
+        ORDER BY user_id ASC
+    </select>
+
+    <!-- 某账号已绑定号码数 -->
+    <select id="countByUserId" parameterType="Long" resultType="int">
+        SELECT COUNT(1) FROM apms_user_phone WHERE user_id = #{userId}
+    </select>
+
+    <!-- 新增绑定 -->
+    <insert id="insertApmsUserPhone"
+            parameterType="com.ruoyi.system.domain.apms.ApmsUserPhone"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_user_phone
+        (user_id, phonenumber, create_by, create_time)
+        VALUES
+        (#{userId}, #{phonenumber}, #{createBy}, sysdate())
+    </insert>
+
+    <!-- 按主键删除 -->
+    <delete id="deleteApmsUserPhoneById" parameterType="Long">
+        DELETE FROM apms_user_phone WHERE id = #{id}
+    </delete>
+
+    <!-- 按账号删除全部绑定 -->
+    <delete id="deleteByUserId" parameterType="Long">
+        DELETE FROM apms_user_phone WHERE user_id = #{userId}
+    </delete>
+
+    <!-- 批量按账号删除全部绑定 -->
+    <delete id="deleteByUserIds">
+        DELETE FROM apms_user_phone WHERE user_id IN
+        <foreach item="userId" collection="userIds" open="(" separator="," close=")">
+            #{userId}
+        </foreach>
+    </delete>
+
+</mapper>

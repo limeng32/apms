@@ -17,15 +17,17 @@ const publicHttp = axios.create({
 
 /**
  * 获取登录页公开配置
- * @returns {Promise<object>} 配置对象（无配置行时后端返回 {}）
+ * @returns {Promise<{config: object, smsEnabled: boolean}>}
+ *   config 视觉配置（无配置行时为 {}）；smsEnabled 短信登录开关（与 data 平级，默认 false）
  */
 export function getPublicLoginConfig() {
   return publicHttp
     .get('/login/config')
     .then((res) => {
       const body = res && res.data
-      // 后端按 AjaxResult 包裹：{ code:200, data:{...} }
-      return body && typeof body.data === 'object' && body.data !== null ? body.data : {}
+      // 后端按 AjaxResult 包裹：{ code:200, data:{...}, smsEnabled:false }
+      const data = body && typeof body.data === 'object' && body.data !== null ? body.data : {}
+      return { config: data, smsEnabled: body && body.smsEnabled === true }
     })
 }
 
