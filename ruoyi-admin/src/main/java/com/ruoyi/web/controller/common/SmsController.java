@@ -13,9 +13,11 @@ import com.ruoyi.common.core.domain.model.SmsSendBody;
 import com.ruoyi.common.enums.LimitType;
 import com.ruoyi.common.utils.SecurityUtils;
 import com.ruoyi.common.utils.ip.IpUtils;
+import com.ruoyi.framework.aspectj.IpRateLimiter;
 import com.ruoyi.framework.sms.SmsCodeService;
 import com.ruoyi.framework.sms.SmsLoginOutcome;
 import com.ruoyi.framework.web.service.SysLoginService;
+import com.ruoyi.system.service.ISysConfigService;
 
 /**
  * 短信验证码（匿名接口）
@@ -35,15 +37,37 @@ public class SmsController
     @Autowired
     private SysLoginService loginService;
 
+    @Autowired
+    private ISysConfigService configService;
+
+    @Autowired
+    private IpRateLimiter ipRateLimiter;
+
+    /** 发码接口 IP 窗口限流参数：与原 @RateLimiter(time=60,count=10,IP) 完全一致 */
+    private static final int SEND_LIMIT_SECONDS = 60;
+    private static final int SEND_LIMIT_COUNT = 10;
+
     /**
      * 发送短信验证码。
-     * 注意：limitType 必须显式 IP——DEFAULT 模式下限流 key 不带 IP，会退化为全站合计限额。
+     *
+     * <p>接口级 IP 限流原为方法注解 {@code @RateLimiter(time=60,count=10,IP)}，
+     * 因 AOP 先于方法体执行、无法读取请求体内手机号，下沉为编程式调用
+     * {@link IpRateLimiter}（Redis key 与注解时代完全一致，计数连续）：
+     * sys.sms.whitelistPhones 白名单手机号豁免本道限流，其余号码照常 60 秒 10 次。
      */
-    @RateLimiter(time = 60, count = 10, limitType = LimitType.IP)
     @PostMapping("/sms/code")
     public AjaxResult sendCode(@RequestBody SmsSendBody body)
     {
         String scene = body.getScene();
+        String phone = body.getPhonenumber();
+
+        // 白名单手机豁免接口 IP 限流；非白名单保持与原注解一致的 60s/IP/10 次
+        if (!configService.isSmsWhitelistPhone(phone))
+        {
+            ipRateLimiter.checkByIp(SmsController.class, "sendCode",
+                    SEND_LIMIT_SECONDS, SEND_LIMIT_COUNT);
+        }
+
         if (SmsCodeService.SCENE_ADMIN_BIND.equals(scene))
         {
             // 管理员给目标用户代绑发码：必须登录、必须指定目标用户；平台管理员免码不走这里
@@ -53,7 +77,7 @@ public class SmsController
                 return AjaxResult.error("未指定目标用户");
             }
             SecurityUtils.getUserId();
-            smsCodeService.sendCodeForAdminBind(body.getTargetUserId(), body.getPhonenumber(),
+            smsCodeService.sendCodeForAdminBind(body.getTargetUserId(), phone,
                     IpUtils.getIpAddr(), body.getSliderUuid());
             return AjaxResult.success("验证码已发送");
         }
@@ -64,7 +88,7 @@ public class SmsController
             // 路径匿名放行，但 JWT 过滤器仍会解析有效 token；无登录态时 getUserId 抛 401 语义异常
             userId = SecurityUtils.getUserId();
         }
-        smsCodeService.sendCode(body.getPhonenumber(), scene, userId,
+        smsCodeService.sendCode(phone, scene, userId,
                 IpUtils.getIpAddr(), body.getSliderUuid());
         return AjaxResult.success("验证码已发送");
     }

@@ -195,39 +195,48 @@ public class SmsCodeService
     /**
      * 频控（60s 间隔/单号日上限/IP 日上限，全部 Redis 原子）→ SecureRandom 生成码
      * → Lua 原子写码清错 → 发送；发送失败回滚 code/err/ttl 允许立即重试。
+     *
+     * <p>白名单手机号（sys.sms.whitelistPhones）豁免全部发送频控：不写 60s 占位、
+     * 不计单号/IP 日计数，便于内部测试与演示高频取码；滑块人机校验与验码错误锁定
+     * 在本方法之外，白名单不豁免。
      */
     private void dispatchSms(String scene, String phone, String ip)
     {
-        // ===== 频控（全部 Redis 原子操作，禁止先查后加） =====
         String day = LocalDate.now().format(DAY_FMT);
         String ttlKey = CacheConstants.SMS_TTL_KEY + scene + ":" + phone;
-        String dayKey = CacheConstants.SMS_DAY_KEY + phone + ":" + day;
-        String ipDayKey = CacheConstants.SMS_IPDAY_KEY + ip + ":" + day;
+        String codeKey = CacheConstants.SMS_CODE_KEY + scene + ":" + phone;
+        String errKey = CacheConstants.SMS_ERR_KEY + scene + ":" + phone;
 
-        // 60 秒重发间隔：SET NX 原子占位
-        Boolean firstInWindow = redisTemplate.opsForValue()
-                .setIfAbsent(ttlKey, "1", RESEND_SECONDS, TimeUnit.SECONDS);
-        if (!Boolean.TRUE.equals(firstInWindow))
+        boolean whitelisted = configService.isSmsWhitelistPhone(phone);
+        if (!whitelisted)
         {
-            throw new ServiceException("验证码发送过于频繁，请 " + RESEND_SECONDS + " 秒后再试");
-        }
-        // 单号日上限
-        Long phoneCount = incrDayCounter(dayKey);
-        if (phoneCount > MAX_PER_PHONE_PER_DAY)
-        {
-            throw new ServiceException("该手机号今日接收验证码次数已达上限，请明天再试");
-        }
-        // 单 IP 日上限
-        Long ipCount = incrDayCounter(ipDayKey);
-        if (ipCount > MAX_PER_IP_PER_DAY)
-        {
-            throw new ServiceException("当前网络今日验证码请求次数过多，请稍后再试");
+            // ===== 频控（全部 Redis 原子操作，禁止先查后做） =====
+            String dayKey = CacheConstants.SMS_DAY_KEY + phone + ":" + day;
+            String ipDayKey = CacheConstants.SMS_IPDAY_KEY + ip + ":" + day;
+
+            // 60 秒重发间隔：SET NX 原子占位
+            Boolean firstInWindow = redisTemplate.opsForValue()
+                    .setIfAbsent(ttlKey, "1", RESEND_SECONDS, TimeUnit.SECONDS);
+            if (!Boolean.TRUE.equals(firstInWindow))
+            {
+                throw new ServiceException("验证码发送过于频繁，请 " + RESEND_SECONDS + " 秒后再试");
+            }
+            // 单号日上限
+            Long phoneCount = incrDayCounter(dayKey);
+            if (phoneCount > MAX_PER_PHONE_PER_DAY)
+            {
+                throw new ServiceException("该手机号今日接收验证码次数已达上限，请明天再试");
+            }
+            // 单 IP 日上限
+            Long ipCount = incrDayCounter(ipDayKey);
+            if (ipCount > MAX_PER_IP_PER_DAY)
+            {
+                throw new ServiceException("当前网络今日验证码请求次数过多，请稍后再试");
+            }
         }
 
         // 生成并写入验证码（SecureRandom + Lua 原子写码/清错误计数）
         String code = String.valueOf(100000 + SECURE_RANDOM.nextInt(900000));
-        String codeKey = CacheConstants.SMS_CODE_KEY + scene + ":" + phone;
-        String errKey = CacheConstants.SMS_ERR_KEY + scene + ":" + phone;
         redisTemplate.execute(SAVE_CODE_SCRIPT,
                 List.of(codeKey, errKey), code, String.valueOf(CODE_TTL_SECONDS));
 
@@ -238,6 +247,7 @@ public class SmsCodeService
         catch (RuntimeException e)
         {
             // 用户收不到的码不得残留：删除 code/err/ttl，允许立刻重试；日计数保留（计尝试次数）
+            // 白名单未写 ttlKey，删除不存在的 key 为空操作，无害
             redisTemplate.delete(List.of(codeKey, errKey, ttlKey));
             throw e;
         }

@@ -60,6 +60,18 @@ public interface ISysConfigService
     public boolean selectAdminPasswordLoginEnabled();
 
     /**
+     * 判断手机号是否在短信发送白名单（sys.sms.whitelistPhones）。
+     *
+     * <p>白名单为逗号分隔的 11 位手机号，在「参数设置」维护并随参数缓存热生效；
+     * 命中白名单的手机号豁免短信发送类频控（60s 重发间隔、单号/IP 日上限、
+     * 接口 IP 限流），但滑块人机校验与验证码错误锁定仍生效。
+     *
+     * @param phone 待判定手机号
+     * @return true 在白名单内；空配置/空号码/格式不符均返回 false
+     */
+    public boolean isSmsWhitelistPhone(String phone);
+
+    /**
      * 查询参数配置列表
      * 
      * @param config 参数配置信息

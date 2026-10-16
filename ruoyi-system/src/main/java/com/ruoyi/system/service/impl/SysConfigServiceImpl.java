@@ -137,6 +137,33 @@ public class SysConfigServiceImpl implements ISysConfigService
     }
 
     /**
+     * 短信发送白名单：sys.sms.whitelistPhones，逗号（兼容中文逗号/分号/空白）分隔。
+     * 走 selectConfigByKey 的参数缓存，「参数设置」保存即清缓存热生效，无需重启。
+     */
+    @Override
+    public boolean isSmsWhitelistPhone(String phone)
+    {
+        if (StringUtils.isEmpty(phone))
+        {
+            return false;
+        }
+        String raw = selectConfigByKey("sys.sms.whitelistPhones");
+        if (StringUtils.isEmpty(raw))
+        {
+            return false;
+        }
+        // 统一分隔符：中英文逗号、中英文分号、空白（含换行）均作切分，trim 后精确匹配
+        for (String item : raw.split("[,，;；\\s]+"))
+        {
+            if (phone.equals(item.trim()))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 查询参数配置列表
      * 
      * @param config 参数配置信息
