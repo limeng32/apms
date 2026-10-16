@@ -2,6 +2,7 @@ package com.ruoyi.web.controller.apms;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.system.service.ISysConfigService;
@@ -28,13 +29,17 @@ public class ApmsLoginConfigController {
     /**
      * 匿名获取登录页配置
      * 无配置行时 data 为 {}，前端与内置默认值深度合并。
+     *
+     * @param entry 入口标识：portal（业务站 aoti.apms.top，默认）| showcase（展示站 apms.top）；
+     *              前端按当前 hostname 传参，非法值后端拒绝
      * smsEnabled：手机短信登录开关，登录页据此决定是否渲染短信登录 tab（默认 false，
      * 无后端的演示站请求失败回退默认，tab 自动隐藏）。
      */
     @GetMapping("/login/config")
-    public AjaxResult getPublicConfig()
+    public AjaxResult getPublicConfig(
+            @RequestParam(value = "entry", required = false) String entry)
     {
-        AjaxResult ajax = AjaxResult.success(apmsLoginConfigService.getConfigMap());
+        AjaxResult ajax = AjaxResult.success(apmsLoginConfigService.getConfigMap(entry));
         ajax.put("smsEnabled", configService.selectSmsLoginEnabled());
         return ajax;
     }

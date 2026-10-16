@@ -30,15 +30,12 @@ defineProps({
   align-items: center;
   gap: 5px;
   margin-top: 8px;
-  font-size: 12px;
-  line-height: 1.4;
-  /* 颜色继承所在页脚（深色品牌区 / 浅色表单区各自的 --login-*-foot/text 变量） */
+  /* 字号/颜色完全继承所在页脚，与版权各行保持统一 */
+  font-size: inherit;
+  line-height: inherit;
+  white-space: nowrap;
   color: inherit;
   text-decoration: none;
-  transition: opacity 0.2s;
-}
-a.police-beian:hover {
-  opacity: 0.75;
 }
 .police-beian-badge {
   width: 15px;

@@ -1,8 +1,10 @@
+import { getSiteTitle } from '@/utils/entry'
+
 export default {
   /**
-   * 网页标题
+   * 网页标题（按入口域名区分：apms.top 短标题 / aoti.apms.top 奥体中心全称）
    */
-  title: import.meta.env.VITE_APP_TITLE,
+  title: getSiteTitle(),
 
   /**
    * 侧边栏主题 深色主题theme-dark，浅色主题theme-light

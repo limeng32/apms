@@ -7,15 +7,14 @@
 <script setup name="Showcase">
 import LoginRenderer from '../login/LoginRenderer.vue'
 import useLoginThemeStore from '@/store/modules/loginTheme'
-import { applyLoginHead, restoreLoginHead } from '../login/login.utils'
+import { applyLoginHead, restoreLoginHead, resolveBrowserTitle } from '../login/login.utils'
 
 const loginThemeStore = useLoginThemeStore()
 
-// favicon / 浏览器标题：与登录页完全一致，配置加载后动态替换，离开时恢复
+// favicon / 浏览器标题：均取展示站配置；标题留空回退域名内置短标题
 function applyHead() {
   const c = loginThemeStore.config
-  const title = (c.brand?.name || '').trim() || import.meta.env.VITE_APP_TITLE
-  applyLoginHead({ favicon: c.brand?.favicon, title })
+  applyLoginHead({ favicon: c.brand?.favicon, title: resolveBrowserTitle(c) }, 'showcase')
 }
 
 // 首帧用默认配置渲染，挂载后异步拉取公开配置（失败静默回退，绝不阻断）

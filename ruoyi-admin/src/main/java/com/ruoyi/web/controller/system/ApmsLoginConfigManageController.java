@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import com.ruoyi.common.annotation.Log;
 import com.ruoyi.common.core.controller.BaseController;
@@ -32,23 +33,30 @@ public class ApmsLoginConfigManageController extends BaseController {
 
     /**
      * 设计器回显：原样返回库中配置（无行返回 {}），由前端与默认值合并后填表
+     *
+     * @param entry 入口标识：portal（业务站，默认）| showcase（展示站）
      */
     @PreAuthorize("@ss.hasPermi('system:loginconfig:query')")
     @GetMapping
-    public AjaxResult getConfig()
+    public AjaxResult getConfig(
+            @RequestParam(value = "entry", required = false) String entry)
     {
-        return success(apmsLoginConfigService.getConfigMap());
+        return success(apmsLoginConfigService.getConfigMap(entry));
     }
 
     /**
      * 保存配置（JSON 导入复用本接口，校验同一套）
+     *
+     * @param entry 入口标识：portal（业务站，默认）| showcase（展示站）
      */
     @PreAuthorize("@ss.hasPermi('system:loginconfig:edit')")
     @Log(title = "登录页配置", businessType = BusinessType.UPDATE)
     @PutMapping
-    public AjaxResult save(@RequestBody Map<String, Object> config)
+    public AjaxResult save(
+            @RequestBody Map<String, Object> config,
+            @RequestParam(value = "entry", required = false) String entry)
     {
-        apmsLoginConfigService.saveConfig(config, getUsername());
+        apmsLoginConfigService.saveConfig(config, getUsername(), entry);
         return AjaxResult.success();
     }
 }

@@ -31,8 +31,12 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
 
     private static final Logger log = LoggerFactory.getLogger(ApmsLoginConfigServiceImpl.class);
 
-    /** 单例配置标识 */
+    /** 业务站配置标识（aoti.apms.top；历史单例行沿用此 key，零迁移） */
     private static final String DEFAULT_CONFIG_KEY = "default";
+    /** 品牌展示站配置标识（apms.top / www.apms.top） */
+    private static final String SHOWCASE_CONFIG_KEY = "showcase";
+    /** 入口参数中展示站的取值 */
+    private static final String ENTRY_SHOWCASE = "showcase";
 
     /** config_json 上限 64KB（UTF-8） */
     private static final int MAX_JSON_BYTES = 64 * 1024;
@@ -101,7 +105,14 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
     @Override
     public Map<String, Object> getConfigMap()
     {
-        ApmsLoginConfig row = apmsLoginConfigMapper.selectByConfigKey(DEFAULT_CONFIG_KEY);
+        return getConfigMap(null);
+    }
+
+    @Override
+    public Map<String, Object> getConfigMap(String entry)
+    {
+        String configKey = resolveConfigKey(entry);
+        ApmsLoginConfig row = apmsLoginConfigMapper.selectByConfigKey(configKey);
         if (row == null || row.getConfigJson() == null || row.getConfigJson().isBlank())
         {
             // 无配置行：返回空对象，由前端与 login.defaults.js 合并
@@ -116,13 +127,19 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
         catch (Exception e)
         {
             // 库中 JSON 损坏等异常不阻断登录页：记录日志并返回空对象
-            log.error("解析登录页配置 config_json 失败，回退空配置: {}", e.getMessage());
+            log.error("解析登录页配置 config_json 失败（{}），回退空配置: {}", configKey, e.getMessage());
             return Collections.emptyMap();
         }
     }
 
     @Override
     public void saveConfig(Map<String, Object> config, String operator)
+    {
+        saveConfig(config, operator, null);
+    }
+
+    @Override
+    public void saveConfig(Map<String, Object> config, String operator, String entry)
     {
         if (config == null)
         {
@@ -144,12 +161,13 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
             throw new ServiceException("配置内容超出 64KB 上限");
         }
 
-        ApmsLoginConfig row = apmsLoginConfigMapper.selectByConfigKey(DEFAULT_CONFIG_KEY);
+        String configKey = resolveConfigKey(entry);
+        ApmsLoginConfig row = apmsLoginConfigMapper.selectByConfigKey(configKey);
         if (row == null)
         {
             ApmsLoginConfig entity = new ApmsLoginConfig();
-            entity.setConfigKey(DEFAULT_CONFIG_KEY);
-            entity.setConfigName("默认配置");
+            entity.setConfigKey(configKey);
+            entity.setConfigName(configName(configKey));
             entity.setConfigJson(json);
             entity.setSchemaVer(SCHEMA_VER);
             entity.setStatus("0");
@@ -163,6 +181,34 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
             row.setUpdateBy(operator);
             apmsLoginConfigMapper.updateByConfigKey(row);
         }
+    }
+
+    /**
+     * 入口参数 → 物理 config_key：
+     * null/空/portal/default 归一为业务站 'default'；仅 'showcase' 映射到展示站；
+     * 其余取值一律拒绝（防参数注入到任意 key）。
+     */
+    private String resolveConfigKey(String entry)
+    {
+        if (entry == null || entry.isBlank())
+        {
+            return DEFAULT_CONFIG_KEY;
+        }
+        String e = entry.trim();
+        if (ENTRY_SHOWCASE.equalsIgnoreCase(e))
+        {
+            return SHOWCASE_CONFIG_KEY;
+        }
+        if ("portal".equalsIgnoreCase(e) || DEFAULT_CONFIG_KEY.equalsIgnoreCase(e))
+        {
+            return DEFAULT_CONFIG_KEY;
+        }
+        throw new ServiceException("非法的入口标识 entry：" + entry);
+    }
+
+    private String configName(String configKey)
+    {
+        return SHOWCASE_CONFIG_KEY.equals(configKey) ? "展示站配置" : "默认配置";
     }
 
     // ============================ 形态校验 ============================
@@ -184,6 +230,8 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
         {
             str(brand.get("name"), "brand.name", 100);
             str(brand.get("subTitle"), "brand.subTitle", 200);
+            // 浏览器标签页标题（留空时前端按入口域名回退内置默认值）
+            str(brand.get("browserTitle"), "brand.browserTitle", 100);
             // v1 favicon 仅允许 /profile/ 站内路径
             mediaUrl(brand.get("favicon"), "brand.favicon", true);
             // Logo 与上下留白（桌面端）：复用校验方法，移动端共用同一套口径

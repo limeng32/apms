@@ -78,12 +78,16 @@
             <slot name="roles"></slot>
           </div>
 
-          <div class="lc-copyright" v-if="cfg.footer.showCopyright" data-anim :style="entranceOn ? { animationDelay: '0.5s' } : null">
-            <FooterRichText :content="cfg.footer.copyright" :ctx="tplCtx" />
-          </div>
-          <!-- 网安备案：居中卡片布局固定在卡片最下方（含 www 展示形态） -->
-          <div v-if="policeBeian.show" class="lc-police" data-anim :style="entranceOn ? { animationDelay: '0.5s' } : null">
-            <PoliceBeian :info="policeBeian" />
+          <!-- 版权 + 网安备案同一行内联排列（窄屏自动折行，警徽与备案号成组不拆）。
+               版权文本中含 {police} 占位符时，公安备案在文本流内渲染，不再重复显示独立块 -->
+          <div
+            class="lc-footer"
+            v-if="cfg.footer.showCopyright || policeBeian.show"
+            data-anim
+            :style="entranceOn ? { animationDelay: '0.5s' } : null"
+          >
+            <FooterRichText v-if="cfg.footer.showCopyright" :content="copyrightRich" :ctx="tplCtx" :police="policeBeian" />
+            <PoliceBeian v-if="policeBeian.show && !(cfg.footer.showCopyright && policeInCopyright)" :info="policeBeian" />
           </div>
         </div>
       </div>
@@ -155,12 +159,15 @@
             <slot name="roles"></slot>
           </div>
 
-          <div class="lc-copyright" v-if="cfg.footer.showCopyright" data-anim :style="entranceOn ? { animationDelay: '0.5s' } : null">
-            <FooterRichText :content="cfg.footer.copyright" :ctx="tplCtx" />
-          </div>
-          <!-- 网安备案：全屏布局同居中布局，置于最下方（含 www 展示形态） -->
-          <div v-if="policeBeian.show" class="lc-police" data-anim :style="entranceOn ? { animationDelay: '0.5s' } : null">
-            <PoliceBeian :info="policeBeian" />
+          <!-- 版权 + 网安备案同一行内联排列（窄屏自动折行，警徽与备案号成组不拆） -->
+          <div
+            class="lc-footer"
+            v-if="cfg.footer.showCopyright || policeBeian.show"
+            data-anim
+            :style="entranceOn ? { animationDelay: '0.5s' } : null"
+          >
+            <FooterRichText v-if="cfg.footer.showCopyright" :content="copyrightRich" :ctx="tplCtx" :police="policeBeian" />
+            <PoliceBeian v-if="policeBeian.show && !(cfg.footer.showCopyright && policeInCopyright)" :info="policeBeian" />
           </div>
         </div>
       </div>
@@ -248,17 +255,17 @@
         class="lb-foot"
         data-anim
         :style="entranceOn ? { animationDelay: (descDelay + 0.65) + 's' } : null"
-      ><FooterRichText :content="cfg.footer.brandText" :ctx="tplCtx" />
-        <!-- 展示形态（www）：版权声明 + 网安备案紧随 brandText 同一行内联排列
-             （窄屏自动折行）；常规 split 布局二者只在右下表单区显示 -->
-        <span v-if="showcase" class="lb-copyright-extra">
-          <FooterRichText
-            v-if="cfg.footer.showCopyright"
-            :content="cfg.footer.copyright"
-            :ctx="tplCtx"
-          />
-          <PoliceBeian v-if="policeBeian.show" :info="policeBeian" />
-        </span>
+      ><FooterRichText :content="brandTextRich" :ctx="tplCtx" :police="policeBeian" />
+        <!-- 展示形态（www）：公安备案默认紧跟 brandText（含 ICP）同一行内联排列；
+             若 brandText/copyright 文本中已用 {police} 占位符，则不再显示独立块；
+             copyright 声明另起一行；窄屏自动折行，警徽与备案号成组不拆 -->
+        <PoliceBeian
+          v-if="showcase && policeBeian.show && !policeInBrandText && !(cfg.footer.showCopyright && policeInCopyright)"
+          :info="policeBeian"
+        />
+        <div v-if="showcase && cfg.footer.showCopyright" class="lb-copyright-line">
+          <FooterRichText :content="copyrightRich" :ctx="tplCtx" :police="policeBeian" />
+        </div>
       </div>
     </aside>
 
@@ -286,11 +293,11 @@
         <slot name="form"></slot>
         <slot name="roles"></slot>
 
-        <div class="lf-copyright" v-if="cfg.footer.showCopyright">
-          <FooterRichText :content="cfg.footer.copyright" :ctx="tplCtx" />
-        </div>
-        <div v-if="policeBeian.show" class="lf-police">
-          <PoliceBeian :info="policeBeian" />
+        <!-- 版权 + 网安备案同一行内联排列（窄屏自动折行，警徽与备案号成组不拆）。
+             版权文本中含 {police} 占位符时，公安备案在文本流内渲染，不再重复显示独立块 -->
+        <div class="lf-footer" v-if="cfg.footer.showCopyright || policeBeian.show">
+          <FooterRichText v-if="cfg.footer.showCopyright" :content="copyrightRich" :ctx="tplCtx" :police="policeBeian" />
+          <PoliceBeian v-if="policeBeian.show && !(cfg.footer.showCopyright && policeInCopyright)" :info="policeBeian" />
         </div>
       </div>
     </main>
@@ -302,8 +309,8 @@
 import defaultSettings from '@/settings'
 import {
   toCssVars, interpolate, resolveDeviceConfig,
-  clampLogoSize, clampLogoOffset, mediaUrl, builtinLogoImage, isBitmapLogo,
-  builtinBgImage, builtinBgTexture,
+  resolveLogoBox, clampLogoOffset, mediaUrl, builtinLogoImage, isBitmapLogo,
+  builtinBgImage, builtinBgTexture, withPoliceToken,
   CLIENT_LOGO_OFFSET_X_LIMITS,
   BUILTIN_LOGO_VALUES
 } from './login.utils'
@@ -369,6 +376,15 @@ const policeBeian = computed(() => {
   }
 })
 
+// 版权文本中是否含 {police}：优先用人工占位符；未写时公安备案开启且文本有备案链接，
+// withPoliceToken 自动把占位符插到首个链接后（ICP 与网安备案默认同行，无需手工排版）。
+// brandText 的自动跟随仅在 showcase 展示形态启用（常规登录页左栏不显示公安备案）；
+// copyright（表单侧/卡片）登录与展示均启用
+const brandTextRich = computed(() => withPoliceToken(cfg.value.footer?.brandText, props.showcase && policeBeian.value.show))
+const copyrightRich = computed(() => withPoliceToken(cfg.value.footer?.copyright, policeBeian.value.show))
+const policeInBrandText = computed(() => brandTextRich.value.includes('{police}'))
+const policeInCopyright = computed(() => copyrightRich.value.includes('{police}'))
+
 // 布局模板：split（双栏，默认）/ centered（居中卡片，M3b）/ fullscreen（全屏背景，M3c）
 const isCentered = computed(() => cfg.value.layout.template === 'centered')
 const isFullscreen = computed(() => cfg.value.layout.template === 'fullscreen')
@@ -428,15 +444,15 @@ const tplCtx = computed(() => ({
 
 /* ============ logo 渲染与像素级调整 ============ */
 const logo = computed(() => cfg.value.brand.logo || {})
-const logoW = computed(() => clampLogoSize(logo.value.width, 42))
-const logoH = computed(() => clampLogoSize(logo.value.height, 48))
-// 位图类 logo：宽度主导、高度按图片比例自适应；矢量（盾牌/EP 图标）走宽高双维
+// 位图类 logo：宽度主导、高度按图片比例自适应；矢量（盾牌/EP 图标）高度由宽度按比例推导
+// （设计器只开放宽度控件，矢量视觉尺寸不得被配置中固定的 height 限死）
 const logoBitmap = computed(() => isBitmapLogo(logo.value))
+const logoBox = computed(() => resolveLogoBox(logo.value))
 const logoStyle = computed(() => ({
-  width: `${logoW.value}px`,
-  height: logoBitmap.value ? 'auto' : `${logoH.value}px`,
-  // el-icon 内 svg 为 1em，用 font-size 撑满 slot（位图无 el-icon）
-  fontSize: logoBitmap.value ? undefined : `${logoH.value}px`,
+  width: `${logoBox.value.width}px`,
+  height: logoBitmap.value ? 'auto' : `${logoBox.value.height}px`,
+  // el-icon 内 svg 为 1em，用 font-size 撑满 slot（位图无 el-icon，不需要）
+  fontSize: logoBitmap.value ? undefined : `${logoBox.value.height}px`,
   transform: `translate(${clampLogoOffset(logo.value.offsetX)}px, ${clampLogoOffset(logo.value.offsetY)}px)`
 }))
 const logoImageSrc = computed(() => mediaUrl(logo.value.value))
@@ -712,10 +728,15 @@ function onLogoPointerUp() {
 
 /* 表单、登录按钮、dev 角色块均由 slot 注入，其样式归属 login.vue（slotted 内容带父级 scope） */
 
-/* 版权 */
-.lf-copyright {
+/* 版权 + 网安备案：同一行内联排列，窄屏自动折行；
+   警徽与备案号由 PoliceBeian 自身 white-space:nowrap 保证成组不拆 */
+.lf-footer {
   margin-top: 30px;
-  text-align: center;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 4px 12px;
   font-size: 11.5px;
   color: var(--login-text-2);
   a {
@@ -723,13 +744,12 @@ function onLogoPointerUp() {
     text-decoration: none;
     &:hover { text-decoration: underline; }
   }
-}
-/* 公安备案行：与版权同色、居中，版权隐藏时也保留上间距 */
-.lf-police {
-  margin-top: 12px;
-  text-align: center;
-  font-size: 11.5px;
-  color: var(--login-text-2);
+  :deep(.police-beian) { margin-top: 0; }
+  /* 多行版权：富文本占满整行、每一行各自居中（而非整块按最宽行左对齐） */
+  .footer-rich {
+    display: block;
+    text-align: center;
+  }
 }
 
 /* ============ centered：居中卡片模板（M3b） ============ */
@@ -805,10 +825,15 @@ function onLogoPointerUp() {
     margin-bottom: 22px;
   }
 }
-/* 版权落在深色渐变背景上，使用品牌区浅色文字体系 */
-.lc-copyright {
+/* 版权 + 网安备案：同一行内联排列，落在深色渐变背景上使用品牌区浅色文字体系；
+   窄屏自动折行，警徽与备案号成组不拆 */
+.lc-footer {
   margin-top: 22px;
-  text-align: center;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 4px 12px;
   font-size: 11.5px;
   color: var(--login-brand-foot);
   a {
@@ -816,13 +841,12 @@ function onLogoPointerUp() {
     text-decoration: none;
     &:hover { text-decoration: underline; }
   }
-}
-/* 网安备案：居中/全屏布局卡片最下方，与版权同色居中；版权隐藏时保留自身间距 */
-.lc-police {
-  margin-top: 12px;
-  text-align: center;
-  font-size: 11.5px;
-  color: var(--login-brand-foot);
+  :deep(.police-beian) { margin-top: 0; }
+  /* 多行版权：富文本占满整行、每一行各自居中（而非整块按最宽行左对齐） */
+  .footer-rich {
+    display: block;
+    text-align: center;
+  }
 }
 
 /* ============ fullscreen：整屏背景图 + 遮罩 + 浮层卡片（M3c） ============ */
@@ -944,15 +968,15 @@ function onLogoPointerUp() {
    实测三段合计约 850px，760 会把公安备案挤到第二行；放开到可用整宽。
    窄屏放不下时由内联排版自然折行（警徽与备案号仍保持成组不拆） */
 .showcase-on .lb-foot { max-width: none; }
-/* 展示形态：版权声明 + 网安备案与品牌文（brandText）同一行内联排列。
-   清除 PoliceBeian 组件自带的 margin-top（那是为独立成行设计的），
-   备案块与版权文字间留 12px 间距；white-space:nowrap 保证警徽与备案号不被拆开 */
-.showcase-on .lb-copyright-extra {
-  :deep(.police-beian) {
-    margin-top: 0;
-    margin-left: 12px;
-    white-space: nowrap;
-  }
+/* 展示形态：公安备案紧跟 brandText（含 ICP）同一行内联排列；
+   copyright 声明通过 .lb-copyright-line 另起一行。
+   清除 PoliceBeian 自带的 margin-top，备案块与 brandText 间留 12px 间距 */
+.showcase-on .lb-foot :deep(.police-beian) {
+  margin-top: 0;
+  margin-left: 12px;
+}
+.showcase-on .lb-copyright-line {
+  margin-top: 4px;
 }
 /* overlay 族（centered/fullscreen）：卡片摘除后品牌块不再需要给卡片留的底部间距 */
 .showcase-on .lc-brand { margin-bottom: 0; }

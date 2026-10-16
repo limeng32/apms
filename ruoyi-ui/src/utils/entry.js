@@ -13,6 +13,14 @@
 const DEFAULT_SHOWCASE_HOSTS = 'www.apms.top,apms.top'
 const DEV_PREVIEW_KEY = 'apms_showcase_preview'
 
+/**
+ * 浏览器标题（按入口域名区分，同一份 dist 服务两个域名）：
+ *  - apms.top 裸域/www（品牌展示入口）：运动员训练数据管理系统
+ *  - aoti.apms.top 等业务入口（非展示域）：国家奥林匹克体育中心-运动员训练数据管理系统
+ */
+const SITE_TITLE_SHOWCASE = '运动员训练数据管理系统'
+const SITE_TITLE_PORTAL = '国家奥林匹克体育中心-运动员训练数据管理系统'
+
 function configuredHosts() {
   const raw = import.meta.env.VITE_SHOWCASE_HOSTS || DEFAULT_SHOWCASE_HOSTS
   return raw.split(',').map((s) => s.trim()).filter(Boolean)
@@ -61,4 +69,15 @@ export function isShowcaseHost() {
     }
   }
   return false
+}
+
+/**
+ * 当前入口对应的浏览器标题，规则与页面形态完全一致：
+ *  - 展示形态（生产 apms.top 裸域/www，或本机 ?showcase=1 预览）：短标题
+ *  - 其余一切形态（生产 aoti.apms.top、内网 UAT、localhost 默认业务入口、
+ *    ?showcase=0 关闭展示预览）：奥体中心全称
+ */
+export function getSiteTitle() {
+  if (typeof window === 'undefined') return import.meta.env.VITE_APP_TITLE
+  return isShowcaseHost() ? SITE_TITLE_SHOWCASE : SITE_TITLE_PORTAL
 }

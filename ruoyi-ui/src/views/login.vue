@@ -66,7 +66,7 @@ import SmsLoginForm from './login/SmsLoginForm.vue'
 import SliderCaptcha from './login/SliderCaptcha.vue'
 import DemoPassDialog from './login/DemoPassDialog.vue'
 import useLoginThemeStore from '@/store/modules/loginTheme'
-import { applyLoginHead, restoreLoginHead } from './login/login.utils'
+import { applyLoginHead, restoreLoginHead, resolveBrowserTitle } from './login/login.utils'
 import { readDemoSessionState, clearDemoSession } from '@/utils/auth'
 import { isDemoEnabled } from '@/utils/demo'
 
@@ -153,11 +153,11 @@ watch(route, (newRoute) => {
   redirect.value = newRoute.query && newRoute.query.redirect
 }, { immediate: true })
 
-// favicon / 浏览器标题：配置加载后动态替换，离开登录页恢复，不影响全站
+// favicon / 浏览器标题：favicon 取业务站设计器配置；标题取 brand.browserTitle，
+// 留空回退域名内置默认（见 login.utils.resolveBrowserTitle）
 function applyHead() {
   const c = loginThemeStore.config
-  const title = (c.brand?.name || '').trim() || import.meta.env.VITE_APP_TITLE
-  applyLoginHead({ favicon: c.brand?.favicon, title })
+  applyLoginHead({ favicon: c.brand?.favicon, title: resolveBrowserTitle(c) }, 'portal')
 }
 
 // 进入 /login：首帧用默认配置渲染，挂载后异步拉取（失败静默回退，绝不阻断）

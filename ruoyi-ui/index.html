@@ -28,6 +28,45 @@
   <!-- v=构建号：重新部署后强制浏览器拉新 favicon，绕过对 .ico 的 7 天强缓存 -->
   <link rel="icon" href="/favicon.ico?v=%BUILD_ID%">
   <title>%VITE_APP_TITLE%</title>
+  <script>
+    /*
+     * 多入口标题（首屏同步设置，规则与 src/utils/entry.js#getSiteTitle 完全一致）：
+     *  - 展示形态：生产 apms.top 裸域 / www.apms.top，或本机 ?showcase=1 预览
+     *    （含 sessionStorage 中的预览开关）→ 运动员训练数据管理系统
+     *  - 其余一切（生产 aoti.apms.top、内网 UAT、localhost 业务入口、?showcase=0）
+     *    → 国家奥林匹克体育中心-运动员训练数据管理系统
+     * 必须同步执行，避免 JS bundle 加载期间标签页显示构建默认标题。
+     */
+    (function () {
+      try {
+        var host = location.hostname
+        var showcase = host === 'apms.top' || host === 'www.apms.top'
+        if (!showcase) {
+          var params = new URLSearchParams(location.search)
+          if (params.get('showcase') === '1') {
+            showcase = true
+          } else if (!params.get('showcase')
+            && sessionStorage.getItem('apms_showcase_preview') === '1') {
+            showcase = true
+          }
+        }
+        // 优先使用设计器为该入口配置并持久化的浏览器标题（login.utils.applyLoginHead 写入）
+        var cached = ''
+        try {
+          cached = localStorage.getItem(
+            'apms_login_title_' + (showcase ? 'showcase' : 'portal')) || ''
+          cached = cached.replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 100)
+        } catch (e) { /* localStorage 不可用时用内置默认 */ }
+        if (cached) {
+          document.title = cached
+        } else {
+          document.title = showcase
+            ? '运动员训练数据管理系统'
+            : '国家奥林匹克体育中心-运动员训练数据管理系统'
+        }
+      } catch (e) { /* 异常时保留 <title> 构建默认值 */ }
+    })()
+  </script>
   <!--[if lt IE 11]><script>window.location.href='/html/ie.html';</script><![endif]-->
   <style>
     html,

@@ -5,8 +5,19 @@
       <div class="ld-title">
         登录页设计
         <el-tag v-if="dirty" type="warning" size="small" effect="plain" class="ld-dirty">未保存</el-tag>
+        <!-- 双入口切换：业务站 aoti.apms.top / 展示站 apms.top，两套配置独立保存 -->
+        <el-radio-group
+          :model-value="entry"
+          size="small"
+          class="ld-entry-switch"
+          @change="switchEntry"
+        >
+          <el-radio-button label="portal">业务站（aoti）</el-radio-button>
+          <el-radio-button label="showcase">展示站（apms.top）</el-radio-button>
+        </el-radio-group>
       </div>
       <div class="ld-actions">
+        <el-button v-if="entry === 'showcase'" @click="copyFromPortal">从业务站复制</el-button>
         <el-button @click="triggerImport">导入 JSON</el-button>
         <el-button @click="exportJson">导出 JSON</el-button>
         <el-button @click="resetDefault">恢复默认</el-button>
@@ -39,11 +50,13 @@
                   <LoginRenderer
                     :config="localConfig"
                     device="mobile"
+                    :showcase="isShowcaseEntry"
                     logo-draggable
                     :preview-scale="scale"
                     @logo-offset="onLogoOffset"
                   >
-                    <template #form>
+                    <!-- 展示形态无登录卡片，与真实 apms.top 落地页一致 -->
+                    <template v-if="!isShowcaseEntry" #form>
                       <LoginFormFields
                         :model-value="previewForm"
                         :config="localConfig"
@@ -57,11 +70,12 @@
               <LoginRenderer
                 v-else
                 :config="localConfig"
+                :showcase="isShowcaseEntry"
                 logo-draggable
                 :preview-scale="scale"
                 @logo-offset="onLogoOffset"
               >
-                <template #form>
+                <template v-if="!isShowcaseEntry" #form>
                   <LoginFormFields
                     :model-value="previewForm"
                     :config="localConfig"
@@ -84,6 +98,15 @@
               <div class="ld-section">品牌区</div>
               <el-form-item label="品牌名称（留空则取系统标题）">
                 <el-input v-model="localConfig.brand.name" maxlength="100" placeholder="默认取 VITE_APP_TITLE" />
+              </el-form-item>
+              <el-form-item label="浏览器标签页标题（留空使用入口默认）">
+                <el-input
+                  v-model="localConfig.brand.browserTitle"
+                  maxlength="100"
+                  show-word-limit
+                  :placeholder="`默认：${defaultBrowserTitle}`"
+                />
+                <div class="ld-hint">仅对当前「{{ entry === 'showcase' ? '展示站' : '业务站' }}」生效；两站标题可分别配置</div>
               </el-form-item>
               <el-form-item label="英文副标题">
                 <el-input v-model="localConfig.brand.subTitle" maxlength="200" />
@@ -185,28 +208,34 @@
               <div class="ld-section">版权</div>
               <el-form-item label="品牌区版权（左下，{year} {title} 为占位符，支持备案链接）">
                 <el-input
+                  ref="brandTextInput"
                   v-model="localConfig.footer.brandText"
                   type="textarea"
-                  :rows="2"
+                  :rows="3"
                   maxlength="400"
                   show-word-limit
                 />
                 <div class="ld-hint">
                   链接写法：&lt;a href="https://beian.miit.gov.cn/" target="_blank"&gt;京ICP备XXXXXXXX号-X&lt;/a&gt;（仅允许 http(s)）
-                  <el-button link type="primary" size="small" @click="appendIcp('brandText')">插入备案链接</el-button>
+                  <el-button link type="primary" size="small" @click="insertIcp('brandText')">插入备案链接</el-button>
+                  <el-button link type="primary" size="small" @click="insertPolice('brandText')">插入公安备案标识</el-button>
+                  <div>文本框中直接回车换行即可控制排版；{police} 显示为警徽+公安备案号（需开启下方开关并填写编号）</div>
                 </div>
               </el-form-item>
               <el-form-item label="表单区版权（右下，{footerContent} 为占位符，支持备案链接）">
                 <el-input
+                  ref="copyrightInput"
                   v-model="localConfig.footer.copyright"
                   type="textarea"
-                  :rows="2"
+                  :rows="3"
                   maxlength="400"
                   show-word-limit
                 />
                 <div class="ld-hint">
                   链接写法：&lt;a href="https://beian.miit.gov.cn/" target="_blank"&gt;京ICP备XXXXXXXX号-X&lt;/a&gt;（仅允许 http(s)）
-                  <el-button link type="primary" size="small" @click="appendIcp('copyright')">插入备案链接</el-button>
+                  <el-button link type="primary" size="small" @click="insertIcp('copyright')">插入备案链接</el-button>
+                  <el-button link type="primary" size="small" @click="insertPolice('copyright')">插入公安备案标识</el-button>
+                  <div>文本框中直接回车换行即可控制排版；{police} 显示为警徽+公安备案号（需开启下方开关并填写编号）</div>
                 </div>
               </el-form-item>
               <el-form-item label="显示表单区版权">
@@ -435,6 +464,7 @@ import LoginFormFields from '@/views/login/LoginFormFields.vue'
 import LoginLayoutFields from '@/views/login/LoginLayoutFields.vue'
 import { getManagedLoginConfig, updateLoginConfig } from '@/api/loginConfig'
 import useLoginThemeStore from '@/store/modules/loginTheme'
+import { isShowcaseHost } from '@/utils/entry'
 import {
   cloneDefaults, mergeWithDefaults,
   BUILTIN_LOGO_VALUES,
@@ -607,6 +637,17 @@ const PALETTES = [
 const loading = ref(true)
 const saving = ref(false)
 const activeTab = ref('content')
+/**
+ * 当前编辑的入口：'portal' 业务站（aoti.apms.top）| 'showcase' 展示站（apms.top）。
+ * 两套配置独立加载/保存；切换时未保存草稿需二次确认后丢弃。
+ */
+const entry = ref('portal')
+const isShowcaseEntry = computed(() => entry.value === 'showcase')
+const entryLabel = computed(() => (isShowcaseEntry.value ? '展示站' : '业务站'))
+/** 浏览器标题留空时的入口内置默认（仅用于输入框占位提示） */
+const defaultBrowserTitle = computed(() => (isShowcaseEntry.value
+  ? '运动员训练数据管理系统'
+  : '国家奥林匹克体育中心-运动员训练数据管理系统'))
 const localConfig = ref(cloneDefaults())
 let savedSnapshot = JSON.stringify(localConfig.value)
 
@@ -646,24 +687,37 @@ function onFieldPatch({ section, sub, key, value }) {
   else root[key] = value
 }
 
-const previewTip = computed(() => isMobileView.value
-  ? '当前为移动端 H5 登录页预览（375×812）；此处修改仅作用于移动端，点击「保存」后与浏览器端配置一起生效'
-  : '预览为真实登录页等比缩放，所有修改即时生效；可直接按住 logo 拖动调整位置；保存后登录页与全系统品牌即时生效')
+const previewTip = computed(() => {
+  if (isShowcaseEntry.value) {
+    return isMobileView.value
+      ? '当前为展示站移动端 H5 预览（375×812，无登录卡片）；保存后 apms.top 手机端即时生效'
+      : '当前为展示站（apms.top）落地页预览：无登录卡片与客户 logo，品牌区满宽；保存后即时生效'
+  }
+  return isMobileView.value
+    ? '当前为业务站移动端 H5 登录页预览（375×812）；此处修改仅作用于移动端，点击「保存」后与浏览器端配置一起生效'
+    : '预览为真实登录页等比缩放，所有修改即时生效；可直接按住 logo 拖动调整位置；保存后登录页与全系统品牌即时生效'
+})
 
 const dirty = computed(() => JSON.stringify(localConfig.value) !== savedSnapshot)
 
+// 当前真实访问入口（设计器部署在业务站，但可能正在编辑展示站配置）
+const hostEntry = isShowcaseHost() ? 'showcase' : 'portal'
+
 function markSaved() {
   savedSnapshot = JSON.stringify(localConfig.value)
-  // 同步登录页 store：同 SPA 内退出重进登录页前保持一致（onMounted 仍会重新拉取）
-  loginThemeStore.config = mergeWithDefaults(localConfig.value)
+  // 仅当编辑的入口与当前访问入口一致时同步登录页 store（onMounted 仍会重新拉取），
+  // 避免在业务站编辑展示站配置时污染本站登录预览
+  if (entry.value === hostEntry) {
+    loginThemeStore.config = mergeWithDefaults(localConfig.value)
+  }
 }
 
 // ============================ 加载 / 保存 ============================
 
-async function loadData() {
+async function loadData(targetEntry) {
   loading.value = true
   try {
-    const data = await getManagedLoginConfig()
+    const data = await getManagedLoginConfig(targetEntry)
     // 回显同样在前端合并默认值后再填表，保存提交完整对象
     localConfig.value = mergeWithDefaults(data)
     savedSnapshot = JSON.stringify(localConfig.value)
@@ -672,20 +726,60 @@ async function loadData() {
   }
 }
 
+/**
+ * 切换编辑入口：当前草稿有未保存修改时需确认丢弃；确认后重新拉取目标入口配置。
+ * radio-group 使用单向 :model-value，取消切换时 entry 不变、按钮状态自动回退。
+ */
+function switchEntry(target) {
+  if (target === entry.value) return
+  const doSwitch = () => {
+    entry.value = target
+    loadData(target)
+  }
+  if (dirty.value) {
+    proxy.$modal.confirm(
+      `当前${entryLabel.value}配置尚未保存，切换到「${target === 'showcase' ? '展示站' : '业务站'}」将丢弃未保存修改，是否继续？`
+    ).then(doSwitch).catch(() => {})
+  } else {
+    doSwitch()
+  }
+}
+
+/**
+ * 展示站一键以业务站当前已保存配置为起点：
+ * 仅拉取业务站正式配置填入本地草稿（不自动保存），管理员调整后点「保存」才落展示站配置行。
+ */
+function copyFromPortal() {
+  proxy.$modal.confirm(
+    '将用业务站当前已保存的配置覆盖展示站草稿（不会立即保存），可再调整后点「保存」。是否继续？'
+  ).then(async () => {
+    loading.value = true
+    try {
+      const data = await getManagedLoginConfig('portal')
+      localConfig.value = mergeWithDefaults(JSON.parse(JSON.stringify(data)))
+      proxy.$modal.msgSuccess('已复制业务站配置到展示站草稿，确认后请点击「保存」')
+    } finally {
+      loading.value = false
+    }
+  }).catch(() => {})
+}
+
 function save() {
   saving.value = true
-  updateLoginConfig(localConfig.value).then(() => {
+  updateLoginConfig(localConfig.value, entry.value).then(() => {
     markSaved()
-    proxy.$modal.msgSuccess('登录页配置已保存并立即生效')
+    proxy.$modal.msgSuccess(`${entryLabel.value}配置已保存并立即生效`)
   }).finally(() => {
     saving.value = false
   })
 }
 
 function resetDefault() {
-  proxy.$modal.confirm('确定恢复为系统内置默认配置吗？恢复后需点击「保存」才会生效。').then(() => {
+  proxy.$modal.confirm(
+    `确定恢复为系统内置默认配置吗？将重置当前编辑的「${entryLabel.value}」草稿，恢复后需点击「保存」才会生效。`
+  ).then(() => {
     localConfig.value = cloneDefaults()
-    proxy.$modal.msgSuccess('已恢复为默认配置（尚未保存）')
+    proxy.$modal.msgSuccess(`已恢复为默认配置（${entryLabel.value}，尚未保存）`)
   }).catch(() => {})
 }
 
@@ -693,9 +787,37 @@ function applyPalette(p) {
   localConfig.value.colors = { ...localConfig.value.colors, ...JSON.parse(JSON.stringify(p.colors)) }
 }
 
+// 版权 textarea 模板引用：备案链接/{police} 片段在光标处插入
+const brandTextInput = ref(null)
+const copyrightInput = ref(null)
 const ICP_SNIPPET = ' <a href="https://beian.miit.gov.cn/" target="_blank">京ICP备XXXXXXXX号-X</a>'
-function appendIcp(key) {
-  localConfig.value.footer[key] = (localConfig.value.footer[key] || '') + ICP_SNIPPET
+const POLICE_SNIPPET = '{police}'
+
+// 在 textarea 最后一次光标位置插入片段（el-input 失焦后 selectionStart 仍保留）；
+// 拿不到原生节点时退化为追加末尾。插入后聚焦并把光标移到片段末尾
+function insertFooterSnippet(key, snippet) {
+  const inputRef = key === 'brandText' ? brandTextInput.value : copyrightInput.value
+  const ta = inputRef?.$el?.querySelector?.('textarea') || null
+  const cur = localConfig.value.footer[key] || ''
+  let start = cur.length
+  let end = cur.length
+  if (ta && typeof ta.selectionStart === 'number') {
+    start = ta.selectionStart
+    end = ta.selectionEnd
+  }
+  localConfig.value.footer[key] = cur.slice(0, start) + snippet + cur.slice(end)
+  nextTick(() => {
+    if (!ta) return
+    const pos = start + snippet.length
+    ta.focus()
+    ta.setSelectionRange(pos, pos)
+  })
+}
+function insertIcp(key) {
+  insertFooterSnippet(key, ICP_SNIPPET)
+}
+function insertPolice(key) {
+  insertFooterSnippet(key, POLICE_SNIPPET)
 }
 
 // ============================ Logo / 背景 / Favicon ============================
@@ -803,13 +925,15 @@ function onFilePicked(e) {
       proxy.$modal.msgError('文件不是合法的登录页配置 JSON 对象')
       return
     }
-    // 导入复用保存接口：服务端走与保存完全相同的白名单校验
-    proxy.$modal.confirm(`将用文件「${file.name}」的内容直接覆盖当前配置并立即生效，是否继续？`).then(() => {
+    // 导入复用保存接口：服务端走与保存完全相同的白名单校验；仅作用于当前入口
+    proxy.$modal.confirm(
+      `将用文件「${file.name}」的内容覆盖当前【${entryLabel.value}】配置并立即生效，是否继续？`
+    ).then(() => {
       saving.value = true
-      updateLoginConfig(parsed).then(() => {
+      updateLoginConfig(parsed, entry.value).then(() => {
         localConfig.value = mergeWithDefaults(parsed)
         markSaved()
-        proxy.$modal.msgSuccess('配置已导入并生效')
+        proxy.$modal.msgSuccess(`${entryLabel.value}配置已导入并生效`)
       }).finally(() => {
         saving.value = false
       })
@@ -823,7 +947,7 @@ function exportJson() {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = 'login-page-config.json'
+  a.download = `login-page-config-${entry.value}.json`
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
@@ -834,7 +958,7 @@ function exportJson() {
 
 onBeforeRouteLeave(() => {
   if (!dirty.value) return true
-  return window.confirm('当前登录页配置尚未保存，确定离开吗？')
+  return window.confirm(`当前${entryLabel.value}登录页配置尚未保存，确定离开吗？`)
 })
 
 function onBeforeUnload(e) {
@@ -926,6 +1050,7 @@ function measure() {
   color: #303133;
 }
 .ld-dirty { margin-left: 10px; }
+.ld-entry-switch { margin-left: 16px; }
 .ld-actions { display: flex; gap: 8px; }
 
 .ld-body {

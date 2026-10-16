@@ -4,6 +4,8 @@
 import defaultConfig from './login.defaults'
 // 字体栈唯一事实源在 @/utils/theme（登录页与后台整体共用），这里转出供渲染层/设计器复用
 import { FONT_STACKS, APP_FONT_FAMILIES } from '@/utils/theme'
+// 域名差异化浏览器标题（apms.top / aoti.apms.top）
+import { getSiteTitle } from '@/utils/entry'
 // 内置静态资源走构建管线（src/assets）而非 public/：Vite 会按内容哈希命名，
 // 运营替换图片后文件名变化，浏览器强缓存也会自动拉新，无需 no-cache/手工刷新。
 import noscLogo from '@/assets/login/nosc-logo.png'
@@ -147,6 +149,33 @@ export function clampLogoOffset(v, bounds = null) {
 }
 
 /**
+ * Logo 视觉尺寸解析（渲染层唯一入口）。
+ *
+ * 设计器只开放「宽度」一个尺寸控件（不提供高度调节），因此：
+ * - 位图类（nosc/上传图）：高度 auto，宽度主导（高度随图片原始比例）；
+ * - 矢量类：
+ *   · shield 盾牌内联 SVG 的 viewBox 为 40×46，高度 = 宽 × 46/40；
+ *   · 其余 Element Plus 图标为 1em 正方，高度 = 宽度。
+ *
+ * 若直接取配置中的 height，矢量 logo 会被默认 height（48）限死：
+ * 宽度滑块即便拉到 200，盾牌视觉宽度也只有约 42px（meet 等比适配）、
+ * EP 图标始终为 48px（1em 见方）——表现为「默认图标最大只能到 40 多」。
+ *
+ * @param {object} logo 配置中的 logo 对象
+ * @param {{width?:number,height?:number}} fallback 缺省值
+ * @param {object|null} bounds 宽度夹取范围（客户方 logo 用 CLIENT_LOGO_SIZE_LIMITS）
+ * @returns {{width:number, height:number|'auto'}}
+ */
+export function resolveLogoBox(logo = {}, fallback = { width: 42, height: 48 }, bounds = null) {
+  const w = clampLogoSize(logo && logo.width, fallback.width, bounds)
+  if (isBitmapLogo(logo)) return { width: w, height: 'auto' }
+  // 与渲染层同口径：shield 或非白名单脏值（兜底渲染盾牌）按 40:46；其余 EP 图标为正方
+  const rendersShield = !logo || logo.value === 'shield' || !BUILTIN_LOGO_VALUES.includes(logo.value)
+  const h = rendersShield ? Math.round((w * 46) / 40) : w
+  return { width: w, height: h }
+}
+
+/**
  * 递归合并：对象按 key 深度合并；数组与原始值整体覆盖（与库中保存语义一致）
  */
 export function deepMerge(base, override) {
@@ -212,7 +241,12 @@ export function resolveDeviceConfig(raw, isMobile) {
  */
 export function interpolate(text, ctx) {
   if (typeof text !== 'string') return ''
-  return text.replace(/\{(\w+)\}/g, (_, key) => (ctx[key] != null ? String(ctx[key]) : ''))
+  return text.replace(/\{(\w+)\}/g, (_, key) => {
+    // {police} 是版权富文本中的公安备案占位符（由 parseRichText 二次解析为警徽组件），
+    // 插值阶段原样保留；其余未知占位符按旧规则落为空串
+    if (key === 'police') return '{police}'
+    return ctx[key] != null ? String(ctx[key]) : ''
+  })
 }
 
 /**
@@ -346,6 +380,39 @@ function parseAnchorAttrs(attrText) {
   return { href: href.trim() }
 }
 
+/* 公安备案占位符（版权富文本内联使用，由设计器「插入公安备案标识」生成） */
+const POLICE_TOKEN_RE = /\{police\}/g
+
+/**
+ * 公安备案默认跟随版权文本中的第一个链接（版权富文本里的 <a> 经后端校验只可能是备案链接）：
+ * - 公安备案开启、文本含链接、且未显式写 {police} 时，自动把占位符插到首个 </a> 之后，
+ *   使「ICP 备案 + 网安备案」默认同一行，无需管理员手工排版；
+ * - 已显式使用 {police}（完全由人控制位置）或文本无链接时原样返回，独立块兜底。
+ */
+export function withPoliceToken(source, policeOn) {
+  const text = source == null ? '' : String(source)
+  if (!policeOn || POLICE_TOKEN_RE.test(text) || !/<\/a>/i.test(text)) return text
+  POLICE_TOKEN_RE.lastIndex = 0
+  return text.replace(/<\/a>/i, '</a>{police}')
+}
+
+/**
+ * 把纯文本段按 {police} 占位符切开：
+ * 普通文本 → {type:'text'}；占位符 → {type:'police'}（是否渲染由 FooterRichText 按开关决定）
+ */
+function pushTextSegments(segments, str) {
+  if (!str) return
+  POLICE_TOKEN_RE.lastIndex = 0
+  let last = 0
+  let m
+  while ((m = POLICE_TOKEN_RE.exec(str)) !== null) {
+    if (m.index > last) segments.push({ type: 'text', value: str.slice(last, m.index) })
+    segments.push({ type: 'police' })
+    last = m.index + m[0].length
+  }
+  if (last < str.length) segments.push({ type: 'text', value: str.slice(last) })
+}
+
 export function parseRichText(source, ctx) {
   const text = interpolate(source == null ? '' : String(source), ctx || {})
   const segments = []
@@ -353,17 +420,17 @@ export function parseRichText(source, ctx) {
   ANCHOR_RE.lastIndex = 0
   let m
   while ((m = ANCHOR_RE.exec(text)) !== null) {
-    if (m.index > last) segments.push({ type: 'text', value: text.slice(last, m.index) })
+    if (m.index > last) pushTextSegments(segments, text.slice(last, m.index))
     const parsed = parseAnchorAttrs(m[1])
     if (parsed) {
       segments.push({ type: 'link', label: m[2], url: parsed.href })
     } else {
-      // 非法 <a>：整段原样输出为文本（会被转义显示，不执行）
-      segments.push({ type: 'text', value: m[0] })
+      // 非法 <a>：整段原样输出为文本（会被转义显示，不执行）；其中可能仍含 {police}
+      pushTextSegments(segments, m[0])
     }
     last = m.index + m[0].length
   }
-  if (last < text.length) segments.push({ type: 'text', value: text.slice(last) })
+  if (last < text.length) pushTextSegments(segments, text.slice(last))
   return segments
 }
 
@@ -444,11 +511,24 @@ function restoreOriginalIconLinks() {
 }
 
 /**
+ * 解析当前入口的浏览器标题：
+ * 设计器配置 brand.browserTitle 优先（业务站/展示站各自独立），
+ * 留空则回退域名内置默认（见 utils/entry.js）。
+ * @param {object} config 已与默认值合并的完整配置
+ */
+export function resolveBrowserTitle(config) {
+  const custom = (config?.brand?.browserTitle || '').trim()
+  return custom || getSiteTitle()
+}
+
+/**
  * @param {string=} favicon undefined=配置尚未加载（不触碰图标，保留 index.html
  *   引导脚本写入的 Safari 兼容链接）；null=明确无配置（清除并恢复 favicon.ico）；
  *   字符串=/profile/ PNG 相对路径。
+ * @param {string} [entry] 入口 'portal' | 'showcase'：标题按入口分别持久化，
+ *   供下次整页加载时 index.html 引导脚本同步读取（同 favicon 的 localStorage 方案）
  */
-export function applyLoginHead({ favicon, title }) {
+export function applyLoginHead({ favicon, title }, entry = 'portal') {
   // favicon === undefined：配置还没回来，只处理标题，绝不能把引导链接误删
   if (favicon !== undefined) {
     const href = mediaUrl(favicon)
@@ -477,7 +557,15 @@ export function applyLoginHead({ favicon, title }) {
       restoreOriginalIconLinks()
     }
   }
-  if (title) document.title = title
+  if (title) {
+    document.title = title
+    // 按入口持久化：下次整页加载时 index.html 引导脚本在 bundle 到达前同步设置，
+    // 避免首屏短暂显示内置默认标题；两入口各一键，localhost 预览切换互不串扰
+    try {
+      const key = 'apms_login_title_' + (entry === 'showcase' ? 'showcase' : 'portal')
+      localStorage.setItem(key, String(title).slice(0, 100))
+    } catch (e) { /* 隐私模式等场景静默 */ }
+  }
 }
 
 export function restoreLoginHead() {
@@ -485,7 +573,7 @@ export function restoreLoginHead() {
   const dyn = findDynamicIconLink()
   if (dyn) dyn.parentNode.removeChild(dyn)
   restoreOriginalIconLinks()
-  document.title = import.meta.env.VITE_APP_TITLE
+  document.title = getSiteTitle()
 }
 
 /**

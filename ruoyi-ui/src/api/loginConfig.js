@@ -17,12 +17,13 @@ const publicHttp = axios.create({
 
 /**
  * 获取登录页公开配置
+ * @param {string} [entry] 入口：'portal'（业务站，默认）| 'showcase'（展示站）
  * @returns {Promise<{config: object, smsEnabled: boolean}>}
  *   config 视觉配置（无配置行时为 {}）；smsEnabled 短信登录开关（与 data 平级，默认 false）
  */
-export function getPublicLoginConfig() {
+export function getPublicLoginConfig(entry) {
   return publicHttp
-    .get('/login/config')
+    .get('/login/config', { params: entry ? { entry } : {} })
     .then((res) => {
       const body = res && res.data
       // 后端按 AjaxResult 包裹：{ code:200, data:{...}, smsEnabled:false }
@@ -37,24 +38,28 @@ import request from '@/utils/request'
 
 /**
  * 设计器回显：获取库中原始配置（无配置行时为 {}，前端再与默认值合并填表）
+ * @param {string} [entry] 入口：'portal'（业务站，默认）| 'showcase'（展示站）
  * @returns {Promise<object>}
  */
-export function getManagedLoginConfig() {
+export function getManagedLoginConfig(entry) {
   // request 拦截器返回完整 AjaxResult { code, msg, data }，这里解包出 data
   return request({
     url: '/system/login/config',
-    method: 'get'
+    method: 'get',
+    params: entry ? { entry } : {}
   }).then((res) => (res && typeof res.data === 'object' && res.data !== null ? res.data : {}))
 }
 
 /**
  * 保存登录页配置（JSON 导入也复用本接口，后端同一套校验）
  * @param {object} data 完整配置对象
+ * @param {string} [entry] 入口：'portal'（业务站，默认）| 'showcase'（展示站）
  */
-export function updateLoginConfig(data) {
+export function updateLoginConfig(data, entry) {
   return request({
     url: '/system/login/config',
     method: 'put',
+    params: entry ? { entry } : {},
     data
   })
 }

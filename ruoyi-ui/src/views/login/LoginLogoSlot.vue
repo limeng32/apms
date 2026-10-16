@@ -33,7 +33,7 @@
  * LoginRenderer 原模板中未做迁移，避免影响既有拖拽/像素调整链路。
  */
 import {
-  clampLogoSize, clampLogoOffset, mediaUrl, builtinLogoImage, isBitmapLogo,
+  resolveLogoBox, clampLogoOffset, mediaUrl, builtinLogoImage, isBitmapLogo,
   CLIENT_LOGO_OFFSET_X_LIMITS, CLIENT_LOGO_SIZE_LIMITS,
   BUILTIN_LOGO_VALUES
 } from './login.utils'
@@ -55,14 +55,13 @@ const imageSrc = computed(() => mediaUrl(props.logo.value))
 const bitmap = computed(() => isBitmapLogo(props.logo))
 
 const slotStyle = computed(() => {
-  // 客户方 logo：宽度上限放宽到 300；位图高度 auto（随图片比例），矢量高度取配置
-  const w = clampLogoSize(props.logo.width, 42, CLIENT_LOGO_SIZE_LIMITS)
-  const h = clampLogoSize(props.logo.height, 48)
+  // 客户方 logo：宽度上限放宽到 300；位图高度 auto，矢量高度由宽度按比例推导
+  const box = resolveLogoBox(props.logo, { width: 42, height: 48 }, CLIENT_LOGO_SIZE_LIMITS)
   return {
-    width: `${w}px`,
-    height: bitmap.value ? 'auto' : `${h}px`,
+    width: `${box.width}px`,
+    height: bitmap.value ? 'auto' : `${box.height}px`,
     // el-icon 内 svg 为 1em，用 font-size 撑满 slot（位图无 el-icon，不需要）
-    fontSize: bitmap.value ? undefined : `${h}px`,
+    fontSize: bitmap.value ? undefined : `${box.height}px`,
     // 客户方 logo：X 用放宽行程（-200~400），Y 与版权方一致（±100）
     transform: `translate(${clampLogoOffset(props.logo.offsetX, CLIENT_LOGO_OFFSET_X_LIMITS)}px, ${clampLogoOffset(props.logo.offsetY)}px)`
   }
