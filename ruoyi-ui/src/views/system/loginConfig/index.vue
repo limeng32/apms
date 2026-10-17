@@ -13,7 +13,7 @@
           @change="switchEntry"
         >
           <el-radio-button label="portal">业务站（aoti）</el-radio-button>
-          <el-radio-button label="showcase">展示站（apms.top）</el-radio-button>
+          <el-radio-button label="showcase">展示站（www）</el-radio-button>
         </el-radio-group>
       </div>
       <div class="ld-actions">
@@ -24,7 +24,7 @@
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="portal">导入到业务站（aoti）</el-dropdown-item>
-              <el-dropdown-item command="showcase">导入到展示站（apms.top）</el-dropdown-item>
+              <el-dropdown-item command="showcase">导入到展示站（www）</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -33,7 +33,7 @@
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="portal">导出业务站（aoti）配置</el-dropdown-item>
-              <el-dropdown-item command="showcase">导出展示站（apms.top）配置</el-dropdown-item>
+              <el-dropdown-item command="showcase">导出展示站（www）配置</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -657,7 +657,7 @@ const loading = ref(true)
 const saving = ref(false)
 const activeTab = ref('content')
 /**
- * 当前编辑的入口：'portal' 业务站（aoti.apms.top）| 'showcase' 展示站（apms.top）。
+ * 当前编辑的入口：'portal' 业务站（aoti.apms.top）| 'showcase' 展示站（www）。
  * 两套配置独立加载/保存；切换时未保存草稿需二次确认后丢弃。
  */
 const entry = ref('portal')
@@ -720,7 +720,7 @@ const previewTip = computed(() => {
   if (isShowcaseEntry.value) {
     return isMobileView.value
       ? '当前为展示站移动端 H5 预览（375×812，无登录卡片）；保存后 apms.top 手机端即时生效'
-      : '当前为展示站（apms.top）落地页预览：无登录卡片与客户 logo，品牌区满宽；保存后即时生效'
+      : '当前为展示站（www）落地页预览：无登录卡片与客户 logo，品牌区满宽；保存后即时生效'
   }
   return isMobileView.value
     ? '当前为业务站移动端 H5 登录页预览（375×812）；此处修改仅作用于移动端，点击「保存」后与浏览器端配置一起生效'
@@ -946,10 +946,10 @@ const fileInputRef = ref(null)
 let pendingImportEntry = 'portal'
 
 function entryLabelOf(e) {
-  return e === 'showcase' ? '展示站（apms.top）' : '业务站（aoti）'
+  return e === 'showcase' ? '展示站（www）' : '业务站（aoti）'
 }
 
-// 导出文件名站点段：展示站 www（apms.top）、业务站 aoti（aoti.apms.top）
+// 导出文件名站点段：展示站 www（www）、业务站 aoti（aoti.apms.top）
 function entryFileSlug(e) {
   return e === 'showcase' ? 'www' : 'aoti'
 }
