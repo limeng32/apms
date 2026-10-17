@@ -18,8 +18,25 @@
       </div>
       <div class="ld-actions">
         <el-button v-if="entry === 'showcase'" @click="copyFromPortal">从业务站复制</el-button>
-        <el-button @click="triggerImport">导入 JSON</el-button>
-        <el-button @click="exportJson">导出 JSON</el-button>
+        <!-- 两站点导入/导出完全分开：直接选「业务站」或「展示站」操作，不依赖当前编辑入口 -->
+        <el-dropdown trigger="click" @command="onImportCommand">
+          <el-button :loading="saving">导入 JSON<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="portal">导入到业务站（aoti）</el-dropdown-item>
+              <el-dropdown-item command="showcase">导入到展示站（apms.top）</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-dropdown trigger="click" @command="onExportCommand">
+          <el-button>导出 JSON<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="portal">导出业务站（aoti）配置</el-dropdown-item>
+              <el-dropdown-item command="showcase">导出展示站（apms.top）配置</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-button @click="resetDefault">恢复默认</el-button>
         <el-button
           v-hasPermi="['system:loginconfig:edit']"
@@ -36,6 +53,19 @@
           @change="onFilePicked"
         >
       </div>
+    </div>
+
+    <!-- 操作流提示条：降低首次使用门槛，关闭后记忆（不再打扰熟练用户） -->
+    <div v-if="!tipDismissed" class="ld-flow-tip">
+      <el-icon class="ld-flow-tip-icon"><InfoFilled /></el-icon>
+      <div class="ld-flow-tip-body">
+        <b>三步完成配置：</b>
+        ① 左侧是<em>实时预览</em>，改动立即可见；
+        ② 右侧在「文案 / 主题色 / 字体 / 浏览器端布局 / 移动端布局」中调整，<em>电脑端与手机端需分别设置</em>；
+        ③ 点右上角<em>「保存」</em>后立即生效。
+        顶部先切换「业务站 / 展示站」分别编辑；「导入/导出 JSON」下拉可对两个站点各自独立备份与恢复（含标题、移动端 Logo 等全部设置）。
+      </div>
+      <button type="button" class="ld-flow-tip-x" aria-label="关闭提示" @click="dismissDesignerTip">×</button>
     </div>
 
     <div class="ld-body">
@@ -462,6 +492,7 @@
 import LoginRenderer from '@/views/login/LoginRenderer.vue'
 import LoginFormFields from '@/views/login/LoginFormFields.vue'
 import LoginLayoutFields from '@/views/login/LoginLayoutFields.vue'
+import { ArrowDown, InfoFilled } from '@element-plus/icons-vue'
 import { getManagedLoginConfig, updateLoginConfig } from '@/api/loginConfig'
 import useLoginThemeStore from '@/store/modules/loginTheme'
 import { isShowcaseHost } from '@/utils/entry'
@@ -644,10 +675,22 @@ const activeTab = ref('content')
 const entry = ref('portal')
 const isShowcaseEntry = computed(() => entry.value === 'showcase')
 const entryLabel = computed(() => (isShowcaseEntry.value ? '展示站' : '业务站'))
+
+// 顶部操作流提示条：关闭后记忆，不再打扰熟练用户（版本号变更可重新引导）
+const tipDismissed = ref(false)
+try {
+  tipDismissed.value = localStorage.getItem('apms_designer_tip_v1') === '1'
+} catch (e) { /* localStorage 不可用时默认显示提示 */ }
+function dismissDesignerTip() {
+  tipDismissed.value = true
+  try { localStorage.setItem('apms_designer_tip_v1', '1') } catch (e) { /* 忽略 */ }
+}
 /** 浏览器标题留空时的默认值（仅用于输入框占位提示）：构建标题 VITE_APP_TITLE */
 const defaultBrowserTitle = computed(() => import.meta.env.VITE_APP_TITLE)
 const localConfig = ref(cloneDefaults())
-let savedSnapshot = JSON.stringify(localConfig.value)
+// 已保存快照必须是响应式的：dirty 是 computed，若基准用普通闭包变量，
+// 保存只更新该变量不会触发 dirty 重算，UI（保存按钮/切换入口确认）会停留在「未保存」状态。
+const savedSnapshot = ref(JSON.stringify(localConfig.value))
 
 const previewForm = { username: 'admin', password: 'admin123', rememberMe: false }
 
@@ -696,13 +739,13 @@ const previewTip = computed(() => {
     : '预览为真实登录页等比缩放，所有修改即时生效；可直接按住 logo 拖动调整位置；保存后登录页与全系统品牌即时生效'
 })
 
-const dirty = computed(() => JSON.stringify(localConfig.value) !== savedSnapshot)
+const dirty = computed(() => JSON.stringify(localConfig.value) !== savedSnapshot.value)
 
 // 当前真实访问入口（设计器部署在业务站，但可能正在编辑展示站配置）
 const hostEntry = isShowcaseHost() ? 'showcase' : 'portal'
 
 function markSaved() {
-  savedSnapshot = JSON.stringify(localConfig.value)
+  savedSnapshot.value = JSON.stringify(localConfig.value)
   // 仅当编辑的入口与当前访问入口一致时同步登录页 store（onMounted 仍会重新拉取），
   // 避免在业务站编辑展示站配置时污染本站登录预览
   if (entry.value === hostEntry) {
@@ -718,7 +761,7 @@ async function loadData(targetEntry) {
     const data = await getManagedLoginConfig(targetEntry)
     // 回显同样在前端合并默认值后再填表，保存提交完整对象
     localConfig.value = mergeWithDefaults(data)
-    savedSnapshot = JSON.stringify(localConfig.value)
+    savedSnapshot.value = JSON.stringify(localConfig.value)
   } finally {
     loading.value = false
   }
@@ -899,11 +942,69 @@ function clearFavicon() {
   localConfig.value.brand.favicon = null
 }
 
-// ============================ 导入 / 导出 ============================
+// ============================ 导入 / 导出（业务站 / 展示站 各自独立）============================
+//
+// 设计要点：
+// - 两个站点的导入/导出在顶栏完全分开，直接选择目标站点，不依赖当前正在编辑哪个入口；
+// - 导出的是「该站点最近一次已保存的配置」（GET 后端），与默认值合并成完整结构，
+//   保证任意版本导出的文件都含全部字段（浏览器标题 brand.browserTitle、
+//   移动端 mobile.brand.logo / logoClient 等），跨版本导入不丢字段；
+// - 文件顶层 meta 记录来源站点/导出时间；导入时校验归属：
+//   跨站导入强警告、旧版无 meta 文件提示；meta 在提交前剥离，不写入数据库。
 
+const EXPORT_META_KEY = 'meta'
 const fileInputRef = ref(null)
+/** 选择文件后要导入到的站点（由「导入到业务站/展示站」下拉项决定） */
+let pendingImportEntry = 'portal'
 
-function triggerImport() {
+function entryLabelOf(e) {
+  return e === 'showcase' ? '展示站（apms.top）' : '业务站（aoti）'
+}
+
+// 导出文件名站点段：展示站 www（apms.top）、业务站 aoti（aoti.apms.top）
+function entryFileSlug(e) {
+  return e === 'showcase' ? 'www' : 'aoti'
+}
+
+function downloadJson(obj, filename) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+function timestampForFile() {
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`
+}
+
+/** 下拉选择「导出业务站 / 导出展示站」 */
+async function onExportCommand(targetEntry) {
+  try {
+    const data = await getManagedLoginConfig(targetEntry)
+    // 与默认值合并：导出文件始终是「完整配置对象」，杜绝缺字段导致再次导入时「无指定」
+    const full = mergeWithDefaults(data)
+    full[EXPORT_META_KEY] = {
+      source: 'apms-login-designer',
+      entry: targetEntry,
+      exportedAt: new Date().toISOString()
+    }
+    downloadJson(full, `apms-login-${entryFileSlug(targetEntry)}-${timestampForFile()}.json`)
+    proxy.$modal.msgSuccess(`已导出${entryLabelOf(targetEntry)}配置（含桌面端、移动端、文案、标题等全部设置）`)
+  } catch (e) {
+    proxy.$modal.msgError('导出失败，请稍后重试')
+  }
+}
+
+/** 下拉选择「导入到业务站 / 导入到展示站」→ 打开文件选择 */
+function onImportCommand(targetEntry) {
+  pendingImportEntry = targetEntry
   fileInputRef.value && fileInputRef.value.click()
 }
 
@@ -911,6 +1012,7 @@ function onFilePicked(e) {
   const file = e.target.files && e.target.files[0]
   e.target.value = ''
   if (!file) return
+  const targetEntry = pendingImportEntry
   const reader = new FileReader()
   reader.onload = () => {
     let parsed
@@ -923,33 +1025,39 @@ function onFilePicked(e) {
       proxy.$modal.msgError('文件不是合法的登录页配置 JSON 对象')
       return
     }
-    // 导入复用保存接口：服务端走与保存完全相同的白名单校验；仅作用于当前入口
-    proxy.$modal.confirm(
-      `将用文件「${file.name}」的内容覆盖当前【${entryLabel.value}】配置并立即生效，是否继续？`
-    ).then(() => {
+
+    // 来源归属校验（meta 不入库，提交前剥离）
+    const meta = parsed[EXPORT_META_KEY]
+    delete parsed[EXPORT_META_KEY]
+    const sourceEntry = meta && (meta.entry === 'portal' || meta.entry === 'showcase') ? meta.entry : ''
+    let confirmText
+    if (sourceEntry && sourceEntry !== targetEntry) {
+      confirmText = `⚠️ 文件「${file.name}」是【${entryLabelOf(sourceEntry)}】的配置，确定要覆盖导入到【${entryLabelOf(targetEntry)}】吗？\n导入后立即生效，该站现有配置将被完全替换。`
+    } else if (!sourceEntry) {
+      confirmText = `文件「${file.name}」是旧版导出（未标注来源站点），将作为【${entryLabelOf(targetEntry)}】配置导入并立即生效，是否继续？\n如文件并非该站配置，请点取消后重新选择。`
+    } else {
+      confirmText = `将用文件「${file.name}」覆盖【${entryLabelOf(targetEntry)}】配置并立即生效，是否继续？`
+    }
+
+    proxy.$modal.confirm(confirmText).then(() => {
       saving.value = true
-      updateLoginConfig(parsed, entry.value).then(() => {
-        localConfig.value = mergeWithDefaults(parsed)
-        markSaved()
-        proxy.$modal.msgSuccess(`${entryLabel.value}配置已导入并生效`)
+      updateLoginConfig(parsed, targetEntry).then(() => {
+        // 若导入目标正是当前编辑入口：重新拉取该站数据回填，保证界面与后端一致
+        if (targetEntry === entry.value) {
+          return loadData(targetEntry)
+        }
+      }).then(() => {
+        if (targetEntry === entry.value) {
+          proxy.$modal.msgSuccess(`${entryLabelOf(targetEntry)}配置已导入并生效`)
+        } else {
+          proxy.$modal.msgSuccess(`已导入到${entryLabelOf(targetEntry)}；切换顶部入口可查看/继续编辑`)
+        }
       }).finally(() => {
         saving.value = false
       })
     }).catch(() => {})
   }
   reader.readAsText(file)
-}
-
-function exportJson() {
-  const blob = new Blob([JSON.stringify(localConfig.value, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `login-page-config-${entry.value}.json`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
 }
 
 // ============================ 未保存离开拦截 ============================
@@ -1055,6 +1163,56 @@ function measure() {
   flex: 1;
   display: flex;
   min-height: 0;
+}
+
+/* 操作流提示条（可关闭） */
+.ld-flow-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 18px 0;
+  padding: 9px 12px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  color: #1e40af;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.ld-flow-tip-icon {
+  margin-top: 3px;
+  color: #2563eb;
+  font-size: 15px;
+  flex: none;
+}
+.ld-flow-tip-body {
+  flex: 1;
+  min-width: 0;
+}
+.ld-flow-tip-body b {
+  color: #1e3a8a;
+}
+.ld-flow-tip-body em {
+  font-style: normal;
+  color: #b45309;
+  font-weight: 600;
+}
+.ld-flow-tip-x {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0;
+}
+.ld-flow-tip-x:hover {
+  background: #dbeafe;
+  color: #1e40af;
 }
 
 /* ============ 预览区 ============ */

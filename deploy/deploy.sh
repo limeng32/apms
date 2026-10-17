@@ -99,6 +99,77 @@ mysql_cli() { mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" --password="${D
 # mysqldump 必须指定 --databases "${DB_NAME}"，否则会尝试 dump 所有 DB（包括 mysql 系统库），可能权限不够失败
 mysql_dump() { mysqldump -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" --password="${DB_PASS}" --single-transaction --no-tablespaces --triggers --databases "${DB_NAME}" ${1+"${@}"}; }
 
+# ===== 登录页设计器配置（apms_login_config）JSON 专项备份/恢复 =====
+# 全库 dump 之外，把两套设计器配置单独导出为「可直接在设计器导入 JSON」的文件；
+# 部署 SQL 补丁后校验行状态，缺失/JSON 非法时从最近备份自动导回（完好则零覆盖）。
+# 三元组：config_key|config_name|备份文件名
+LC_PAIRS="default|默认配置|portal
+showcase|展示站配置|showcase"
+
+# 用法: login_config_backup <本次备份目录>
+login_config_backup() {
+    local bkdir="${1}" triple key slug file rows
+    [ -d "${bkdir}" ] || return 0
+    while IFS='|' read -r key _name slug; do
+        [ -z "${key}" ] && continue
+        file="${bkdir}/login-config-${slug}.json"
+        rows="$(mysql_cli --raw -N -e "SELECT config_json FROM apms_login_config WHERE config_key='${key}' AND config_json IS NOT NULL AND config_json <> '';" 2>/dev/null || true)"
+        if [ -n "${rows}" ]; then
+            printf '%s' "${rows}" > "${file}"
+            log "  登录页配置（${key}）已备份 → ${file} ($(wc -c < "${file}" | tr -d ' ') bytes)"
+        fi
+    done <<EOF
+${LC_PAIRS}
+EOF
+}
+
+# 用法: login_config_restore <本次备份目录>
+# 仅在配置行缺失或 JSON 非法时恢复；优先本次备份，其次历史备份目录中最新一份
+login_config_restore() {
+    local bkdir="${1}" triple key cname slug tbl_exists state file hex
+    tbl_exists="$(mysql_cli -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${DB_NAME}' AND table_name='apms_login_config';" 2>/dev/null || echo "0")"
+    if [ "${tbl_exists}" != "1" ]; then
+        warn "  apms_login_config 表不存在，跳过登录页配置恢复（应用补丁后将自动建表）"
+        return 0
+    fi
+    while IFS='|' read -r key cname slug; do
+        [ -z "${key}" ] && continue
+        state="$(mysql_cli -N -e "SELECT CASE WHEN COUNT(*)=0 THEN 'missing' WHEN JSON_VALID(config_json) THEN 'ok' ELSE 'invalid' END FROM apms_login_config WHERE config_key='${key}';" 2>/dev/null || echo "dberr")"
+        case "${state}" in
+            ok)
+                log "  登录页配置（${key}）完好，无需恢复"
+                ;;
+            missing|invalid)
+                file=""
+                if [ -s "${bkdir}/login-config-${slug}.json" ]; then
+                    file="${bkdir}/login-config-${slug}.json"
+                else
+                    file="$(ls -t "${BACKUP}"/*/login-config-"${slug}".json 2>/dev/null | head -1)"
+                fi
+                if [ -z "${file}" ] || [ ! -s "${file}" ]; then
+                    warn "  登录页配置（${key}）状态为 ${state}，但无历史备份可恢复（首次部署属正常，前端使用内置默认）"
+                    continue
+                fi
+                # hex 导回彻底避开 JSON 中引号/中文/反斜杠的 shell 转义问题（xxd 缺失时 od 兜底）
+                hex="$(xxd -p "${file}" 2>/dev/null | tr -d '\n' || od -An -v -tx1 "${file}" | tr -d ' \n')"
+                [ -n "${hex}" ] || { warn "  无法编码备份文件 ${file}，跳过"; continue; }
+                mysql_cli <<EOSQL
+SET @j := CONVERT(UNHEX('${hex}') USING utf8mb4);
+INSERT INTO apms_login_config (config_key, config_name, config_json, schema_ver, status, create_by, create_time)
+VALUES ('${key}', '${cname}', @j, 1, '0', 'deploy-restore', NOW())
+ON DUPLICATE KEY UPDATE config_json=VALUES(config_json), schema_ver=1, status='0', update_by='deploy-restore', update_time=NOW();
+EOSQL
+                log "  ✅ 登录页配置（${key}）已从 ${file} 恢复"
+                ;;
+            *)
+                warn "  登录页配置（${key}）状态校验异常（${state}），跳过自动恢复"
+                ;;
+        esac
+    done <<EOF
+${LC_PAIRS}
+EOF
+}
+
 # ===== flush_redis_keep: 选择性清 Redis（发版不再踢用户）=====
 # 删除目标 DB 内全部 key，但保留指定前缀的 key（RuoYi 登录态前缀 login_tokens:）。
 # 依赖调用点已装配的全局 REDIS_ARGS / REDIS_DB。SCAN 快照落临时文件后分批 DEL（每批
@@ -530,6 +601,10 @@ else
     err "❌ DB 备份失败（3 次均失败），已清理无效备份目录，终止部署（P0 数据安全：无完整备份不允许执行 SQL patch）"
 fi
 
+# 登录页设计器配置：单导出两份可直接导入的 JSON（运营手工数据，额外留档）
+log "  登录页设计器配置 JSON 备份..."
+login_config_backup "${BKDIR}"
+
 log "  备份当前产物..."
 [ -f "${JARDIR}/apms.jar" ] && cp "${JARDIR}/apms.jar" "${BKDIR}/apms.jar" || true
 [ -d "${FRONTIR}/dist" ] && cp -a "${FRONTIR}/dist" "${BKDIR}/dist_old" || true
@@ -633,6 +708,10 @@ EOSQL
     fi
     log "  ✅ SQL patches: ${APPLIED_COUNT} 个新 patch 已应用"
 fi
+
+# 登录页设计器配置：缺失/JSON 非法时从备份自动导回（完好零覆盖；此时处于停服窗口，启动前就位）
+log "Step 3.5: 校验并按需恢复登录页设计器配置..."
+login_config_restore "${BKDIR}"
 
 # ===== Step 4: 替换产物 =====
 log "Step 4: 替换产物..."

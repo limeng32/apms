@@ -149,17 +149,18 @@ export function clampLogoOffset(v, bounds = null) {
 }
 
 /**
- * Logo 视觉尺寸解析（渲染层唯一入口）。
+ * Logo 槽盒尺寸解析（渲染层唯一入口）。
  *
- * 设计器只开放「宽度」一个尺寸控件（不提供高度调节），因此：
+ * 槽盒（布局占位 + offsetX/offsetY 像素校准基准）：
  * - 位图类（nosc/上传图）：高度 auto，宽度主导（高度随图片原始比例）；
- * - 矢量类：
- *   · shield 盾牌内联 SVG 的 viewBox 为 40×46，高度 = 宽 × 46/40；
- *   · 其余 Element Plus 图标为 1em 正方，高度 = 宽度。
+ * - 矢量类（盾牌/EP 图标）：宽高均取配置值。height 是历史拖拽位置基准——
+ *   旧渲染下矢量图形以 preserveAspectRatio=meet 在槽内居中，视觉中心恒为槽中心，
+ *   用户拖出的 offsetY 是按该中心校准的；槽高必须保留，否则同一 offsetY 会随
+ *   宽度推导高度而整体移位。
  *
- * 若直接取配置中的 height，矢量 logo 会被默认 height（48）限死：
- * 宽度滑块即便拉到 200，盾牌视觉宽度也只有约 42px（meet 等比适配）、
- * EP 图标始终为 48px（1em 见方）——表现为「默认图标最大只能到 40 多」。
+ * 视觉大小：矢量图形不再被槽高 meet 压缩（旧实现宽度滑块对盾牌/EP 无效，
+ * 最大只能到 40 多），而由 CSS 在槽内「宽度 100%、等比、居中」渲染——
+ * 宽度滑块即时决定视觉尺寸，视觉中心仍是槽中心，历史 offset 不漂移。
  *
  * @param {object} logo 配置中的 logo 对象
  * @param {{width?:number,height?:number}} fallback 缺省值
@@ -169,14 +170,16 @@ export function clampLogoOffset(v, bounds = null) {
 export function resolveLogoBox(logo = {}, fallback = { width: 42, height: 48 }, bounds = null) {
   const w = clampLogoSize(logo && logo.width, fallback.width, bounds)
   if (isBitmapLogo(logo)) return { width: w, height: 'auto' }
-  // 与渲染层同口径：shield 或非白名单脏值（兜底渲染盾牌）按 40:46；其余 EP 图标为正方
-  const rendersShield = !logo || logo.value === 'shield' || !BUILTIN_LOGO_VALUES.includes(logo.value)
-  const h = rendersShield ? Math.round((w * 46) / 40) : w
+  const h = clampLogoSize(logo && logo.height, fallback.height)
   return { width: w, height: h }
 }
 
 /**
- * 递归合并：对象按 key 深度合并；数组与原始值整体覆盖（与库中保存语义一致）
+ * 递归合并：对象按 key 深度合并；数组与原始值整体覆盖（与库中保存语义一致）。
+ * 特例：基底中是对象骨架（如 brand.logo/background/logoClient）而覆盖值为
+ * null/缺失时，保留基底对象——历史版本/外部导入的 JSON 可能把这些节点存成 null，
+ * 直接透传会让渲染层与设计器拿到「无指定」空骨架（logo 无法渲染、字段控件报错）。
+ * 本配置体系没有「对象节点有意置空」的语义（清空 logo 用 type/value=''），故兜底无副作用。
  */
 export function deepMerge(base, override) {
   if (!isPlainObject(override)) return base
@@ -186,10 +189,13 @@ export function deepMerge(base, override) {
     const ov = override[key]
     if (isPlainObject(bv) && isPlainObject(ov)) {
       out[key] = deepMerge(bv, ov)
+    } else if (isPlainObject(bv) && (ov === null || ov === undefined)) {
+      out[key] = bv
     } else {
       out[key] = ov
     }
   })
+  // 覆盖对象缺少的 key：基底对象值原样保留（...base 已展开），数组/原始值同理
   return out
 }
 

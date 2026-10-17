@@ -55,13 +55,13 @@ const imageSrc = computed(() => mediaUrl(props.logo.value))
 const bitmap = computed(() => isBitmapLogo(props.logo))
 
 const slotStyle = computed(() => {
-  // 客户方 logo：宽度上限放宽到 300；位图高度 auto，矢量高度由宽度按比例推导
+  // 客户方 logo：宽度上限放宽到 300；位图高度 auto，矢量槽盒保留配置宽高（位置基准）
   const box = resolveLogoBox(props.logo, { width: 42, height: 48 }, CLIENT_LOGO_SIZE_LIMITS)
   return {
     width: `${box.width}px`,
     height: bitmap.value ? 'auto' : `${box.height}px`,
-    // el-icon 内 svg 为 1em，用 font-size 撑满 slot（位图无 el-icon，不需要）
-    fontSize: bitmap.value ? undefined : `${box.height}px`,
+    // EP 图标 1em 见方：font-size 取槽宽，视觉随宽度缩放并在槽内居中；盾牌走 CSS width/height
+    fontSize: bitmap.value ? undefined : `${box.width}px`,
     // 客户方 logo：X 用放宽行程（-200~400），Y 与版权方一致（±100）
     transform: `translate(${clampLogoOffset(props.logo.offsetX, CLIENT_LOGO_OFFSET_X_LIMITS)}px, ${clampLogoOffset(props.logo.offsetY)}px)`
   }
@@ -80,7 +80,7 @@ const slotStyle = computed(() => {
 }
 .brand-logo-slot > svg {
   width: 100%;
-  height: 100%;
+  height: auto;
   display: block;
 }
 .brand-logo-slot.logo-draggable { cursor: grab; }

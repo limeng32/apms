@@ -70,7 +70,11 @@
       </div>
     </el-form-item>
 
-    <el-form-item :label="`遮罩浓度：${Math.round(bgOverlay * 100)}%`">
+    <el-form-item>
+      <template #label>
+        遮罩浓度：{{ Math.round(bgOverlay * 100) }}%
+        <LoginHelpTip content="在背景图上叠一层品牌渐变色。数值越大背景越暗、白色文字越清晰；背景太亮导致白字看不清时调高即可。" />
+      </template>
       <el-slider v-model="bgOverlay" :min="0" :max="1" :step="0.05" />
       <div class="ld-hint">遮罩为品牌渐变：数值越大背景越暗、白色文字对比越强</div>
     </el-form-item>
@@ -86,16 +90,28 @@
       <div class="ld-hint">粒子漂浮 + 雷达扫描为纯 CSS 动效，访客系统开启「减弱动态效果」时自动停用</div>
     </el-form-item>
 
-    <el-form-item label="背景缓推动效（Ken Burns，缓慢推近/拉远）">
+    <el-form-item>
+      <template #label>
+        背景缓推动效（Ken Burns）
+        <LoginHelpTip content="背景图缓慢放大、平移的电影感效果，纯 CSS 动画。低端手机或想更省电时建议关闭；访客系统开启「减弱动态效果」时也会自动停用。" />
+      </template>
       <el-switch v-model="kenBurns" />
     </el-form-item>
 
     <!-- ===== 左右分栏模板专属：分栏比例（桌面端另有窄屏开关） ===== -->
     <template v-if="template === 'split'">
-      <el-form-item :label="`左右分栏比例（左:右）：${Number(splitRatio).toFixed(1)} : 1`">
+      <el-form-item>
+        <template #label>
+          左右分栏比例（左:右）：{{ Number(splitRatio).toFixed(1) }} : 1
+          <LoginHelpTip content="左侧品牌区与右侧登录卡片的宽度比。数值越大左侧品牌区越宽；手机等窄屏会自动上下堆叠，不受此项影响。" />
+        </template>
         <el-slider v-model="splitRatio" :min="0.5" :max="3" :step="0.1" />
       </el-form-item>
-      <el-form-item v-if="!mobile" label="窄屏（≤900px）显示品牌区">
+      <el-form-item v-if="!mobile">
+        <template #label>
+          窄屏（≤900px）显示品牌区
+          <LoginHelpTip content="窗口或手机较窄时，是否仍显示左侧品牌区（标语、特性、版权）。关闭后窄屏只保留登录卡片，更省空间、更聚焦。" />
+        </template>
         <el-switch
           :model-value="showBrandOnMobile"
           @update:model-value="(v) => emit('patch', { section: 'layout', key: 'showBrandOnMobile', value: v })"
@@ -179,7 +195,7 @@
     </div>
     <div class="ld-px-grid">
       <div class="ld-px-item">
-        <div class="ld-px-label">水平偏移 X：{{ offsetX }}px</div>
+        <div class="ld-px-label">水平偏移 X：{{ offsetX }}px<LoginHelpTip content="仅平移 Logo 位置，不挤压周围文字。想恢复原位点上方「归零」。" /></div>
         <el-input-number
           v-model="offsetX"
           :min="LOGO_LIMITS.offsetMin" :max="LOGO_LIMITS.offsetMax" :step="1"
@@ -188,7 +204,7 @@
         <el-slider v-model="offsetX" :min="LOGO_LIMITS.offsetMin" :max="LOGO_LIMITS.offsetMax" :step="1" />
       </div>
       <div class="ld-px-item">
-        <div class="ld-px-label">垂直偏移 Y：{{ offsetY }}px</div>
+        <div class="ld-px-label">垂直偏移 Y：{{ offsetY }}px<LoginHelpTip content="仅上下平移 Logo 位置，不影响后续区块排版。想恢复原位点上方「归零」。" /></div>
         <el-input-number
           v-model="offsetY"
           :min="LOGO_LIMITS.offsetMin" :max="LOGO_LIMITS.offsetMax" :step="1"
@@ -197,7 +213,7 @@
         <el-slider v-model="offsetY" :min="LOGO_LIMITS.offsetMin" :max="LOGO_LIMITS.offsetMax" :step="1" />
       </div>
       <div class="ld-px-item">
-        <div class="ld-px-label">宽度：{{ logoWidth }}px</div>
+        <div class="ld-px-label">宽度：{{ logoWidth }}px<LoginHelpTip content="盾牌/图形等矢量图标会按原始比例随宽度等比缩放（高度自动）；上传的位图 Logo 高度按图片原始比例。" /></div>
         <el-input-number
           v-model="logoWidth"
           :min="LOGO_LIMITS.sizeMin" :max="LOGO_LIMITS.sizeMax" :step="1"
@@ -306,7 +322,7 @@
           <el-slider v-model="clientOffsetY" :min="LOGO_LIMITS.offsetMin" :max="LOGO_LIMITS.offsetMax" :step="1" />
         </div>
         <div class="ld-px-item">
-          <div class="ld-px-label">宽度：{{ clientLogoWidth }}px</div>
+          <div class="ld-px-label">宽度：{{ clientLogoWidth }}px<LoginHelpTip content="矢量图标按原始比例随宽度等比缩放；上传的位图 Logo 高度按图片原始比例。" /></div>
           <el-input-number
             v-model="clientLogoWidth"
             :min="CLIENT_SIZE_LIMITS.min" :max="CLIENT_SIZE_LIMITS.max" :step="1"
@@ -374,7 +390,11 @@
     </div>
 
     <!-- 圆角（桌面端：全局生效，移动端跟随该值） -->
-    <el-form-item v-if="!mobile" :label="`圆角：${cardRadius}px`">
+    <el-form-item v-if="!mobile">
+      <template #label>
+        圆角：{{ cardRadius }}px
+        <LoginHelpTip content="登录页与后台管理系统全局生效：按钮、输入框、卡片、弹窗的圆角统一变化；移动端登录页同样使用该值。" />
+      </template>
       <el-slider v-model="cardRadius" :min="0" :max="40" :step="1" />
       <div class="ld-hint">系统全局生效：按钮、输入框、卡片、弹窗圆角；移动端登录页同样使用该圆角</div>
     </el-form-item>
@@ -436,6 +456,7 @@ import {
   CLIENT_LOGO_SIZE_LIMITS as CLIENT_SIZE_LIMITS,
   mediaUrl, builtinBgImage, DEFAULT_FAVICON_HREF
 } from './login.utils'
+import LoginHelpTip from './LoginHelpTip.vue'
 
 const props = defineProps({
   /** 当前是否为移动端布局（控制窄屏开关/圆角/Favicon 等区块显隐与文案） */

@@ -444,15 +444,16 @@ const tplCtx = computed(() => ({
 
 /* ============ logo 渲染与像素级调整 ============ */
 const logo = computed(() => cfg.value.brand.logo || {})
-// 位图类 logo：宽度主导、高度按图片比例自适应；矢量（盾牌/EP 图标）高度由宽度按比例推导
-// （设计器只开放宽度控件，矢量视觉尺寸不得被配置中固定的 height 限死）
+// 位图类 logo：高度 auto、宽度主导；矢量（盾牌/EP 图标）槽盒保留配置宽高作为位置基准，
+// 视觉在槽内按宽度等比居中（宽度滑块生效且历史 offsetY 不漂移，详见 resolveLogoBox）
 const logoBitmap = computed(() => isBitmapLogo(logo.value))
 const logoBox = computed(() => resolveLogoBox(logo.value))
 const logoStyle = computed(() => ({
   width: `${logoBox.value.width}px`,
   height: logoBitmap.value ? 'auto' : `${logoBox.value.height}px`,
-  // el-icon 内 svg 为 1em，用 font-size 撑满 slot（位图无 el-icon，不需要）
-  fontSize: logoBitmap.value ? undefined : `${logoBox.value.height}px`,
+  // EP 图标内 svg 为 1em 见方：font-size 取槽宽，视觉随宽度滑块缩放，
+  // 在槽内 flex 居中（视觉中心=槽中心）；盾牌内联 svg 不消费 em，由 CSS width/height 控制
+  fontSize: logoBitmap.value ? undefined : `${logoBox.value.width}px`,
   transform: `translate(${clampLogoOffset(logo.value.offsetX)}px, ${clampLogoOffset(logo.value.offsetY)}px)`
 }))
 const logoImageSrc = computed(() => mediaUrl(logo.value.value))
@@ -582,7 +583,9 @@ function onLogoPointerUp() {
   justify-content: center;
   touch-action: none;
   user-select: none;
-  > svg { width: 100%; height: 100%; display: block; }
+  /* 盾牌等内联矢量：宽度随槽（即宽度滑块），高度按 viewBox 比例自适应并在槽内垂直居中；
+     槽盒本身仍保留配置宽高作为布局/offset 基准，故宽度变大只改变视觉、不改变位置基准 */
+  > svg { width: 100%; height: auto; display: block; }
 }
 .brand-logo-slot.logo-draggable { cursor: grab; }
 .brand-logo-slot.logo-draggable:active { cursor: grabbing; }
