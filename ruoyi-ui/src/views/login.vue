@@ -69,6 +69,7 @@ import useLoginThemeStore from '@/store/modules/loginTheme'
 import { applyLoginHead, restoreLoginHead, resolveBrowserTitle } from './login/login.utils'
 import { readDemoSessionState, clearDemoSession } from '@/utils/auth'
 import { isDemoEnabled } from '@/utils/demo'
+import { isShowcaseHost } from '@/utils/entry'
 
 const userStore = useUserStore()
 const loginThemeStore = useLoginThemeStore()
@@ -164,6 +165,7 @@ function applyHead() {
 onMounted(() => {
   applyHead()
   loginThemeStore.loadConfig().then(applyHead)
+  setupAutoFullscreen()
   // broken 自愈：演示单键损坏时清掉异常键并提示，本次回到普通登录（isDemoMode 翻 false）。
   // storage-error 不在此处理（模板渲染阻断页，任何登录入口都不出现）。
   if (sessionState.value === 'broken') {
@@ -174,7 +176,43 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   restoreLoginHead()
+  removeAutoFullscreenListener()
 })
+
+/**
+ * 大屏沉浸兜底（仅生产 + 业务站）：
+ * PWA 主屏幕图标启动时系统已按 manifest 全屏运行，无需再请求；
+ * 用户从普通 Chrome 标签打开时，浏览器禁止页面加载即全屏（安全策略），
+ * 故在首次点击/触摸页面（点输入框、按钮任意位置均可）时请求一次全屏。
+ * iPhone Safari 不支持网页全屏（fullscreenEnabled 为假），自动跳过；
+ * Esc/返回键退出后不再重复请求，失败（权限/iframe 等）一律静默。
+ */
+let autoFullscreenBound = false
+function onFirstUserActivation() {
+  const el = document.documentElement
+  if (el && typeof el.requestFullscreen === 'function') {
+    el.requestFullscreen().catch(() => {})
+  }
+}
+function removeAutoFullscreenListener() {
+  if (!autoFullscreenBound) return
+  document.removeEventListener('pointerdown', onFirstUserActivation, true)
+  autoFullscreenBound = false
+}
+function setupAutoFullscreen() {
+  if (!import.meta.env.PROD || isShowcaseHost()) return
+  if (!document.fullscreenEnabled) return
+  // 已处于 PWA 全屏/独立形态（从主屏幕图标启动）时不再请求
+  let launchedImmersive = false
+  try {
+    launchedImmersive = window.matchMedia(
+      '(display-mode: fullscreen), (display-mode: standalone), (display-mode: minimal-ui)'
+    ).matches
+  } catch (e) { /* matchMedia 不可用时按普通标签处理 */ }
+  if (launchedImmersive) return
+  document.addEventListener('pointerdown', onFirstUserActivation, { once: true, capture: true })
+  autoFullscreenBound = true
+}
 
 // 口令正确、enterDemo 完成：守卫检测 roles.length===0 走真实链路拉 mock getInfo/路由。
 // 落地页与真实 super 一致：总览 → 数据驾驶舱（/overview/cockpit）

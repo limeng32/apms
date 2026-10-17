@@ -25,6 +25,10 @@ import elementIcons from '@/components/SvgIcon/svgicon'
 
 import './permission' // permission control
 
+// 业务站 PWA 全屏（仅生产 aoti 域生效；展示站/dev 自动跳过）
+import { setupPortalPwa } from '@/utils/pwa'
+setupPortalPwa()
+
 import { useDict } from '@/utils/dict'
 import { getConfigKey } from "@/api/system/config"
 import { parseTime, resetForm, addDateRange, handleTree, selectDictLabel, selectDictLabels, cookieName } from '@/utils/ruoyi'
