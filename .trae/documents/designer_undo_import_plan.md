@@ -23,11 +23,12 @@
 |---|---|---|
 | D1 | 撤销/重做历史的站点作用域 | **不做分站保留**。切换业务站/展示站时历史清空，以载入的新站配置为基线；历史只在「同一站、同一次页面会话」有效 |
 | D2 | 撤销/重做历史的页签作用域 | **按 4 个内容页签分区独立记录**，撤销只回滚当前页签拥有的字段，不影响其他页签 |
-| D3 | 导入的历史行为 | **导入可撤销，且按页签分别成步**。导入执行固定序列（见 §6.1）：确认已保存 → 清栈 → 各页签压入「导入前状态」节点 → 导入新 JSON 并保存 → 各页签压入「导入后状态」节点。在发生变化的页签可撤销回导入前该页签配置（只改本地，重新保存才回写数据库） |
+| D3 | 导入的历史行为 | **导入可撤销，且按页签分别成步**。严格顺序见 §6.1：内存校验通过后**先 PUT 落库，成功后才**更新本地并整体重建历史（前=导入前、后=导入后，按页签各成节点）；PUT 失败则本地与历史完全不变。撤销只改本地，重新保存才回写数据库。导入进行中锁定编辑（见 §6.1c） |
 | D4 | 导入/导出的站点选择 | **作用当前顶栏站点**（恢复为单按钮，不再用下拉选目标站）；要操作另一站先切换顶栏 |
 | D5 | 跨站导入 | **严格拒绝**：文件 `meta.entry` 与当前站不一致 → 不执行（后端 400 + 前端预判） |
 | D6 | 旧文件（无 `meta.entry`） | **严格拒绝**：提示在对应站点重新导出；不留确认放行口子 |
 | D7 | 当前站有未保存草稿时点导入 | **禁止执行**：仅弹「取消」提示，不提供「先保存/放弃草稿」分支；用户先保存或用撤销回到已保存状态后再导入 |
+| D8 | 保存的快照绑定 | **保存基线绑定请求发出时的快照**，成功后只确认该快照为已保存；请求在途期间的新增修改不得被一并标记为已保存（见 §6.1d）。导入在途期间**锁定所有编辑**（见 §6.1c） |
 
 ## 3. 现状调研（关键文件与事实）
 
@@ -65,8 +66,11 @@
 - `nodes[scope]: string[]`：该 scope 的状态节点序列，每个节点是「该 scope 拥有叶子组成的子对象」JSON（提取 `pickScope(fullConfig, scope)`，非整份配置，避免改文案把外观也记一步）；`nodes[0]` 为基线，末尾为最新。
 - `index[scope]: number`：当前所处节点下标。
 - 上限 50 节点（超出丢弃最旧非当前节点，基线随之前移）。
-- 不变量：当前实际配置 == `applyScope` 还原的 `nodes[index]`；`canUndo = index > 0`；`canRedo = index < nodes.length-1`。
-- 暴露：`undo()`、`redo()`（内部先 `flushPending(当前scope)`）、`canUndo/canRedo`（按当前 activeTab）、`schedulePush(scope)`（4 个独立 watcher 回调）、`flushPending(scope)`、`clearAllTimers()`、`beginImportSession(before, after)`、`resetAll()`、`seed(config)`（载入后建单节点基线）。
+- 每 scope 维护一个 `pending: boolean`（防抖定时器存活即 true）。
+- 不变量：当前实际配置 == `applyScope` 还原的「当前节点 + pending 中尚未结算的编辑」；
+  - `canUndo(scope) = index[scope] > 0 || pending[scope]`——**防抖 500ms 未到时，只要本页签有未结算修改，撤销按钮就要可点**（否则按钮禁用导致 flushPending 无从触发，"刚拖完立即撤销"失效）；
+  - `canRedo(scope) = index[scope] < nodes[scope].length-1`（有 pending 时按编辑分叉语义，redo 暂不可用）。
+- 暴露：`undo()`、`redo()`（内部先 `flushPending(当前scope)`）、`canUndo/canRedo`（按当前 activeTab，响应式含 pending）、`schedulePush(scope)`、`flushPending(scope)`、`clearAllTimers()`、`beginImportSession(before, after)`、`resetAll()`、`seed(config)`（载入后建单节点基线）。
 
 ### 5.2 普通编辑如何成节点（每个 scope 独立监听 + 防抖）
 
@@ -89,14 +93,17 @@ SCOPES.forEach((s) => {
 
 **防抖结算（必须）**：
 
-- `undo()`/`redo()` 执行前先 `flushPending(activeScope)`：把该 scope 尚未入栈的 500ms 内编辑立即结算成节点，再移动游标——否则"刚拖完滑块立刻点撤销"会因定时器未触发而无反应。
-- `resetAll()`、`loadData`、`beginImportSession` 前先 `clearAllTimers()`，取消全部待执行防抖，杜绝切站/导入后旧定时器污染新站点或新基线。
+- pending 状态与 `canUndo` 联动（见 §5.1/§5.3），保证 500ms 内撤销按钮也可点；`undo()` 先 `flushPending`。
+- `seed/resetAll`、`loadData`、`beginImportSession` 前先 `clearAllTimers()`，取消全部待执行防抖，杜绝切站/导入后旧定时器污染新站点或新基线。
 
 ### 5.3 undo/redo 写回
 
-- undo（当前 scope `index>0`）：`index--`，把 `nodes[index]` 仅写回该 scope 的叶子（`applyScope`），其它页签字段原样保留。
-- redo（`index<末尾`）：`index++` 后同样只写回该 scope。
+- undo 开头先 `flushPending(activeScope)`：
+  - 若存在未结算编辑（pending=true）：先把当前值结算成一个新节点（index 移到末尾），再回退一步——效果是"撤销掉这次尚未停顿的连续修改"；
+  - 否则直接 `index--`，把 `nodes[index]` 仅写回该 scope 的叶子（`applyScope`），其它页签字段原样保留。
+- redo（`index<末尾`，且无 pending）：`index++` 后同样只写回该 scope。
 - 写回期 `restoring=true`，不触发新节点；全局副作用（主题色/字体/圆角/标签标题/favicon）由现有 App.vue watcher 与登录页 applyHead 自动跟随。
+- pending 是响应式 ref，撤销按钮 disabled 绑定 `!canUndo`，因此修改瞬间（无需等 500ms）按钮即亮起可点。
 
 ### 5.4 交互
 
@@ -181,6 +188,28 @@ switchEntry(target):
 - radio 仍用单向 `:model-value`，失败时因 `entry` 未变，按钮自然回退，无需手动复位。
 - 初次 `onMounted` 的 `loadData()` 同理走「成功才赋值」（初始为默认配置，失败保持默认并提示，不影响入口）。
 
+### 6.1c 导入在途锁定编辑
+
+导入序列（§6.1）从「覆盖确认」通过到 `beginImportSession` 完成期间：
+
+- 设计器进入 `busy` 态：顶栏保存/导入/导出/恢复默认/入口切换、右侧所有表单控件与预览拖拽统一禁用（`v-loading` + 控件 disabled/readonly），杜绝边导入边改与并发二次导入。
+- 该窗口只有一次 PUT（通常 <1s），成功后解除并刷新为新基线；失败解除后用户原草稿与历史都在，可继续编辑。
+
+### 6.1d 保存基线必须绑定请求快照（修复既有误判已保存）
+
+现状缺陷：`save()` 在 PUT 返回后执行 `markSaved()`，而 `savedSnapshot = JSON.stringify(localConfig.value)` 取的是**返回时刻**的配置。若请求在途期间用户又改了 B，则把「A（已入库）+ B（未入库）」整体标记为已保存 → `dirty=false`，B 被静默吞掉；D7 的导入前置依赖 dirty，会进一步放大。
+
+规则（D8）：
+
+1. 点击保存瞬间：`saving=true` 并记录请求快照 `snap = JSON.stringify(localConfig.value)`（即实际 PUT 的 A）；保存期间顶栏保存/导入/切站禁用，避免并发保存（字段编辑可继续，不强制锁，见下）。
+2. PUT 成功：`savedSnapshot.value = snap`（**只确认请求时的 A**），随后再 `seedHistoryBaseline()` 用**当前** localConfig 校准历史基线指针：
+   - 若在途没有新修改（当前 == snap）：dirty=false、历史基线=A；
+   - 若在途又改了 B（当前 == A+B）：dirty 仍为 **true**、保存按钮保持可点，明确提示「已保存此前修改，另有未保存的新改动」；历史栈保留 B 的待结算/节点，用户可继续撤销或再保存。
+3. PUT 失败：`savedSnapshot` 不变，dirty 保持（A 仍是未保存），弹错误，不吞任何修改。
+4. 保存不阻塞普通字段编辑（仅禁用会发起新提交/切站的动作）；与导入不同，保存是高频操作，不整体锁 UI。
+
+> 实现要点：历史模块提供 `rebase(savedSnapshotString)`，用于「外部保存成功后把某快照登记为已保存基线但不丢弃当前在途编辑」；dirty 始终由 `JSON.stringify(localConfig) !== savedSnapshot` 实时计算，天然正确反映 B。
+
 ### 6.2 后端（强约束，防绕过）
 
 - `saveConfig(config, operator, entry)` 在 `validate` 之前读取顶层 `meta`：
@@ -200,9 +229,11 @@ switchEntry(target):
 
 前端：
 
-1. **新增** `ruoyi-ui/src/views/system/loginConfig/useConfigHistory.js`：分区历史纯逻辑（`pickScope/applyScope`、4 scope 的 nodes/index、**4 个独立 scope 快照 watcher**、`schedulePush/flushPending/clearAllTimers`、undo/redo、`seed`、`beginImportSession(before,after)`、`resetAll`、restoring 屏蔽）。
+1. **新增** `ruoyi-ui/src/views/system/loginConfig/useConfigHistory.js`：分区历史纯逻辑（`pickScope/applyScope`、4 scope 的 nodes/index/pending、**4 个独立 scope 快照 watcher**、`schedulePush/flushPending/clearAllTimers`、undo/redo、`seed`、`rebase`、`beginImportSession(before,after)`、`resetAll`、restoring 屏蔽）。
 2. [index.vue](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/views/system/loginConfig/index.vue)：
-   - 接入 history（4 watcher + activeTab + 快捷键 + 两个按钮，undo/redo 前 flushPending）；
+   - 接入 history（4 watcher + activeTab + 快捷键 + 两个按钮，undo/redo 前 flushPending，canUndo 含 pending）；
+   - **`save()` 绑定请求快照**（§6.1d）：成功只 `savedSnapshot=请求快照` + `rebase`，在途新增 B 保持 dirty=true；失败不变；
+   - 导入在途 busy 锁定（§6.1c）；
    - **`switchEntry` 改为先 GET 成功再原子切换**（§6.1b）；`loadData` 失败不改 entry/localConfig/历史；
    - 导入/导出下拉改单按钮（作用当前站）；
    - 导入前置 dirty 拦截、来源严格校验、剥离 meta；PUT 成功后才更新本地并 `beginImportSession`（§6.1）；
@@ -222,7 +253,11 @@ switchEntry(target):
 
 - scope 提取/写回：改 `colors.accent` 只影响 appearance 子树；undo 后 colors 还原，文案/logo 不变。
 - 防抖归并：连续多次写入停顿后只入 1 步；拖拽等价序列 1 步。
+- canUndo 含 pending：改完字段 500ms 内 canUndo 立即为 true（无需等防抖）；undo 先 flushPending 再回退。
 - flushPending：写入后未满 500ms 立即 undo，先结算再回退，撤销有效（不会空撤）。
+- 保存快照绑定：发出保存(A)后在途改 B，成功回调后 savedSnapshot==A 且 dirty 仍为 true（B 未被标记已保存）；保存失败 savedSnapshot 不变。
+- rebase：已保存基线登记为 A 时，当前 A+B 的待结算 B 仍保留在历史、可撤销。
+- busy 锁定：导入在途保存/导入/切站/控件不可用。
 - resetDefault 一次改 4 scope：4 个 watcher 各记 1 节点，互不混入。
 - clearAllTimers：seed/beginImportSession 后旧定时器不再触发污染。
 - undo/redo 多步、到边界按钮禁用、redo 后再编辑清空 future。
@@ -234,7 +269,9 @@ switchEntry(target):
 
 手工验收（UAT）：
 
-- 四页签分别改→各自撤销互不串；刚拖完滑块立刻撤销能立即生效；输入框内 Ctrl+Z 只撤文字；切站历史清空。
+- 四页签分别改→各自撤销互不串；**改动后无需停顿、撤销按钮立即亮起可点**；刚拖完滑块立刻撤销能立即生效；输入框内 Ctrl+Z 只撤文字；切站历史清空。
+- **保存竞态**：改 A 点保存、在途立刻改 B，成功后保存按钮仍亮（B 未保存），再点保存才把 B 落库；保存失败时 A/B 都仍在草稿。
+- **导入锁定**：导入在途无法编辑/保存/切站，完成或失败后恢复。
 - **切换失败**：断网/后端异常时点切展示站，顶栏仍停留业务站、配置仍是业务站、保存仍写业务站（不错站）。
 - 业务站有未保存修改时导入被拦；保存后可导入；展示站文件导入业务站被拒；旧文件被拒；导入过程中模拟 PUT 失败：本地草稿/快照/历史均不变、可继续编辑；同站导入成功后，在变化页签可撤销回导入前（保存按钮变亮，不自动改数据库）。
 - 保存请求带正确 meta，正常保存不受影响；GET 公开配置中永远无 meta。
@@ -251,8 +288,8 @@ switchEntry(target):
 
 ## 10. 实施顺序（建议一次评审通过后按序执行）
 
-1. **switchEntry/loadData 先成功后切换**（独立小改，先消除错站风险，不依赖历史模块）。
+1. **保存快照绑定 + switchEntry 先成功后切换**（两个独立正确性修复，先消除"误判已保存"与"错站"，不依赖历史模块）。
 2. 后端 meta 来源校验 + 前端保存/导入同步改造（打通强约束）。
-3. `useConfigHistory` 纯逻辑（4 watcher/防抖结算/seed/beginImportSession）+ 桩测。
-4. index.vue 接入历史 UI/快捷键；导入接入「PUT 成功后 beginImportSession」序列。
+3. `useConfigHistory` 纯逻辑（4 watcher/pending/防抖结算/seed/rebase/beginImportSession）+ 桩测。
+4. index.vue 接入历史 UI/快捷键（canUndo 含 pending）；导入接入 busy 锁定 +「PUT 成功后 beginImportSession」序列。
 5. 构建/桩测/UAT 验收。
