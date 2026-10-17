@@ -145,6 +145,13 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
         {
             throw new ServiceException("配置内容不能为空");
         }
+
+        String configKey = resolveConfigKey(entry);
+
+        // 来源强校验（防绕过）：保存/导入统一要求顶层 meta.entry 与目标站点一致；
+        // 缺来源标识（旧文件）或跨站一律拒绝；通过后剥离 meta，meta 永不入库。
+        validateAndStripMeta(config, configKey);
+
         validate(config);
 
         String json;
@@ -161,7 +168,6 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
             throw new ServiceException("配置内容超出 64KB 上限");
         }
 
-        String configKey = resolveConfigKey(entry);
         ApmsLoginConfig row = apmsLoginConfigMapper.selectByConfigKey(configKey);
         if (row == null)
         {
@@ -209,6 +215,47 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
     private String configName(String configKey)
     {
         return SHOWCASE_CONFIG_KEY.equals(configKey) ? "展示站配置" : "默认配置";
+    }
+
+    /**
+     * 保存/导入来源强校验：要求配置顶层带 meta.entry，归一化后必须等于目标 config_key；
+     * 缺 meta/缺 entry（旧版导出文件、手工构造请求）或跨站一律拒绝，防止把展示站 JSON 导入业务站。
+     * 通过后从配置中移除 meta，保证 meta 不落入 config_json（公开 GET 也永远拿不到它）。
+     */
+    private void validateAndStripMeta(Map<String, Object> config, String configKey)
+    {
+        Object metaObj = config.get("meta");
+        if (!(metaObj instanceof Map))
+        {
+            throw new ServiceException("配置缺少来源标识（meta），仅支持由本系统设计器导出的配置文件，请在对应站点重新导出后再导入");
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> meta = (Map<String, Object>) metaObj;
+        Object entryVal = meta.get("entry");
+        if (!(entryVal instanceof String) || ((String) entryVal).isBlank())
+        {
+            throw new ServiceException("配置来源标识无效（meta.entry 缺失），请在对应站点重新导出后再导入");
+        }
+        String fromKey;
+        String e = ((String) entryVal).trim();
+        if (ENTRY_SHOWCASE.equalsIgnoreCase(e))
+        {
+            fromKey = SHOWCASE_CONFIG_KEY;
+        }
+        else if ("portal".equalsIgnoreCase(e) || DEFAULT_CONFIG_KEY.equalsIgnoreCase(e))
+        {
+            fromKey = DEFAULT_CONFIG_KEY;
+        }
+        else
+        {
+            throw new ServiceException("配置来源站点无法识别（meta.entry=" + e + "）");
+        }
+        if (!fromKey.equals(configKey))
+        {
+            throw new ServiceException("该配置属于「" + configName(fromKey)
+                    + "」，不能导入到「" + configName(configKey) + "」");
+        }
+        config.remove("meta");
     }
 
     // ============================ 形态校验 ============================

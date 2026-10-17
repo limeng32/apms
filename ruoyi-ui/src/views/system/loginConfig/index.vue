@@ -1,5 +1,5 @@
 <template>
-  <div class="login-designer" v-loading="loading">
+  <div class="login-designer" v-loading="loading || importing" :element-loading-text="importing ? '正在导入配置…' : '加载中'">
     <!-- 顶部操作栏 -->
     <div class="ld-header">
       <div class="ld-title">
@@ -10,6 +10,7 @@
           :model-value="entry"
           size="small"
           class="ld-entry-switch"
+          :disabled="saving || importing"
           @change="switchEntry"
         >
           <el-radio-button label="portal">业务站（aoti）</el-radio-button>
@@ -17,31 +18,22 @@
         </el-radio-group>
       </div>
       <div class="ld-actions">
-        <el-button v-if="entry === 'showcase'" @click="copyFromPortal">从业务站复制</el-button>
-        <!-- 两站点导入/导出完全分开：直接选「业务站」或「展示站」操作，不依赖当前编辑入口 -->
-        <el-dropdown trigger="click" @command="onImportCommand">
-          <el-button :loading="saving">导入 JSON<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="portal">导入到业务站（aoti）</el-dropdown-item>
-              <el-dropdown-item command="showcase">导入到展示站（www）</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-        <el-dropdown trigger="click" @command="onExportCommand">
-          <el-button>导出 JSON<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="portal">导出业务站（aoti）配置</el-dropdown-item>
-              <el-dropdown-item command="showcase">导出展示站（www）配置</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-        <el-button @click="resetDefault">恢复默认</el-button>
+        <!-- 撤销/重做：作用于当前内容页签 -->
+        <el-tooltip :content="`撤销（${modKeyHint} Ctrl/⌘+Z）`" placement="bottom">
+          <el-button class="ld-hist-btn" :disabled="!canUndo || importing" @click="undo"><el-icon><RefreshLeft /></el-icon></el-button>
+        </el-tooltip>
+        <el-tooltip content="重做（Ctrl/⌘+Shift+Z）" placement="bottom">
+          <el-button class="ld-hist-btn" :disabled="!canRedo || importing" @click="redo"><el-icon><RefreshRight /></el-icon></el-button>
+        </el-tooltip>
+        <el-button v-if="entry === 'showcase'" :disabled="saving || importing" @click="copyFromPortal">从业务站复制</el-button>
+        <!-- 导入/导出均作用于当前顶栏站点；导入按文件 meta.entry 严格校验，跨站/旧文件拒绝 -->
+        <el-button :disabled="saving || switching || importing" @click="triggerImport">导入 JSON</el-button>
+        <el-button :disabled="saving || switching || importing" @click="exportCurrentEntry">导出 JSON</el-button>
+        <el-button :disabled="saving || importing" @click="resetDefault">恢复默认</el-button>
         <el-button
           v-hasPermi="['system:loginconfig:edit']"
           type="primary"
-          :disabled="!dirty || saving"
+          :disabled="!dirty || saving || importing"
           :loading="saving"
           @click="save"
         >保存</el-button>
@@ -123,7 +115,14 @@
       <div class="ld-panel">
         <el-tabs v-model="activeTab" class="ld-tabs">
           <!-- ======================== 文案与显隐 ======================== -->
-          <el-tab-pane label="文案" name="content">
+          <el-tab-pane name="content">
+            <template #label>
+              <span class="ld-tab-label">文案<i
+                v-if="dirtyScopes.content"
+                class="ld-tab-dot"
+                title="该页签有未保存修改"
+              /></span>
+            </template>
             <el-form label-position="top" class="ld-form">
               <div class="ld-section">品牌区</div>
               <el-form-item label="品牌名称（留空则取系统标题）">
@@ -298,7 +297,14 @@
           </el-tab-pane>
 
           <!-- ======================== 外观（配色 / 字体 / 圆角 / 入场动效） ======================== -->
-          <el-tab-pane label="外观" name="appearance">
+          <el-tab-pane name="appearance">
+            <template #label>
+              <span class="ld-tab-label">外观<i
+                v-if="dirtyScopes.appearance"
+                class="ld-tab-dot"
+                title="该页签有未保存修改"
+              /></span>
+            </template>
             <el-form label-position="top" class="ld-form">
               <div class="ld-section">
                 品牌背景渐变
@@ -429,7 +435,14 @@
           </el-tab-pane>
 
           <!-- ======================== 浏览器端布局 ======================== -->
-          <el-tab-pane label="浏览器端布局" name="layout">
+          <el-tab-pane name="layout">
+            <template #label>
+              <span class="ld-tab-label">浏览器端布局<i
+                v-if="dirtyScopes.layout"
+                class="ld-tab-dot"
+                title="该页签有未保存修改"
+              /></span>
+            </template>
             <LoginLayoutFields
               :layout="localConfig.layout"
               :logo="localConfig.brand.logo"
@@ -451,7 +464,14 @@
           </el-tab-pane>
 
           <!-- ======================== 移动端布局 ======================== -->
-          <el-tab-pane label="移动端布局" name="mobileLayout">
+          <el-tab-pane name="mobileLayout">
+            <template #label>
+              <span class="ld-tab-label">移动端布局<i
+                v-if="dirtyScopes.mobileLayout"
+                class="ld-tab-dot"
+                title="该页签有未保存修改"
+              /></span>
+            </template>
             <LoginLayoutFields
               mobile
               :layout="localConfig.mobile.layout"
@@ -480,8 +500,9 @@ import LoginRenderer from '@/views/login/LoginRenderer.vue'
 import LoginFormFields from '@/views/login/LoginFormFields.vue'
 import LoginLayoutFields from '@/views/login/LoginLayoutFields.vue'
 import LoginHelpTip from '@/views/login/LoginHelpTip.vue'
-import { ArrowDown, InfoFilled } from '@element-plus/icons-vue'
+import { InfoFilled, RefreshLeft, RefreshRight } from '@element-plus/icons-vue'
 import { getManagedLoginConfig, updateLoginConfig } from '@/api/loginConfig'
+import { useConfigHistory } from '@/views/system/loginConfig/useConfigHistory.js'
 import useLoginThemeStore from '@/store/modules/loginTheme'
 import { isShowcaseHost } from '@/utils/entry'
 import {
@@ -655,6 +676,10 @@ const PALETTES = [
 
 const loading = ref(true)
 const saving = ref(false)
+// 切换站点请求在途（防止并发切换；成功才真正换站）
+const switching = ref(false)
+// 导入在途：锁定保存/导入/切站/恢复默认等会改配置或发起提交的动作
+const importing = ref(false)
 const activeTab = ref('content')
 /**
  * 当前编辑的入口：'portal' 业务站（aoti.apms.top）| 'showcase' 展示站（www）。
@@ -732,38 +757,86 @@ const dirty = computed(() => JSON.stringify(localConfig.value) !== savedSnapshot
 // 当前真实访问入口（设计器部署在业务站，但可能正在编辑展示站配置）
 const hostEntry = isShowcaseHost() ? 'showcase' : 'portal'
 
-function markSaved() {
-  savedSnapshot.value = JSON.stringify(localConfig.value)
-  // 仅当编辑的入口与当前访问入口一致时同步登录页 store（onMounted 仍会重新拉取），
-  // 避免在业务站编辑展示站配置时污染本站登录预览
-  if (entry.value === hostEntry) {
-    loginThemeStore.config = mergeWithDefaults(localConfig.value)
-  }
+// ============================ 撤销 / 重做历史（按内容页签分区） ============================
+// activeTab（content/appearance/layout/mobileLayout）即历史 scope；
+// 传入 savedSnapshot 以获得按页签的未保存痕迹（dirtyScopes）
+const historyApi = useConfigHistory(localConfig, activeTab, savedSnapshot)
+const { undo, redo, canUndo, canRedo, dirtyScopes } = historyApi
+const modKeyHint = /mac|iphone|ipad/i.test(navigator.userAgent || '') ? '⌘' : 'Ctrl'
+
+function afterConfigLoaded() { historyApi.seed(localConfig.value) }
+function afterConfigSaved(requestSnapshot) { historyApi.rebase(requestSnapshot) }
+
+// 快捷键：非输入态 Ctrl/⌘+Z 撤销、Ctrl/⌘+Shift+Z 或 Ctrl+Y 重做；
+// 焦点在 input/textarea/contenteditable 时让给浏览器原生文字撤销。
+function isEditableTarget(el) {
+  if (!el) return false
+  const tag = el.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA'
+    || tag === 'SELECT' || el.isContentEditable
 }
+function onHistoryKeydown(e) {
+  if (!(e.ctrlKey || e.metaKey)) return
+  const key = e.key.toLowerCase()
+  if (key !== 'z' && key !== 'y') return
+  if (isEditableTarget(e.target)) return
+  if (importing.value) return
+  e.preventDefault()
+  if (key === 'z' && e.shiftKey) redo()
+  else if (key === 'z') undo()
+  else if (key === 'y') redo()
+}
+onMounted(() => window.addEventListener('keydown', onHistoryKeydown))
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onHistoryKeydown)
+  historyApi.stop()
+})
 
-// ============================ 加载 / 保存 ============================
-
+/**
+ * 拉取并载入某入口配置。成功才写 localConfig/savedSnapshot，并返回合并后的配置；
+ * 失败抛错、不改任何本地状态（供 switchEntry 做「先取数成功再切换」）。
+ */
 async function loadData(targetEntry) {
   loading.value = true
   try {
     const data = await getManagedLoginConfig(targetEntry)
-    // 回显同样在前端合并默认值后再填表，保存提交完整对象
-    localConfig.value = mergeWithDefaults(data)
-    savedSnapshot.value = JSON.stringify(localConfig.value)
+    const merged = mergeWithDefaults(data)
+    localConfig.value = merged
+    savedSnapshot.value = JSON.stringify(merged)
+    afterConfigLoaded()
+    return merged
   } finally {
     loading.value = false
   }
 }
 
 /**
- * 切换编辑入口：当前草稿有未保存修改时需确认丢弃；确认后重新拉取目标入口配置。
- * radio-group 使用单向 :model-value，取消切换时 entry 不变、按钮状态自动回退。
+ * 切换编辑入口：有未保存修改先二次确认；**先请求目标站配置，成功后才原子切换**
+ * entry/localConfig/savedSnapshot/历史基线。请求失败则停留原站、配置与保存目标不变，
+ * 杜绝「顶栏已显示新站、localConfig 仍是旧站」导致把旧站配置存进新站。
  */
 function switchEntry(target) {
-  if (target === entry.value) return
-  const doSwitch = () => {
-    entry.value = target
-    loadData(target)
+  if (target === entry.value || switching.value) return
+  const doSwitch = async () => {
+    switching.value = true
+    loading.value = true
+    try {
+      const data = await getManagedLoginConfig(target)
+      // —— 只有请求成功才执行下面的整体切换 ——
+      const merged = mergeWithDefaults(data)
+      entry.value = target
+      localConfig.value = merged
+      savedSnapshot.value = JSON.stringify(merged)
+      historyApi && historyApi.clearAllTimers()
+      afterConfigLoaded()
+    } catch (e) {
+      proxy.$modal.msgError(
+        `切换失败：未能加载${target === 'showcase' ? '展示站' : '业务站'}配置，仍停留在${entryLabel.value}`
+      )
+    } finally {
+      switching.value = false
+      loading.value = false
+    }
   }
   if (dirty.value) {
     proxy.$modal.confirm(
@@ -793,11 +866,31 @@ function copyFromPortal() {
   }).catch(() => {})
 }
 
+/**
+ * 保存：已保存基线**绑定请求发出时的快照**，而非响应返回时的 localConfig。
+ * 若请求在途又产生新修改 B，成功后只确认请求时的 A 为已保存（dirty 仍为 true），
+ * 不会把未入库的 B 误判为已保存。
+ */
 function save() {
+  if (saving.value || importing.value) return
+  // 深拷贝请求体并记录其序列化快照（PUT 的就是这份 A；后续编辑不影响该引用）
+  const requestConfig = JSON.parse(JSON.stringify(localConfig.value))
+  // 后端强约束：保存/导入统一携带来源标识 meta（meta 不入库，由后端剥离）
+  requestConfig.meta = { source: 'apms-login-designer', entry: entry.value }
+  const requestSnapshot = JSON.stringify(localConfig.value)
   saving.value = true
-  updateLoginConfig(localConfig.value, entry.value).then(() => {
-    markSaved()
-    proxy.$modal.msgSuccess(`${entryLabel.value}配置已保存并立即生效`)
+  updateLoginConfig(requestConfig, entry.value).then(() => {
+    savedSnapshot.value = requestSnapshot
+    afterConfigSaved(requestSnapshot)
+    // 全局品牌 store 仅在本站编辑时同步（与 markSaved 同口径）
+    if (entry.value === hostEntry) {
+      loginThemeStore.config = mergeWithDefaults(localConfig.value)
+    }
+    if (dirty.value) {
+      proxy.$modal.msgSuccess(`${entryLabel.value}此前修改已保存；另有未保存的新改动，请继续编辑后再次保存`)
+    } else {
+      proxy.$modal.msgSuccess(`${entryLabel.value}配置已保存并立即生效`)
+    }
   }).finally(() => {
     saving.value = false
   })
@@ -942,8 +1035,6 @@ function clearFavicon() {
 
 const EXPORT_META_KEY = 'meta'
 const fileInputRef = ref(null)
-/** 选择文件后要导入到的站点（由「导入到业务站/展示站」下拉项决定） */
-let pendingImportEntry = 'portal'
 
 function entryLabelOf(e) {
   return e === 'showcase' ? '展示站（www）' : '业务站（aoti）'
@@ -972,80 +1063,112 @@ function timestampForFile() {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`
 }
 
-/** 下拉选择「导出业务站 / 导出展示站」 */
-async function onExportCommand(targetEntry) {
+/** 导出当前编辑站点（顶栏在哪个站就导出哪个站） */
+async function exportCurrentEntry() {
+  if (switching.value || importing.value) return
+  const target = entry.value
   try {
-    const data = await getManagedLoginConfig(targetEntry)
-    // 与默认值合并：导出文件始终是「完整配置对象」，杜绝缺字段导致再次导入时「无指定」
+    const data = await getManagedLoginConfig(target)
+    // 与默认值合并：导出文件始终是完整配置对象，跨版本再导入不缺字段
     const full = mergeWithDefaults(data)
     full[EXPORT_META_KEY] = {
       source: 'apms-login-designer',
-      entry: targetEntry,
+      entry: target,
       exportedAt: new Date().toISOString()
     }
-    downloadJson(full, `apms-login-${entryFileSlug(targetEntry)}-${timestampForFile()}.json`)
-    proxy.$modal.msgSuccess(`已导出${entryLabelOf(targetEntry)}配置（含桌面端、移动端、文案、标题等全部设置）`)
+    downloadJson(full, `apms-login-${entryFileSlug(target)}-${timestampForFile()}.json`)
+    proxy.$modal.msgSuccess(`已导出${entryLabelOf(target)}配置（含桌面端、移动端、文案、标题等全部设置）`)
   } catch (e) {
     proxy.$modal.msgError('导出失败，请稍后重试')
   }
 }
 
-/** 下拉选择「导入到业务站 / 导入到展示站」→ 打开文件选择 */
-function onImportCommand(targetEntry) {
-  pendingImportEntry = targetEntry
+/** 点「导入 JSON」：仅作用当前顶栏站点；先做本地前置校验再打开文件选择 */
+function triggerImport() {
+  if (switching.value || importing.value || saving.value) return
+  const target = entry.value
+  // D7：当前站有未保存草稿一律禁止导入（仅提示，不提供覆盖分支）
+  if (dirty.value) {
+    proxy.$modal.alertWarning(
+      `当前${entryLabelOf(target)}存在未保存修改，请先点击「保存」，或用撤销回到已保存状态后再导入。`,
+      '暂不能导入'
+    )
+    return
+  }
   fileInputRef.value && fileInputRef.value.click()
 }
 
 function onFilePicked(e) {
   const file = e.target.files && e.target.files[0]
   e.target.value = ''
-  if (!file) return
-  const targetEntry = pendingImportEntry
+  if (!file || importing.value) return
+  const target = entry.value
+
+  // FileReader 异步读取后做严格来源校验，再走 runImport
   const reader = new FileReader()
   reader.onload = () => {
     let parsed
     try {
       parsed = JSON.parse(reader.result)
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('not-object')
-      }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not-object')
     } catch (err) {
       proxy.$modal.msgError('文件不是合法的登录页配置 JSON 对象')
       return
     }
-
-    // 来源归属校验（meta 不入库，提交前剥离）
     const meta = parsed[EXPORT_META_KEY]
-    delete parsed[EXPORT_META_KEY]
-    const sourceEntry = meta && (meta.entry === 'portal' || meta.entry === 'showcase') ? meta.entry : ''
-    let confirmText
-    if (sourceEntry && sourceEntry !== targetEntry) {
-      confirmText = `⚠️ 文件「${file.name}」是【${entryLabelOf(sourceEntry)}】的配置，确定要覆盖导入到【${entryLabelOf(targetEntry)}】吗？\n导入后立即生效，该站现有配置将被完全替换。`
-    } else if (!sourceEntry) {
-      confirmText = `文件「${file.name}」是旧版导出（未标注来源站点），将作为【${entryLabelOf(targetEntry)}】配置导入并立即生效，是否继续？\n如文件并非该站配置，请点取消后重新选择。`
-    } else {
-      confirmText = `将用文件「${file.name}」覆盖【${entryLabelOf(targetEntry)}】配置并立即生效，是否继续？`
+    // D6：旧文件/无 meta 严格拒绝；D5：来源与当前站不一致严格拒绝
+    if (!meta || typeof meta !== 'object' || typeof meta.entry !== 'string' || !meta.entry.trim()) {
+      proxy.$modal.msgError('该文件缺少有效来源标识，仅支持由本系统设计器导出的配置文件，请先在对应站点重新导出')
+      return
     }
+    const source = meta.entry.trim()
+    const norm = (v) => (v === 'showcase' ? 'showcase' : (v === 'portal' || v === 'default' ? 'portal' : ''))
+    const sourceEntry = norm(source)
+    if (!sourceEntry) {
+      proxy.$modal.msgError(`文件来源站点无法识别（meta.entry=${source}），已拒绝导入`)
+      return
+    }
+    if (sourceEntry !== target) {
+      proxy.$modal.msgError(`该文件属于${entryLabelOf(sourceEntry)}，不能导入${entryLabelOf(target)}。如需导入请先切换到对应站点`)
+      return
+    }
+    delete parsed[EXPORT_META_KEY]
 
-    proxy.$modal.confirm(confirmText).then(() => {
-      saving.value = true
-      updateLoginConfig(parsed, targetEntry).then(() => {
-        // 若导入目标正是当前编辑入口：重新拉取该站数据回填，保证界面与后端一致
-        if (targetEntry === entry.value) {
-          return loadData(targetEntry)
-        }
-      }).then(() => {
-        if (targetEntry === entry.value) {
-          proxy.$modal.msgSuccess(`${entryLabelOf(targetEntry)}配置已导入并生效`)
-        } else {
-          proxy.$modal.msgSuccess(`已导入到${entryLabelOf(targetEntry)}；切换顶部入口可查看/继续编辑`)
-        }
-      }).finally(() => {
-        saving.value = false
-      })
-    }).catch(() => {})
+    proxy.$modal.confirm(
+      `将用文件「${file.name}」覆盖当前【${entryLabelOf(target)}】配置并立即生效，是否继续？`
+    ).then(() => runImport(target, parsed)).catch(() => {})
   }
   reader.readAsText(file)
+}
+
+/**
+ * 导入固定序列（D3）：PUT 成功前不动本地/快照/历史；成功后更新本地并重建历史。
+ * busy 期间 importing=true 锁定编辑。
+ */
+async function runImport(target, configC1) {
+  importing.value = true
+  // 导入前当前已保存配置 C0（dirty=false 已由前置保证）
+  const before = mergeWithDefaults(JSON.parse(JSON.stringify(localConfig.value)))
+  historyApi && historyApi.clearAllTimers()
+  try {
+    const body = JSON.parse(JSON.stringify(configC1))
+    body[EXPORT_META_KEY] = { source: 'apms-login-designer', entry: target }
+    // 1) 先落库；失败直接抛出，本地完全不变
+    await updateLoginConfig(body, target)
+    // 2) 成功后更新本地（回读口径与普通保存一致：用提交体合并默认值即可，后端原样存储）
+    const after = mergeWithDefaults(JSON.parse(JSON.stringify(configC1)))
+    localConfig.value = after
+    savedSnapshot.value = JSON.stringify(after)
+    // 3) 整体重建历史：前=C0、后=C1，按页签各自成节点
+    historyApi && historyApi.beginImportSession(before, after)
+    if (entry.value === hostEntry) loginThemeStore.config = mergeWithDefaults(after)
+    proxy.$modal.msgSuccess(`${entryLabelOf(target)}配置已导入并生效`)
+  } catch (err) {
+    // 数据库/本地草稿/快照/历史均未改动
+    proxy.$modal.msgError((err && err.msg) || '导入失败，当前配置未做任何改动')
+  } finally {
+    importing.value = false
+  }
 }
 
 // ============================ 未保存离开拦截 ============================
@@ -1145,7 +1268,15 @@ function measure() {
 }
 .ld-dirty { margin-left: 10px; }
 .ld-entry-switch { margin-left: 16px; }
-.ld-actions { display: flex; gap: 8px; }
+.ld-actions { display: flex; gap: 8px; align-items: center; }
+/* 撤销/重做：仅图标的方形小按钮，与文字按钮同高 */
+.ld-hist-btn {
+  width: 32px;
+  padding-left: 0;
+  padding-right: 0;
+  margin-right: 2px;
+}
+.ld-hist-btn .el-icon { font-size: 15px; margin: 0; }
 
 .ld-body {
   flex: 1;
@@ -1292,6 +1423,17 @@ function measure() {
   display: flex;
   flex-direction: column;
   padding: 0 16px;
+  /* 页签标题中的未保存痕迹：文字后琥珀色小圆点（与顶栏「未保存」标签同色） */
+  .ld-tab-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-left: 5px;
+    border-radius: 50%;
+    background: #e6a23c;
+    vertical-align: middle;
+    font-style: normal;
+  }
   :deep(.el-tabs__content) {
     flex: 1;
     min-height: 0;
