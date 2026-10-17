@@ -907,6 +907,8 @@ function onLogoPointerUp() {
     min-height: 100vh;
     padding: var(--login-logo-top-split) 20px 32px;
   }
+  /* 窄屏/H5：客户方 logo 在登录卡上方居中展示（桌面宽屏仍与卡片左缘对齐） */
+  .rs-logo-head { justify-content: center; }
   .lc-logo-corner { left: 20px; }
 
   /* centered/fullscreen：logo 收入白色登录卡顶部——nosc 等含黑色字样的位图
@@ -944,6 +946,8 @@ function onLogoPointerUp() {
   min-height: 100%;
   padding: var(--login-logo-top-split) 20px 32px;
 }
+/* 手机预览：客户方 logo 居中（与 ≤900px 媒体查询同口径） */
+.login-wrap.force-mobile .rs-logo-head { justify-content: center; }
 .login-wrap.force-mobile .lc-logo-corner { left: 20px; }
 .login-wrap.force-mobile .login-form-box { max-width: 100%; }
 .login-wrap.force-mobile .lc-card { padding: 26px 22px 22px; }

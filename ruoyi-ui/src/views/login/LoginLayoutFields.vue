@@ -20,84 +20,6 @@
       </div>
     </el-form-item>
 
-    <!-- ===== 背景（三种模板通用：split 作用于左侧品牌区，centered/fullscreen 作用于整页） ===== -->
-    <div class="ld-section">背景与科技动效</div>
-
-    <el-form-item label="内置背景（随系统发布，可直接使用）">
-      <el-radio-group v-model="bgBuiltin" size="small">
-        <el-radio-button :value="null">不使用</el-radio-button>
-        <el-radio-button
-          v-for="b in BUILTIN_BACKGROUNDS"
-          :key="b.value"
-          :value="b.value"
-        >{{ b.label }}</el-radio-button>
-      </el-radio-group>
-      <div class="ld-builtin-row" v-if="builtinPreview">
-        <el-image :src="builtinPreview" fit="cover" class="ld-bg-preview" />
-        <span class="ld-hint">深色运动科技风：球场大图 + 线稿纹理，搭配粒子/雷达特效</span>
-      </div>
-    </el-form-item>
-
-    <el-form-item label="自定义背景图（设置后优先于内置背景）">
-      <div class="ld-upload-row">
-        <el-image
-          v-if="background.image"
-          :src="mediaUrl(background.image)"
-          fit="cover"
-          class="ld-bg-preview"
-        />
-        <div v-else class="ld-logo-empty">未上传</div>
-        <el-upload
-          name="file"
-          :action="uploadAction"
-          :headers="uploadHeaders"
-          :show-file-list="false"
-          accept="image/jpeg,image/png"
-          :before-upload="beforeBgUpload"
-          :on-success="(res) => emit('bg-uploaded', res)"
-        >
-          <el-button size="small" type="primary" plain>上传背景图（jpg/png）</el-button>
-        </el-upload>
-        <el-button
-          size="small"
-          :disabled="!background.image"
-          @click="emit('clear-bg')"
-        >清除</el-button>
-      </div>
-      <div class="ld-hint">
-        建议{{ mobile ? '竖版大图（手机 9:16）' : '横版大图（桌面 16:9）' }}，不超过 5MB；
-        自定义图不叠加球场线稿纹理
-      </div>
-    </el-form-item>
-
-    <el-form-item>
-      <template #label>
-        遮罩浓度：{{ Math.round(bgOverlay * 100) }}%
-        <LoginHelpTip content="在背景图上叠一层品牌渐变色。数值越大背景越暗、白色文字越清晰；背景太亮导致白字看不清时调高即可。" />
-      </template>
-      <el-slider v-model="bgOverlay" :min="0" :max="1" :step="0.05" />
-      <div class="ld-hint">遮罩为品牌渐变：数值越大背景越暗、白色文字对比越强</div>
-    </el-form-item>
-
-    <el-form-item label="动态装饰特效">
-      <el-radio-group v-model="bgEffect" size="small">
-        <el-radio-button
-          v-for="e in BACKGROUND_EFFECTS"
-          :key="e.value"
-          :value="e.value"
-        >{{ e.label }}</el-radio-button>
-      </el-radio-group>
-      <div class="ld-hint">粒子漂浮 + 雷达扫描为纯 CSS 动效，访客系统开启「减弱动态效果」时自动停用</div>
-    </el-form-item>
-
-    <el-form-item>
-      <template #label>
-        背景缓推动效（Ken Burns）
-        <LoginHelpTip content="背景图缓慢放大、平移的电影感效果，纯 CSS 动画。低端手机或想更省电时建议关闭；访客系统开启「减弱动态效果」时也会自动停用。" />
-      </template>
-      <el-switch v-model="kenBurns" />
-    </el-form-item>
-
     <!-- ===== 左右分栏模板专属：分栏比例（桌面端另有窄屏开关） ===== -->
     <template v-if="template === 'split'">
       <el-form-item>
@@ -389,14 +311,82 @@
       </div>
     </div>
 
-    <!-- 圆角（桌面端：全局生效，移动端跟随该值） -->
-    <el-form-item v-if="!mobile">
+    <!-- ===== 背景与科技动效（三种模板通用：split 作用于左侧品牌区，centered/fullscreen 作用于整页） ===== -->
+    <div class="ld-section">背景与科技动效</div>
+
+    <el-form-item label="内置背景（随系统发布，可直接使用）">
+      <el-radio-group v-model="bgBuiltin" size="small">
+        <el-radio-button :value="null">不使用</el-radio-button>
+        <el-radio-button
+          v-for="b in BUILTIN_BACKGROUNDS"
+          :key="b.value"
+          :value="b.value"
+        >{{ b.label }}</el-radio-button>
+      </el-radio-group>
+      <div class="ld-builtin-row" v-if="builtinPreview">
+        <el-image :src="builtinPreview" fit="cover" class="ld-bg-preview" />
+        <span class="ld-hint">深色运动科技风：球场大图 + 线稿纹理，搭配粒子/雷达特效</span>
+      </div>
+    </el-form-item>
+
+    <el-form-item label="自定义背景图（设置后优先于内置背景）">
+      <div class="ld-upload-row">
+        <el-image
+          v-if="background.image"
+          :src="mediaUrl(background.image)"
+          fit="cover"
+          class="ld-bg-preview"
+        />
+        <div v-else class="ld-logo-empty">未上传</div>
+        <el-upload
+          name="file"
+          :action="uploadAction"
+          :headers="uploadHeaders"
+          :show-file-list="false"
+          accept="image/jpeg,image/png"
+          :before-upload="beforeBgUpload"
+          :on-success="(res) => emit('bg-uploaded', res)"
+        >
+          <el-button size="small" type="primary" plain>上传背景图（jpg/png）</el-button>
+        </el-upload>
+        <el-button
+          size="small"
+          :disabled="!background.image"
+          @click="emit('clear-bg')"
+        >清除</el-button>
+      </div>
+      <div class="ld-hint">
+        建议{{ mobile ? '竖版大图（手机 9:16）' : '横版大图（桌面 16:9）' }}，不超过 5MB；
+        自定义图不叠加球场线稿纹理
+      </div>
+    </el-form-item>
+
+    <el-form-item>
       <template #label>
-        圆角：{{ cardRadius }}px
-        <LoginHelpTip content="登录页与后台管理系统全局生效：按钮、输入框、卡片、弹窗的圆角统一变化；移动端登录页同样使用该值。" />
+        遮罩浓度：{{ Math.round(bgOverlay * 100) }}%
+        <LoginHelpTip content="在背景图上叠一层品牌渐变色。数值越大背景越暗、白色文字越清晰；背景太亮导致白字看不清时调高即可。" />
       </template>
-      <el-slider v-model="cardRadius" :min="0" :max="40" :step="1" />
-      <div class="ld-hint">系统全局生效：按钮、输入框、卡片、弹窗圆角；移动端登录页同样使用该圆角</div>
+      <el-slider v-model="bgOverlay" :min="0" :max="1" :step="0.05" />
+      <div class="ld-hint">遮罩为品牌渐变：数值越大背景越暗、白色文字对比越强</div>
+    </el-form-item>
+
+    <el-form-item label="动态装饰特效">
+      <el-radio-group v-model="bgEffect" size="small">
+        <el-radio-button
+          v-for="e in BACKGROUND_EFFECTS"
+          :key="e.value"
+          :value="e.value"
+        >{{ e.label }}</el-radio-button>
+      </el-radio-group>
+      <div class="ld-hint">粒子漂浮 + 雷达扫描为纯 CSS 动效，访客系统开启「减弱动态效果」时自动停用</div>
+    </el-form-item>
+
+    <el-form-item>
+      <template #label>
+        背景缓推动效（Ken Burns）
+        <LoginHelpTip content="背景图缓慢放大、平移的电影感效果，纯 CSS 动画。低端手机或想更省电时建议关闭；访客系统开启「减弱动态效果」时也会自动停用。" />
+      </template>
+      <el-switch v-model="kenBurns" />
     </el-form-item>
 
     <!-- Favicon（仅桌面端浏览器概念） -->
@@ -459,9 +449,9 @@ import {
 import LoginHelpTip from './LoginHelpTip.vue'
 
 const props = defineProps({
-  /** 当前是否为移动端布局（控制窄屏开关/圆角/Favicon 等区块显隐与文案） */
+  /** 当前是否为移动端布局（控制窄屏开关/Favicon 等区块显隐与文案） */
   mobile: { type: Boolean, default: false },
-  /** 布局根（桌面：template/splitRatio/showBrandOnMobile/cardRadius；移动：template/splitRatio） */
+  /** 布局根（template/splitRatio/showBrandOnMobile；全局圆角 cardRadius 在「外观」页设置） */
   layout: { type: Object, required: true },
   /** Logo 根（版权方，左上） */
   logo: { type: Object, required: true },
@@ -508,7 +498,6 @@ function bind2(section, sub, key) {
 const template = bind('layout', 'template')
 const splitRatio = bind('layout', 'splitRatio')
 const showBrandOnMobile = bind('layout', 'showBrandOnMobile')
-const cardRadius = bind('layout', 'cardRadius')
 const logoType = bind('logo', 'type')
 const offsetX = bind('logo', 'offsetX')
 const offsetY = bind('logo', 'offsetY')

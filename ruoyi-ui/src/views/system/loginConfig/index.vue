@@ -61,7 +61,7 @@
       <div class="ld-flow-tip-body">
         <b>三步完成配置：</b>
         ① 左侧是<em>实时预览</em>，改动立即可见；
-        ② 右侧在「文案 / 主题色 / 字体 / 浏览器端布局 / 移动端布局」中调整，<em>电脑端与手机端需分别设置</em>；
+        ② 右侧在「文案 / 外观 / 浏览器端布局 / 移动端布局」中调整，<em>电脑端与手机端需分别设置</em>；
         ③ 点右上角<em>「保存」</em>后立即生效。
         顶部先切换「业务站 / 展示站」分别编辑；「导入/导出 JSON」下拉可对两个站点各自独立备份与恢复（含标题、移动端 Logo 等全部设置）。
       </div>
@@ -297,8 +297,8 @@
             </el-form>
           </el-tab-pane>
 
-          <!-- ======================== 主题色 ======================== -->
-          <el-tab-pane label="主题色" name="colors">
+          <!-- ======================== 外观（配色 / 字体 / 圆角 / 入场动效） ======================== -->
+          <el-tab-pane label="外观" name="appearance">
             <el-form label-position="top" class="ld-form">
               <div class="ld-section">
                 品牌背景渐变
@@ -375,12 +375,7 @@
                   <el-input v-model="localConfig.colors[c.path]" size="small" class="ld-color-input" />
                 </div>
               </div>
-            </el-form>
-          </el-tab-pane>
 
-          <!-- ======================== 字体 ======================== -->
-          <el-tab-pane label="字体" name="font">
-            <el-form label-position="top" class="ld-form">
               <div class="ld-section">整体字体（登录页 + 后台管理系统）</div>
               <el-form-item label="字体风格">
                 <el-radio-group v-model="localConfig.typography.fontFamily" class="ld-font-group">
@@ -402,7 +397,6 @@
                 <div class="ld-hint">切换后保存即对整体系统（含登录页）生效；黑体使用随站点自托管的 Inter / Noto Sans SC（无需访问外网），缺字库时按字体栈自动回退</div>
               </el-form-item>
 
-              <div class="ld-section">字号 / 字重</div>
               <el-form-item :label="`Hero 主标题字号：${localConfig.typography.heroSize}px`">
                 <el-slider v-model="localConfig.typography.heroSize" :min="20" :max="64" :step="1" />
               </el-form-item>
@@ -415,29 +409,22 @@
               <el-form-item :label="`表单标题字号：${localConfig.typography.formTitleSize}px`">
                 <el-slider v-model="localConfig.typography.formTitleSize" :min="14" :max="40" :step="1" />
               </el-form-item>
-            </el-form>
-          </el-tab-pane>
 
-          <!-- ======================== 动效 ======================== -->
-          <el-tab-pane label="动效" name="motion">
-            <el-form label-position="top" class="ld-form">
-              <div class="ld-section">入场动效</div>
+              <div class="ld-section">圆角与入场动效</div>
+              <el-form-item>
+                <template #label>
+                  全局圆角：{{ localConfig.layout.cardRadius }}px
+                  <LoginHelpTip content="登录页与后台管理系统全局生效：按钮、输入框、卡片、弹窗的圆角统一变化；移动端登录页同样使用该值。" />
+                </template>
+                <el-slider v-model="localConfig.layout.cardRadius" :min="0" :max="40" :step="1" />
+                <div class="ld-hint">系统全局生效：按钮、输入框、卡片、弹窗圆角；移动端登录页同样使用该圆角</div>
+              </el-form-item>
               <el-form-item label="文字与卡片入场动画（标语逐字上浮 + 区块依次淡入）">
                 <el-switch v-model="localConfig.animation.entrance" />
                 <div class="ld-hint">
                   关闭后登录页静态呈现，无任何入场动画；开启时访客系统若设置了「减弱动态效果」也会自动停用。
                 </div>
               </el-form-item>
-
-              <div class="ld-section">背景动态（按设备分别配置）</div>
-              <div class="ld-hint" style="margin-bottom:12px">
-                科技背景图、粒子漂浮、雷达扫描、Ken Burns 缓推位于
-                「浏览器端布局」「移动端布局」两个页签顶部的「背景与科技动效」分区，桌面与手机可独立设置。
-              </div>
-              <div class="ld-section">渐变效果</div>
-              <div class="ld-hint">
-                标题强调行渐变与登录按钮渐变的开关、角度、色标位于「主题色」页签中部。
-              </div>
             </el-form>
           </el-tab-pane>
 
@@ -492,6 +479,7 @@
 import LoginRenderer from '@/views/login/LoginRenderer.vue'
 import LoginFormFields from '@/views/login/LoginFormFields.vue'
 import LoginLayoutFields from '@/views/login/LoginLayoutFields.vue'
+import LoginHelpTip from '@/views/login/LoginHelpTip.vue'
 import { ArrowDown, InfoFilled } from '@element-plus/icons-vue'
 import { getManagedLoginConfig, updateLoginConfig } from '@/api/loginConfig'
 import useLoginThemeStore from '@/store/modules/loginTheme'
