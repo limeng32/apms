@@ -116,9 +116,9 @@
  * 短信登录表单（纯展示 + 自身倒计时管理）
  *
  * 与 LoginFormFields 平级，挂在 login.vue 的 #form 插槽内、tab 切换显示。
- * 滑块复用 login.vue 常驻的 SliderCaptcha 模态：
- *   - 点「获取验证码」→ emit('need-slider')；父级按滑块开关决定弹模态或直接放行；
- *   - 滑块通过后父级调本组件暴露的 requestSend(uuid)；
+ * 图形点选验证复用 login.vue 常驻的 ClickCaptcha 模态：
+ *   - 点「获取验证码」→ emit('need-slider')；父级按验证开关决定弹模态或直接放行；
+ *   - 验证通过后父级调本组件暴露的 requestSend(uuid)；
  *   - 只有服务端发码成功才启动倒计时，失败保持可重试。
  */
 import { Iphone, Key } from '@element-plus/icons-vue'

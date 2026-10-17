@@ -57,8 +57,8 @@
       </template>
     </el-dialog>
 
-    <!-- 真人滑块（与登录页同一组件：常驻挂载、open 时自动拉新挑战；关闭时 open 返回 false 直接放行） -->
-    <SliderCaptcha ref="sliderRef" @verified="onSliderVerified" />
+    <!-- 图形点选验证（与登录页同一组件：常驻挂载、open 时自动拉新挑战；关闭时 open 返回 false 直接放行） -->
+    <ClickCaptcha ref="sliderRef" @verified="onSliderVerified" />
   </div>
 </template>
 
@@ -66,7 +66,7 @@
 import { Iphone, Key, Plus } from '@element-plus/icons-vue'
 import { listMyPhones, bindMyPhone, unbindMyPhone } from '@/api/apms/userPhone'
 import { sendSmsCode } from '@/api/login'
-import SliderCaptcha from '@/views/login/SliderCaptcha.vue'
+import ClickCaptcha from '@/views/login/ClickCaptcha.vue'
 
 const { proxy } = getCurrentInstance()
 
@@ -117,7 +117,7 @@ function sendCode() {
     return
   }
   if (countdown.value > 0 || sending.value) return
-  // SliderCaptcha.open()：开关关闭时返回 false；开启时弹模态并由 @verified 异步回调
+  // ClickCaptcha.open()：开关关闭时返回 false；开启时弹模态并由 @verified 异步回调
   const opened = sliderRef.value && sliderRef.value.open()
   if (!opened) doSend(undefined)
 }

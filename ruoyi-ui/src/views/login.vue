@@ -44,8 +44,8 @@
     </template>
   </LoginRenderer>
 
-  <!-- 真人拖拽拼图验证码（模态框；点登录时弹出，通过后自动发起登录） -->
-  <SliderCaptcha
+  <!-- 图形点选验证码（模态框；点登录时弹出，通过后自动发起登录） -->
+  <ClickCaptcha
     ref="sliderRef"
     @verified="onSliderVerified"
     @enabled-change="onSliderEnabledChange"
@@ -63,7 +63,7 @@ import useUserStore from '@/store/modules/user'
 import LoginRenderer from './login/LoginRenderer.vue'
 import LoginFormFields from './login/LoginFormFields.vue'
 import SmsLoginForm from './login/SmsLoginForm.vue'
-import SliderCaptcha from './login/SliderCaptcha.vue'
+import ClickCaptcha from './login/ClickCaptcha.vue'
 import DemoPassDialog from './login/DemoPassDialog.vue'
 import useLoginThemeStore from '@/store/modules/loginTheme'
 import { applyLoginHead, restoreLoginHead, resolveBrowserTitle } from './login/login.utils'

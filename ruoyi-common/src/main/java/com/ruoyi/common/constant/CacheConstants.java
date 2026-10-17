@@ -18,14 +18,14 @@ public class CacheConstants
     public static final String CAPTCHA_CODE_KEY = "captcha_codes:";
 
     /**
-     * 滑块拼图验证码挑战（答案） redis key
+     * 图形点选验证码挑战（答案） redis key
      */
-    public static final String SLIDER_CAPTCHA_KEY = "slider_captcha:";
+    public static final String CLICK_CAPTCHA_KEY = "click_captcha:";
 
     /**
-     * 滑块拼图验证通过标记（换取登录） redis key
+     * 图形点选验证通过标记（换取登录/发码） redis key
      */
-    public static final String SLIDER_PASS_KEY = "slider_pass:";
+    public static final String CAPTCHA_PASS_KEY = "captcha_pass:";
 
     /**
      * 参数管理 cache key

@@ -34,8 +34,9 @@ public interface ISysConfigService
     public boolean selectCaptchaEnabled();
 
     /**
-     * 滑块拼图拖拽验证码开关（sys.account.sliderCaptchaEnabled，默认关闭）。
-     * 开启后登录强制真人拖拽校验，与字符/算术验证码互斥。
+     * 人机验证码开关（sys.account.sliderCaptchaEnabled，默认关闭）。
+     * 开启后登录/发码强制图形点选校验（历史上为滑块拼图，参数键与方法名沿用以免迁移配置），
+     * 与字符/算术验证码互斥。
      *
      * @return true开启，false关闭
      */

@@ -94,7 +94,7 @@ public class SysConfigServiceImpl implements ISysConfigService
     }
 
     /**
-     * 滑块拼图验证码开关：默认关闭（未配置参数时不影响既有登录链路）
+     * 人机验证码开关（图形点选）：默认关闭（未配置参数时不影响既有登录链路）
      */
     @Override
     public boolean selectSliderCaptchaEnabled()

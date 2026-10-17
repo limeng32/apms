@@ -72,8 +72,8 @@
       <el-button @click="emit('update:modelValue', false)">关闭</el-button>
     </template>
 
-    <!-- 真人滑块（与登录页/个人中心同一组件；开关关闭时 open 直接返回 false 放行） -->
-    <SliderCaptcha ref="sliderRef" @verified="onSliderVerified" />
+    <!-- 图形点选验证（与登录页/个人中心同一组件；开关关闭时 open 直接返回 false 放行） -->
+    <ClickCaptcha ref="sliderRef" @verified="onSliderVerified" />
   </el-dialog>
 </template>
 
@@ -81,7 +81,7 @@
 import { Iphone, Key } from '@element-plus/icons-vue'
 import { listUserPhones, adminUnbindPhone, adminBindPhone } from '@/api/apms/userPhone'
 import { sendSmsCode } from '@/api/login'
-import SliderCaptcha from '@/views/login/SliderCaptcha.vue'
+import ClickCaptcha from '@/views/login/ClickCaptcha.vue'
 import useUserStore from '@/store/modules/user'
 
 const { proxy } = getCurrentInstance()

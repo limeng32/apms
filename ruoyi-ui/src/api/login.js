@@ -105,22 +105,22 @@ export function getCodeImg() {
   })
 }
 
-// 获取滑块拼图挑战（同时返回开关状态；关闭时仅返回 sliderEnabled=false）
-export function getSliderCaptcha() {
+// 获取彩色图形点选挑战（同时返回开关状态；关闭时仅返回 enabled=false）
+export function getClickCaptcha() {
   return request({
-    url: '/captcha/slider',
+    url: '/captcha/click',
     headers: { isToken: false },
     method: 'get',
     timeout: 20000
   })
 }
 
-// 校验滑块拖拽结果
-export function checkSliderCaptcha(data) {
+// 校验图形点选结果：points 为按点击顺序回传的画布坐标 [{x,y},{x,y},{x,y}]
+export function checkClickCaptcha(data) {
   return request({
-    url: '/captcha/slider/check',
+    url: '/captcha/click/check',
     headers: { isToken: false, repeatSubmit: false },
-    // silent：失败不弹全局通知，由滑块组件在遮罩内自行提示（全局通知层级低会被遮罩毛玻璃糊住）
+    // silent：失败不弹全局通知，由验证组件在弹层内自行提示（全局通知会被遮罩盖住）
     silent: true,
     method: 'post',
     data

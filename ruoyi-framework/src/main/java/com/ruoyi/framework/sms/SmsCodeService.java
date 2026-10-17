@@ -24,7 +24,7 @@ import com.ruoyi.common.enums.UserStatus;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.common.utils.uuid.IdUtils;
-import com.ruoyi.framework.captcha.SliderCaptchaService;
+import com.ruoyi.framework.captcha.ClickCaptchaService;
 import com.ruoyi.system.domain.apms.ApmsUserPhone;
 import com.ruoyi.system.service.ISysConfigService;
 import com.ruoyi.system.service.ISysUserService;
@@ -109,7 +109,7 @@ public class SmsCodeService
     private ISysConfigService configService;
 
     @Autowired
-    private SliderCaptchaService sliderCaptchaService;
+    private ClickCaptchaService clickCaptchaService;
 
     @Autowired
     private IApmsUserPhoneService userPhoneService;
@@ -147,11 +147,11 @@ public class SmsCodeService
             throw new ServiceException("请输入正确的手机号");
         }
 
-        // 人机校验：滑块开关开启时必须消费一次性通过标记；关闭时与密码登录验证码策略一致（放行）
+        // 人机校验：图形点选开关开启时必须消费一次性通过标记；关闭时与密码登录验证码策略一致（放行）
         if (configService.selectSliderCaptchaEnabled()
-                && !sliderCaptchaService.consumePass(sliderUuid))
+                && !clickCaptchaService.consumePass(sliderUuid))
         {
-            throw new ServiceException("请先完成滑块安全验证");
+            throw new ServiceException("请先完成图形安全验证");
         }
 
         // 场景业务校验（不满足则不产生短信费用）
@@ -436,9 +436,9 @@ public class SmsCodeService
         }
         // 人机校验
         if (configService.selectSliderCaptchaEnabled()
-                && !sliderCaptchaService.consumePass(sliderUuid))
+                && !clickCaptchaService.consumePass(sliderUuid))
         {
-            throw new ServiceException("请先完成滑块安全验证");
+            throw new ServiceException("请先完成图形安全验证");
         }
         // 门禁：admin 直接放行；super 必须数据范围内 + portal 角色
         managedBoundary.assertPhoneManageable(targetUserId,

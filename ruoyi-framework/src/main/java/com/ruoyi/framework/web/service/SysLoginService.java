@@ -56,7 +56,7 @@ public class SysLoginService
     private ISysConfigService configService;
 
     @Autowired
-    private com.ruoyi.framework.captcha.SliderCaptchaService sliderCaptchaService;
+    private com.ruoyi.framework.captcha.ClickCaptchaService clickCaptchaService;
 
     @Autowired
     private SmsCodeService smsCodeService;
@@ -191,17 +191,17 @@ public class SysLoginService
      *
      * @param username   用户名
      * @param code       字符验证码
-     * @param uuid       字符验证码唯一标识（滑块关闭时使用）
-     * @param sliderUuid 滑块拼图通过标识（滑块开启时使用）
+     * @param uuid       字符验证码唯一标识（图形验证关闭时使用）
+     * @param sliderUuid 图形点选通过标识（图形验证开启时使用；沿用历史字段名）
      */
     public void validateCaptcha(String username, String code, String uuid, String sliderUuid)
     {
-        // 滑块拼图开启：以一次性通过标记为准，不再校验字符验证码
+        // 图形点选验证开启：以一次性通过标记为准，不再校验字符验证码
         if (configService.selectSliderCaptchaEnabled())
         {
-            if (!sliderCaptchaService.consumePass(sliderUuid))
+            if (!clickCaptchaService.consumePass(sliderUuid))
             {
-                AsyncManager.me().execute(AsyncFactory.recordLogininfor(username, Constants.LOGIN_FAIL, "滑块验证未通过或已失效"));
+                AsyncManager.me().execute(AsyncFactory.recordLogininfor(username, Constants.LOGIN_FAIL, "安全验证未通过或已失效"));
                 throw new CaptchaException();
             }
             return;
