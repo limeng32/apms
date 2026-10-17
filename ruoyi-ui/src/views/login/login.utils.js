@@ -513,7 +513,7 @@ function restoreOriginalIconLinks() {
 /**
  * 解析当前入口的浏览器标题：
  * 设计器配置 brand.browserTitle 优先（业务站/展示站各自独立），
- * 留空则回退域名内置默认（见 utils/entry.js）。
+ * 留空则回退构建标题 VITE_APP_TITLE（见 utils/entry.js，不内置域名中文默认）。
  * @param {object} config 已与默认值合并的完整配置
  */
 export function resolveBrowserTitle(config) {
@@ -573,7 +573,9 @@ export function restoreLoginHead() {
   const dyn = findDynamicIconLink()
   if (dyn) dyn.parentNode.removeChild(dyn)
   restoreOriginalIconLinks()
-  document.title = getSiteTitle()
+  // 不在这里重置 document.title：登录成功后路由守卫的 useDynamicTitle() 会以
+  // loginThemeStore.siteTitle（设计器配置，留空回退域名默认）设置标题，
+  // 此处再覆盖会把配置标题打回内置默认；登录页重新挂载时由 applyLoginHead 接管。
 }
 
 /**

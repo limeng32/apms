@@ -11,7 +11,7 @@ import { applyLoginHead, restoreLoginHead, resolveBrowserTitle } from '../login/
 
 const loginThemeStore = useLoginThemeStore()
 
-// favicon / 浏览器标题：均取展示站配置；标题留空回退域名内置短标题
+// favicon / 浏览器标题：均取展示站配置；标题留空回退构建标题 VITE_APP_TITLE
 function applyHead() {
   const c = loginThemeStore.config
   applyLoginHead({ favicon: c.brand?.favicon, title: resolveBrowserTitle(c) }, 'showcase')

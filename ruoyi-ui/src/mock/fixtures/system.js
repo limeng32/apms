@@ -174,7 +174,7 @@ export const dictMap = {
 export const notices = [
   {
     noticeId: 1,
-    noticeTitle: '欢迎使用 APMS 运动员管理系统演示环境',
+    noticeTitle: '欢迎使用 运动员训练数据管理系统演示环境',
     noticeType: '2',
     status: '0',
     isRead: false,

@@ -154,7 +154,7 @@ watch(route, (newRoute) => {
 }, { immediate: true })
 
 // favicon / 浏览器标题：favicon 取业务站设计器配置；标题取 brand.browserTitle，
-// 留空回退域名内置默认（见 login.utils.resolveBrowserTitle）
+// 留空回退构建标题 VITE_APP_TITLE（见 login.utils.resolveBrowserTitle）
 function applyHead() {
   const c = loginThemeStore.config
   applyLoginHead({ favicon: c.brand?.favicon, title: resolveBrowserTitle(c) }, 'portal')

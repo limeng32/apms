@@ -106,7 +106,7 @@
                   show-word-limit
                   :placeholder="`默认：${defaultBrowserTitle}`"
                 />
-                <div class="ld-hint">仅对当前「{{ entry === 'showcase' ? '展示站' : '业务站' }}」生效；两站标题可分别配置</div>
+                <div class="ld-hint">整站生效（登录页/展示页与登录后各页面标签标题）；仅作用于当前「{{ entry === 'showcase' ? '展示站' : '业务站' }}」，两站分别配置</div>
               </el-form-item>
               <el-form-item label="英文副标题">
                 <el-input v-model="localConfig.brand.subTitle" maxlength="200" />
@@ -644,10 +644,8 @@ const activeTab = ref('content')
 const entry = ref('portal')
 const isShowcaseEntry = computed(() => entry.value === 'showcase')
 const entryLabel = computed(() => (isShowcaseEntry.value ? '展示站' : '业务站'))
-/** 浏览器标题留空时的入口内置默认（仅用于输入框占位提示） */
-const defaultBrowserTitle = computed(() => (isShowcaseEntry.value
-  ? '运动员训练数据管理系统'
-  : '国家奥林匹克体育中心-运动员训练数据管理系统'))
+/** 浏览器标题留空时的默认值（仅用于输入框占位提示）：构建标题 VITE_APP_TITLE */
+const defaultBrowserTitle = computed(() => import.meta.env.VITE_APP_TITLE)
 const localConfig = ref(cloneDefaults())
 let savedSnapshot = JSON.stringify(localConfig.value)
 

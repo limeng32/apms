@@ -6,6 +6,7 @@
 import useSettingsStore from './store/modules/settings'
 import useLoginThemeStore from './store/modules/loginTheme'
 import { applyGlobalBrand } from '@/utils/theme'
+import { useDynamicTitle } from '@/utils/dynamicTitle'
 
 const settingsStore = useSettingsStore()
 const loginThemeStore = useLoginThemeStore()
@@ -17,6 +18,11 @@ watch(() => loginThemeStore.config, (cfg) => {
   if (cfg && cfg.colors && cfg.colors.accent) {
     settingsStore.theme = cfg.colors.accent
   }
+  // 浏览器标题整站跟随设计器配置：缓存供下次整页加载时 index.html 首屏同步读取，
+  // 并立即按当前路由刷新标签页标题（后台页/设计器保存后在此统一生效；
+  // 登录页/展示页随后由 applyLoginHead 以同一口径再设一次，值相同）
+  loginThemeStore.cacheHeadTitle()
+  useDynamicTitle()
 }, { deep: true })
 
 onMounted(() => {

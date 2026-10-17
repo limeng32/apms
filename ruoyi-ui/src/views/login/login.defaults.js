@@ -17,7 +17,7 @@ export default {
   brand: {
     name: '',                   // 空则回退 VITE_APP_TITLE
     // 浏览器标签页标题（仅本入口生效：业务站/展示站各自独立配置）；
-    // 空串 = 按域名使用内置默认（展示站「运动员训练数据管理系统」/ 业务站「国家奥林匹克体育中心-…」）
+    // 空串 = 使用构建标题 VITE_APP_TITLE，不内置任何域名中文默认
     browserTitle: '',
     subTitle: 'ATHLETE PERFORMANCE MANAGEMENT SYSTEM',
     // type: builtin（内置矢量库）| image（/profile/ 下 jpg/png）
