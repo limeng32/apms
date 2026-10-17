@@ -66,14 +66,31 @@
 - `index[scope]: number`：当前所处节点下标。
 - 上限 50 节点（超出丢弃最旧非当前节点，基线随之前移）。
 - 不变量：当前实际配置 == `applyScope` 还原的 `nodes[index]`；`canUndo = index > 0`；`canRedo = index < nodes.length-1`。
-- 暴露：`undo()`、`redo()`、`canUndo/canRedo`（按当前 activeTab）、`pushFromWatch(scope)`（防抖驱动）、`beginImportSession(before, after)`、`resetAll()`。
+- 暴露：`undo()`、`redo()`（内部先 `flushPending(当前scope)`）、`canUndo/canRedo`（按当前 activeTab）、`schedulePush(scope)`（4 个独立 watcher 回调）、`flushPending(scope)`、`clearAllTimers()`、`beginImportSession(before, after)`、`resetAll()`、`seed(config)`（载入后建单节点基线）。
 
-### 5.2 普通编辑如何成节点（防抖）
+### 5.2 普通编辑如何成节点（每个 scope 独立监听 + 防抖）
 
-- `watch(localConfig, { deep:true })` 监听改动 → 按变化路径判定 scope（一次深层变更只命中一个 scope；色板/上传等同属一个页签）→ 对该 scope 启动 **500ms 防抖**。
-- 停顿后成节点：丢弃 `index` 之后的 redo 尾节点（标准 undo 分叉语义），把「编辑后的该 scope 稳定快照」追加到 `nodes`，`index = 末尾`。
-- 持续键入、Logo 拖拽的高频 pointermove 仅重置定时器，一次连续操作 = 1 个节点，无需 pointerup 特判。
-- 待提交快照与当前节点相同则跳过；undo/redo/loadData 的程序化回填期间用一个 `restoring` 标志屏蔽 watch 成节点，避免空步（比"靠相等性去重"更确定）。
+不做"一个 deep watcher + 路径 diff 判定归属"——Vue 深层 watcher 回调里 `newVal/oldVal` 通常是同一对象引用，拿不到可靠的旧值与变更路径；且 `copyFromPortal()`/`resetDefault()` 会**一次替换整份配置、同时命中多个 scope**，单 watcher 难以正确拆步。改为**每个 scope 一个独立的快照监听**：
+
+```js
+SCOPES.forEach((s) => {
+  watch(
+    () => JSON.stringify(pickScope(localConfig.value, s)),
+    () => schedulePush(s)
+  )
+})
+```
+
+- 监听源是该 scope 叶子的 JSON 字符串，天然只对本页签字段敏感、也天然拿到"变/没变"；无需 oldValue 与路径 diff。
+- `schedulePush(s)`：对该 scope 启动/重置 **500ms 防抖**；持续键入、Logo 拖拽高频 pointermove 期间只重置定时器，停顿后成 1 个节点。
+- 停顿后成节点：丢弃 `index` 之后的 redo 尾节点（undo 分叉语义），把新快照追加到 `nodes`，`index=末尾`；与当前节点相同则跳过。
+- `resetDefault()` 一次改 4 个 scope → 4 个监听各自触发、各自记一个节点（符合"按页签分别记录"）。
+- `restoring` 标志：undo/redo/loadData/导入回填期间置 true，`schedulePush` 直接 return，避免程序化赋值成空步。
+
+**防抖结算（必须）**：
+
+- `undo()`/`redo()` 执行前先 `flushPending(activeScope)`：把该 scope 尚未入栈的 500ms 内编辑立即结算成节点，再移动游标——否则"刚拖完滑块立刻点撤销"会因定时器未触发而无反应。
+- `resetAll()`、`loadData`、`beginImportSession` 前先 `clearAllTimers()`，取消全部待执行防抖，杜绝切站/导入后旧定时器污染新站点或新基线。
 
 ### 5.3 undo/redo 写回
 
@@ -112,21 +129,57 @@
   4. 通过后再走现有「覆盖确认」二次确认 → 执行下方**导入固定序列**。
 - 跨站操作入口本身已不存在（按钮只针对当前站），来源校验作为内容级硬保险。
 
-#### 导入固定序列（D3，严格按此顺序，任一步失败整体中止且不动历史）
+#### 导入固定序列（D3，先落库成功，最后才整体替换历史）
+
+核心原则：**服务端 PUT 成功前，不动 localConfig、不动 savedSnapshot、不动历史栈**；任何前置/网络/校验失败都让本地完全保持原状（仍可继续编辑、原有撤销记录仍在）。
 
 设当前站已保存配置为 `C0`（前置 D7 保证其 == 本地草稿 == 数据库），文件解析并剥离 `meta` 后的配置为 `C1`：
 
-1. **确保保存状态**：再次断言 `dirty === false`（前置已拦，防御性复核），不满足直接中止。
-2. **清栈**：`resetAll()` 内部先清空 4 个 scope 的 `nodes/index`。
-3. **压入导入前节点**：以 `C0` 对每个 scope 建节点——`nodes[s] = [pickScope(C0, s)]`、`index[s] = 0`。
-4. **导入并保存**：`restoring=true` 期间 `updateLoginConfig(C1, entry)` PUT 落库；成功后 `localConfig = mergeWithDefaults(C1 回读/本地合并)`、`savedSnapshot = 当前`（dirty 回 false）。
-5. **压入导入后节点**：以导入后配置 `C1'`（回显值）对每个 scope 追加节点——仅当 `pickScope(C1', s)` 与节点0不同才 `push` 并令 `index[s]=1`；相同则该 scope 保持单节点（该页签无变化，撤销按钮禁用）。结束后 `restoring=false`。
+1. **确保保存状态**：断言 `dirty === false`（前置已拦，防御性复核），不满足中止；同时 `clearAllTimers()` 取消待入栈防抖。
+2. **读取并解析**：`C0 = mergeWithDefaults(GET 当前站)`、`C1 = mergeWithDefaults(剥离 meta 后的文件)`；在内存完成来源校验/JSON 校验，**不发写请求、不改任何状态**。
+3. **PUT 落库**：`restoring=true` 下 `updateLoginConfig(C1, entry)`。
+   - **失败 → 立即结束**：不执行后续任何步骤；localConfig、savedSnapshot、四 scope 历史栈**全部原样保留**，弹错误提示。
+4. **PUT 成功后更新本地**：`localConfig = C1`（以接口回读/本地合并为准）、`savedSnapshot = JSON.stringify(C1)`（dirty=false）。
+5. **最后整体替换历史**：`beginImportSession(C0, C1)`——内部一次性 `resetAll()` 后重建：每 scope 先以 `pickScope(C0,s)` 为节点0；仅当 `pickScope(C1,s)` 与节点0不同才追加为节点1并 `index=1`，相同则该 scope 保持单节点（撤销禁用）。结束 `restoring=false`。
 
 语义结果：
 
-- 在「导入确实改变了」的页签，撤销 1 次回到导入前该页签配置；重做回到导入后。无变化的页签撤销按钮本就禁用。
-- 撤销只改本地草稿（`dirty=true`），**不自动回写数据库**；用户需再点「保存」才会把回退结果落库——数据库在撤销期间始终是导入后的 C1，安全边界清晰。
-- 「从业务站复制/恢复默认」不走本序列（它们不立即落库），仅普通成节点。
+- 导入失败：数据库、本地草稿、已保存快照、撤销历史**四者全部不变**，无任何半完成状态。
+- 导入成功：在「确实变化」的页签撤销 1 次回到导入前该页签配置；重做回导入后；无变化页签撤销按钮禁用。
+- 撤销只改本地草稿（`dirty=true`），**不自动回写数据库**；再点「保存」才落库——撤销期间数据库始终是导入后的 C1。
+- 「从业务站复制/恢复默认」不走本序列（不立即落库），仅普通成节点。
+
+### 6.1b 切换站点：先加载成功，再整体切换（修复既有错站风险）
+
+现状缺陷：`switchEntry` 先 `entry.value = target` 再异步 `loadData(target)`。若目标站 GET 失败，顶栏已显示新站、`localConfig` 却仍是旧站配置，此时编辑/保存会把**旧站配置写进新站**（比导入误操作风险更高）。
+
+改为「先取数、成功后一次性原子切换」：
+
+```text
+switchEntry(target):
+  未保存拦截（沿用现有 dirty 二次确认，取消则不动）
+  loading=true
+  try:
+    data = await getManagedLoginConfig(target)   // 先请求，期间 entry 仍是旧站
+  catch:
+    msgError('切换失败：未能加载{目标站}配置，仍停留在{当前站}')
+    return                                       // entry/localConfig/历史全部不变
+  // —— 只有加载成功才执行下面的切换 ——
+  clearAllTimers()
+  restoring = true
+  entry.value = target
+  localConfig.value = mergeWithDefaults(data)
+  savedSnapshot.value = JSON.stringify(localConfig.value)
+  resetAll(); seed(localConfig.value)            // 新站单节点基线
+  restoring = false
+```
+
+要点：
+
+- 加载失败时**四个状态都不动**：`entry`（顶栏 radio）、`localConfig`、`savedSnapshot`、历史栈，用户仍在原站、可继续操作。
+- 切换与载入合并为一次 `restoring` 窗口，避免四 scope watcher 因整份替换弹出一串节点；载入完成后用 `seed` 直接建基线。
+- radio 仍用单向 `:model-value`，失败时因 `entry` 未变，按钮自然回退，无需手动复位。
+- 初次 `onMounted` 的 `loadData()` 同理走「成功才赋值」（初始为默认配置，失败保持默认并提示，不影响入口）。
 
 ### 6.2 后端（强约束，防绕过）
 
@@ -147,13 +200,13 @@
 
 前端：
 
-1. **新增** `ruoyi-ui/src/views/system/loginConfig/useConfigHistory.js`：分区历史纯逻辑（`pickScope/applyScope`、4 scope 的 nodes/index、undo/redo、防抖成节点、`beginImportSession(before,after)`、`resetAll`、restoring 屏蔽）。
+1. **新增** `ruoyi-ui/src/views/system/loginConfig/useConfigHistory.js`：分区历史纯逻辑（`pickScope/applyScope`、4 scope 的 nodes/index、**4 个独立 scope 快照 watcher**、`schedulePush/flushPending/clearAllTimers`、undo/redo、`seed`、`beginImportSession(before,after)`、`resetAll`、restoring 屏蔽）。
 2. [index.vue](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/views/system/loginConfig/index.vue)：
-   - 接入 history（watch + activeTab + 快捷键 + 两个按钮）；
+   - 接入 history（4 watcher + activeTab + 快捷键 + 两个按钮，undo/redo 前 flushPending）；
+   - **`switchEntry` 改为先 GET 成功再原子切换**（§6.1b）；`loadData` 失败不改 entry/localConfig/历史；
    - 导入/导出下拉改单按钮（作用当前站）；
-   - 导入前置：dirty 拦截、来源严格校验、剥离 meta；通过后执行 §6.1 五步固定序列（含 beginImportSession）；
-   - 保存请求临时附加 `meta.entry`；
-   - `loadData` 成功后 `resetAll()`。
+   - 导入前置 dirty 拦截、来源严格校验、剥离 meta；PUT 成功后才更新本地并 `beginImportSession`（§6.1）；
+   - 保存请求临时附加 `meta.entry`；`loadData` 成功后 `seed` 建基线。
 3. 不改 LoginLayoutFields/LoginRenderer/LoginFormFields 等子组件结构（历史对它们透明）。
 
 后端：
@@ -169,6 +222,9 @@
 
 - scope 提取/写回：改 `colors.accent` 只影响 appearance 子树；undo 后 colors 还原，文案/logo 不变。
 - 防抖归并：连续多次写入停顿后只入 1 步；拖拽等价序列 1 步。
+- flushPending：写入后未满 500ms 立即 undo，先结算再回退，撤销有效（不会空撤）。
+- resetDefault 一次改 4 scope：4 个 watcher 各记 1 节点，互不混入。
+- clearAllTimers：seed/beginImportSession 后旧定时器不再触发污染。
 - undo/redo 多步、到边界按钮禁用、redo 后再编辑清空 future。
 - resetAll：模拟 loadData 后各 scope 单节点、canUndo=false。
 - 复制/恢复默认可撤销一步。
@@ -178,21 +234,25 @@
 
 手工验收（UAT）：
 
-- 四页签分别改→各自撤销互不串；输入框内 Ctrl+Z 只撤文字；切站历史清空。
-- 业务站有未保存修改时导入被拦；保存后可导入；展示站文件导入业务站被拒；旧文件被拒；同站文件导入成功并落库后，在发生变化的页签可撤销回导入前（撤销后保存按钮变亮，不自动改数据库）。
+- 四页签分别改→各自撤销互不串；刚拖完滑块立刻撤销能立即生效；输入框内 Ctrl+Z 只撤文字；切站历史清空。
+- **切换失败**：断网/后端异常时点切展示站，顶栏仍停留业务站、配置仍是业务站、保存仍写业务站（不错站）。
+- 业务站有未保存修改时导入被拦；保存后可导入；展示站文件导入业务站被拒；旧文件被拒；导入过程中模拟 PUT 失败：本地草稿/快照/历史均不变、可继续编辑；同站导入成功后，在变化页签可撤销回导入前（保存按钮变亮，不自动改数据库）。
 - 保存请求带正确 meta，正常保存不受影响；GET 公开配置中永远无 meta。
 
 构建门禁：`npm run build:prod`、IDE GetDiagnostics 0 错误、`mvn clean package -DskipTests`（后端改动）。
 
 ## 9. 风险与回滚
 
-- 风险点：deep watch 高频（拖拽）性能——JSON 子树序列化 + 500ms 防抖，配置 < 8KB，实测无压力；上线后若低端机卡顿可再改为 rAF 合帧。
+- 风险点：4 个 scope watcher 各自 `JSON.stringify` 快照的开销——配置 < 8KB、仅在变更时序列化 + 500ms 防抖，拖拽高频 pointermove 也只 stringify 本 scope 子串，实测无压力；低端机若卡顿再改 rAF 合帧。
 - 风险点：页签归属漏字段导致某处改动不可撤销——以「配置默认值叶子全集 vs scope 归属表」做一次自动 diff 校验纳入桩测，保证每个可编辑叶子都被覆盖。
+- 风险点：防抖定时器跨切换/导入串扰——由 `clearAllTimers()` + undo/redo 前 `flushPending()` 双重收口（已列为桩测项）。
+- 风险点：切换/导入时序竞态——统一「请求成功后才原子切换/落库成功后才替换历史」，失败保持原状（已列手工验收）。
 - 回滚：纯前后端增量，回退这几个文件即可；数据库与配置 JSON 无变更，无需 SQL 回滚。
 
 ## 10. 实施顺序（建议一次评审通过后按序执行）
 
-1. 后端 meta 来源校验 + 前端保存/导入同步改造（先打通强约束，避免历史功能在旧导入语义上返工）。
-2. `useConfigHistory` 纯逻辑 + 桩测。
-3. index.vue 接入历史 UI/快捷键/重置时机。
-4. 构建/桩测/UAT 验收。
+1. **switchEntry/loadData 先成功后切换**（独立小改，先消除错站风险，不依赖历史模块）。
+2. 后端 meta 来源校验 + 前端保存/导入同步改造（打通强约束）。
+3. `useConfigHistory` 纯逻辑（4 watcher/防抖结算/seed/beginImportSession）+ 桩测。
+4. index.vue 接入历史 UI/快捷键；导入接入「PUT 成功后 beginImportSession」序列。
+5. 构建/桩测/UAT 验收。
