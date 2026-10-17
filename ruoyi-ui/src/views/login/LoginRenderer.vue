@@ -911,6 +911,13 @@ function onLogoPointerUp() {
   .rs-logo-head { justify-content: center; }
   .lc-logo-corner { left: 20px; }
 
+  /* 居中卡片/全屏背景：白色登录卡片宽度可配（占可用宽度百分比；仍受 400px 上限约束）。
+     split 模板窄屏为满宽白栏，不消费此项 */
+  .login-centered .lc-box,
+  .login-fullscreen .lc-box {
+    width: var(--login-mobile-card-pct, 100%);
+  }
+
   /* centered/fullscreen：logo 收入白色登录卡顶部——nosc 等含黑色字样的位图
      落在白底上天然清晰，不在深色背景上加任何色块。
      卡外深色品牌块（logo+品牌名+英文副标题）与右上角客户方 logo 在移动端隐藏
@@ -949,6 +956,11 @@ function onLogoPointerUp() {
 /* 手机预览：客户方 logo 居中（与 ≤900px 媒体查询同口径） */
 .login-wrap.force-mobile .rs-logo-head { justify-content: center; }
 .login-wrap.force-mobile .lc-logo-corner { left: 20px; }
+/* 手机预览：登录卡片宽度可配（与 ≤900px 媒体查询同口径，设计器所见即所得） */
+.login-wrap.force-mobile.login-centered .lc-box,
+.login-wrap.force-mobile.login-fullscreen .lc-box {
+  width: var(--login-mobile-card-pct, 100%);
+}
 .login-wrap.force-mobile .login-form-box { max-width: 100%; }
 .login-wrap.force-mobile .lc-card { padding: 26px 22px 22px; }
 /* 手机预览：logo 入白卡（与 ≤900px 媒体查询同口径，设计器所见即所得） */

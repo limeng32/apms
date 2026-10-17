@@ -341,6 +341,10 @@ export function toCssVars(config) {
     // 雷达等装饰锚定到品牌区（背景提升为整屏后，固定 right 会落到右侧登录域里）
     '--login-brand-frac': String(((Number(c.layout.splitRatio) || 1.1) /
       ((Number(c.layout.splitRatio) || 1.1) + 1)).toFixed(4)),
+    // H5 白色登录卡片宽度（百分比，仅 ≤900px/force-mobile 的 centered/fullscreen 消费；
+    // 桌面布局无此字段，回退 100%；脏数据夹取到 60~100）
+    '--login-mobile-card-pct':
+      `${Math.min(100, Math.max(60, Number(c.layout.cardWidthPct) || 100))}%`,
     // Logo 上下留白：split（左右分栏）与 overlay（居中卡片/全屏背景）各自独立
     '--login-logo-top-split': px(c.brand?.logoSpace?.split?.top, '56px'),
     '--login-logo-bottom-split': px(c.brand?.logoSpace?.split?.bottom, '0px'),

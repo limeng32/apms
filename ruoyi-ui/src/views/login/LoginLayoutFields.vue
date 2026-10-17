@@ -42,6 +42,18 @@
       </el-form-item>
     </template>
 
+    <!-- ===== 居中卡片/全屏背景（仅移动端布局页签）：H5 登录卡片宽度 ===== -->
+    <el-form-item v-if="mobile && template !== 'split'">
+      <template #label>
+        登录卡片宽度：{{ cardWidthPct }}%
+        <LoginHelpTip content="白色登录卡片占手机屏幕可用宽度的百分比。100% 为默认（卡片两侧各留约 20px 边距），调小后卡片收窄并保持居中。" />
+      </template>
+      <el-slider v-model="cardWidthPct" :min="60" :max="100" :step="1" />
+      <div class="ld-hint">
+        仅作用于业务站 H5 登录卡片（居中卡片/全屏背景模板）；展示站无登录卡片，此项不产生效果
+      </div>
+    </el-form-item>
+
     <!-- ===== 版权方 Logo（左上，通用） ===== -->
     <div class="ld-section">版权方 Logo（左上）</div>
 
@@ -498,6 +510,8 @@ function bind2(section, sub, key) {
 const template = bind('layout', 'template')
 const splitRatio = bind('layout', 'splitRatio')
 const showBrandOnMobile = bind('layout', 'showBrandOnMobile')
+// H5 登录卡片宽度（仅移动端 layout 根存在该字段，桌面端不渲染该控件）
+const cardWidthPct = bind('layout', 'cardWidthPct')
 const logoType = bind('logo', 'type')
 const offsetX = bind('logo', 'offsetX')
 const offsetY = bind('logo', 'offsetY')

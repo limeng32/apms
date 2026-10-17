@@ -297,6 +297,8 @@ public class ApmsLoginConfigServiceImpl implements IApmsLoginConfigService {
             {
                 enumStr(mobileLayout.get("template"), TEMPLATES, "mobile.layout.template", true);
                 number(mobileLayout.get("splitRatio"), "mobile.layout.splitRatio", 0.5, 3.0);
+                // H5 白色登录卡片宽度（占可用宽度百分比，60~100；缺省 100）
+                number(mobileLayout.get("cardWidthPct"), "mobile.layout.cardWidthPct", 60, 100);
             }
             Map<String, Object> mobileBrand = obj(mobile.get("brand"), "mobile.brand");
             if (mobileBrand != null)

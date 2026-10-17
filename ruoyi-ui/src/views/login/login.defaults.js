@@ -141,7 +141,10 @@ export default {
     // 移动端布局：默认居中卡片（H5 常见形态）；不携带 showBrandOnMobile/cardRadius
     layout: {
       template: 'centered',
-      splitRatio: 1.1
+      splitRatio: 1.1,
+      // 白色登录卡片宽度（占可用宽度百分比，60~100）；100=两侧各留约 20px 边距的默认形态，
+      // 仅 centered/fullscreen 的 H5 卡片消费，split 满宽白栏与展示站（无卡片）不受影响
+      cardWidthPct: 100
     },
     brand: {
       // 移动端主 Logo：nosc 奥体中心（含黑色字样，深色背景上由 Renderer 白色铭牌承托）；
