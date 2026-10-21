@@ -7,6 +7,7 @@
 #   bash deploy.sh start|startup   # 只启动
 #   bash deploy.sh stop|shutdown   # 只停止
 #   bash deploy.sh restart         # 重启
+#   bash deploy.sh backup          # 每日定时备份（DB+附件+登录页JSON；滚动保留30天；供 crontab 调用，不停服）
 #   bash deploy.sh deploy --skip-patch --version X.Y.Z
 #
 # 运行目录: /opt/apms/
@@ -27,7 +28,7 @@ warn() { echo -e "${YELLOW}[WARN]${NC} ${*}"; }
 err()  { echo -e "${RED}[ERR ]${NC} ${*}"; exit 1; }
 
 # ===== 参数解析（第一个参数可能是子命令，也可能直接是 flag）=====
-KNOWN_CMD="^(start|startup|stop|shutdown|restart|deploy)$"
+KNOWN_CMD="^(start|startup|stop|shutdown|restart|deploy|backup)$"
 if [ -n "${1:-}" ] && [[ "${1}" =~ ${KNOWN_CMD} ]]; then
     CMD="${1}"; shift
 else
@@ -477,13 +478,81 @@ do_restart() {
     do_start
 }
 
+# ===== do_daily_backup: 每日定时备份（crontab 调用；不停服，业务可正常写入）=====
+# 内容：DB 全量 dump（校验逻辑与部署 Step 2 一致）+ 附件 uploadPath 打包
+#       + 登录页设计器 JSON 单导出；存 ${BACKUP}/daily/<时间戳>/（与发版备份隔离，
+#       prune_old_backups 只扫一层 YYYYMMDD_HHMMSS 目录，不触碰 daily/）
+# 保留：滚动 ${DAILY_BACKUP_KEEP_DAYS:-30} 天，按目录 mtime 清理
+# cron 示例（用户自行安装到生产 crontab）：
+#   30 3 * * * /bin/bash /opt/apms/deploy.sh backup >> /opt/apms/logs/backup.log 2>&1
+do_daily_backup() {
+    local keep_days="${DAILY_BACKUP_KEEP_DAYS:-30}"
+    local daily_root="${BACKUP}/daily"
+    local ts bkdir tmp ok try
+    ts=$(date '+%Y%m%d_%H%M%S')
+    bkdir="${daily_root}/${ts}"
+    mkdir -p "${bkdir}"
+
+    log "每日备份开始 → ${bkdir}"
+
+    # --- DB dump：临时文件 + gzip 完整性 + 解压体积 ≥10KB 校验 + 原子改名，失败重试 3 次 ---
+    tmp="${bkdir}/db.sql.gz.tmp"
+    ok=0
+    for try in 1 2 3; do
+        : > "${tmp}"
+        if mysql_dump 2>"${bkdir}/dump.err.log" | gzip > "${tmp}" \
+           && gzip -t "${tmp}" \
+           && [ "$(gzip -dc "${tmp}" 2>/dev/null | wc -c | tr -d ' ')" -ge 10240 ]; then
+            ok=1; break
+        fi
+        if [ "${try}" -lt 3 ]; then
+            warn "  第 ${try} 次备份失败，3s 后重试..."
+            sleep 3
+        fi
+    done
+    if [ "${ok}" -eq 1 ]; then
+        mv "${tmp}" "${bkdir}/db.sql.gz"
+        rm -f "${bkdir}/dump.err.log"
+        log "  ✅ DB 备份完成 ($(du -h "${bkdir}/db.sql.gz" | cut -f1))"
+    else
+        grep -v -F 'Using a password on the command line interface can be insecure' "${bkdir}/dump.err.log" 2>/dev/null | tail -5 | sed 's/^/    mysqldump: /' || true
+        rm -rf -- "${bkdir}"
+        err "❌ 每日 DB 备份失败（3 次均失败），已清理 ${bkdir}（cron 日志可查原因）"
+    fi
+
+    # --- 登录页设计器配置 JSON 单导出（与发版备份同款；失败不影响 DB 备份成果）---
+    login_config_backup "${bkdir}" || warn "  ⚠️ 登录页配置 JSON 备份失败（不影响 DB 备份）"
+
+    # --- 附件 uploadPath 打包（目录存在才打包，保结构可整目录恢复）---
+    if [ -d "${JARDIR}/uploadPath" ]; then
+        if tar -czf "${bkdir}/uploadPath.tar.gz" -C "${JARDIR}" uploadPath; then
+            log "  ✅ 附件备份完成 ($(du -h "${bkdir}/uploadPath.tar.gz" | cut -f1))"
+        else
+            warn "  ⚠️ 附件打包失败（DB 备份不受影响）"
+            rm -f "${bkdir}/uploadPath.tar.gz"
+        fi
+    fi
+
+    # --- 滚动清理：删除 mtime 超过保留期的 daily 备份目录 ---
+    local old
+    while IFS= read -r old; do
+        [ -z "${old}" ] && continue
+        rm -rf -- "${old}" 2>/dev/null \
+            && log "  🧹 清理过期每日备份 ${old}" \
+            || warn "  ⚠️ 无法删除过期每日备份 ${old}"
+    done < <(find "${daily_root}" -mindepth 1 -maxdepth 1 -type d -mtime +"${keep_days}" 2>/dev/null || true)
+
+    log "每日备份完成"
+}
+
 # ===== 子命令 dispatch =====
 case "${CMD}" in
     start|startup)   do_start; exit 0 ;;
     stop|shutdown)   do_stop;  exit 0 ;;
     restart)         do_restart; exit 0 ;;
+    backup)          do_daily_backup; exit 0 ;;
     deploy|"")       : ;;  # 走下面的完整部署流程
-    *)               err "未知子命令: ${CMD} (可用: start|stop|restart|deploy)" ;;
+    *)               err "未知子命令: ${CMD} (可用: start|stop|restart|deploy|backup)" ;;
 esac
 
 # ===== 版本号推导 =====
@@ -528,6 +597,9 @@ fi
 # 规则：保留"每天的第一个备份" + "最新一次备份"，其余删除。
 # 仅处理形如 YYYYMMDD_HHMMSS 的备份目录（目录名即时间戳，字典序=时间序）。
 # 最新备份就是本次部署的回滚点，恒在保留集合内，绝不删除。
+# 产物瘦身：jar/dist 每份 100M+，是备份目录磁盘大头——历史备份目录不再
+# 保留 apms.jar / dist_old，仅最新备份（= 本次部署回滚点）保留完整产物；
+# 历史目录只留 db.sql.gz、登录页配置 JSON、nginx-ssl 等小文件。
 prune_old_backups() {
     local all name d latest="" keep="" prev_date=""
     all=$(find "${BACKUP}" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null \
@@ -560,6 +632,19 @@ prune_old_backups() {
                 || warn "  ⚠️ 无法删除过期备份 ${name}" ;;
         esac
     done <<< "${all}"
+
+    # 保留集合内的历史目录（非最新）剥离 jar/dist 产物，只留小文件
+    # keep 是空格分隔串，目录名（时间戳）无空格，按词展开安全
+    for name in ${keep}; do
+        [ "${name}" = "${latest}" ] && continue
+        for artifact in apms.jar dist_old; do
+            if [ -e "${BACKUP}/${name}/${artifact}" ]; then
+                rm -rf -- "${BACKUP}/${name}/${artifact}" 2>/dev/null \
+                    && log "  🧹 剥离历史产物 ${name}/${artifact}" \
+                    || warn "  ⚠️ 无法剥离历史产物 ${name}/${artifact}"
+            fi
+        done
+    done
 }
 
 # ===== Step 1: 停服务 =====
