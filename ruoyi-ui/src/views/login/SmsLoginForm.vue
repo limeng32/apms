@@ -98,14 +98,14 @@
     <!-- 一键体验入口：与账号密码表单同位（登录按钮下方）、同弹窗链路 -->
     <div v-if="demoEntry" class="lf-demo-entry">
       <el-button link type="primary" class="lf-demo-btn" @click="emit('demo')">
-        一键体验演示环境
         <svg
-          class="lf-demo-arrow" viewBox="0 0 24 24" fill="none"
+          class="lf-demo-zap" viewBox="0 0 24 24" fill="none"
           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
           aria-hidden="true"
         >
-          <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
+          <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02H20a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02H4Z"/>
         </svg>
+        一键体验
       </el-button>
     </div>
   </el-form>
@@ -352,14 +352,20 @@ defineExpose({ requestSend, showAccounts, backToForm })
 .lf-demo-entry {
   display: flex;
   justify-content: center;
-  margin-top: 6px;
+  margin-top: 22px;
 }
 .lf-demo-btn {
-  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
   font-weight: 500;
-  padding: 4px 8px;
+  letter-spacing: 1px;
+  padding: 6px 12px;
+  height: auto;
 }
-.lf-demo-arrow { width: 14px; height: 14px; flex: none; margin-left: 2px; }
+.lf-demo-btn:hover { opacity: .85; }
+.lf-demo-zap { width: 17px; height: 17px; flex: none; }
 
 /* 登录按钮与账号表单同款（含根节点渐变形态 .btn-gradient-on .lf-submit） */
 .lf-submit-label {
