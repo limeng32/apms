@@ -1,6 +1,11 @@
 # 运动员训练数据管理系统 — 详细设计
 
-> 基于若依（RuoYi-Vue）框架二次开发，覆盖一期项目边界全部业务能力。
+> 基于若依（RuoYi-Vue 3.9.2）框架二次开发，覆盖一期项目边界全部业务能力。
+>
+> **文档状态：v1.1（2026-10-30 按已上线实现校准）**
+> v1.0 为实施前基线，模块名、菜单、路由与接口在实现期已收敛为「分组菜单 + 合并页」。
+> 本文已同步现状；**实现事实以 `ruoyi-*` 代码、`patches/` 补丁与 `.trae/documents/` 为准**，
+> 数据库变更只以 `patches/patch-<version>-<时间戳>.sql` 为部署源。
 
 ---
 
@@ -11,7 +16,7 @@
 | 层 | 技术 | 说明 |
 |----|------|------|
 | 前端 | Vue 3 + Element Plus + Vite | 若依 RuoYi-Vue3 脚手架 |
-| 后端 | Spring Boot 4.x + MyBatis + PageHelper | RuoYi-Vue 3.9.2 脚手架 |
+| 后端 | Java 17 + Spring Boot 4.1.0 + MyBatis XML + PageHelper | RuoYi-Vue 3.9.2 脚手架；工程不引入 MyBatis-Plus |
 | 数据库 | MySQL 8.0 | utf8mb4 字符集 |
 | 缓存 | Redis 7.x | 会话、字典、限流 |
 | 文件存储 | 本地 / NAS | 医疗附件、导入文件 |
@@ -29,81 +34,100 @@ Web/H5 采用同一 Vue 3 前端工程，PC 与移动浏览器使用响应式布
 
 ### 1.2 模块规划
 
-在若依 `ruoyi-admin` 下新增 `apms` 业务包，结构：
+实现期未新建独立的 `com.ruoyi.apms` 工程，而是沿用若依分层：
 
 ```
-com.ruoyi.apms
-├── controller     # 接口层
-├── service        # 业务层
-├── domain         # 实体
-├── mapper         # 数据访问
-├── enums          # 枚举（RTP状态、任务状态等）
-├── algorithm      # 算法实现（PHV、RSA等）
-├── dto            # 传输对象
-└── config         # APMS 专属配置
+ruoyi-admin     com.ruoyi.web.controller.apms          # 19 个 APMS Controller（含 VersionController）
+ruoyi-system    com.ruoyi.system.domain.apms           # 实体
+                com.ruoyi.system.mapper.apms           # Mapper 接口
+                com.ruoyi.system.service.apms          # 业务服务与 impl
+                com.ruoyi.system.util.apms             # Mirwald / Khamis-Roche / RSA / T 分 / AlgorithmStatus
+                com.ruoyi.system.service.apms.batchimport # Excel/CSV 两阶段导入解析与校验
+ruoyi-admin     resources/mapper/apms                   # MyBatis XML（30 份）
+ruoyi-ui        src/views/apms                         # 18 个页面目录（含合并壳页）
 ```
 
-前端在 `src/views/apms/` 下新增页面，复用若依的 `@/components` 通用组件。
+前端页面统一复用若依 `@/components` 与 `src/assets/styles/roster-kit.scss`（花名册视觉规范）。
 
 ---
 
 ## 二、业务模块与页面映射
 
-### 2.1 模块总览
+### 2.1 模块总览（已按上线实现校准）
 
-| 模块 | 对应 demo 页面 | 后端 Controller | 前端路由 |
-|------|---------------|-----------------|---------|
-| 工作台 | index.html | ApmsDashboardController | /apms/dashboard |
-| 队员档案 | profile.html | ApmsAthleteController | /apms/athlete |
-| 健康与医疗 | health.html | ApmsHealthController | /apms/health |
-| 生长发育 | phv.html | ApmsPhvController | /apms/phv |
-| 指标矩阵 | matrix.html | ApmsIndicatorController | /apms/indicator |
-| 测试模型 | models.html | ApmsTestModelController | /apms/test-model |
-| 测试任务 | tasks.html | ApmsTaskController | /apms/task |
-| 分析报告 | report.html | ApmsReportController | /apms/report |
-| 组织机构 | org.html | 复用 RuoYi sys_dept | /apms/org |
-| 角色权限 | rbac.html | 复用 RuoYi sys_role/menu | /apms/rbac |
+| 一级分组 | 菜单/页面 | 前端组件 | 后端 Controller | 路由 |
+|---------|----------|---------|-----------------|------|
+| 总览 | 数据驾驶舱 | `apms/dashboard/index` | ApmsDashboardController | `/overview/cockpit`（`/index` 渲染同一组件） |
+| 运动员 | 花名册（含运动员详情） | `apms/athlete/index`、`apms/athlete/detail.vue` | ApmsAthleteController、ApmsAthleteGroupController | `/athletes/roster`；详情 `/apms/athlete/detail/:athleteId` |
+| 运动员 | 青训发育监控（合并页：体态测量 + PHV） | `apms/growth/index` | ApmsBodyMeasureController、ApmsPhvController | `/athletes/growth` |
+| 测试 | 指标库与任务下发（合并页：指标 + 任务 + 结果） | `apms/dispatch/index` | ApmsIndicatorController、ApmsTestTaskController、ApmsTestResultController | `/testings/dispatch` |
+| 测试 | 组合测试调度（合并页：测试模型 + 组合模型 + 组合评分） | `apms/comboDispatch/index` | ApmsTestModelController、ApmsComboModelController、ApmsComboScoreController | `/testings/combo-dispatch` |
+| 健康 | 健康预警中心（合并页：RTP 状态 + RTP 风险预警） | `apms/healthAlert/index` | ApmsRtpController、ApmsRtpRiskController | `/healthcare/alert-center` |
+| 健康 | 医疗康复 | `apms/medical/index` | ApmsMedicalController | `/healthcare/medical-care` |
+| 分析 | 报告中心 | `apms/report/index` | ApmsReportController | `/analytics/report-center` |
+| 系统 | 角色权限管理 / 组织架构 / 用户管理 | `system/role/index`、`system/dept/index`、`system/user/index` | RuoYi 原生 | `/sysmgr/role-acl`、`/sysmgr/org`、`/sysmgr/user` |
+| 系统管理 | 登录页设计 | `system/loginConfig/index` | ApmsLoginConfigManageController（管理端）、ApmsLoginConfigController（公开端） | `/system/loginConfig` |
 
-### 2.2 菜单挂载
+> **未进入导航但保留的独立页**：`bodyMeasure`、`phv`、`indicator`、`testTask`、`testResult`、`testModel`、`comboModel`、`comboScore`、`rtp`、`rtpWarning` 仍是独立页面组件，被合并壳页内嵌，同时保留旧链接直达能力（`getRouters` 只下发 2400 段菜单，旧 2200 段已隐藏但路由仍可注册）。
+>
+> **不再存在的模块**：早期设计中的 `apms/health`、`apms/task`、`apms/test-model`、`apms/org`、`apms/rbac` 均未实现，对应能力已合并到上表页面。
 
-在 `sys_menu` 表中新增 APMS 顶级目录，按 demo 侧边栏四大分组挂载子菜单：
+### 2.2 菜单挂载（2400 分组信息架构）
+
+`sys_menu` 当前生效的是 2400 段分组树（2200 段旧平铺菜单已 `visible='1'` 隐藏）：
 
 ```
-APMS（顶级目录）
-├── 日常管理
-│   ├── 工作台
-│   └── 队员档案
-├── 科研测试
-│   ├── 指标矩阵
-│   ├── 测试模型
-│   ├── 测试任务
-│   └── 分析报告
-├── 健康与安全
-│   ├── 健康与医疗
-│   └── 生长发育
-└── 环境
-    ├── 组织机构
-    └── 角色权限
+数据驾驶舱 2402（总览 2401）
+运动员 2410
+├── 花名册 2411                    → apms/athlete/index
+└── 青训发育监控 2412（二级菜单）   → apms/growth/index（体态测量 + PHV）
+测试 2420
+├── 指标库与任务下发 2421（二级菜单）→ apms/dispatch/index（指标库 + 测试任务 + 测试结果）
+└── 组合测试调度 2425（二级菜单）    → apms/comboDispatch/index（测试模型 + 组合模型 + 组合评分）
+健康 2430
+├── 健康预警中心 2431（二级菜单）    → apms/healthAlert/index（RTP 状态 + 风险预警）
+└── 医疗康复 2434                   → apms/medical/index
+分析 2440
+└── 报告中心 2441                   → apms/report/index
+系统 2450
+├── 角色权限管理 2451               → system/role/index
+├── 组织架构 2452                   → system/dept/index
+└── 用户管理 2453                   → system/user/index
+系统管理（menu_id=1）
+└── 登录页设计 2300                 → system/loginConfig/index
 ```
 
-### 2.3 角色与权限设计
+- 合并页改造（patch-0.0.6-2610061640 / 2610061710）删除了三级菜单 2413/2414/2422/2423/2424/2426/2427/2432/2433 与 2415；按钮权限点（F 型）沿用 22xxx 段，按 `perms` 字符串授权，与菜单 ID 解耦。
+- 专岗 `home_path` 统一为 `/overview/cockpit`（patch-0.0.7-261008170310）；前端守卫不再按角色分叉，登录后一律落地数据驾驶舱。
 
-复用若依 `sys_role` + `sys_menu` 的 RBAC 机制，新增 5 个预置角色。**功能权限之外，明确数据权限范围（若依 DataScope）**：
 
-| 角色 | 角色Key | 功能权限 | 默认数据范围 |
-|------|---------|---------|-------------|
-| 体能师 | apms_coach | 档案查看、测试任务管理、结果录入、报告查看 | 本部门及以下 |
-| 康复师 | apms_rehab | 档案查看、RTP 状态修改、医疗附件管理、报告查看 | 自定义 |
-| 队医 | apms_doctor | 档案查看、医疗附件管理、RTP 查看（不可改）、报告查看 | 自定义 |
-| 主教练 | apms_head_coach | 数据权限范围内全部查看、报告查看/导出、不可修改测试结果 | 本部门及以下 |
-| 科研人员 | apms_researcher | 数据权限范围内全部查看、指标/模型配置、组合模型管理、报告查看 | 自定义 |
-| 管理员 | admin | 系统管理 | 全部 |
+### 2.3 账号与角色设计（决策已冻结）
 
-> **数据范围说明**：「数据权限范围内全部查看」指受 DataScope 约束的可访问范围，**不是全库权限**。主教练和科研人员虽可查看所有功能模块，但只能看到自己数据范围内的运动员数据。
+复用若依 `sys_role` + `sys_menu` 的 RBAC，账号分三层；D1–D11 决策全部冻结，权威方案见 [PERMISSION_DESIGN.md](./PERMISSION_DESIGN.md)。
+
+| 层级 | 账号/角色 | 说明 | 权限边界 |
+|------|----------|------|---------|
+| 平台保留 | `admin`（userId=1，role_key=`admin`） | 交付方运维账号 | 全部菜单、菜单管理、系统监控、系统工具 |
+| 客户超管 | `super`（userId=100，role_id=200） | 客户侧最高账号 | 2400 业务全菜单 + 用户/角色/部门/字典/参数/日志/登录页设计；**无菜单管理、系统监控、系统工具**；不可见 admin |
+| 专岗 | `portal_coach` / `portal_tester` / `portal_medic` | 教练 / 测量员 / 队医，强制单角色 | 按分组授予读写权限，见下表 |
+
+专岗写权限矩阵（patch-0.0.7-261007145310 冻结）：
+
+| 专岗 | 默认入口 | 写权限（其余业务模块均为只读 list/query） |
+|------|---------|------------------------------------------|
+| 教练 `portal_coach` | `/overview/cockpit` | 运动员 add/edit/remove、体态 edit/remove、PHV edit/remove、组合评分 calculate/remove、报告 generate/remove |
+| 测量员 `portal_tester` | `/overview/cockpit` | 指标库/测试模型/组合模型 add/edit/remove、测试任务 add/edit/remove、测试结果 add/edit/remove |
+| 队医 `portal_medic` | `/overview/cockpit` | RTP edit/clear、RTP 风险 handle/scan、医疗记录 add/edit/remove、病历附件 remove |
+
+公共只读：三个专岗均拥有各业务模块 list/query、病历附件下载、报告下载、部门树与测试人下拉。
+
+> **导航模式现状**：专岗角色的 `portal_mode=1` 仍保留，但侧边栏已恢复渲染（patch-0.0.7-261007145310），仅标签页（TagsView）按 `portal_mode` 隐藏；admin/super 为 `portal_mode=0`，侧栏与标签页均显示。
+>
+> **权限校验双保险**：页面按钮用 `v-hasPermi` 隐藏，后端接口用 `@PreAuthorize` 拒绝；前端隐藏只是体验，接口权限点才是安全边界。
 
 ### 2.3.1 DataScope 实现方式
 
-运动员已脱离 `sys_user` 独立存在于 `apms_athlete` 表，`primary_team_id` 指向 `sys_dept`。若依的 `@DataScope` 注解可直接作用于该字段：
+运动员独立存在于 `apms_athlete`，`primary_team_id` 指向 `sys_dept`。`@DataScope` 已挂在运动员、测试任务、测试结果、体态、PHV、医疗、报告、看板、风险预警等查询入口：
 
 ```java
 @DataScope(
@@ -113,17 +137,15 @@ APMS（顶级目录）
 public List<ApmsAthlete> selectAthleteList(ApmsAthlete a) { ... }
 ```
 
-- **本部门及以下**（`DATA_SCOPE_DEPT_AND_CHILD`）：体能师、主教练只能看到自己队伍及下属小组的运动员
-- **自定义**（`DATA_SCOPE_CUSTOM`）：康复师/队医/科研人员通过 `sys_role_dept` 选中的部门集合控制数据权限
-- **全部**（`DATA_SCOPE_ALL`）：管理员
+- **当前运行态**：admin、super 与三个专岗的 `data_scope` 均为 `1`（全部数据），且决策 D3 冻结“本期不做行级数据权限”，因此现网不做行级过滤。
+- **未来启用**：把角色 `data_scope` 调为 2/3/4/5 即按注解生效，无需改业务代码。
+- 医疗、测试、报告等运动员从属数据统一 JOIN 到 `apms_athlete.primary_team_id` 应用 DataScope，不另建数据权限体系（如 medical_file → medical_record → athlete.primary_team_id）。
 
-医疗、测试、报告等运动员从属数据统一通过关联 `apms_athlete.primary_team_id` 应用 DataScope，不另建数据权限体系。查询时需 JOIN 到 athlete 表让 DataScope SQL 作用在 `primary_team_id` 上（如 medical_file → medical_record → athlete.primary_team_id）。
-
-> **DataScope 配置粒度约束（一期强制规则）**：由于 `primary_team_id` 指向"队伍"层级（`sys_dept.dept_type=20`），DataScope 实际权限粒度是**队伍级**。
-> - **`sys_role_dept` 必须配置到"队伍"节点**（dept_type=20），不能配置到训练小组/科研小组/恢复小组（dept_type=30/40/50）
-> - 原因：若依 DataScope 检查 `athlete.primary_team_id ∈ 角色配置的 dept 集合`，而运动员的 primary_team_id 是队伍级。如果把"康复组"配进 sys_role_dept，匹配的是 `primary_team_id = 康复组`，永远匹配不上（运动员 primary_team_id 是 U15 这样的队伍），康复师反而看不到任何运动员
+> **DataScope 配置粒度约束（启用前必须遵守）**：由于 `primary_team_id` 指向“队伍”层级（`sys_dept.dept_type=20`），DataScope 实际权限粒度是**队伍级**。
+> - **`sys_role_dept` 必须配置到“队伍”节点**（dept_type=20），不能配置到训练小组/科研小组/恢复小组（dept_type=30/40/50）
+> - 原因：若依 DataScope 检查 `athlete.primary_team_id ∈ 角色配置的 dept 集合`，而运动员的 primary_team_id 是队伍级。如果把“康复组”配进 sys_role_dept，匹配的是 `primary_team_id = 康复组`，永远匹配不上（运动员 primary_team_id 是 U15 这样的队伍），康复师反而看不到任何运动员
 > - **专项/康复/科研小组只用于业务分组**（`apms_athlete_group` 记录历史归属），**不作为数据权限节点**
-> - 角色需要覆盖多支队伍时，在 sys_role_dept 中勾选多个"队伍"节点，而非勾选小组
+> - 角色需要覆盖多支队伍时，在 sys_role_dept 中勾选多个“队伍”节点，而非勾选小组
 > - 部门树配置示例：
 >   ```
 >   机构（dept_type=10）
@@ -132,7 +154,7 @@ public List<ApmsAthlete> selectAthleteList(ApmsAthlete a) { ... }
 >       └── 康复组（dept_type=50）       ← 不勾选，仅业务分组
 >   ```
 
-RTP 状态修改按钮仅对 `apms_rehab` 角色可见；测试结果录入仅对 `apms_coach` 和 `apms_researcher` 可见。
+RTP 状态修改/清除由 `apms:rtp:edit` / `apms:rtp:clear` 控制（队医）；测试结果录入由 `apms:testResult:add/edit` 控制（测量员）；完整权限点矩阵见 PERMISSION_DESIGN §6。
 
 ---
 
@@ -296,7 +318,7 @@ INSERT INTO sys_dict_data (
 > - 康复师首次评估后插入第一条记录，进入 `g/y/r` 三态
 > - "未评估"与"允许完整训练（g）"语义不同：未评估表示康复师尚未介入，不代表医学上已确认可训练
 > - 遵循"系统不做自动医学判断"原则，新建运动员不预置 `g` 状态
-> - 工作台"RTP 汇总"卡片中未评估运动员不计入绿/黄/红任一档，单独显示"未评估 N 人"
+> - 数据驾驶舱「RTP 汇总」卡片中未评估运动员不计入绿/黄/红任一档，单独显示"未评估 N 人"
 
 #### apms_rtp_log — RTP 状态变更日志
 
@@ -838,6 +860,32 @@ sys_user（系统登录账号）    sys_dept（机构 → 队伍 → 小组，�
 | 主队伍 | `apms_athlete.primary_team_id → sys_dept` | 运动员所属主队伍（唯一），与小组归属分离 |
 | 小组归属 | `apms_athlete_group` | 独立记录，带 `join_date`/`leave_date`/`status`，支持历史追踪 |
 
+### 3.12 实施期扩展表与字段（v1.0 基线之后新增）
+
+> 以下结构不在 3.1–3.10 原始清单内，均由 `patches/` 补丁引入、部署时自动应用；`.trae/sql/apms_schema.sql` 仅作开发参考，不是部署源。
+
+| 表 | 用途 | 引入补丁 |
+|----|------|---------|
+| `apms_athlete_promotion_log` | 赛季整队晋升执行留痕（只追加） | 0.0.6 系列 |
+| `apms_measure_cycle` | 测量周期（周期批量测量与进度） | patch-0.0.6-202610041321 |
+| `apms_rtp_risk_rule` | RTP 风险规则（kind/severity/urgency/params/开关） | patch-0.0.6-202610042315 |
+| `apms_rtp_risk_snapshot` | 每日扫描的预警快照与处置状态 | patch-0.0.6-202610042315 |
+| `apms_user_phone` | 登录手机号绑定（一号可绑多账号、账号内最多 3 号） | patch-0.0.9-261015134522 |
+| `apms_login_config` | 登录页配置单例（`config_key='default'`，JSON） | patch-0.0.3-202609201644 |
+| `apms_db_version` | 已应用补丁登记（部署脚本去重） | `patches/000-init-version-table.sql` |
+
+关键字段扩展：
+
+- `apms_athlete`：`last_team_id`（离队/退役队伍快照）、`predicted_adult_height`、`adult_height_algo`、`adult_height_calc_date`
+- `apms_body_measure`：`cycle_id`（周期测量归属）
+- `apms_task_item`：`collect_mode`（INPUT=人工/设备采集，DERIVED=系统计算）
+- `apms_test_result_value`：`algo_id`（派生算法注册表 key）
+- `apms_medical_record`：`body_site`（伤病部位，19 点位 + OTHER）
+- `sys_role`：`portal_mode`、`home_path`（Portal 专岗字段；专岗 `portal_mode=1` 且 `home_path='/overview/cockpit'`，侧栏仍渲染、仅隐藏标签页）
+- `sys_dept`：`dept_type`（10 机构 / 20 队伍 / 30 训练小组 / 40 科研小组 / 50 恢复小组）
+
+> 全库当前共 30 张 `apms_*` 表：3.1–3.10 的 23 张 + 上表 7 张。
+
 ---
 
 ## 四、算法实现设计
@@ -851,14 +899,14 @@ sys_user（系统登录账号）    sys_dept（机构 → 队伍 → 小组，�
 - 实现类：`MirwaldCalculator`，版本号 `mirwald-v1`
 - 必须保存：算法ID、算法版本、性别、全部输入值、测量日期、输出值、计算时间
 
-### 4.2 Khamis-Roche 预测成年身高
+### 4.2 Khamis-Roche 预测成年身高（实现已启用简化版）
 
-- 输入：年龄、性别、当前身高、体重、父亲身高、母亲身高
-- **当前状态**：用户需求未给出可直接落地的完整系数表，算法标记为 `NOT_CONFIGURED`
-- **实施策略**：实现 `KhamisRocheCalculator` 类和数据库 schema，但 `calculate()` 在参数确认前直接拒绝计算（抛出 `AlgorithmNotConfiguredException`），不产生任何假数字
-- 界面显示：「成年身高预测算法待业务方确认参数后启用」，不展示任何预测值
-- 待业务方确认系数表后，填入参数、切换状态为 `READY`，才正式计算
-- 版本号 `khamis-roche-v1-pending`，参数确认后升版为 `khamis-roche-v1`
+- 实现类：`KhamisRocheCalculator`，版本号 `khamis-roche-v1`，状态 `READY`
+- 采用 Sports Science Journal 2015 简化版（输入仅需年龄、性别、当前身高、体重），**不要求骨龄**；原始 2007 版需骨龄，未采用
+- 输出预测成年身高（cm，1 位小数），保存在 `apms_athlete.predicted_adult_height` 与 `adult_height_algo` / `adult_height_calc_date`
+- 触发：体态测量保存后 `tryKhamisRoche` 按最新测量自动重算；`GET /apms/phv/athlete/{athleteId}/adult-height` 回看计算口径与来源测量
+- **`apms_phv_record.predicted_adult_height` 保持 NULL**：成年身高归属运动员主档，不混入每次 PHV 记录，避免同一字段两套口径
+- 与 v1.0 基线差异：基线为 `NOT_CONFIGURED` 待业务确认；实现期已确认并启用简化版，父母身高当前不参与该公式
 
 ### 4.3 RSA 冲刺衰减率
 
@@ -876,19 +924,23 @@ sys_user（系统登录账号）    sys_dept（机构 → 队伍 → 小组，�
 - 组合分 = Σ(T 分 × 权重)
 - 实现类：`ComboScoreCalculator`
 - 展示原始值、T 分、组合分，保证可复核
+- **实现口径（当前）**：
+  - `N ≥ 5`：使用同参考组真实 μ/σ（`is_selected=1` 的历史最佳成绩聚合）；
+  - `N < 5`：以 `apms_indicator_ref` 的参考区间作代理归一化，快照中标注真实样本量，**不拒绝计算、不伪造样本**；
+  - 报告与界面统一称“本队内部参考分”，不表述为行业常模。
 
 > **T 分值域与 demo 数据对齐**：标准 T 分范围大致 20～80（±3σ 覆盖 99.7%），报告页柱状图值域设为 20～80。
-> demo [mock.js](file:///prototype/assets/mock.js) 中现有的 90/82/56/91/75 是旧的 0～100 风格，开发时替换为 T 分值。
+> demo [mock.js](file:///prototype/assets/mock.js) 中的 90/82/56/91/75 是旧的 0～100 风格；上线实现与报告页已统一使用 T 分。
 
 > **参考组统计量来源与快照**：μ 和 σ 不是算法参数，而是数据参数。
 > - 从 `apms_test_result_value` 按同队伍、同年龄组、同指标的历史数据实时聚合计算
 > - **计算后将 μ、σ、样本量、参考口径快照保存到 `apms_combo_score.ref_snapshot`**，历史报告直接读快照，不重新计算
 > - 没有快照会导致：9月算的 T 分 = 63，12月队伍新增人后重新查询变成 58——同一历史记录分数自己变了，无法复现
-> - 设最低样本量门槛：N < 5 时不计算 T 分，界面显示「样本不足，无法生成本队参考分」
-> - 门槛值写入 `apms_combo_model` 的配置或系统参数项，不硬编码
+> - 设样本量口径：`N ≥ 5` 使用真实 μ/σ；`N < 5` 使用参考区间代理归一化并在快照标注真实样本量
+> - 门槛 `N=5` 当前为服务内常量，与一期口径一致；若后续可配置再迁到 `apms_combo_model` 或系统参数
 > - N ≥ 5 是**一期内部实现门槛**，不是统计学上可靠的行业标准，仅适用于演示和队内标准化
 > - 界面标注用「本队内部参考分」，**不叫「行业常模」**
-> - 系统上线初期数据不足属正常状态，不造假、不降门槛
+> - 系统上线初期数据不足属正常状态，不伪造样本、不宣称统计可靠性
 
 ### 4.5 算法版本管理
 
@@ -905,18 +957,17 @@ public interface AlgorithmCalculator<I, O> {
     String getVersion();
     AlgorithmStatus getStatus();
     O calculate(I input);   // NOT_CONFIGURED 时抛出 AlgorithmNotConfiguredException
-    AlgorithmSnapshot snapshot(I input, O output);
 }
 ```
 
-每次计算保存完整快照（输入、输出、版本、时间），不可事后篡改。
+实现类同时提供静态 `calculate()` 供 Service 直接调用；接口用于未来工厂/注册表统一调度。快照责任在各业务服务（如 `apms_phv_record.input_snapshot`、`apms_combo_score.ref_snapshot`），不在接口层统一生成。
 
 当前各算法状态：
 
 | 算法 | 版本 | 状态 |
 |------|------|------|
 | Mirwald 成熟度偏移 | mirwald-v1 | READY |
-| Khamis-Roche 成年身高 | khamis-roche-v1-pending | NOT_CONFIGURED |
+| Khamis-Roche 成年身高 | khamis-roche-v1 | READY（2015 简化版，无骨龄输入） |
 | RSA 衰减率 | rsa-decay-v1 | READY |
 | 组合指数（T 分） | combo-tscore-v1 | READY |
 
@@ -959,249 +1010,332 @@ public interface TestResultProvider {
 > 3. 实现 `TestResultProvider` 接口并注册到 `ProviderRegistry`
 >
 > 不满足上述条件的设备不写入正式 DESIGN Provider 清单。
+>
+> **实现现状（v1.1）**：xlsx/xls/csv 两阶段导入已上线（`/apms/test-result/import/preview|commit`、`/apms/body-measure/import/preview|commit`）；`ApmsDeviceController` 提供 `/apms/device/register|list|push|model-push` 作为设备结果推送入口；`ProviderRegistry` 仅注册 CSV 解析 Provider，尚未接入任何厂商实时 API。
+
+### 4.7 RTP 风险规则引擎（一期已上线）
+
+- 规则存 `apms_rtp_risk_rule`，扫描结果存 `apms_rtp_risk_snapshot`；`sys_job` 调用 `rtpRiskTask.scanDaily` 每日全量扫描（昨日 ACTIVE 置 EXPIRED），也支持手动扫描
+- 一期 4 条规则：`REVIEW_OVERDUE`、`REVIEW_SOON`（PROCESS）；`INJURY_OPEN`、`PHV_PEAK`（HEALTH）；`TEST_DECLINE` 移到 1.1，阈值见 [rtp-warning-phase1.md](./knowledge/roadmap/rtp-warning-phase1.md)
+- 健康分只累加 HEALTH 因子（severity），PROCESS 因子仅影响待办优先级（urgency），不改变黄/红建议
+- 分级阈值 INFO 3 / ATTENTION 6 / WARNING 9 为引擎常量
+- 处置：知悉 / 忽略 / 采纳；采纳只跳转 RTP 编辑，由人工确认后写 `apms_rtp_status`，**系统绝不自动改状态**
 
 ---
 
 ## 五、接口设计
 
-### 5.1 工作台
+### 5.1 数据驾驶舱与版本
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| /apms/dashboard | GET | 在队人数、进行中任务、RTP汇总、本周新测量 |
+| `/apms/dashboard/stats` | GET | 首页统计卡聚合 |
+| `/apms/dashboard/overview` | GET | 数据驾驶舱总览（KPI/图表/最近任务/RTP 汇总） |
+| `/apms/version` | GET | 当前部署版本 |
 
-### 5.2 运动员档案
-
-| 接口 | 方法 | 说明 |
-|------|------|------|
-| /apms/athlete/list | GET | 运动员列表（含RTP状态） |
-| /apms/athlete/{id} | GET | 运动员详情（基础信息+体态+最新专项表现+RTP限制） |
-| /apms/athlete | POST | 新增运动员 |
-| /apms/athlete | PUT | 修改运动员信息 |
-| /apms/athlete/{id}/body-measures | GET | 历次体态记录 |
-| /apms/athlete/{id}/body-measure | POST | 录入体态测量 |
-| /apms/athlete/import | POST | 模板批量导入 |
-
-### 5.3 RTP 参训状态
+### 5.2 运动员与组织归属
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| /apms/health/rtp/{athleteId} | GET | 查看当前RTP状态 |
-| /apms/health/rtp | PUT | 修改RTP状态（康复师权限） |
-| /apms/health/rtp/{athleteId}/logs | GET | 状态变更日志 |
-| /apms/health/rtp/summary | GET | 全队RTP汇总（红黄绿计数） |
-| /apms/health/medical/{athleteId}/records | GET | 医疗记录列表（含附件） |
-| /apms/health/medical/record | POST | 新建医疗记录 |
-| /apms/health/medical/record/{id} | PUT | 修改医疗记录 |
-| /apms/health/medical/record/{id} | DELETE | 删除医疗记录（级联删除附件文件） |
-| /apms/health/medical/record/{recordId}/files | GET | 某条记录下的附件列表 |
-| /apms/health/medical/record/{recordId}/upload | POST | 上传附件到指定医疗记录 |
-| /apms/health/medical/file/{fileId} | DELETE | 删除单个附件（`apms:medical:delete`） |
-| /apms/health/medical/file/{fileId}/download | GET | 下载附件（`apms:medical:download`） |
+| `/apms/athlete/list` | GET | 运动员列表（含 RTP 状态，`@DataScope`） |
+| `/apms/athlete/rtpSummary` | GET | 全队 RTP 汇总（红/黄/绿/未评估） |
+| `/apms/athlete/{athleteId}` | GET | 运动员详情（基础信息 + RTP + 最新表现） |
+| `/apms/athlete` | POST / PUT | 新增 / 修改运动员 |
+| `/apms/athlete/{athleteIds}` | DELETE | 删除（逗号分隔批量） |
+| `/apms/athlete/rejoin` | PUT | 离队/退役人员重入队 |
+| `/apms/athlete/promotion/preview` | POST | 赛季整队晋升预览 |
+| `/apms/athlete/promotion/execute` | POST | 赛季整队晋升执行（写 `apms_athlete_promotion_log`） |
+| `/apms/athlete-group/athlete/{athleteId}` | GET | 运动员小组归属历史 |
+| `/apms/athlete-group/athlete/{athleteId}/current` | GET | 当前所属小组 |
+| `/apms/athlete-group/dept/{deptId}` | GET | 小组当前成员 |
+| `/apms/athlete-group/join` | POST | 加入小组 |
+| `/apms/athlete-group/leave/{athleteId}` | POST | 离开小组 |
 
-> **医疗权限细分为四个独立权限点**：
-> | 权限标识 | 说明 |
-> |---------|------|
-> | `apms:medical:list` | 查看医疗记录和附件列表 |
-> | `apms:medical:upload` | 上传医疗附件 |
-> | `apms:medical:download` | 下载医疗附件 |
-> | `apms:medical:delete` | 删除医疗记录和附件 |
->
-> **下载流程**：JWT 认证 → 校验 `apms:medical:download` 权限 → DataScope 校验（fileId → medical_record → athlete.primary_team_id 是否在数据范围内）→ 从私有存储流式输出。医疗文件**不进入 `/profile/**` 静态访问路径**。
-
-### 5.4 PHV 生长发育
+### 5.3 体态测量、测量周期与 PHV
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| /apms/phv/{athleteId}/records | GET | 历次PHV测量记录 |
-| /apms/phv/calculate | POST | 录入数据并计算（保存输入+输出+版本） |
-| /apms/phv/{athleteId}/trend | GET | 成长趋势折线数据 |
+| `/apms/body-measure/list` | GET | 体态记录列表 |
+| `/apms/body-measure/athlete/{athleteId}` | GET | 某运动员历次体态 |
+| `/apms/body-measure/athlete/{athleteId}/latest` | GET | 最新一条体态 |
+| `/apms/body-measure/{id}` | GET | 单条体态 |
+| `/apms/body-measure/upsert` | POST | 按业务唯一键 upsert（任务会话聚合） |
+| `/apms/body-measure` | POST / PUT | 新增 / 修改 |
+| `/apms/body-measure/{id}` | DELETE | 删除 |
+| `/apms/body-measure/import/preview` | POST | 批量导入预览校验 |
+| `/apms/body-measure/import/commit` | POST | 批量导入确认入库 |
+| `/apms/body-measure/import/template` | GET | 导入模板下载 |
+| `/apms/measure-cycle/list` | GET | 测量周期列表 |
+| `/apms/measure-cycle/{id}` / `/{id}/progress` | GET | 周期详情 / 进度 |
+| `/apms/measure-cycle` | POST / PUT | 新增 / 修改周期 |
+| `/apms/measure-cycle/{id}` | DELETE | 删除周期 |
+| `/apms/measure-cycle/{id}/batch` | POST | 周期批量生成测量任务 |
+| `/apms/phv/list` | GET | PHV 记录列表 |
+| `/apms/phv/athlete/{athleteId}` | GET | 运动员 PHV 历史 |
+| `/apms/phv/athlete/{athleteId}/latest` | GET | 最新 PHV |
+| `/apms/phv/{id}` | GET | 单条 PHV |
+| `/apms/phv/calculate` | POST | 基于体态记录计算（Mirwald，写输入快照与版本） |
+| `/apms/phv/calculate-direct` | POST | 直接输入参数计算 |
+| `/apms/phv/athlete/{athleteId}/adult-height` | GET | 成年身高预测口径与来源测量回看 |
+| `/apms/phv/{id}` | DELETE | 删除 PHV 记录 |
 
-### 5.5 指标矩阵
-
-| 接口 | 方法 | 说明 |
-|------|------|------|
-| /apms/indicator/list | GET | 指标列表（按分类） |
-| /apms/indicator | POST | 新增指标 |
-| /apms/indicator | PUT | 修改指标 |
-| /apms/indicator/{id}/refs | GET | 参考范围列表 |
-| /apms/indicator/{id}/ref | POST | 配置参考范围 |
-
-### 5.6 测试模型
-
-| 接口 | 方法 | 说明 |
-|------|------|------|
-| /apms/test-model/list | GET | 模型列表 |
-| /apms/test-model/{id} | GET | 模型详情（含字段定义） |
-| /apms/test-model | POST | 新增模型 |
-| /apms/test-model/{id}/fields | PUT | 配置记录字段 |
-| /apms/test-model/combo | POST | 新增组合模型 |
-
-### 5.7 测试任务
-
-| 接口 | 方法 | 说明 |
-|------|------|------|
-| /apms/task/list | GET | 任务看板列表 |
-| /apms/task/{id} | GET | 任务详情（含成员完成情况） |
-| /apms/task | POST | 创建任务 |
-| /apms/task/{id}/items | PUT | 配置任务测试项（INDICATOR/MODEL） |
-| /apms/task/{id}/members | PUT | 配置任务成员 |
-| /apms/task/{id}/result | POST | 录入测试结果（自动更新进度） |
-| /apms/task/{id}/import | POST | CSV批量导入结果 |
-
-### 5.8 分析报告
+### 5.4 RTP 状态与风险预警
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| /apms/report/individual/{athleteId} | GET | 个人报告数据 |
-| /apms/report/team/{deptId} | GET | 团队报告数据 |
-| /apms/report/individual/{athleteId}/trend | GET | 趋势折线数据 |
-| /apms/report/export | POST | 导出PDF |
-| /apms/report/history | GET | 报告生成记录 |
+| `/apms/rtp/status/{athleteId}` | GET | 当前 RTP 状态（无记录=未评估） |
+| `/apms/rtp/status/list` | GET | 全量状态（看板/KPI 用） |
+| `/apms/rtp/log/{athleteId}` | GET | 状态变更日志 |
+| `/apms/rtp/update` | POST | 评估处置（写状态 + 日志，事务） |
+| `/apms/rtp/batch-update` | POST | 批量更新 |
+| `/apms/rtp/clear/{athleteId}` | POST | 清除状态（回到未评估） |
+| `/apms/rtp-risk/list` | GET | 预警列表（`@DataScope`） |
+| `/apms/rtp-risk/stat` | GET | 预警统计 |
+| `/apms/rtp-risk/{id}` | GET | 预警详情与因子明细 |
+| `/apms/rtp-risk/athlete/{athleteId}/latest` | GET | 运动员最新预警 |
+| `/apms/rtp-risk/rules` | GET | 规则配置查询 |
+| `/apms/rtp-risk/{id}/ack` / `dismiss` / `accept` | POST | 知悉 / 忽略 / 采纳 |
+| `/apms/rtp-risk/scan` | POST | 手动全量扫描 |
+
+### 5.5 指标库与参考范围
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/apms/indicator/list` / `/{id}` | GET | 指标列表 / 详情 |
+| `/apms/indicator` | POST / PUT | 新增 / 修改指标 |
+| `/apms/indicator/{ids}` | DELETE | 批量删除 |
+| `/apms/indicator/ref/list/{indicatorId}` | GET | 参考范围列表 |
+| `/apms/indicator/ref` | POST / PUT | 新增 / 修改参考范围 |
+| `/apms/indicator/ref/{refId}` | DELETE | 删除参考范围 |
+| `/apms/indicator/level/list/{refId}` | GET | 三级判定区间 |
+| `/apms/indicator/level` | POST / PUT | 新增 / 修改评级区间 |
+| `/apms/indicator/level/{levelId}` | DELETE | 删除评级区间 |
+
+### 5.6 测试模型、组合模型与组合评分
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/apms/test-model/algorithms` | GET | 已注册派生算法 |
+| `/apms/test-model/list` / `/{id}` | GET | 模型列表 / 详情（含字段） |
+| `/apms/test-model` | POST / PUT | 新增 / 修改模型 |
+| `/apms/test-model/{ids}` | DELETE | 批量删除 |
+| `/apms/test-model/field/list/{modelId}` | GET | 字段定义 |
+| `/apms/test-model/field` | POST / PUT | 新增 / 修改字段 |
+| `/apms/test-model/field/{fieldId}` | DELETE | 删除字段 |
+| `/apms/combo-model/list` / `/{id}` | GET | 组合模型列表 / 详情 |
+| `/apms/combo-model` | POST / PUT | 新增 / 修改 |
+| `/apms/combo-model/{ids}` | DELETE | 批量删除 |
+| `/apms/combo-model/component/list/{comboModelId}` | GET | 组成项 |
+| `/apms/combo-model/component` | POST / PUT | 新增 / 修改组成项 |
+| `/apms/combo-model/component/{componentId}` | DELETE | 删除组成项 |
+| `/apms/combo-score/list` / `/{id}` | GET | 评分记录 / 详情（含快照） |
+| `/apms/combo-score/calculate` | POST | 计算（写 `ref_snapshot`） |
+| `/apms/combo-score/{id}` | DELETE | 删除评分记录 |
+
+### 5.7 测试任务与测试结果
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/apms/test-task/list` / `/{id}` | GET | 任务列表 / 详情 |
+| `/apms/test-task` | POST / PUT | 创建 / 修改任务 |
+| `/apms/test-task/{ids}` | DELETE | 批量删除 |
+| `/apms/test-task/item/list/{taskId}` | GET | 任务测试项 |
+| `/apms/test-task/item` | POST / PUT | 新增 / 修改测试项 |
+| `/apms/test-task/item/{itemId}` | DELETE | 删除测试项 |
+| `/apms/test-task/member/list/{taskId}` | GET | 成员完成情况 |
+| `/apms/test-task/member/enroll` | POST | 单人报名 |
+| `/apms/test-task/member/batch-enroll` | POST | 批量报名 |
+| `/apms/test-task/member/status` | PUT | 更新成员状态 |
+| `/apms/test-task/member` | DELETE | 移除成员 |
+| `/apms/test-result/list` / `/{id}` | GET | 结果列表 / 详情 |
+| `/apms/test-result/by-task-member` | GET | 按任务成员取录入上下文 |
+| `/apms/test-result/by-free-group` | GET | 非任务自由补录分组 |
+| `/apms/test-result` | POST / PUT | 新增 / 修改结果 |
+| `/apms/test-result/batch-grid` | POST | 成绩网格批量登记 |
+| `/apms/test-result/{id}` / `/batch` / `/task/{taskId}` | DELETE | 单条 / 批量 / 按任务删除 |
+| `/apms/test-result/auto-select` | POST | 自动选最佳 attempt |
+| `/apms/test-result/select-attempt/{resultId}` | POST | 手动选为最佳 |
+| `/apms/test-result/import/preview` | POST | 成绩导入预览校验 |
+| `/apms/test-result/import/commit` | POST | 成绩导入确认入库 |
+| `/apms/test-result/import/csv` | POST | 旧版 CSV 直导（保留兼容） |
+| `/apms/test-result/import/template` | GET | 导入模板下载 |
+
+### 5.8 医疗康复
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/apms/medical-record/list` | GET | 医疗记录列表（`@DataScope`） |
+| `/apms/medical-record/site-stats` | GET | 伤病部位统计 |
+| `/apms/medical-record/{id}` | GET | 详情（含附件） |
+| `/apms/medical-record` | POST / PUT | 新增 / 修改（`{record, files}`） |
+| `/apms/medical-record/{id}` | DELETE | 删除记录（级联文件） |
+| `/apms/medical-record/file/download/{fileId}` | GET | 私有下载（鉴权 + DataScope + 流式） |
+| `/apms/medical-record/file/{fileId}` | DELETE | 删除单个附件 |
+
+> **医疗权限点（现行）**：`apms:medicalRecord:list/query/add/edit/remove`、`apms:medicalFile:download/remove`。
+> **下载流程**：JWT → 权限点 → DataScope（fileId → medical_record → athlete.primary_team_id）→ 私有存储流式输出；医疗文件不进入 `/profile/**` 静态路径。
+
+### 5.9 报告
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/apms/report/list` / `/{id}` | GET | 报告列表 / 详情（含 contentSnapshot） |
+| `/apms/report/generate` | POST | 生成报告（个人/团队/任务） |
+| `/apms/report/regenerate/{id}` | POST | 重新生成 |
+| `/apms/report/download/{id}` | GET | 下载 PDF（鉴权 + DataScope） |
+| `/apms/report/{id}` | DELETE | 删除报告 |
+
+### 5.10 登录页配置与手机号
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/login/config` | GET（匿名） | 登录页公开配置，无配置行返回 `{}` |
+| `/system/login/config` | GET / PUT | 设计器回显 / 保存（`system:loginconfig:query/edit`） |
+| `/sms/code` | POST（匿名） | 发验证码（scene=login/bind，服务端频控） |
+| `/login/sms` | POST（匿名） | 短信登录，多个活跃账号时返回选择令牌 |
+| `/login/sms/select` | POST（匿名） | 多账号选择后兑换 token |
+| `/system/user/profile/phone/list` / `bind` / `unbind/{id}` | GET/POST | 本人手机号查询 / 绑定 / 解绑 |
+| `/system/user/phone/list/{userId}` / `bind` / `unbind/{id}` | GET/POST | 管理员代查 / 代绑 / 强解绑（按 D10 门禁） |
 
 ---
 
 ## 六、前端页面设计
 
-### 6.1 页面与 demo 对照
+### 6.1 页面形态（已上线实现）
 
-每个页面保持 demo 的布局结构，将 mock 数据替换为 API 调用。
+所有业务页已按「花名册」视觉重构（`roster-kit.scss`），壳层统一：`rk-header → rk-filter → rk-table-card / rk-split-grid`；合并页是纯嵌入壳，子页自动继承同一套样式与权限。
 
-#### 工作台 `/apms/dashboard`
+#### 数据驾驶舱 `/overview/cockpit`（`/index` 同组件）
 
-- 4 张统计卡（在队队员、进行中任务、限制/不建议参训、本周新测量）
-- 快捷入口（队员档案、新建任务、RTP复核、生成报告）
-- 近期任务进度条
-- RTP 分布饼图
+- KPI 带：在队人数、进行中任务、RTP 红/黄/绿、未评估、本周新测量
+- 图表区：任务进度、RTP 风险分布、伤病台账摘要、PHV 发育阶段分布、健康预警、组合分 TOP10、PHV 散点、指标雷达、任务完成率
+- 最近任务表、队伍分布 chips；支持深色「大屏模式」切换（详见 `documents/dashboard_bigscreen_plan.md`）
 
-#### 队员档案 `/apms/athlete`
+#### 花名册 `/athletes/roster`
 
-- 左侧：队员列表（可按队伍/姓名筛选）
-- 右侧：选中队员的档案详情
-  - 头卡：姓名、号码、位置、RTP 状态徽章、大号编号
-  - 基础体态卡：身高、体重、坐高、测量日期
-  - 最新专项表现卡：Yo-Yo/RSA/伊利诺伊/CMJ 指标
-  - RTP 参训限制卡：当前状态、训练限制、复核日期
-  - 快捷跳转：PHV、测试记录、报告、医疗附件
+- 左列筛选：队伍 / 在训状态 / 关键词（300ms 防抖）
+- 表格：哈希首字头像 + 姓名/位置副行、RTP 徽章、体态摘要、行操作 ≤3 平铺
+- 详情 `/apms/athlete/detail/:athleteId`：`rk-crumb → rk-profile → rk-banner → rk-tabs`，面板为小组归属 / 体态测量 / PHV / RTP 参训状态 / 组合评分
 
-#### 健康与医疗 `/apms/health`
+#### 青训发育监控 `/athletes/growth`（合并页）
 
-- 顶部筛选：运动员 + 赛季
-- RTP 总览：红/黄/绿三色统计卡
-- 状态变更时间线：from→to、原因、操作人、时间
-- 状态修改弹窗：原因、训练限制、下次复核日期（康复师可见）
-- 医疗附件列表：文件名、类型、日期、来源、下载
+- 上半：体态测量台账（KPI 带 + 全量本地过滤表 + 新增/编辑弹窗 + 批量导入）
+- 下半：PHV 成熟度（双模式计算弹窗、趋势、成年身高口径回看）
 
-#### 生长发育 `/apms/phv`
+#### 指标库与任务下发 `/testings/dispatch`（合并页）
 
-- 运动员选择 + 测量日期筛选
-- 输入表单：年龄、身高、坐高、体重、父母身高
-- 计算结果卡：成熟度偏移、预计PHV年龄、预测成年身高、身高占比
-- 成长趋势折线图
+- 指标库：主从双栏 + 参考范围/评级区间内联编辑
+- 测试任务：主从双栏 + 测试项/成员管理 + 多选删除
+- 测试结果：主从双栏 + attempt 子表 / 值网格 / REP 分级条 + 批量导入
 
-#### 指标矩阵 `/apms/matrix`
+#### 组合测试调度 `/testings/combo-dispatch`（合并页）
 
-- 四类指标卡片（身体形态/机能/素质/筛查）
-- 每项指标：勾选框、名称、采集方式
-- 底部：已选指标 → 下发任务按钮
+- 测试模型库：主从双栏 + 规程 banner + 字段表
+- 组合模型库：主从双栏 + 公式卡 + 权重平衡条 + 内联权重编辑
+- 组合评分：列表 + 计算入口 + 可打印快照报告弹窗
 
-#### 测试模型 `/apms/test-model`
+#### 健康预警中心 `/healthcare/alert-center`（合并页）
 
-- 模型卡片网格：名称、分类、规程、字段数
-- 详情展开：记录字段表、参考区间说明
-- 组合模型标记
+- RTP 状态管理：四列看板（未评估/绿/黄/红），HTML5 拖拽 + confirm 落库，右侧抽屉详情/时间线
+- RTP 风险预警：分级待办列表、因子明细、知悉/忽略/采纳、规则说明
 
-#### 测试任务 `/apms/task`
+#### 医疗康复 `/healthcare/medical-care`
 
-- 任务卡片列表：名称、队伍、主测人、时间窗口、状态
-- 进度条：已测/目标、完成率
-- 成员级完成情况：姓名、号码、位置、已测/未测
+- 主从双栏：左记录列表（服务端分页）+ 右详情（类型 banner、附件卡、私有下载）
+- 新增/编辑弹窗必须先 `getById` 回填，避免附件被清空
 
-#### 分析报告 `/apms/report`
+#### 报告中心 `/analytics/report-center`
 
-- 报告类型切换（个人/团队）
-- 个人报告：
-  - 抬头：运动员信息、报告编号、日期
-  - 多维表现概览柱状图（标准分）
-  - 核心指标卡：当前值、单位、参考范围
-  - 专业人员记录
-  - 近5次测试历史表
-  - PDF 导出按钮
-- 团队报告：队员对比表 + 指标分布
+- 主从双栏：类型 KPI + 类型渐变 banner + 文件状态条 + 暗色 JSON 快照卡 + 鉴权 blob 下载
+- 生成弹窗按个人/团队/任务条件渲染，规则与单选校验在提交前执行
 
-### 6.2 通用组件复用
+#### 系统页面
 
-| 若依组件 | APMS 用途 |
-|---------|----------|
-| Pagination | 队员列表、任务列表分页 |
-| RightToolbar | 列表页工具栏（搜索、刷新、列设置） |
-| FileUpload | 医疗附件上传、CSV导入 |
-| DictSelect | RTP状态、任务状态、指标分类等 |
-| ImageUpload | 运动员头像 |
-| DateRangeSelect | 任务时间窗口 |
+- 角色权限管理 / 组织架构 / 用户管理：复用 RuoYi 原生页，已按花名册风格重构（role / dept / user 三个标杆页）
+- 登录页设计：`/system/loginConfig`，配置驱动 + 可视化设计器（撤销/重做、JSON 导入来源校验）
 
-### 6.3 前端目录结构
+### 6.2 通用组件与视觉资产
+
+| 资产 | 用途 |
+|------|------|
+| `src/assets/styles/roster-kit.scss` | 花名册壳层：`rk-header`、`rk-filter`、`rk-table`、`rk-split-grid`、`rk-kanban-grid`、`rk-kpi-grid`、`rk-pager`、`rk-status-badge` |
+| `roster-style-pages` 技能 | 列表/详情/看板/主从/看板重构的范式与验收清单 |
+| Element Plus | 弹窗、表单、日期、下拉、上传等交互控件（外壳统一 deep 收敛） |
+| ECharts 5.6 | 驾驶舱图表（显式 import，按需最小化） |
+| `RkPager` | 花名册统一分页器（部分页仍用页内 `.rk-pager` 同款样式） |
+
+### 6.3 前端目录结构（实际）
 
 ```
 src/views/apms/
-├── dashboard/index.vue       # 工作台
+├── dashboard/index.vue          # 数据驾驶舱
 ├── athlete/
-│   ├── index.vue             # 列表 + 档案详情
-│   └── components/           # 档案子组件
-├── health/
-│   ├── index.vue             # 健康与医疗
-│   └── rtp-dialog.vue        # RTP 修改弹窗
-├── phv/index.vue             # 生长发育
-├── indicator/index.vue       # 指标矩阵
-├── test-model/index.vue      # 测试模型
-├── task/index.vue            # 测试任务
-├── report/
-│   ├── individual.vue        # 个人报告
-│   └── team.vue              # 团队报告
-├── org/index.vue             # 组织机构（复用 dept）
-└── rbac/index.vue            # 角色权限（复用 role）
+│   ├── index.vue                # 花名册
+│   ├── detail.vue               # 运动员详情
+│   └── components/              # 档案子组件
+├── growth/index.vue             # 合并壳：体态测量 + PHV
+├── bodyMeasure/index.vue
+├── phv/index.vue
+├── dispatch/index.vue           # 合并壳：指标 + 任务 + 结果
+├── indicator/index.vue
+├── testTask/index.vue
+├── testResult/index.vue
+├── comboDispatch/index.vue      # 合并壳：测试模型 + 组合模型 + 组合评分
+├── testModel/index.vue
+├── comboModel/index.vue
+├── comboScore/index.vue
+├── healthAlert/index.vue        # 合并壳：RTP 状态 + 风险预警
+├── rtp/index.vue
+├── rtpWarning/index.vue
+├── medical/index.vue
+└── report/index.vue
+
+src/api/apms/                    # 18 个业务 API 文件（athlete/athleteGroup/bodyMeasure/phv/
+                                 # indicator/testModel/testTask/testResult/comboModel/comboScore/
+                                 # rtp/rtpRisk/medical/report/measureCycle/batchImport/
+                                 # dashboard/userPhone）
 ```
 
 ---
 
 ## 七、实施阶段规划
 
-### 第一阶段：基础数据层（组织 + 运动员 + 体态）
+### 第一阶段：基础数据层（组织 + 运动员 + 体态）—— 已完成
 
 - 数据库建表（apms_athlete, apms_athlete_group, apms_body_measure）
 - 菜单与角色初始化 SQL
 - 运动员 CRUD + 模板导入
 - 体态测量录入与历史查询
-- 工作台统计卡数据接口
+- 数据驾驶舱统计卡数据接口
 
-### 第二阶段：RTP + PHV（健康与生长发育闭环）
+### 第二阶段：RTP + PHV（健康与生长发育闭环）—— 已完成
 
-- RTP 状态管理与变更日志
-- PHV 测量录入 + Mirwald 计算
-- Khamis-Roche 接口骨架 + `NOT_CONFIGURED` 禁用态（`calculate()` 抛 `AlgorithmNotConfiguredException`，界面显示"待业务方确认参数后启用"，**不产生任何假值**）
-- 成长趋势折线图
-- 医疗附件上传与权限控制
+- RTP 状态管理、变更日志与四列看板
+- PHV 测量录入 + Mirwald 计算（保存输入快照与版本）
+- Khamis-Roche 简化版计算（`READY`，体态保存后自动更新运动员成年身高字段）
+- 成长趋势与成年身高口径回看
+- 医疗附件上传、私有下载与权限点
 
-### 第三阶段：测试闭环（指标 + 模型 + 任务 + 结果）
+### 第三阶段：测试闭环（指标 + 模型 + 任务 + 结果）—— 已完成
 
-- 指标矩阵库 CRUD
-- 测试模型库 + 字段定义
-- 测试任务创建与进度看板
-- 测试结果录入（手工 + CSV）
-- RSA 衰减率计算
-- 组合指数计算
+- 指标矩阵库 CRUD + 参考范围/评级区间
+- 测试模型库 + 字段定义 + 派生算法注册
+- 测试任务创建、排期、成员与进度看板
+- 测试结果录入（手工 / 批量网格 / xlsx-xls-csv 两阶段导入）
+- RSA 衰减率计算、组合指数计算（含参考快照）
+- 上线后追加：测量周期、设备结果推送入口、RTP 风险规则引擎、组合评分页面
 
-### 第四阶段：报告与趋势
+### 第四阶段：报告与趋势 —— 已完成
 
 - 个人综合报告模板
 - 团队报告模板
 - 趋势折线分析
-- PDF 导出
-- 报告版本记录
+- PDF 导出与鉴权下载
+- 报告版本记录与内容快照
 
-### 第五阶段：部署与验收
+### 第五阶段：部署与验收 —— 已完成（持续运维）
 
-- 服务器部署（39.97.246.69）
+- 采购方服务器 / 私有云部署（Nginx + systemd，`deploy/deploy.sh` / `deploy-uat.sh`）
 - 全链路联调
 - 验收清单逐项确认
 
@@ -1209,17 +1343,17 @@ src/views/apms/
 
 ## 八、验收对照表
 
-| 验收项 | 对应模块 | 对应 demo 页面 |
-|--------|---------|---------------|
-| 运动员档案可完整关联各类数据 | 运动员档案 | profile.html |
-| RTP 状态可按权限维护并留痕 | 健康与医疗 | health.html |
-| PHV 可按确认公式计算 | 生长发育 | phv.html |
-| 指标可配置、任务可下发 | 指标矩阵 + 测试任务 | matrix.html + tasks.html |
-| 测试结果可录入并更新进度 | 测试任务 | tasks.html |
-| 组合结果可计算和复核 | 测试模型 + 测试结果 | models.html |
-| 趋势和报告可展示并导出 PDF | 分析报告 | report.html |
-| 权限能够隔离不同角色操作 | 角色权限 | rbac.html |
-| 系统可在采购方环境部署运行 | 部署 | — |
+| 验收项 | 对应模块 | 验收入口 |
+|--------|---------|---------|
+| 运动员档案可完整关联各类数据 | 运动员档案 | `/athletes/roster` → 运动员详情 |
+| RTP 状态可按权限维护并留痕 | 健康预警中心 | `/healthcare/alert-center`（RTP 状态看板） |
+| PHV 可按确认公式计算 | 青训发育监控 | `/athletes/growth`（体态 + PHV） |
+| 指标可配置、任务可下发 | 指标库与任务下发 | `/testings/dispatch` |
+| 测试结果可录入并更新进度 | 指标库与任务下发 | `/testings/dispatch`（任务 / 结果） |
+| 组合结果可计算和复核 | 组合测试调度 | `/testings/combo-dispatch`（组合评分） |
+| 趋势和报告可展示并导出 PDF | 报告中心 / 运动员详情 | `/analytics/report-center` |
+| 权限能够隔离不同角色操作 | 账号与角色 | `/sysmgr/role-acl` + 手测回归说明书 |
+| 系统可在采购方环境部署运行 | 部署 | `deploy/` 脚本 + systemd |
 
 ---
 
@@ -1329,36 +1463,52 @@ assertEquals(70.00, result.getTScoreB(), 0.01);
 assertEquals(62.50, result.getComboScore(), 0.01);
 ```
 
-Khamis-Roche 不写 golden case（NOT_CONFIGURED 状态下 `calculate()` 直接拒绝，无数字输出）。
+Khamis-Roche 已启用 2015 简化版（`READY`），当前未固化 golden case；回归时以体态保存后 `apms_athlete.predicted_adult_height`、`adult_height_algo` 与来源测量核对，不手抄实现输出。
 
 ### 9.2 业务测试
 
 | 场景 | 验证点 |
 |------|--------|
-| RTP 只能康复师修改 | 非康复师角色调用修改接口返回 403 |
-| RTP 日志正确追加 | 每次状态变更后 `apms_rtp_log` 新增一条，旧记录不变 |
-| 任务进度正确 | `apms_task_member.status` 与 `apms_test_result` 实际数据一致（pending/partial/completed） |
-| CSV 重复导入 | 幂等粒度为 task_id + athlete_id + task_item + attempt_no；同一组合重复导入时提示已存在或覆盖，不产生重复数据。同一运动员的不同 task_item（30m、RSA、Yo-Yo）不互相冲突 |
-| 多次试测最佳成绩 | 3 次 attempt 中 `is_selected=1` 的那条是最优有效值，无效成绩不参与 |
+| RTP 仅授权角色可改 | 无 `apms:rtp:edit` 的账号调用 `/apms/rtp/update` 返回 403 |
+| RTP 日志正确追加 | 每次状态变更后 `apms_rtp_log` 新增一条，旧记录不变；清除状态同样留痕 |
+| 任务进度正确 | `apms_task_member.status` 与 result 实际数据一致（pending/partial/completed），且以必测项为准 |
+| 两阶段导入 | preview 返回逐行校验结果；commit 对同队员同日冲突拒绝，不静默覆盖 manual/task 记录 |
+| 多次试测最佳成绩 | 同一 `athlete_id + task_item_id` 最多一个 `is_selected=1`；无效 attempt 不可被选中 |
+| 组合分可复现 | 重查历史评分读取 `ref_snapshot`，不随新数据变化；N<5 时快照标注真实样本量与代理口径 |
+| RTP 风险处置 | 知悉/忽略/采纳均留痕；采纳只跳转编辑，不自动改 `apms_rtp_status` |
 
 ### 9.3 安全测试
 
 | 场景 | 验证点 |
 |------|--------|
-| 未登录不能下载医疗附件 | 无 token 访问 `/apms/health/medical/file/{fileId}/download` 返回 401 |
-| 无医疗权限不能下载 | 有 token 但角色无 `apms:medical:download` 权限返回 403 |
-| 越权访问其他队伍运动员 | 体能师 A 查询体能师 B 队伍的运动员列表返回空 |
+| 未登录不能下载医疗附件 | 无 token 访问 `/apms/medical-record/file/download/{fileId}` 返回 401 |
+| 无权限不能下载 | 有 token 但无 `apms:medicalFile:download` 返回 403 |
+| 报告私有下载 | `/apms/report/download/{id}` 同样需要 `apms:report:download`，且不能当静态文件直链访问 |
+| 专岗越权 | 教练调测试结果写接口、测量员调医疗删除、队医调报告生成均返回 403 |
+| D9 提权 | super 直调角色接口提交 `system:*` / 不可委派菜单必须整体拒绝（见 PERMISSION_REGRESSION §3.5） |
+| D10 对象边界 | super 不能查询/修改/授权/删除 admin 用户与 admin 角色 |
+| 行级数据权限 | 当前 `data_scope=1` 不生效；启用后按“队伍级”验证跨队不可见 |
 
 ### 9.4 验收测试
 
 对照项目边界验收项，逐页手动走查：
 
-| 验收项 | 测试路径 | 对应 demo |
-|--------|---------|-----------|
-| 数字档案 | 新建运动员 → 录入体态 → 查看档案页数据完整 | profile.html |
-| RTP | 修改 RTP 状态 → 查看日志 → 验证权限隔离 | health.html |
-| PHV | 录入身高体重坐高 → Mirwald 计算结果正确 → Khamis 显示"待启用" | phv.html |
-| 指标/任务 | 配置指标 → 创建任务 → 分配运动员 → 录入结果 → 进度更新 | matrix.html + tasks.html |
-| 专项测试 | 录入 30m 冲刺 3 次试测 → 最佳成绩自动标记 → RSA 7 趟衰减率计算 | models.html |
-| 趋势 | 同一运动员多次录入 → 折线图正确渲染 → 参考区间标注 | report.html |
-| PDF 导出 | 生成个人报告 → 下载 PDF → 内容与页面一致 | report.html |
+| 验收项 | 测试路径 | 验收入口 |
+|--------|---------|---------|
+| 数字档案 | 新建运动员 → 录入体态 → 查看档案页数据完整 | `/athletes/roster` |
+| RTP | 修改 RTP 状态 → 查看日志 → 验证权限隔离 | `/healthcare/alert-center` |
+| PHV | 录入身高体重坐高 → Mirwald 计算结果正确 → 成年身高字段更新 | `/athletes/growth` |
+| 指标/任务 | 配置指标 → 创建任务 → 分配运动员 → 录入结果 → 进度更新 | `/testings/dispatch` |
+| 专项测试 | 录入 30m 冲刺 3 次试测 → 最佳成绩自动标记 → RSA 7 趟衰减率计算 | `/testings/dispatch` |
+| 趋势 | 同一运动员多次录入 → 趋势/参考区间正确 | 运动员详情 / 报告中心 |
+| PDF 导出 | 生成个人报告 → 鉴权下载 PDF → 内容与页面一致 | `/analytics/report-center` |
+
+### 9.5 自动化与回归资产
+
+| 资产 | 用途 |
+|------|------|
+| `.trae/demo-tests/run.mjs` | 演示模式 Node 桩测（auth 四态、Demo Adapter、13 模块 mock 路由、下载守卫），不依赖无头浏览器 |
+| `.trae/PERMISSION_REGRESSION.md` | 权限手测回归说明书（P0 冒烟、curl 提权、F1–F8 强制下线） |
+| `.trae/skills/roster-style-pages` | 花名册页面重构范式与逐项浏览器验收清单 |
+| `.trae/skills/rk-split-width-fix` | 主从双栏左栏宽度/横滚回归方法 |
+| `patches/` | 数据库变更唯一部署源，部署脚本按 `apms_db_version` 去重应用 |
