@@ -37,7 +37,16 @@
 - 不新增菜单与权限点（登录用户均可用，能力按现有菜单/权限过滤）；
 - 不改动现有业务接口与页面逻辑。
 
-### 1.4 阶段路线
+### 1.4 评审修订记录（2026-10-30）
+
+| 级别 | 原方案问题 | 修订 |
+|---|---|---|
+| P0 | 计划使用 `LimitType.USER`，但 [LimitType.java](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-common/src/main/java/com/ruoyi/common/enums/LimitType.java) 只有 `DEFAULT` / `IP`，照写编译失败；`DEFAULT` 为全局额度 | 不扩展枚举；改为 Redis `assistant:user:{userId}` 按用户限流（§4.4） |
+| P1 | `selectMenuTreeByUserId()` 返回层级菜单，子菜单 path 可能是相对路径，不能直接和 `/testings/dispatch` 比较 | 统一走 `ISysMenuService.buildMenus()`（与 `getRouters` 同源）还原 `RouterVo` 完整路径后再匹配（§4.4） |
+| P1 | 自建 SSE 线程池默认拿不到 `SecurityContext`，异步线程调用 `SecurityUtils` 会失败 | 请求线程捕获 `LoginUser` → 不可变 `AssistantPrincipal` 快照，异步只读快照（§4.4） |
+| 环境 | 端口写死 8080 会导致 UAT/生产 502 | 明确 dev `8080/8081`、uat `9080/9081`、prod `10080/10081`（§8.1） |
+
+### 1.5 阶段路线
 
 | 阶段 | 能力 | 是否接 Agent |
 |---|---|---|
@@ -62,20 +71,24 @@ Layout（登录后所有页面）
 POST /apms/assistant/chat  (text/event-stream, Bearer)
                      │
 ApmsAssistantController
+  ├── 请求线程：捕获 LoginUser → AssistantPrincipal
+  │             （userId / userName / permissions / allowedPaths）
+  └── 限流：Redis key 按 userId，超限直接 429，不进入 SSE
                      ▼
-AssistantService
+AssistantService（异步流）
   ├── PseudoAssistantProvider（规则意图 + 模板回答）
-  ├── CapabilityResolver（按当前用户菜单/权限过滤可去页面）
+  ├── CapabilityResolver（buildMenus 还原完整路由，请求线程预计算）
   ├── AssistantActionFactory（仅生成 whitelist 动作）
-  └── ApmsAssistantLog（审计）
+  └── ApmsAssistantLog（审计，使用 Principal 快照）
 ```
 
 关键原则：
 
-1. **权限过滤在后端**：动作路径必须命中当前用户菜单树；前端再做一次路由存在性复核。
-2. **协议与 Provider 解耦**：M4 只替换 Provider，SSE 事件与前端执行器不动。
-3. **动作最小化**：M1 只做导航与高亮，任何写操作都必须由用户自己点击完成。
-4. **演示模式同源裁决**：`isDemoMode()` 为真时走本地伪流式，绝不发真实请求。
+1. **权限过滤在后端**：动作路径必须命中当前用户菜单树还原出的完整路由；前端再做一次路由存在性复核。
+2. **异步线程不读 ThreadLocal**：鉴权、菜单能力、用户名都在请求线程取好并快照传递；后台线程禁止调用 `SecurityUtils`。
+3. **协议与 Provider 解耦**：M4 只替换 Provider，SSE 事件与前端执行器不动。
+4. **动作最小化**：M1 只做导航与高亮，任何写操作都必须由用户自己点击完成。
+5. **演示模式同源裁决**：`isDemoMode()` 为真时走本地伪流式，绝不发真实请求。
 
 ---
 
@@ -146,10 +159,14 @@ ruoyi-system/src/main/java/com/ruoyi/system/
     ├── AssistantProvider.java            # 流式 Provider 接口（M4 预留）
     ├── PseudoAssistantProvider.java      # 规则意图 + 回答模板
     ├── AssistantIntentCatalog.java       # 意图/关键词/同义词目录
-    ├── CapabilityResolver.java           # 菜单树 → 可访问路由集合
+    ├── CapabilityResolver.java           # buildMenus → 完整路由集合
     ├── AssistantActionFactory.java       # 仅构建 navigate / highlight
     ├── AssistantContext.java             # route/pageTitle 等
+    ├── AssistantPrincipal.java           # 请求线程身份快照
     └── impl/AssistantServiceImpl.java    # SSE 编排、限流、审计
+
+ruoyi-framework/src/main/java/com/ruoyi/framework/aspectj/
+└── AssistantRateLimiter.java             # 按 userId 限流（复用 limitScript，与 IpRateLimiter 并列）
 
 ruoyi-admin/src/main/resources/mapper/apms/
 └── ApmsAssistantLogMapper.xml
@@ -167,12 +184,13 @@ patches/
 
 ### 4.3 规则引擎
 
+0. **请求线程预计算**：捕获 `LoginUser`，调用 `CapabilityResolver` 得到 `allowedPaths`，连同 userId/userName/permissions 一起封装为不可变 `AssistantPrincipal`；
 1. 归一化问题：去空白、转小写、同义词替换；
 2. 意图打分：关键词命中数 + 权重，取最高分；低于阈值走兜底意图；
 3. 生成回答：模板文本（支持当前页面上下文、权限说明）；
-4. 生成动作：仅限目标页面在 `CapabilityResolver` 集合内；
+4. 生成动作：仅当目标路径精确命中 `Principal.allowedPaths` 时下发 `navigate`；
 5. 流式输出：按句/片段发送 `delta`，每段间隔约 15–25ms；
-6. 结束：写审计记录，发送 `done`。
+6. 结束：使用 Principal 快照写审计记录，发送 `done`。
 
 首批意图：
 
@@ -188,12 +206,61 @@ patches/
 | `CAPABILITY` | 你能做什么 | 能力清单 + 建议问题 | 无 |
 | `FALLBACK` | 未命中 | 提示可问的问题 | 无 |
 
-### 4.4 权限与安全
+### 4.4 权限、限流与异步上下文
+
+**路由能力还原（不能直接比较 `menu.path`）**
+
+- 使用 `ISysMenuService.selectMenuTreeByUserId(userId)` 取菜单树；
+- 再调用**同一个** `ISysMenuService.buildMenus(menus)`（与 `GET /getRouters` 完全同源）得到 `RouterVo` 树；
+- 递归拼接完整路径：
+  - 子路径以 `/` 开头 → 绝对路径；
+  - 否则 `父路径 + "/" + 子路径`，父路径为 `/` 时做去重处理；
+  - 目录（`M`）继续下钻，页面（`C`）收录为可导航路径；
+- 产出 `Set<String> allowedPaths`（规范化：去掉尾部 `/`、合并重复 `/`）；
+- 示例：菜单 2402 `path=cockpit`、父目录 2401 `path=overview` → 完整路由 `/overview/cockpit`；2402 的 `menu.path` 本身永远不等于 `/overview/cockpit`，所以不能直接比较原始 `menu.path`。
+- **补集**：固定路由单独维护白名单（如 `/index`、`/apms/athlete/detail/{athleteId}`），且必须按权限点二次校验；
+- 隐藏菜单（`hidden=true`）仍会注册路由，但默认不进入“建议页面”，仅参与动作合法性校验。
+
+**按 userId 限流（不扩展 LimitType）**
+
+当前 `LimitType` 只有 `DEFAULT` 和 `IP`，直接写 `@RateLimiter(limitType=USER)` 会编译失败，且 `DEFAULT` 是全局额度，不能用于多用户系统。M1 新增编程式 `AssistantRateLimiter`，复用项目已有的 Redis Lua 限流脚本（与 [IpRateLimiter.java](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-framework/src/main/java/com/ruoyi/framework/aspectj/IpRateLimiter.java) 同源）：
+
+```java
+// 请求线程内，建立 SSE 之前
+String key = CacheConstants.RATE_LIMIT_KEY + "assistant:user:" + userId;
+List<Object> keys = Collections.singletonList(key);
+Long number = redisTemplate.execute(limitScript, keys, 20, 60); // 60s 窗口，最多 20 次
+if (number == null || number.intValue() > 20) {
+    return ResponseEntity.status(429).body(AjaxResult.error("访问过于频繁，请稍候再试"));
+}
+```
+
+- 多实例共享 Redis，天然按用户隔离；
+- 超限返回 `429` + JSON（前端 `assistantClient` 识别非 `text/event-stream` 响应并提示）；
+- 不修改 `LimitType` 枚举，避免影响其他模块。`AssistantRateLimiter` 放在 `ruoyi-framework` 或 `ruoyi-system` 均可，但必须能注入 `RedisTemplate` 与 `limitScript`；推荐与 `IpRateLimiter` 并列放 `ruoyi-framework`，由 Controller 调用。
+
+**SSE 异步线程的登录上下文**
+
+- `SecurityContext` 是 ThreadLocal，**不会自动传播到自建线程池**；
+- 请求线程完成：JWT 鉴权、`SecurityUtils.getLoginUser()`、菜单能力计算；
+- 构造不可变快照：
+
+```java
+class AssistantPrincipal {
+    Long userId;
+    String userName;
+    Set<String> permissions;
+    Set<String> allowedPaths;
+}
+```
+
+- 异步流只使用该快照：审计写 userId/userName，动作只用 allowedPaths；
+- 异步线程内**禁止**调用 `SecurityUtils`、`@DataScope` 依赖的 ThreadLocal；
+- M2 若要读写数据：在请求线程预取结果，或显式把 `userId` 与数据范围参数传入查询方法，不能指望后台线程的 DataScope AOP。
+
+**其他**
 
 - 登录必需；M1 不新增权限点，能力按现有菜单过滤；
-- `CapabilityResolver` 使用 `ISysMenuService.selectMenuTreeByUserId(userId)` 构建路径；
-- 固定路由（如 `/index`、`/apms/athlete/detail/:athleteId`）单独维护白名单；
-- `@RateLimiter(time=60, count=20, limitType=USER)` 或等价 Redis 限流；
 - SSE 独立线程池（核心 2 / 最大 4 / 队列 32），拒绝时返回 `error` 事件；
 - 15s 心跳；客户端断开时停止生成；
 - 审计失败只记日志，不影响回答。
@@ -250,7 +317,8 @@ ruoyi-ui/src/components/Assistant/
 - 导航动作点击后面板收起但保留会话；目标页 3 秒内高亮；
 - 主题跟随 `--el-color-primary`（登录页 accent），不引入新依赖；
 - 文本用 `white-space: pre-wrap` + 转义渲染，不使用 `v-html`；
-- 会话保存在 `sessionStorage`（刷新保留，关闭标签清除），不落业务库。
+- 会话保存在 `sessionStorage`（刷新保留，关闭标签清除），不落业务库；
+- 首次打开面板时调用 `GET /apms/assistant/capabilities` 预热 `allowedPaths` 与建议问题；失败不阻塞对话。
 
 ### 5.4 上下文
 
@@ -267,7 +335,8 @@ ruoyi-ui/src/components/Assistant/
 ### 5.5 动作执行器
 
 - 只实现 `navigate` / `highlight`；
-- `navigate` 前用 `router.resolve(path)` 校验，且 path 必须命中 `assistantStore.allowedPaths`；
+- `navigate` 前用 `router.resolve(path)` 校验，且 path 必须命中 `assistantStore.allowedPaths`（来自后端 `capabilities`，与后端 `Principal.allowedPaths` 同源）；
+- 路径规范化统一（去尾 `/`、合并 `//`），与后端 CapabilityResolver 保持同一规则；
 - `highlight` 从本地注册表取选择器：
 
 ```js
@@ -315,27 +384,44 @@ const TARGETS = {
 | 步骤 | 内容 | 产出 |
 |---|---|---|
 | M1a | 协议常量、意图目录、审计表补丁 | 补丁 SQL（交用户执行） |
-| M1b | Provider、CapabilityResolver、SSE、审计 | 后端可独立 `curl` 验证 |
+| M1b | Provider、CapabilityResolver（buildMenus 还原路由）、Redis 用户级限流、Principal 快照、SSE、审计 | 后端可独立 `curl` 验证 |
 | M1c | client、store、Launcher、Panel、actions | 前端可呼出并流式 |
 | M1d | 5 个页面加 `data-rpa` 锚点 | 高亮可用 |
 | M1e | 构建与回归 | `mvn clean package`、`npm run build`、Node 桩测、手工验收 |
 
 ---
 
-## 八、部署注意（SSE）
+## 八、部署注意（环境端口与 SSE）
 
-生产 nginx 必须关闭代理缓冲，否则流式会“憋一大段再一次性出现”：
+### 8.1 环境端口（以 deploy 脚本与 env.conf 为准）
+
+| 环境 | 业务 API 端口 | 健康检查端口 | 说明 |
+|---|---|---|---|
+| dev | `8080` | `8081` | 本地开发；前端 Vite 代理到 8080 |
+| uat | `9080` | `9081` | `deploy/deploy-uat.sh` 默认值 |
+| prod | `10080` | `10081` | `deploy/deploy.sh` + `deploy/env.conf.example` 默认值 |
+
+> 写死端口会导致 UAT/生产 502。Agent 不执行部署，部署与 env.conf 修改由用户本人操作。
+
+### 8.2 nginx SSE 配置
+
+SSE 必须关闭代理缓冲，否则流式会“憋一大段再一次性出现”。按环境替换上游端口：
 
 ```nginx
+# 生产（10080）；UAT 用 9080
 location /prod-api/ {
-    proxy_pass http://127.0.0.1:8080/;
+    proxy_pass http://127.0.0.1:10080/;
     proxy_http_version 1.1;
     proxy_set_header Connection '';
     proxy_buffering off;
     proxy_cache off;
     proxy_read_timeout 120s;
+    proxy_send_timeout 120s;
 }
 ```
+
+- UAT：`proxy_pass http://127.0.0.1:9080/;`
+- dev：不经过 nginx，Vite proxy 默认支持流式；若本地反向代理需同样关闭缓冲。
 
 > 配置与部署由用户执行；Agent 只提供配置内容。
 
@@ -359,7 +445,10 @@ location /prod-api/ {
 |---|---|
 | SSE 被 nginx 缓冲 | 关闭 `proxy_buffering`，心跳 15s |
 | 事件流被安全过滤器拦截 | 使用 Bearer 头 + `fetch`，接口与普通鉴权接口同链路 |
-| 动作路径越权 | 后端菜单树过滤 + 前端 `router.resolve` 双重校验 |
+| 动作路径越权 | `buildMenus` 还原完整路由 + 后端 allowedPaths + 前端 `router.resolve` 三重校验 |
+| 菜单相对路径误判 | 禁止直接比较 `menu.path`；统一走 `buildMenus → RouterVo` 递归拼接 |
+| 限流编译失败/全局共享额度 | 不扩展 `LimitType`；自定义 Redis key `assistant:user:{userId}` |
+| 异步线程 SecurityContext 丢失 | 请求线程捕获 `AssistantPrincipal` 快照，异步只读快照 |
 | 演示模式误发真实请求 | `isDemoMode()` 四态裁决优先于任何网络调用 |
 | 写操作误触 | M1 不提供 click/fill/submit；动作仅导航与高亮 |
 | 审计表写失败拖垮回答 | 审计 try/catch，只记服务端日志 |
@@ -369,6 +458,6 @@ location /prod-api/ {
 
 ## 十一、后续里程碑（不在本次实施）
 
-- **M2**：只读数据问答（任务数、未评估人数、最近报告），全部走现有 Service 与 DataScope。
+- **M2**：只读数据问答（任务数、未评估人数、最近报告）。注意 `@DataScope` 依赖请求线程 ThreadLocal：查询必须在请求线程完成，或显式传 `userId` 与数据范围参数，不能在 SSE 后台线程直接调带 `@DataScope` 的 Service。
 - **M3**：受控动作——打开新增弹窗并预填、触发导出，必须二次确认并记录动作审计。
 - **M4**：`AgentAssistantProvider` 接入真实 Agent，复用同一 SSE 协议与前端执行器。
