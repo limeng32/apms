@@ -50,6 +50,8 @@
 | P1 | §4.3 让后端按 15–25ms/段发送，用线程等待制造逐字效果 | 后端不 sleep：M1 一次或按自然结构发完 `delta` 后立即 `done`；逐字效果由前端打字机负责（§4.3 / §5.3） |
 | P1 | navigate 与 highlight 是两个独立动作，未定义页面未渲染、数据加载中、按钮被权限隐藏时的行为；`router.resolve` 可能只命中 404 兜底 | `navigate` 可携带 `highlightKey`/`requiresPerm`，执行器按顺序等待锚点（5s 超时、失败静默）；路由校验必须排除 `/:pathMatch(.*)*` 且命中 allowedPaths（§3.3 / §5.5） |
 | P1 | 会话未按账号/Demo 模式隔离；`question varchar(1000)` 无前置长度校验；审计终态可能重复或遗漏 | sessionStorage 增加 owner 校验与清除触发点；DTO 前置校验；CAS 终态 + `message_id` 唯一索引（§4.6 / §5.8） |
+| P1 | `IMPORT_RESULT` 高亮 `task-create`、`REPORT_DOWNLOAD` 高亮 `report-generate`，与用户实际问题不一致 | 严格一致原则：M1 仅保留 `athlete-add` 一个页面级稳定锚点；导入成绩、组合评分、报告下载、RTP 处置只导航并说明下一步（§4.3 / §6） |
+| P1 | `dispatch` / `comboDispatch` 是 Tab 结构，非激活 Tab 内按钮不在 DOM，5s 等待也不会出现 | M1 不自动切 Tab；仅对默认可见锚点下发 `highlightKey`；目标在子页签时只导航，回答写明页签名（§3.3 / §5.5.6） |
 
 ### 1.5 阶段路线
 
@@ -153,6 +155,7 @@ data: {"finishReason":"stop"}
 - 助手优先下发单个 `navigate` 并携带可选 `highlightKey`；前端执行器按「校验路由 → 跳转 → 等待页面就绪 → 查找锚点 → 高亮」顺序执行。
 - 独立 `highlight` 仅用于“已经在目标页”的场景，不隐含跳转。
 - 后端只在用户拥有对应按钮权限时才下发 `highlightKey`；前端仍会在执行前复核权限与锚点存在性。
+- **锚点必须是目标页默认渲染即可见的元素**：Tab 子页签内、抽屉内、选中行后才出现的按钮一律不得作为 `highlightKey`；此类意图只导航，并在回答中明确写出需要切换的 Tab 名称。
 - 任一环节失败（路由不存在、页面未渲染、锚点因权限隐藏、等待超时）都只结束该动作，**不得抛出错误或让助手会话失败**。
 
 明令禁止的 type：`click`、`fill`、`submit`、`eval`、`download`、`openUrl`。
@@ -214,15 +217,17 @@ patches/
 
 | 意图 | 示例问法 | 回答要点 | 动作 |
 |---|---|---|---|
-| `ATHLETE_CREATE` | 怎么新增运动员 / 建档 | 花名册新增、必填项、RTP 不预置 | 去 `/athletes/roster` + `highlightKey=athlete-add` |
-| `PHV_HOW` | PHV 在哪 / 怎么算 | 体态录入 → Mirwald；成年身高口径 | 去 `/athletes/growth` |
-| `IMPORT_RESULT` | 怎么导入成绩 / 体测 | xlsx/xls/csv 两阶段导入、冲突拒绝 | 去 `/testings/dispatch` + `highlightKey=task-create` |
-| `COMBO_SCORE` | 组合评分怎么算 | T 分、参考快照、N<5 代理口径 | 去 `/testings/combo-dispatch` + `highlightKey=combo-calculate` |
-| `RTP_EDIT` | RTP 怎么改 / 谁能改 | 权限点、留痕、人工确认 | 去 `/healthcare/alert-center` + `highlightKey=rtp-edit` |
-| `REPORT_DOWNLOAD` | 报告在哪下载 | 生成 → 鉴权下载 | 去 `/analytics/report-center` + `highlightKey=report-generate` |
+| `ATHLETE_CREATE` | 怎么新增运动员 / 建档 | 花名册右上「新建运动员档案」、必填项、RTP 不预置 | 去 `/athletes/roster` + `highlightKey=athlete-add` |
+| `PHV_HOW` | PHV 在哪 / 怎么算 | 体态录入 → Mirwald；成年身高口径 | 去 `/athletes/growth`，**仅导航** |
+| `IMPORT_RESULT` | 怎么导入成绩 / 体测 | 在「测试结果」页签，右上「批量导入」；两阶段预览、冲突拒绝 | 去 `/testings/dispatch`，**仅导航**（导入按钮在子页签内，不作为页面级锚点） |
+| `COMBO_SCORE` | 组合评分怎么算 | 切换到「评分记录」页签，右上「批量计算」；T 分、参考快照、N<5 代理口径 | 去 `/testings/combo-dispatch`，**仅导航**（计算按钮在子页签内，不作为页面级锚点） |
+| `RTP_EDIT` | RTP 怎么改 / 谁能改 | 看板拖拽卡片，或打开卡片抽屉后「评估处置」；权限、留痕、人工确认 | 去 `/healthcare/alert-center`，**仅导航**（无页面级稳定按钮） |
+| `REPORT_DOWNLOAD` | 报告在哪下载 | 在报告列表选中一条 → 右侧详情「下载 PDF 报告」；先确认 `filePath` 已生成 | 去 `/analytics/report-center`，**仅导航**（下载按钮随选中行变化，不作为页面级锚点） |
 | `PAGE_HELP` | 当前页面能做什么 | 基于 route 的页面说明 | 无 |
 | `CAPABILITY` | 你能做什么 | 能力清单 + 建议问题 | 无 |
 | `FALLBACK` | 未命中 | 提示可问的问题 | 无 |
+
+> **严格一致原则**：`highlightKey` 只允许指向“与问题所述操作完全一致、且页面级默认可见”的按钮。找不到这种入口时只导航，绝不用相近按钮代替（如导入成绩 ≠ 新建任务、下载报告 ≠ 生成报告）。操作位于子页签时，回答文本**必须显式写出页签名称**（「测试结果」「评分记录」），不能只写“点击批量导入/批量计算”。
 
 ### 4.4 权限、限流与异步上下文
 
@@ -490,17 +495,29 @@ async function runAction(action, ctx) {
 
 ```js
 const TARGETS = {
-  'athlete-add': '[data-rpa="athlete-add"]',
-  'task-create': '[data-rpa="task-create"]',
-  'rtp-edit': '[data-rpa="rtp-edit"]',
-  'combo-calculate': '[data-rpa="combo-calculate"]',
-  'report-generate': '[data-rpa="report-generate"]'
+  'athlete-add': '[data-rpa="athlete-add"]'
 }
 ```
 
 - 后端只传 `targetKey`，不传选择器；选择器只存在于前端注册表；
 - `checkPermi` 从 `@/utils/permission` 导入且**必须传数组**（本项目既有约定）；
 - 不执行任何后端下发的选择器或代码。
+
+#### 5.5.6 Tab 页面（M1 不自动切 Tab）
+
+`dispatch` 与 `comboDispatch` 是 Tab 结构，子组件按 `loaded` 条件渲染，未激活 Tab 内的按钮**不在 DOM**，等待再久也不会出现。M1 策略：
+
+| 页面 | Tab（默认加粗） | 目标操作所在 Tab | M1 处理 |
+|---|---|---|---|
+| `/testings/dispatch` | **指标库** / 测试任务 / 测试结果 | 「批量导入」在「测试结果」 | 仅导航，回答写明“切换到「测试结果」页签” |
+| `/testings/combo-dispatch` | **测试模型** / 组合模型 / 评分记录 | 「批量计算」在「评分记录」 | 仅导航，回答写明“切换到「评分记录」页签” |
+
+规则：
+
+- M1 **不自动点击 Tab**，也不新增 tab 切换动作；避免超出“仅导航 + 高亮”的边界。
+- 目标按钮不在默认 Tab 时，后端不下发 `highlightKey`，前端自然也不会进入 5s 等待。
+- 5s 等待只用于“默认 Tab 内因数据加载/渲染延迟而晚出现的锚点”，**不能用于等待 Tab 激活**。
+- 未来 M3+ 若确需自动切换，必须使用受控的 `tabKey` 白名单，并在用户确认后执行（见 §11）。
 
 ### 5.6 assistantClient：与 request.js 请求体系对齐（P0）
 
@@ -631,17 +648,13 @@ const payload = {
 
 ## 六、data-rpa 锚点（最小改动）
 
-只在关键入口加属性，不改布局与逻辑：
+只在“与问题操作完全一致、且页面级默认可见”的唯一入口加属性，不改布局与逻辑：
 
 | 页面 | 锚点 | 对应按钮权限 |
 |---|---|---|
-| 花名册 | `athlete-add`（新增运动员按钮） | `apms:athlete:add` |
-| 指标库与任务下发 | `task-create`（新建任务按钮） | `apms:testTask:add` |
-| 健康预警中心 | `rtp-edit`（评估处置按钮） | `apms:rtp:edit` |
-| 组合测试调度 | `combo-calculate`（批量计算按钮） | `apms:comboScore:calculate` |
-| 报告中心 | `report-generate`（生成报告按钮） | `apms:report:generate` |
+| 花名册 | `athlete-add`（右上「新建运动员档案」） | `apms:athlete:add` |
 
-> 锚点必须挂在稳定的按钮元素上；`v-hasPermi` 隐藏按钮时锚点自然不存在，执行器按 §5.5.4 静默降级，不视为故障。
+> 不给“导入成绩”“组合评分”“下载报告”“RTP 评估处置”加页面级锚点：它们要么位于子页签内（默认不渲染），要么依赖选中行/抽屉状态，高亮相近按钮会误导用户。对应意图只导航到正确页面，由回答说明下一步操作。
 
 ---
 
@@ -652,7 +665,7 @@ const payload = {
 | M1a | 协议常量、意图目录、请求校验规则、审计表补丁 | 补丁 SQL（交用户执行） |
 | M1b | Provider、CapabilityResolver（buildMenus 还原路由）、Redis 用户级限流、Principal 快照、SSE（不发人为延迟）、CAS 终态审计 | 后端可独立 `curl` 验证 |
 | M1c | client、store、Launcher、Panel、actions、前端打字机、会话 owner/清除钩子 | 前端可呼出并逐字呈现 |
-| M1d | 5 个页面加 `data-rpa` 锚点 | 高亮可用 |
+| M1d | 1 个页面级锚点（athlete-add） | 「新建运动员档案」可高亮；其余意图仅导航 |
 | M1e | 构建与回归 | `mvn clean package`、`npm run build`、Node 桩测、手工验收 |
 
 ---
@@ -745,17 +758,18 @@ location = /prod-api/apms/assistant/chat {
 
 1. 数据驾驶舱、花名册、指标任务、医疗、报告、系统角色 6 类页面均可呼出；`Alt+A` / `Esc` 正常。
 2. 回答逐字呈现（前端打字机）；「停止」可中断；页面状态不丢；后端无 `Thread.sleep` / 人为延迟。
-3. “怎么新增运动员”返回步骤 + 「打开花名册」动作；点击后跳转到花名册，等待页面渲染后高亮新增按钮，不触发任何写操作。
-4. 跳转+高亮异常路径：页面数据加载慢时最多等 5s 仍能高亮；无 `apms:athlete:add` 权限时只跳转、不高亮；锚点不存在或 path 命中 404 兜底时不跳转/不报错，助手会话正常。
-5. 无权限页面不会出现在动作中（后端菜单过滤 + 前端 allowedPaths + 404 排除三重校验）。
-6. **演示模式零网络**：打开面板时 `/capabilities` 与 `/chat` 均不产生真实请求（Network 面板无 `/apms/assistant/*`），能力表与本地回答可用；broken / storage-error 态同样不发请求。
-7. 真实模式请求正确：Network 面板中 chat 为 `POST /prod-api/apms/assistant/chat`（dev 为 `/dev-api/...`），带 `Authorization: Bearer ...` 与 `Accept: text/event-stream`；capabilities 为 `GET /prod-api/apms/assistant/capabilities`。
-8. 错误处理：401 提示重新登录、403 提示无权限、429 提示限流、500 提示服务异常；非 SSE 的 JSON 错误能展示后端 `msg`，不出现“把 JSON 当流解析”的乱码。
-9. 每轮问答在 `apms_assistant_log` 有一条记录；中断记为 `aborted`。
-10. 控制台无报错；移动端为底部面板且不遮挡内容；暗色大屏模式视觉正常。
-11. **账号/模式隔离**：同一标签页 A 退出 → B 登录后看不到 A 的对话；Demo ↔ 真实切换后同样互不可见；刷新后仅同一 owner 可恢复。
-12. **输入校验**：`message` 超 1000 字符、`sessionId` 非 UUID、`route` 非法时返回 4xx JSON，Network 无 SSE，审计表无新增行。
-13. **审计终态唯一**：正常完成 → 1 条 `success`；用户停止/断线 → 1 条 `aborted`；异常 → 1 条 `error`；`message_id` 唯一，无重复行。
+3. “怎么新增运动员”返回步骤 + 「打开花名册」动作；点击后跳转到花名册，等待页面渲染后高亮「新建运动员档案」，不触发任何写操作。
+4. “怎么导入成绩”只导航到 `/testings/dispatch`，**不出现 `task-create` 高亮、不进入 5s 锚点等待**，回答提示切换到「测试结果」页签再点「批量导入」；“组合评分怎么算”只导航到 `/testings/combo-dispatch`，**不出现 `combo-calculate` 高亮、不进入等待**，回答提示切换到「评分记录」页签；“报告在哪下载”只导航到 `/analytics/report-center`，**不高亮「生成新报告」**。
+5. 跳转+高亮异常路径：页面数据加载慢时最多等 5s 仍能高亮；无 `apms:athlete:add` 权限时只跳转、不高亮；锚点不存在或 path 命中 404 兜底时不跳转/不报错，助手会话正常。
+6. 无权限页面不会出现在动作中（后端菜单过滤 + 前端 allowedPaths + 404 排除三重校验）。
+7. **演示模式零网络**：打开面板时 `/capabilities` 与 `/chat` 均不产生真实请求（Network 面板无 `/apms/assistant/*`），能力表与本地回答可用；broken / storage-error 态同样不发请求。
+8. 真实模式请求正确：Network 面板中 chat 为 `POST /prod-api/apms/assistant/chat`（dev 为 `/dev-api/...`），带 `Authorization: Bearer ...` 与 `Accept: text/event-stream`；capabilities 为 `GET /prod-api/apms/assistant/capabilities`。
+9. 错误处理：401 提示重新登录、403 提示无权限、429 提示限流、500 提示服务异常；非 SSE 的 JSON 错误能展示后端 `msg`，不出现“把 JSON 当流解析”的乱码。
+10. 每轮问答在 `apms_assistant_log` 有一条记录；中断记为 `aborted`。
+11. 控制台无报错；移动端为底部面板且不遮挡内容；暗色大屏模式视觉正常。
+12. **账号/模式隔离**：同一标签页 A 退出 → B 登录后看不到 A 的对话；Demo ↔ 真实切换后同样互不可见；刷新后仅同一 owner 可恢复。
+13. **输入校验**：`message` 超 1000 字符、`sessionId` 非 UUID、`route` 非法时返回 4xx JSON，Network 无 SSE，审计表无新增行。
+14. **审计终态唯一**：正常完成 → 1 条 `success`；用户停止/断线 → 1 条 `aborted`；异常 → 1 条 `error`；`message_id` 唯一，无重复行。
 
 ---
 
@@ -780,6 +794,8 @@ location = /prod-api/apms/assistant/chat {
 | 跨账号 / Demo 切换残留对话 | sessionStorage payload 带 owner，读取校验；logout/enterDemo/exitDemo/401 显式清除 |
 | 超长 question 到写库才失败 | DTO 前置校验（≤1000 字符），失败 4xx 且不建流、不写审计 |
 | 并发回调造成重复/遗漏审计 | `AtomicReference` CAS 终态 + `message_id` 唯一索引；正常完成/断线/异常各只落一条 |
+| 意图与高亮目标错配 | 严格一致原则：仅保留页面级默认可见的 `athlete-add`；导入、组合评分、下载、RTP 处置只导航 |
+| Tab 未激活导致锚点永不存在 | M1 不自动切 Tab；子页签操作不发 `highlightKey`，回答写明页签名；5s 等待只用于默认 Tab 内的渲染延迟 |
 
 ---
 
@@ -787,4 +803,5 @@ location = /prod-api/apms/assistant/chat {
 
 - **M2**：只读数据问答（任务数、未评估人数、最近报告）。注意 `@DataScope` 依赖请求线程 ThreadLocal：查询必须在请求线程完成，或显式传 `userId` 与数据范围参数，不能在 SSE 后台线程直接调带 `@DataScope` 的 Service。
 - **M3**：受控动作——打开新增弹窗并预填、触发导出，必须二次确认并记录动作审计。
+- **M3+**：如需精确高亮“导入成绩”“组合评分”等子页签按钮，再增加受控的 `tabKey` 导航（仅允许页面白名单内的 tab 值），当前 M1 保持仅导航，避免误高亮。
 - **M4**：`AgentAssistantProvider` 接入真实 Agent，复用同一 SSE 协议与前端执行器。
