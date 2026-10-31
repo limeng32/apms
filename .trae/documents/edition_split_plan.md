@@ -269,17 +269,60 @@ env/scripts：新增 `.env.standard`、`.env.ai`（生产变量 + VITE_EDITION�
 
 ### 3.7 构建/部署脚本适配（遵循 deploy-shell-scripts 技能；部署由您本人执行）
 
-- `deploy/build.sh --edition standard|ai`（缺省 standard）：
-  - Maven 步骤**不带 profile**（单 jar 恒构建）；
-  - 前端 `npx vite build --mode ${EDITION}`；
-  - 始终上传 `patches/` 与 `patches/ai/`（执行与否由远端 EDITION 决定）；
-  - 构建自检：jar 中 ruoyi-ai 恒存在；dist 中 `assistant` 关键字命中数（standard 必须为 0）；
-- `deploy/deploy.sh --edition standard|ai`（缺省 standard，向后兼容；EDITION 也可由 env.conf 提供，命令行优先）：
-  - 启动参数追加 `--app.edition`；
-  - 补丁：始终执行 `patches/*.sql`；仅 ai 线追加执行 `patches/ai/*.sql`（basename 去重共用 apms_db_version）；ai 目录 DDL 防呆扫描；
-  - 启动后按 §3.4 校验管理端口健康块，不一致自动回滚；
-- `deploy/deploy-uat.sh` 透传；`env.conf.example` 增加 `EDITION` 说明（standard 缺省）；
-- nginx 零改动（SSE 已有 `X-Accel-Buffering: no`）。
+#### 3.7.1 线别产物标记（脚本配对校验的依据）
+
+- Vite 增加一个小插件（写在 vite/plugins 内）：构建结束时在 dist 根生成 **`edition.txt`**，内容仅为 `standard` 或 `ai`（取自 `VITE_EDITION`）；
+- 后端为单 jar、无构建线别，运行线别以管理端口 `/health` 的 `ai` 块为准（§3.4）；
+- 任何部署脚本在替换前端产物前，必须读 `dist/edition.txt` 并与本次 `EDITION` 比对，不一致即拒绝部署（防止拿错 dist）。
+
+#### 3.7.2 build.sh（本机构建，UAT 与生产共用入口）
+
+- 新增 `--edition standard|ai`（缺省 standard），**必须与 `--only-build` 可组合**；
+- Maven 步骤不带 profile（单 jar 恒构建，不区分线）；
+- 前端步骤改为 `npx vite build --mode ${EDITION}`；
+- 构建后自检：① jar 内 ruoyi-ai 恒存在；② `dist/edition.txt` 内容 == 入参 EDITION；③ standard 构建 dist 中 `assistant`/`rk-assistant` 关键字零命中；
+- rsync/scp 始终包含 `patches/` 与 `patches/ai/`（远端是否执行 ai 目录取决于运行线别）。
+
+#### 3.7.3 deploy-uat.sh（UAT 本地自包含链路，按现状逐点改造）
+
+入参/默认值：
+
+1. 参数解析（现 44-53 行 flag 循环）增加 `--edition standard|ai`；更新头部 usage 注释与 `--help`；
+2. EDITION 取值优先级固定为：**命令行 `--edition` > `.uat/env.conf` 的 `EDITION` > 缺省 `standard`**；取值非 `standard|ai` 直接 hard fail；启动横幅与结尾汇总（现 283-292、702-707 行）打印 Edition。
+
+自动构建链路（现 403-422 行「智能构建」）：
+
+3. 自动/强制构建调用改为 `bash "${_SCRIPT_DIR}/build.sh" --only-build --edition "${EDITION}"`（现 419 行透传线别，杜绝用错模式的 dist）；
+4. NEED_BUILD 条件增加一条：`ruoyi-ui/dist/edition.txt` 不存在或内容 != EDITION 也判定需构建 —— 解决「源码没动、切换线别时不会触发重建」的问题。
+
+SQL 补丁（现 Step 3，505-566 行）：
+
+5. 公共补丁维持从 repo `patches/*.sql` 同步并执行（两线一致，含全部插件 DDL）；
+6. EDITION=ai 时额外：`mkdir -p "${PATCHES_LOCAL}/ai"`、拷贝 repo `patches/ai/*.sql`、用同一 `APPLIED_LIST` 去重集合再跑一轮循环（basename 天然不与根目录冲突）；standard 模式完全不碰该目录；
+7. ai 目录执行前 DDL 防呆：`grep -Eiq 'create[[:space:]]+(table|index)|alter[[:space:]]+table|drop' patches/ai/*.sql` 命中即拒绝部署（该目录只允许 DML）。
+
+运行时配置与启动：
+
+8. Step 5.5 生成的外部 `config/application.yml`（现 626-645 行 heredoc）增加一行 `app.edition: ${EDITION}`（沿用该文件扁平覆盖既有风格，chmod 600 不变）；do_start 回显行同步打印 edition；
+9. do_start 健康检查通过后（现 321-344 行之后）增加**线别校验**：curl 管理端口 `/health` —— `EDITION=ai` 必须存在 `components.ai.details.edition=ai`；`EDITION=standard` 必须不存在 `ai` 块；不符合即调用既有 `rollback "运行线别与 EDITION 不一致"` 终止；
+10. Step 4 替换前端产物前增加 `edition.txt` 配对校验（§3.7.1），不一致直接 rollback。
+
+env.conf：
+
+11. `deploy/env.conf.example` 与 UAT 说明中增加 `EDITION=standard|ai`；脚本按「非敏感可 fallback」变量处理（缺省 standard），不设为必填 hard fail（与 PROFILE/APP_PORT 同类）。
+
+#### 3.7.4 deploy.sh（生产远端链路）
+
+- 新增 `--edition standard|ai`（缺省 standard，向后兼容），命令行优先，其次远端 env.conf；
+- 启动命令（现 385-393 行 JVM 参数区）追加 `--app.edition="${EDITION}"`；
+- 补丁循环（现 736-794 行）：根目录 `patches/*.sql` 始终执行；ai 线额外执行 `patches/ai/*.sql`（共用 `apms_db_version` basename 去重），执行前同样做 DDL 防呆；
+- 启动后按 §3.4 用管理端口 `/health` 做线别双向校验，不一致走既有失败停机/回滚分支；
+- 前端产物落盘前比对 dist 内 `edition.txt`。
+
+#### 3.7.5 不变项
+
+- nginx 两配置文件零改动（SSE 已由 `X-Accel-Buffering: no` 覆盖）；
+- systemd unit、端口、目录结构、备份/回滚产物结构不变（备份不区分线，回滚后以当时 env.conf 的 EDITION 启动）。
 
 ---
 
@@ -287,7 +330,7 @@ env/scripts：新增 `.env.standard`、`.env.ai`（生产变量 + VITE_EDITION�
 
 **新增**：`ruoyi-ai/pom.xml` + core 约 12 个类；plugin/rpa 迁入的 14 文件（控制器改名、包名/XML/URL 同步）；`resources/mapper/rpa/*.xml`；前端 `src/ai/**`、`src/ai-stub/index.js`、`src/utils/features.js`；3 个 env 文件；`patches/ai/rpa-seed-*.sql`。
 
-**修改**：根 pom.xml（module + dependencyManagement，**无 profile**）、ruoyi-admin/pom.xml（常依赖 ruoyi-ai）、application.yml（app.edition 默认值）、VersionController；vite.config.js、package.json、main.js/permission.js、layout/index.vue、user.js、demo.js、mock/handlers/index.js；build.sh、deploy.sh、deploy-uat.sh、env.conf.example；assistant.mjs（路径 + 空桩同形断言）。
+**修改**：根 pom.xml（module + dependencyManagement，**无 profile**）、ruoyi-admin/pom.xml（常依赖 ruoyi-ai）、application.yml（app.edition 默认值）、VersionController；vite.config.js、vite/plugins（新增 edition.txt 生成插件）、package.json、main.js/permission.js、layout/index.vue、user.js、demo.js、mock/handlers/index.js；build.sh、deploy.sh、deploy-uat.sh、env.conf.example；assistant.mjs（路径 + 空桩同形断言）。
 
 **迁移**：§2.4 全部文件（git mv）；SQL 建表补丁不动，仅追加新种子补丁。
 
@@ -303,7 +346,7 @@ env/scripts：新增 `.env.standard`、`.env.ai`（生产变量 + VITE_EDITION�
 6. **前端容器化**：src/ai + rpa 插件 + 空桩 + glob 注册 + features store；集成点改造；env/scripts。
 7. **前端双构建验证**：dist grep + dev 两模式 + demo + flag 热开关。
 8. **桩测**：7 项原断言 + 空桩同形契约。
-9. **部署脚本**：--edition 全链路 + health 线别校验 + DDL 防呆；`bash -n`/`--help` 验证；不部署。
+9. **部署脚本**：按 §3.7 落地——vite `edition.txt` 产物标记；build.sh `--edition`（可与 --only-build 组合）；**deploy-uat.sh 十一点改造**（入参/env.conf 默认值、智能构建透传线别、edition.txt 触发重建、ai 补丁目录、DDL 防呆、外部 yml 注入 app.edition、health 线别校验、dist 配对校验）；deploy.sh 生产链路同步；`bash -n`/`--help` 验证；**不执行部署**（由您本人运行）。
 10. **收口**：更新 rpa_assistant_plan.md 指引；输出两线发版命令、dev 启动参数、git 提交清单。
 
 ---
@@ -323,7 +366,7 @@ env/scripts：新增 `.env.standard`、`.env.ai`（生产变量 + VITE_EDITION�
 | 既有业务回归 | 登录/getRouters/花名册等全正常 | 同左；限流/审计/413/UUID 校验行为不变 |
 | 前端 dist | grep assistant/rk-assistant 零命中；无球、Alt+A 无效、demo 无助手 | rpa chunk 在；真后端 + mock 全功能；登出/演示会话清理正常 |
 | 构建 | `mvn clean install -DskipTests` 单 jar SUCCESS；`vite build --mode standard/ai` 均成功 | — |
-| 部署 | EDITION 与 dist 错配时 deploy.sh 健康校验失败并回滚 | — |
+| 部署 | UAT/生产：dist `edition.txt` 与 EDITION 不一致即拒绝/回滚；运行线别与 EDITION 不一致（health ai 块双向校验）即回滚；非法 EDITION 入参 hard fail；`patches/ai/` 出现 DDL 关键字即拒绝 | ai 线自动执行 ai DML、standard 线跳过；切换线别触发正确重建 |
 
 `node .trae/demo-tests/assistant.mjs`：原 7 项 + 空桩同形断言全绿。
 
@@ -356,4 +399,7 @@ env/scripts：新增 `.env.standard`、`.env.ai`（生产变量 + VITE_EDITION�
 - 常用命令：
   - 后端本地 ai 联调：`APP_EDITION=ai java -jar ruoyi-admin/target/apms.jar`（缺省即 standard）；
   - 前端：`npm run dev`（standard）/ `npm run dev:ai`；
-  - 发版（您本人执行）：`bash deploy/build.sh --edition standard`｜`bash deploy/build.sh --edition ai`；UAT：`deploy-uat.sh --edition <线>`。
+  - 发版（您本人执行）：
+    - 生产：`bash deploy/build.sh --edition standard`｜`bash deploy/build.sh --edition ai`；
+    - UAT：`bash deploy/deploy-uat.sh --edition ai`（或在 `.uat/env.conf` 写 `EDITION=ai` 后直接 `bash deploy/deploy-uat.sh`；智能构建会自动以对应线别调 build.sh）；
+    - 切换 UAT 线别时无需删产物，脚本依据 `dist/edition.txt` 自动触发正确线别的重建。
