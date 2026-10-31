@@ -226,7 +226,7 @@ ruoyi-ui/src/
 ├── ai/                              # 仅 ai 构建进入 dist
 │   ├── index.js                     # 容器入口：拉 features、发现/启用插件、挂载、会话清理
 │   ├── core/
-│   │   ├── registry.js              # import.meta.glob('./plugins/*/index.js', {eager:true})
+│   │   ├── registry.js              # import.meta.glob('../plugins/*/index.js', {eager:true})
 │   │   └── features.js              # 插件状态缓存
 │   └── plugins/rpa/                 # 助手全部实现迁入（10 个文件）+ index.js 描述符 + mock/
 └── ai-stub/index.js                # 同契约空桩（standard dist 唯一 AI 相关文件，几十行 no-op）
