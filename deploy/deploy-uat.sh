@@ -4,6 +4,10 @@
 # ------------------------------------------------------------
 # 用法：
 #   bash deploy-uat.sh [--build] [--skip-patch] [--skip-cache] [--version X.Y.Z-TIMESTAMP]
+#                      [--edition standard|ai]
+#
+# 产品线 EDITION 取值优先级：命令行 --edition > .uat/env.conf 的 EDITION > 缺省 standard。
+# 智能构建会以对应线别执行 build.sh --only-build --edition <线>。
 #
 # 默认智能构建：产物缺失或源码比产物新时，自动执行 build.sh --only-build；
 # --build 强制重新构建。start/stop/restart 子命令不触发构建。
@@ -41,13 +45,15 @@ SKIP_PATCH=0
 SKIP_CACHE=0
 FORCE_BUILD=0
 TARGET_VERSION=""
+CLI_EDITION=""    # 命令行 --edition（解析早于 env.conf source；最终值在 source 后裁定）
 while [[ ${#} -gt 0 ]]; do
     case "${1}" in
         --build)      FORCE_BUILD=1; shift ;;
         --skip-patch) SKIP_PATCH=1; shift ;;
         --skip-cache) SKIP_CACHE=1; shift ;;
         --version) TARGET_VERSION="${2}"; shift 2 ;;
-        --help|-h)   sed -n '2,25p' "${0}"; exit 0 ;;
+        --edition) CLI_EDITION="${2}"; shift 2 ;;
+        --help|-h)   sed -n '2,30p' "${0}"; exit 0 ;;
         *)           err "未知参数: ${1}" ;;
     esac
 done
@@ -97,6 +103,15 @@ PUBLIC_HOST="${PUBLIC_HOST:-localhost:${NGINX_LISTEN}}"
 [ -n "${SMS_TEMPLATE_CODE+x}" ]     || err "env.conf 缺失 SMS_TEMPLATE_CODE（可空但必须声明），拒绝部署"
 SMS_SIGN_NAME="${SMS_SIGN_NAME:-北京康耐特体育}"
 SMS_TEMPLATE_CODE="${SMS_TEMPLATE_CODE:-SMS_512565975}"
+
+# ===== 产品线裁定：命令行 > env.conf > 缺省 standard =====
+# CONF_EDITION 是 env.conf 持久值：CLI 一次性覆盖失败回滚时，运行配置恢复为该值
+CONF_EDITION="${EDITION:-standard}"
+EDITION="${CLI_EDITION:-${CONF_EDITION}}"
+case "${EDITION}" in
+    standard|ai) ;;
+    *) err "非法 --edition: ${EDITION}（只允许 standard|ai）" ;;
+esac
 
 # ⚠️ 密码里可能有 !#$ 等特殊字符，必须用函数形式避免 bash 解释
 # ${1+"${@}"} 兼容 macOS 自带 bash 3.2：set -u 下无参调用时裸 "${@}" 会报 unbound variable
@@ -286,6 +301,7 @@ do_start() {
     echo "  APMS UAT Start"
     echo "  jar:      ${JAR}"
     echo "  profile:  druid,${PROFILE}"
+    echo "  edition:  ${EDITION}"
     echo "  port:     ${APP_PORT} (mgmt: ${MGMT_PORT})"
     echo "  config:   ${CONFIGDIR:-<jar内默认>}"
     echo "  pidfile:  ${PIDFILE}"
@@ -350,7 +366,7 @@ rollback() {
     echo ""
     warn "╔══════════════════════════════════════════════════════╗"
     warn "║  ❌ 部署失败: ${FAIL_REASON}"
-    warn "║  🔄  自动回滚到上一版本..."
+    warn "║  🔄  自动回滚到上一版本（线别恢复 env.conf 持久值 ${CONF_EDITION}）..."
     warn "╚══════════════════════════════════════════════════════╝"
     echo ""
 
@@ -377,6 +393,16 @@ rollback() {
         cp -a "${LAST_BK}/dist_old" "${FRONTIR}/dist"
         log "  ✅ 恢复 dist"
     fi
+    # 4.5 恢复运行线别：CLI --edition 是一次性覆盖，回滚后外部 yml 必须改回 env.conf 持久值，
+    #     保证「旧产物 + 持久线别」成对恢复（yml 尚不存在时跳过，do_start 不依赖它）
+    if [ -f "${CONFIGDIR}/application.yml" ]; then
+        if grep -q '^app.edition:' "${CONFIGDIR}/application.yml"; then
+            sed -i.bak "s|^app.edition:.*|app.edition: ${CONF_EDITION}|" "${CONFIGDIR}/application.yml" && rm -f "${CONFIGDIR}/application.yml.bak"
+        else
+            printf '\napp.edition: %s\n' "${CONF_EDITION}" >> "${CONFIGDIR}/application.yml"
+        fi
+        log "  运行线别恢复为 env.conf 持久值: app.edition=${CONF_EDITION}"
+    fi
     # 5. 重新 nohup 启动（复用 do_start 的逻辑，但通过 env.conf 读参数）
     log "  重启后端..."
     # do_start 会读 env.conf，里面有 APP_PORT/MGMT_PORT 等
@@ -391,6 +417,22 @@ do_restart() {
     do_start
 }
 
+# ===== verify_edition_health: 管理端口 /health 与本次 EDITION 双向校验 =====
+# ai：必须存在 "ai" 组件且 details.edition=ai；standard：必须不存在 "ai" 组件。
+# 返回 0=一致，1=不一致（调用方据此 rollback）。
+verify_edition_health() {
+    local body
+    body=$(curl -s --max-time 5 "http://localhost:${MGMT_PORT}/health" 2>/dev/null || echo "")
+    [ -n "${body}" ] || return 1
+    if [ "${EDITION}" = "ai" ]; then
+        echo "${body}" | grep -Eq '"ai"[[:space:]]*:[[:space:]]*\{' || return 1
+        echo "${body}" | grep -Eq '"edition"[[:space:]]*:[[:space:]]*"ai"' || return 1
+    else
+        echo "${body}" | grep -q '"ai"' && return 1
+    fi
+    return 0
+}
+
 # ===== 子命令 dispatch =====
 case "${CMD}" in
     start|startup)   do_start; exit 0 ;;
@@ -401,24 +443,43 @@ case "${CMD}" in
 esac
 
 # ===== 智能构建检查（仅 deploy；start/stop/restart 已在上面退出）=====
-# 检测产物缺失或源码比产物新，命中则自动本地构建；--build 强制构建
+# 后端（单 jar，与 Edition 无关）与前端（按 Edition 独立构建）分别判定新鲜度：
+#   - 纯切换线别：dist/edition.txt 不符只触发前端重建，后端 jar 复用、绝不重打；
+#   - 后端源码变更：只触发 Maven，前端 dist 线别已匹配且最新时不重建；
+#   - --build：强制两端都重建。
 _TARGET_JAR="${PROJECT_ROOT}/ruoyi-admin/target/apms.jar"
 _VITE_DIST_IDX="${PROJECT_ROOT}/ruoyi-ui/dist/index.html"
-NEED_BUILD=0
+_VITE_EDITION_FILE="${PROJECT_ROOT}/ruoyi-ui/dist/edition.txt"
+DIST_EDITION=$(tr -d '[:space:]' < "${_VITE_EDITION_FILE}" 2>/dev/null || echo "")
+
+BACKEND_NEED_BUILD=0
+FRONTEND_NEED_BUILD=0
 if [ "${FORCE_BUILD}" -eq 1 ]; then
-    NEED_BUILD=1
-elif [ ! -f "${_TARGET_JAR}" ] || [ ! -f "${_VITE_DIST_IDX}" ]; then
-    NEED_BUILD=1
-elif [ "${PROJECT_ROOT}/pom.xml" -nt "${_TARGET_JAR}" ] \
-  || [ -n "$(find "${PROJECT_ROOT}" -path '*/src/*' -type f -not -path '*/ruoyi-ui/*' -newer "${_TARGET_JAR}" -print -quit 2>/dev/null)" ] \
-  || [ -n "$(find "${PROJECT_ROOT}/ruoyi-ui/src" "${PROJECT_ROOT}/ruoyi-ui/index.html" "${PROJECT_ROOT}/ruoyi-ui/vite.config.js" -type f -newer "${_VITE_DIST_IDX}" -print -quit 2>/dev/null)" ]; then
-    NEED_BUILD=1
-fi
-if [ "${NEED_BUILD}" -eq 1 ]; then
-    log "产物缺失或源码已更新 → 本地构建 (build.sh --only-build)..."
-    bash "${_SCRIPT_DIR}/build.sh" --only-build
+    BACKEND_NEED_BUILD=1
+    FRONTEND_NEED_BUILD=1
 else
-    log "构建产物为最新，跳过构建"
+    # 后端：jar 缺失、pom 更新、或任一后端源码（排除 ruoyi-ui）新于 jar
+    if [ ! -f "${_TARGET_JAR}" ] \
+      || [ "${PROJECT_ROOT}/pom.xml" -nt "${_TARGET_JAR}" ] \
+      || [ -n "$(find "${PROJECT_ROOT}" -path '*/src/*' -type f -not -path '*/ruoyi-ui/*' -newer "${_TARGET_JAR}" -print -quit 2>/dev/null)" ]; then
+        BACKEND_NEED_BUILD=1
+    fi
+    # 前端：dist 缺失、线别不符（切线必重建前端）、或前端源码/配置新于 dist
+    if [ ! -f "${_VITE_DIST_IDX}" ] \
+      || [ "${DIST_EDITION}" != "${EDITION}" ] \
+      || [ -n "$(find "${PROJECT_ROOT}/ruoyi-ui/src" "${PROJECT_ROOT}/ruoyi-ui/index.html" "${PROJECT_ROOT}/ruoyi-ui/vite.config.js" -type f -newer "${_VITE_DIST_IDX}" -print -quit 2>/dev/null)" ]; then
+        FRONTEND_NEED_BUILD=1
+    fi
+fi
+
+if [ "${BACKEND_NEED_BUILD}" -eq 0 ] && [ "${FRONTEND_NEED_BUILD}" -eq 0 ]; then
+    log "前后端产物均为最新 (edition=${EDITION})，跳过构建（后端单 jar 不因切线重建）"
+else
+    _BUILD_ARGS=(--only-build --edition "${EDITION}")
+    [ "${BACKEND_NEED_BUILD}" -eq 0 ]  && _BUILD_ARGS+=(--skip-maven)
+    [ "${FRONTEND_NEED_BUILD}" -eq 0 ] && _BUILD_ARGS+=(--skip-frontend)
+    log "智能构建 → 后端:$([ "${BACKEND_NEED_BUILD}" -eq 1 ] && echo 重建 || echo 复用) 前端:$([ "${FRONTEND_NEED_BUILD}" -eq 1 ] && echo "重建(${EDITION})" || echo 复用)"
+    bash "${_SCRIPT_DIR}/build.sh" "${_BUILD_ARGS[@]}"
 fi
 
 # ===== 版本号推导（优先从 mvn target 读，避免 upload 里是旧 jar）=====
@@ -506,10 +567,12 @@ login_config_backup "${BKDIR}"
 if [ "${SKIP_PATCH}" -eq 1 ]; then
     warn "Step 3: 跳过 SQL patch (--skip-patch)"
 else
-    log "Step 3: 应用 SQL patches..."
+    log "Step 3: 应用 SQL patches（任一公共补丁失败即立即终止，不启动新版本）..."
 
-    # 版本表初始化（幂等）
-    mysql_cli << 'EOSQL' 2>&1 | tail -3
+    # 版本表初始化（幂等）：失败同属 SQL 执行失败，落日志后立即终止
+    INIT_LOG="${BKDIR}/patch-init-version-table.log"
+    set +e
+    mysql_cli << 'EOSQL' >"${INIT_LOG}" 2>&1
 CREATE TABLE IF NOT EXISTS apms_db_version (
     id BIGINT NOT NULL AUTO_INCREMENT,
     patch_name VARCHAR(128) NOT NULL,
@@ -523,8 +586,16 @@ CREATE TABLE IF NOT EXISTS apms_db_version (
     UNIQUE KEY uk_patch_name (patch_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='APMS 数据库版本';
 EOSQL
+    INIT_RC=${?}
+    set -e
+    if [ "${INIT_RC}" -ne 0 ]; then
+        echo ""
+        echo -e "${RED}    ❌ apms_db_version 版本表初始化失败，输出末尾：${NC}"
+        grep -v -F 'Using a password on the command line interface can be insecure' "${INIT_LOG}" 2>/dev/null | tail -15 | sed 's/^/      /'
+        err "🛑 SQL 初始化失败 → 立即终止部署，不启动新版本。服务已停止、旧产物未替换。DB 备份: ${BKDIR}/db.sql.gz；失败日志: ${INIT_LOG}"
+    fi
 
-    # 从 repo patches/ 同步
+    # 从 repo patches/ 同步（公共补丁平铺；本产品线不存在任何按线 SQL 目录）
     REPO_PATCHES="$(dirname "${0}")/../patches"
     if [ -d "${REPO_PATCHES}" ]; then
         cp -f "${REPO_PATCHES}"/*.sql "${PATCHES_LOCAL}/" 2>/dev/null || true
@@ -535,7 +606,7 @@ EOSQL
     APPLIED_COUNT_TOTAL=$(echo "${APPLIED_LIST}" | grep -c . 2>/dev/null || echo 0)
     log "  已应用 patches: ${APPLIED_COUNT_TOTAL} 个"
 
-    # 逐个应用
+    # 逐个应用：失败立即终止（公共补丁是两线同一套迁移，绝不允许带病启动新版本）
     APPLIED_COUNT=0
     if [ -d "${PATCHES_LOCAL}" ]; then
         for patch in $(ls "${PATCHES_LOCAL}"/*.sql 2>/dev/null | sort); do
@@ -552,13 +623,30 @@ EOSQL
 
             log "  ▶ ${pname} (v${pversion})..."
             START_MS=$(($(date +%s%N)/1000000))
-            if mysql_cli < "${patch}" 2>&1 | tail -5; then
+            # 输出落本次备份目录的持久日志（不用 /tmp 临时文件，避免现场被清理）；
+            # 显式取 mysql 退出码，不经过管道，杜绝任何吞错可能
+            PATCH_LOG="${BKDIR}/patch-${pname}.log"
+            set +e
+            mysql_cli < "${patch}" >"${PATCH_LOG}" 2>&1
+            PATCH_RC=${?}
+            set -e
+            if [ "${PATCH_RC}" -eq 0 ]; then
                 END_MS=$(($(date +%s%N)/1000000))
                 mysql_cli -e "INSERT INTO apms_db_version (patch_name, version, checksum, description, applied_by, execution_ms) VALUES ('${pname}', '${pversion}', '${checksum}', '$(echo "${pdesc}" | sed "s/'//g")', 'deploy-uat.sh', $((END_MS - START_MS)));" 2>/dev/null || true
                 APPLIED_COUNT=$((APPLIED_COUNT + 1))
                 log "    ✅ 成功"
             else
-                warn "    ❌ ${pname} 执行失败（继续）"
+                echo ""
+                echo -e "${RED}    ❌ ${pname} 执行失败 (mysql rc=${PATCH_RC})，输出末尾：${NC}"
+                grep -v -F 'Using a password on the command line interface can be insecure' "${PATCH_LOG}" 2>/dev/null | tail -15 | sed 's/^/      /'
+                echo ""
+                err "🛑 公共 SQL 补丁 ${pname} 失败 → 立即终止部署，不允许继续启动新版本。
+    现场状态：服务已停止；旧 jar/dist 未替换（Step 4 未执行）；新版本未启动。
+    DB 备份：${BKDIR}/db.sql.gz
+    失败日志：${PATCH_LOG}
+    人工处理：
+      1) 查看失败日志与补丁 ${patch}，修正补丁（须保持幂等）后重跑：bash deploy/deploy-uat.sh [原参数]
+      2) 若需先恢复旧版服务（旧产物未动）：bash deploy/deploy-uat.sh start"
             fi
         done
     fi
@@ -571,6 +659,15 @@ login_config_restore "${BKDIR}"
 
 # ===== Step 4: 替换产物 =====
 log "Step 4: 替换产物..."
+
+# 先把当前运行产物备份到本次 BKDIR（rollback 依赖 ${LAST_BK}/apms.jar 与 dist_old）
+if [ -f "${JARDIR}/apms.jar" ]; then
+    cp -f "${JARDIR}/apms.jar" "${BKDIR}/apms.jar"
+fi
+if [ -d "${FRONTIR}/dist" ]; then
+    rm -rf "${BKDIR}/dist_old"
+    cp -a "${FRONTIR}/dist" "${BKDIR}/dist_old"
+fi
 
 # 自动同步 mvn target → upload（如果 target 更新）
 _TARGET_JAR="${PROJECT_ROOT}/ruoyi-admin/target/apms.jar"
@@ -595,7 +692,14 @@ if [ -d "${_VITE_DIST}" ]; then
     fi
 fi
 
+# 前端产物线别配对：dist/edition.txt 必须与本次 EDITION 一致，不一致直接回滚（防止错线上线）
 if [ -d "${UPLOAD}/dist" ]; then
+    UPLOAD_DIST_EDITION=$(tr -d '[:space:]' < "${UPLOAD}/dist/edition.txt" 2>/dev/null || echo "")
+    if [ "${UPLOAD_DIST_EDITION}" != "${EDITION}" ]; then
+        rollback "前端产物线别不匹配（dist/edition.txt='${UPLOAD_DIST_EDITION:-缺失}'，本次 EDITION=${EDITION}）"
+        exit 1
+    fi
+    log "  前端线别配对通过: edition.txt=${UPLOAD_DIST_EDITION}"
     rm -rf "${FRONTIR}/dist"
     cp -a "${UPLOAD}/dist" "${FRONTIR}/dist"
     log "  前端: $(find "${FRONTIR}/dist" -type f | wc -l | tr -d ' ') files"
@@ -628,6 +732,9 @@ cat > "${CONFIGDIR}/application.yml" <<EOF
 server.port: ${APP_PORT}
 management.server.port: ${MGMT_PORT}
 
+# 产品线（部署级）：standard 不装配 AI；ai 注册 AI 插件。回滚时由脚本改回 env.conf 持久值
+app.edition: ${EDITION}
+
 spring.datasource.druid.master.url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=false&serverTimezone=GMT%2B8
 spring.datasource.druid.master.username: ${DB_USER}
 spring.datasource.druid.master.password: "${DB_PASS}"
@@ -645,10 +752,18 @@ apms.sms.template-code: ${SMS_TEMPLATE_CODE}
 EOF
 # 内含 DB/Redis 密码与短信 AK/SK：仅运行账号可读，禁止同机其他用户读取
 chmod 600 "${CONFIGDIR}/application.yml"
-log "  ✅ ${CONFIGDIR}/application.yml (权限 600)"
+log "  ✅ ${CONFIGDIR}/application.yml (权限 600, app.edition=${EDITION})"
 
 # ===== Step 6: 启动后端 =====
 do_start
+
+# ===== Step 6.5: 运行线别校验（/health 与本次 EDITION 必须一致，失败即回滚）=====
+log "Step 6.5: 校验运行线别（期望 ${EDITION}）..."
+if ! verify_edition_health; then
+    rollback "运行线别与 EDITION=${EDITION} 不一致（管理端口 /health 校验失败）"
+    exit 1
+fi
+log "  ✅ 运行线别校验通过: ${EDITION}"
 
 # ===== Step 7: Nginx reload =====
 log "Step 7: Nginx reload..."
@@ -703,6 +818,7 @@ info "  入口:    http://${PUBLIC_HOST}/"
 info "  API:     http://localhost:${APP_PORT}/apms/version"
 info "  Health:  http://localhost:${MGMT_PORT}/health"
 info "  Profile: ${PROFILE}"
+info "  Edition: ${EDITION}（持久值 ${CONF_EDITION}）"
 info "  日志:    tail -f ${LOGDIR}/stdout.log"
 info "  PID:     ${PIDFILE} ($(cat "${PIDFILE}" 2>/dev/null))"
 echo ""

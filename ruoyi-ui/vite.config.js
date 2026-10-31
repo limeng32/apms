@@ -12,6 +12,8 @@ const BUILD_ID = String(Date.now())
 export default defineConfig(({ mode, command }) => {
   const env = loadEnv(mode, process.cwd())
   const { VITE_APP_ENV } = env
+  // 产品线：standard（缺省，零 AI 代码）| ai。@ai 别名解析到容器实现或空桩
+  const edition = env.VITE_EDITION === 'ai' ? 'ai' : 'standard'
   return {
     // 部署生产环境和开发环境下的URL。
     // 默认情况下，vite 会假设你的应用是被部署在一个域名的根路径上
@@ -35,7 +37,9 @@ export default defineConfig(({ mode, command }) => {
         // 设置路径
         '~': path.resolve(__dirname, './'),
         // 设置别名
-        '@': path.resolve(__dirname, './src')
+        '@': path.resolve(__dirname, './src'),
+        // AI 容器唯一入口：ai 构建解析 src/ai，standard 构建解析 src/ai-stub（零 AI 代码进产物）
+        '@ai': path.resolve(__dirname, edition === 'ai' ? './src/ai' : './src/ai-stub')
       },
       // https://cn.vitejs.dev/config/#resolve-extensions
       extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.vue']

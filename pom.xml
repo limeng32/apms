@@ -183,6 +183,13 @@
                 <version>${ruoyi.version}</version>
             </dependency>
 
+            <!-- AI 插件模块（部署级 app.edition 条件装配，单一 jar 内常包含） -->
+            <dependency>
+                <groupId>com.ruoyi</groupId>
+                <artifactId>ruoyi-ai</artifactId>
+                <version>${ruoyi.version}</version>
+            </dependency>
+
         </dependencies>
     </dependencyManagement>
 
@@ -193,6 +200,7 @@
         <module>ruoyi-quartz</module>
         <module>ruoyi-generator</module>
         <module>ruoyi-common</module>
+        <module>ruoyi-ai</module>
     </modules>
     <packaging>pom</packaging>
 

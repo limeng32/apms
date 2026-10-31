@@ -9,6 +9,11 @@
 #   bash deploy.sh restart         # 重启
 #   bash deploy.sh backup          # 每日定时备份（DB+附件+登录页JSON；滚动保留30天；供 crontab 调用，不停服）
 #   bash deploy.sh deploy --skip-patch --version X.Y.Z
+#   bash deploy.sh deploy --edition ai          # 指定产品线（通常由 build.sh 透传）
+#
+# 产品线 EDITION 取值优先级：命令行 --edition > /etc/apms/env.conf 的 EDITION > 缺省 standard。
+# 确定的 EDITION 会幂等回写到 /etc/apms/env.conf 并注入 start-backend.sh（--app.edition），
+# systemctl restart/宕机自启不漂移；部署失败回滚时恢复为部署前持久值。
 #
 # 运行目录: /opt/apms/
 #   ├── APPID              (PID 文件)
@@ -37,12 +42,14 @@ fi
 SKIP_PATCH=0
 SKIP_CACHE=0
 TARGET_VERSION=""
+CLI_EDITION=""    # 命令行 --edition（解析早于 env.conf source；最终值在 source 后裁定）
 while [[ ${#} -gt 0 ]]; do
     case "${1}" in
         --skip-patch) SKIP_PATCH=1; shift ;;
         --skip-cache) SKIP_CACHE=1; shift ;;
         --version) TARGET_VERSION="${2}"; shift 2 ;;
-        --help|-h)   sed -n '2,30p' "${0}"; exit 0 ;;
+        --edition) CLI_EDITION="${2}"; shift 2 ;;
+        --help|-h)   sed -n '2,35p' "${0}"; exit 0 ;;
         *)           err "未知参数: ${1}" ;;
     esac
 done
@@ -82,6 +89,15 @@ PUBLIC_HOST="${PUBLIC_HOST:-39.97.246.69}"
 [ -n "${SMS_TEMPLATE_CODE+x}" ]     || err "env.conf 缺失 SMS_TEMPLATE_CODE（可空但必须声明），拒绝部署"
 SMS_SIGN_NAME="${SMS_SIGN_NAME:-北京康耐特体育}"
 SMS_TEMPLATE_CODE="${SMS_TEMPLATE_CODE:-SMS_512565975}"
+
+# ===== 产品线裁定：命令行 > /etc/apms/env.conf > 缺省 standard =====
+# CONF_EDITION 为 env.conf 持久值（回滚恢复依据）；EDITION 为本次部署最终线别
+CONF_EDITION="${EDITION:-standard}"
+EDITION="${CLI_EDITION:-${CONF_EDITION}}"
+case "${EDITION}" in
+    standard|ai) ;;
+    *) err "非法 --edition: ${EDITION}（只允许 standard|ai）" ;;
+esac
 
 PIDFILE="${BINDIR}/APPID"
 UPLOAD="${BINDIR}/upload"
@@ -311,6 +327,9 @@ rollback() {
         warn "  ⚠️  备份目录无 dist，跳过"
     fi
 
+    # 4.5 恢复产品线持久值：保证回滚后 systemd 读到的 EDITION 与旧产物成对
+    restore_edition_env_conf
+
     # 5. 重启
     log "  重启 systemd..."
     systemctl reset-failed apms-backend 2>/dev/null
@@ -337,6 +356,38 @@ rollback() {
     return 1   # 无论回滚成功与否，部署都是 fail
 }
 
+# ===== Edition 持久化与线别校验（systemd 重启不漂移；失败可回滚）=====
+# 把给定线别幂等写入 /etc/apms/env.conf 的 EDITION= 行（其他行原样保留，chmod 600）
+persist_edition_env_conf() {
+    local target_edition="${1}"
+    if grep -q '^EDITION=' "${ETC_ENV_CONF}"; then
+        sed -i "s|^EDITION=.*|EDITION=${target_edition}|" "${ETC_ENV_CONF}"
+    else
+        echo "EDITION=${target_edition}" >> "${ETC_ENV_CONF}"
+    fi
+    chmod 600 "${ETC_ENV_CONF}"
+}
+
+# 回滚用：恢复为 env.conf 部署前持久值（CONF_EDITION，缺省 standard）
+restore_edition_env_conf() {
+    persist_edition_env_conf "${CONF_EDITION}"
+    log "  运行线别已恢复为部署前持久值: EDITION=${CONF_EDITION}"
+}
+
+# 管理端口 /health 与目标线别双向校验：ai 必有 ai 组件且 edition=ai；standard 必无 ai 块
+verify_edition_health() {
+    local body
+    body=$(curl -s --max-time 5 "http://localhost:${MGMT_PORT}/health" 2>/dev/null || echo "")
+    [ -n "${body}" ] || return 1
+    if [ "${EDITION}" = "ai" ]; then
+        echo "${body}" | grep -Eq '"ai"[[:space:]]*:[[:space:]]*\{' || return 1
+        echo "${body}" | grep -Eq '"edition"[[:space:]]*:[[:space:]]*"ai"' || return 1
+    else
+        echo "${body}" | grep -q '"ai"' && return 1
+    fi
+    return 0
+}
+
 # ===== do_start: systemd 启动 =====
 do_start() {
     JAVA_BIN=$(find_java17) || err "找不到 Java 17，请安装 /usr/lib/jvm/java-17-openjdk"
@@ -345,15 +396,16 @@ do_start() {
 
     # 唯一配置源是 /etc/apms/env.conf（含人工维护的 DB/Redis/SMS）。
     # 不再向 ${BINDIR} 写 env.conf 副本：start-backend.sh 直接 source /etc 那份。
-    # 这里只把探测到的 JAVA_BIN 幂等写回 /etc（用户维护的其他行原样保留），
+    # 这里只把探测到的 JAVA_BIN 与本次产品线 EDITION 幂等写回 /etc（其他行原样保留），
     # 并清理旧版本遗留在 ${BINDIR}/env.conf 的运行态副本（含密钥，收敛为单份）。
     if grep -q '^JAVA_BIN=' "${ETC_ENV_CONF}"; then
         sed -i "s|^JAVA_BIN=.*|JAVA_BIN=${JAVA_BIN}|" "${ETC_ENV_CONF}"
     else
         echo "JAVA_BIN=${JAVA_BIN}" >> "${ETC_ENV_CONF}"
     fi
+    persist_edition_env_conf "${EDITION}"
     chmod 600 "${ETC_ENV_CONF}"
-    log "${ETC_ENV_CONF} 已确保 JAVA_BIN (chmod 600)"
+    log "${ETC_ENV_CONF} 已确保 JAVA_BIN / EDITION=${EDITION} (chmod 600)"
     if [ -f "${BINDIR}/env.conf" ]; then
         rm -f "${BINDIR}/env.conf"
         log "  已移除旧运行态副本 ${BINDIR}/env.conf（配置统一收敛到 /etc/apms/）"
@@ -388,6 +440,7 @@ exec "$JAVA_BIN" \
   -jar "$JAR" \
   --spring.profiles.active=druid,"${PROFILE}" \
   --spring.config.additional-location=optional:file:"$BINDIR/config"/ \
+  --app.edition="${EDITION:-standard}" \
   --server.port="${APP_PORT}" \
   --management.server.port="${MGMT_PORT}" \
   "--spring.datasource.druid.master.url=jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8" \
@@ -417,6 +470,7 @@ STARTSH
     echo "  APMS Start (systemd)"
     echo "  service:  apms-backend"
     echo "  profile:  ${PROFILE}"
+    echo "  edition:  ${EDITION}（持久值 ${CONF_EDITION}）"
     echo "  port:     ${APP_PORT} (mgmt: ${MGMT_PORT})"
     echo "=========================================="
 
@@ -468,6 +522,13 @@ STARTSH
     if [ "${APP_PORT_READY}" -ne 1 ]; then
         warn "  ⚠️ 业务端口 ${APP_PORT} 30s 内未接受连接（mgmt 已就绪），继续由外网验证重试判定"
     fi
+
+    # 运行线别校验：/health 的 ai 块必须与本次 EDITION 一致，不一致直接回滚（恢复 env.conf 持久值）
+    if ! verify_edition_health; then
+        rollback "运行线别与 EDITION=${EDITION} 不一致（/health 线别校验失败）"
+        exit 1
+    fi
+    log "  ✅ 运行线别校验通过: ${EDITION}"
     echo ""
 }
 
@@ -804,6 +865,13 @@ cp -f "${UPLOAD}/apms.jar" "${JARDIR}/apms.jar"
 log "  jar: $(ls -lh "${JARDIR}/apms.jar" | awk '{print $5}')"
 
 if [ -d "${UPLOAD}/dist" ]; then
+    # 前端产物线别配对：edition.txt 必须与本次 EDITION 一致，不一致直接回滚（防止错线上线）
+    UPLOAD_DIST_EDITION=$(tr -d '[:space:]' < "${UPLOAD}/dist/edition.txt" 2>/dev/null || echo "")
+    if [ "${UPLOAD_DIST_EDITION}" != "${EDITION}" ]; then
+        rollback "前端产物线别不匹配（dist/edition.txt='${UPLOAD_DIST_EDITION:-缺失}'，本次 EDITION=${EDITION}）"
+        exit 1
+    fi
+    log "  前端线别配对通过: edition.txt=${UPLOAD_DIST_EDITION}"
     rm -rf "${FRONTIR}/dist"
     cp -a "${UPLOAD}/dist" "${FRONTIR}/dist"
     log "  前端: $(find "${FRONTIR}/dist" -type f | wc -l) files"

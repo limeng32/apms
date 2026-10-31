@@ -23,7 +23,8 @@ import { comboModelHandlers } from './comboModel'
 import { comboScoreHandlers } from './comboScore'
 import { medicalHandlers } from './medical'
 import { reportHandlers } from './report'
-import { assistantHandlers } from './assistant'
+// AI 插件 mock 经容器聚合：ai 构建为各插件 handler，standard 构建空桩返回 []
+import { aiMockHandlers } from '@ai'
 
 export const handlers = [
   ...frameworkHandlers,
@@ -44,5 +45,5 @@ export const handlers = [
   ...comboScoreHandlers,
   ...medicalHandlers,
   ...reportHandlers,
-  ...assistantHandlers
+  ...aiMockHandlers()
 ]

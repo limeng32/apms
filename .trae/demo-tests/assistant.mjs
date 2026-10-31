@@ -7,7 +7,8 @@
 import assert from 'node:assert/strict'
 import { pathToFileURL } from 'node:url'
 
-const SRC = '/Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/components/Assistant'
+const UI = '/Users/limeng/Documents/trae_projects/apms/ruoyi-ui'
+const SRC = `${UI}/src/ai/plugins/rpa`
 const demo = await import(pathToFileURL(`${SRC}/assistantDemo.js`).href)
 const { parseSse } = await import(pathToFileURL(`${SRC}/assistantSse.js`).href)
 
@@ -134,6 +135,21 @@ await test('SSE 坏帧丢弃，不影响后续帧', async () => {
 })
 
 globalThis.fetch = realFetch
+
+// ===== 空桩契约：src/ai-stub 必须与 src/ai/index.js 逐键同形，standard 构建主干才不会断 =====
+const stub = await import(pathToFileURL(`${UI}/src/ai-stub/index.js`).href)
+await test('standard 空桩与 AI 容器同形且恒为无能力', async () => {
+  for (const key of ['initAi', 'aiMockHandlers', 'clearAiSession', 'pluginEnabled', 'loadAiFeatures']) {
+    assert.equal(typeof stub[key], 'function', `缺少函数导出 ${key}`)
+  }
+  assert.ok(stub.AiLaunchers, '缺少 AiLaunchers 组件导出')
+  assert.ok(stub.aiState && stub.aiState.edition === 'standard', '空桩 edition 必须为 standard')
+  assert.deepEqual(stub.aiMockHandlers(), [], '空桩不得注册任何 mock')
+  assert.equal(stub.pluginEnabled('rpa'), false)
+  const state = await stub.loadAiFeatures()
+  assert.equal(state.edition, 'standard')
+  assert.doesNotThrow(() => stub.clearAiSession())
+})
 
 if (failures.length) {
   console.error(`\n❌ ${failures.length} failed, ${passed} passed\n`)

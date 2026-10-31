@@ -10,7 +10,7 @@
       <app-main />
       <settings ref="settingRef" />
       <demo-banner />
-      <assistant-launcher />
+      <AiLaunchers />
     </div>
   </div>
 </template>
@@ -20,7 +20,7 @@ import { useWindowSize } from '@vueuse/core'
 import Sidebar from './components/Sidebar/index.vue'
 import { AppMain, Navbar, Settings, TagsView } from './components'
 import DemoBanner from './components/DemoBanner.vue'
-import AssistantLauncher from '@/components/Assistant/AssistantLauncher.vue'
+import { AiLaunchers, initAi } from '@ai'
 import useAppStore from '@/store/modules/app'
 import useSettingsStore from '@/store/modules/settings'
 import useUserStore from '@/store/modules/user'
@@ -65,6 +65,11 @@ const settingRef = ref(null)
 function setLayout() {
   settingRef.value.openSetting()
 }
+
+// 登录后布局加载时拉取 AI 功能表（幂等、失败静默；standard 线无插件入口）
+onMounted(() => {
+  initAi()
+})
 </script>
 
 <style lang="scss" scoped>

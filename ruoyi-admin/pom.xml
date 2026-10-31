@@ -60,6 +60,12 @@
             <artifactId>ruoyi-generator</artifactId>
         </dependency>
 
+        <!-- AI 插件容器：jar 恒包含；standard 部署按 app.edition 不装配任何 AI Bean -->
+        <dependency>
+            <groupId>com.ruoyi</groupId>
+            <artifactId>ruoyi-ai</artifactId>
+        </dependency>
+
         <!-- iText 5 (PDF 生成, Java 17 兼容, LGPL, 已移到 ruoyi-system) -->
         <!--<dependency>
             <groupId>com.itextpdf</groupId>

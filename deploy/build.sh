@@ -12,6 +12,10 @@
 #   # 3. 只构建不部署
 #   bash build.sh --only-build
 #
+#   # 产品线（缺省 standard）：AI 版前端 + 远端以 ai 线启动
+#   bash build.sh --edition ai
+#   bash build.sh --only-build --edition ai
+#
 # 这个脚本做的事：
 #   (1) Maven clean package -DskipTests（注入 apms.version）
 #   (2) Vue vite build
@@ -62,16 +66,28 @@ err()  { echo -e "${RED}[ERR  ]${NC} ${*}"; exit 1; }
 # ===== 参数 =====
 VERSION=""
 ONLY_BUILD=0
+# 产品线：standard（缺省，前端零 AI 代码）| ai（含 AI 插件）；后端为单 jar，线别只影响前端构建与远端运行配置
+EDITION="standard"
+# 细粒度构建开关（供 deploy-uat.sh 智能构建透传：纯切线别时只重建前端，不重打后端 jar）
+SKIP_MAVEN=0
+SKIP_FRONTEND=0
 DEPLOY_SKIP_ARGS=""    # 透传给远程 deploy.sh 的额外参数
 while [[ ${#} -gt 0 ]]; do
     case "${1}" in
         --version) VERSION="${2}"; shift 2 ;;
+        --edition) EDITION="${2}"; shift 2 ;;
         --only-build) ONLY_BUILD=1; shift ;;
+        --skip-maven) SKIP_MAVEN=1; shift ;;
+        --skip-frontend) SKIP_FRONTEND=1; shift ;;
         --skip-patch) DEPLOY_SKIP_ARGS="${DEPLOY_SKIP_ARGS} --skip-patch"; shift ;;
         --skip-cache) DEPLOY_SKIP_ARGS="${DEPLOY_SKIP_ARGS} --skip-cache"; shift ;;
         *) err "未知参数: ${1}" ;;
     esac
 done
+case "${EDITION}" in
+    standard|ai) ;;
+    *) err "未知 --edition: ${EDITION}（只允许 standard|ai）" ;;
+esac
 
 # 版本号：优先 --version 参数，否则读 pom.xml <apms.version>
 if [ -z "${VERSION}" ]; then
@@ -86,29 +102,50 @@ cd "${PROJECT_ROOT}"
 
 echo ""
 echo "=========================================="
-echo "  APMS Build → ${VERSION}"
+echo "  APMS Build → ${VERSION} (edition=${EDITION})"
 echo "=========================================="
 echo ""
 
-# ===== Step 1: Maven 后端 =====
-log "Step 1: Maven 后端构建..."
-mvn clean package -DskipTests -q -Dapms.version="${VERSION}"
+# ===== Step 1: Maven 后端（单 jar，与 Edition 无关；--skip-maven 时复用现有 jar）=====
 JAR_FILE="${PROJECT_ROOT}/ruoyi-admin/target/apms.jar"
-[ -f "${JAR_FILE}" ] || err "jar 未生成"
+if [ "${SKIP_MAVEN}" -eq 1 ]; then
+    log "Step 1: 跳过 Maven 后端构建 (--skip-maven)，复用现有 jar"
+    [ -f "${JAR_FILE}" ] || err "指定 --skip-maven 但 ${JAR_FILE} 不存在，请先完整构建"
+else
+    log "Step 1: Maven 后端构建..."
+    mvn clean package -DskipTests -q -Dapms.version="${VERSION}"
+    [ -f "${JAR_FILE}" ] || err "jar 未生成"
+fi
 # 验证版本注入
 INJECTED_VERSION=$(unzip -p "${JAR_FILE}" BOOT-INF/classes/version.properties 2>/dev/null | grep '^app.version=' | cut -d= -f2)
 log "  jar: $(ls -lh "${JAR_FILE}" | awk '{print $5}')"
 log "  版本注入验证: ${INJECTED_VERSION:-⚠️ 未注入}"
 
-# ===== Step 2: Vue 前端 =====
-log "Step 2: Vue 前端构建..."
-cd "${PROJECT_ROOT}/ruoyi-ui"
-if [ -d node_modules ]; then
-    npx vite build 2>&1 | tail -5 || err "Vite build 失败"
+# ===== Step 2: Vue 前端（按产品线构建；--skip-frontend 时保留现有 dist）=====
+DIST_DIR="${PROJECT_ROOT}/ruoyi-ui/dist"
+if [ "${SKIP_FRONTEND}" -eq 1 ]; then
+    log "Step 2: 跳过前端构建 (--skip-frontend)，保留现有 dist"
 else
-    warn "  node_modules 不存在，跳过前端构建"
+    log "Step 2: Vue 前端构建 (--mode ${EDITION})..."
+    cd "${PROJECT_ROOT}/ruoyi-ui"
+    if [ -d node_modules ]; then
+        npx vite build --mode "${EDITION}" 2>&1 | tail -5 || err "Vite build 失败"
+    else
+        warn "  node_modules 不存在，跳过前端构建"
+    fi
+    cd "${PROJECT_ROOT}"
+
+    # 前端线别自检：edition.txt 必须与入参一致；standard 产物中不允许出现 rpa 插件 URL 痕迹
+    DIST_EDITION=$(tr -d '[:space:]' < "${DIST_DIR}/edition.txt" 2>/dev/null || echo "")
+    [ "${DIST_EDITION}" = "${EDITION}" ] || err "dist/edition.txt='${DIST_EDITION}' 与 --edition ${EDITION} 不一致，拒绝继续"
+    log "  dist 线别自检通过: edition.txt=${DIST_EDITION}"
+    if [ "${EDITION}" = "standard" ]; then
+        if grep -rl "apms/ai/rpa" "${DIST_DIR}/static/js" >/dev/null 2>&1; then
+            err "standard 前端产物中检出 AI 代码（apms/ai/rpa），构建隔离失败"
+        fi
+        log "  standard 零 AI 代码校验通过"
+    fi
 fi
-cd "${PROJECT_ROOT}"
 
 if [ "${ONLY_BUILD}" -eq 1 ]; then
     log "✅ Build 完成 (--only-build)，产物位置："
@@ -229,18 +266,19 @@ fi
 log "  ✅ 上传完成"
 
 # ===== Step 4: 远程执行 deploy.sh =====
-log "Step 4: 远程执行 deploy.sh --version ${VERSION} ${DEPLOY_SKIP_ARGS}"
+log "Step 4: 远程执行 deploy.sh --version ${VERSION} --edition ${EDITION} ${DEPLOY_SKIP_ARGS}"
 scp "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "${PROJECT_ROOT}/deploy/deploy.sh" "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/deploy.sh" >/dev/null 2>&1
 
 # 非 root 用户自动加 sudo（需要 NOPASSWD sudoers 配置）
 REMOTE_SUDO=""
 [ "${REMOTE_USER}" != "root" ] && REMOTE_SUDO="sudo"
 
+# Edition 必须显式透传：否则远端可能按 env.conf 的旧线别启动，与本次构建的 dist 错配
 ssh "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "${REMOTE_USER}@${REMOTE_HOST}" \
-    "${REMOTE_SUDO} bash ${REMOTE_DIR}/deploy.sh --version ${VERSION} ${DEPLOY_SKIP_ARGS}"
+    "${REMOTE_SUDO} bash ${REMOTE_DIR}/deploy.sh --version ${VERSION} --edition ${EDITION} ${DEPLOY_SKIP_ARGS}"
 
 echo ""
 log "=========================================="
-log "  ✅ 全流程完成 → ${VERSION}"
+log "  ✅ 全流程完成 → ${VERSION} (edition=${EDITION})"
 log "=========================================="
 echo ""

@@ -65,6 +65,18 @@ export const STUBS = {
   '@/store/modules/user': dataUrl(`
     export const __store = { token: '', roles: [], permissions: [], portalMode: false, homePath: '' };
     export default function useUserStore() { return __store; }
+  `),
+  // AI 容器（Node 测试专用入口）：不含 Vue/import.meta.glob，仅接 rpa 真实 mock handler，
+  // 保持 mock 注册表行为与重构前一致；浏览器/Vite 下 '@ai' 由构建别名解析。
+  '@ai': dataUrl(`
+    import { assistantHandlers } from '@/ai/plugins/rpa/mock/assistantHandlers.js';
+    export function aiMockHandlers() { return assistantHandlers; }
+    export function clearAiSession() {}
+    export async function initAi() {}
+    export function loadAiFeatures() { return Promise.resolve(aiState); }
+    export function pluginEnabled() { return true; }
+    export const AiLaunchers = null;
+    export const aiState = { edition: 'ai', loaded: true, plugins: { rpa: { enabled: true } } };
   `)
 }
 

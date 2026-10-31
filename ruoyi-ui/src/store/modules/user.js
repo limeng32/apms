@@ -3,7 +3,7 @@ import cache from '@/plugins/cache'
 import { ElMessageBox, } from 'element-plus'
 import { login, smsLogin, smsLoginSelect, logout, getInfo } from '@/api/login'
 import { getToken, setToken, removeToken, isDemoMode, clearDemoSession } from '@/utils/auth'
-import { clearAssistantSession } from '@/utils/assistantSession'
+import { clearAiSession } from '@ai'
 import useLockStore from '@/store/modules/lock'
 
 const useUserStore = defineStore(
@@ -113,7 +113,7 @@ const useUserStore = defineStore(
           // broken/storage-error 同样走进来（401/菜单退出），clearDemoSession 对异常存储安全。
           if (isDemoMode()) {
             clearDemoSession()
-            clearAssistantSession()
+            clearAiSession()
             this.token = ''
             this.roles = []
             this.permissions = []
@@ -123,7 +123,7 @@ const useUserStore = defineStore(
             return
           }
           logout(this.token).then(() => {
-            clearAssistantSession()
+            clearAiSession()
             this.token = ''
             this.roles = []
             this.permissions = []

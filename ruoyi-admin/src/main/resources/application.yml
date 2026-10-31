@@ -171,6 +171,11 @@ xss:
   # 匹配链接
   urlPatterns: /system/*,/monitor/*,/tool/*
 
+# 产品线（部署级）：standard（缺省，不装配任何 AI 能力）| ai
+# 由部署服务器 env.conf / 启动参数 --app.edition 覆盖；standard↔ai 切换不改数据库。
+app:
+  edition: ${APP_EDITION:standard}
+
 # 阿里云短信登录配置
 # 敏感凭证（AK/SK）禁止写入本文件：由部署服务器 env.conf 注入（外部 config/application.yml 扁平覆盖）。
 # 功能总开关在 sys_config: sys.account.smsLoginEnabled（缺省关闭）；AK/SK 为空时发短信直接报错，不影响应用启动。

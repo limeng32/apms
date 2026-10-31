@@ -1,8 +1,14 @@
 # APMS 双产品线（apms-standard / apms-ai）与 ruoyi-ai 插件化模块实施计划
 
-> 状态：待评审（2026-10-31，第五版：补齐生产 build→deploy Edition 透传与 systemd 持久化闭环）
+> 状态：**已实施（2026-10-31）**，待 UAT/生产发版（由项目 owner 执行）
 > 范围：后端单产物 + 部署级 Edition 条件装配、AI 插件框架（SPI）、Feature Flags、前端双构建零 AI 代码、统一数据库结构、构建/部署脚本适配
 > 关联文档：[rpa_assistant_plan.md](rpa_assistant_plan.md)（首个 AI 插件：RPA 助手 M1）
+>
+> 实施结果（与计划的两处实测偏差，均为等价/增强，不影响契约）：
+> 1. standard 部署下未映射的 `/apms/ai/**` 返回与全站任意不存在路径**完全一致**的表现（HTTP 200 + AjaxResult code=500「No static resource」，本框架全局行为），功能不可达且不可区分；ai 线 flag 关闭时拦截器仍返回**真实 HTTP 404**。
+> 2. dev 库在热开关验证时已手工植入 `sys.ai.rpa.enabled=true`（与统一补丁目标态一致），补丁 `patches/patch-1.0-261031224744.sql` 在 dev 执行将是幂等无操作。
+> 3. deploy-uat.sh 顺手补齐了既有缺口：Step 4 现在会把当前 jar/dist 备份到本次 BKDIR（此前 UAT 回滚函数引用的 apms.jar/dist_old 实际无人产出）。
+> 4. 追加加固（同日）：UAT 公共 SQL 补丁失败由「warn 后继续」改为**立即硬终止、绝不启动新版本**，失败日志持久化进本次备份目录交人工处理（§3.7.3 第 5 点）。
 
 ---
 
@@ -282,9 +288,12 @@ env/scripts：新增 `.env.standard`、`.env.ai`（生产变量 + VITE_EDITION�
 #### 3.7.2 build.sh（本机构建，UAT 与生产共用入口；Edition 传递起点）
 
 - 新增 `--edition standard|ai`（缺省 standard），**必须与 `--only-build` 可组合**；入参即时校验（非法值直接 err，不进入构建）；
-- Maven 步骤不带 profile（单 jar 恒构建，不区分线）；
-- 前端步骤改为 `npx vite build --mode ${EDITION}`；
-- 构建后自检：① jar 内 ruoyi-ai 恒存在；② `dist/edition.txt` 内容 == 入参 EDITION；③ standard 构建 dist 中 `assistant`/`rk-assistant` 关键字零命中；
+- 后端构建与前端构建解耦，新增细粒度开关（UAT 智能构建透传，生产手工发版不传、保持全量）：
+  - `--skip-maven`：复用现有 target jar，**不重打后端**（纯切线别场景；jar 缺失则 err）；
+  - `--skip-frontend`：保留现有 dist，不跑 vite；
+  - 后端是**与 Edition 无关的单 jar**，Maven 步骤本身也不带任何 profile；
+- 前端步骤为 `npx vite build --mode ${EDITION}`；
+- 构建后自检（执行前端构建时）：① `dist/edition.txt` 内容 == 入参 EDITION；② standard 构建 dist 中 `apms/ai/rpa` 零命中；
 - patches 同步行为与现状完全一致（仅平铺 `patches/*.sql`），**不随线别变化、不增加任何按线目录**；
 - **远端调用必须透传 Edition（闭环关键）**：现有 ssh 调用 `deploy.sh --version ${VERSION} ${DEPLOY_SKIP_ARGS}`（build.sh 现 Step 4）改为拼接 `--edition ${EDITION}`，即：
   `bash ${REMOTE_DIR}/deploy.sh --version ${VERSION} --edition ${EDITION} ${DEPLOY_SKIP_ARGS}`；
@@ -315,24 +324,25 @@ ssh deploy.sh --version X --edition ai
 1. 参数解析（现 44-53 行 flag 循环）增加 `--edition standard|ai`；更新头部 usage 注释与 `--help`；
 2. EDITION 取值优先级固定为：**命令行 `--edition` > `.uat/env.conf` 的 `EDITION` > 缺省 `standard`**；取值非 `standard|ai` 直接 hard fail；启动横幅与结尾汇总（现 283-292、702-707 行）打印 Edition。
 
-自动构建链路（现 403-422 行「智能构建」）：
+自动构建链路（后端/前端新鲜度独立判定）：
 
-3. 自动/强制构建调用改为 `bash "${_SCRIPT_DIR}/build.sh" --only-build --edition "${EDITION}"`（现 419 行透传线别，杜绝用错模式的 dist）；
-4. NEED_BUILD 条件增加一条：`ruoyi-ui/dist/edition.txt` 不存在或内容 != EDITION 也判定需构建 —— 解决「源码没动、切换线别时不会触发重建」的问题。
+3. 智能构建拆为 `BACKEND_NEED_BUILD`（jar 缺失 / pom 更新 / 后端源码新于 jar）与 `FRONTEND_NEED_BUILD`（dist 缺失 / **edition.txt 与本次 EDITION 不符** / 前端源码新于 dist）两个独立标志；`--build` 强制两者皆重建；
+4. 按需组装 build.sh 参数：纯切线别时只带 `--skip-maven`（**后端单 jar 复用、不重新构建**，仅 vite 重建目标线别 dist）；仅后端源码变更时只带 `--skip-frontend`；两端皆新则全量。实测切线构建后 jar 的 mtime+size 字节级不变；
+5. 契约重申：**后端切换 Edition 永远不需要重新构建/重新打包**，只改部署配置（env.conf/yml）+ 换对应线别 dist + 重启；前后端线别一致性由 Step 4 的 dist/edition.txt 配对与 Step 6.5 的 /health 双向校验强制保证。
 
-SQL 补丁（现 Step 3，505-566 行）：
+SQL 补丁（现 Step 3）：
 
-5. **补丁步骤零改造**：统一补丁流两线执行完全相同的 `patches/*.sql`，不按 EDITION 增加任何分支或目录（§3.5）。
+6. **补丁步骤按线零分化，但失败策略改为硬终止**：统一补丁流两线执行完全相同的 `patches/*.sql`，不按 EDITION 增加任何分支或目录（§3.5）；**任一公共补丁（含版本表初始化）执行失败，立即 err 终止部署，不进入 Step 3.5/4、不启动新版本**——服务保持停止、旧 jar/dist 未替换；mysql 完整输出持久化到 `${BKDIR}/patch-<补丁名>.log`（不写 /tmp），与 `db.sql.gz` 一同保留交人工处理；控制台打印失败末尾 15 行与两条人工处置指引（修复幂等补丁后重跑 / `deploy-uat.sh start` 先恢复旧版服务）。此前 UAT 的「失败仅 warn 并继续启动新版本」行为已移除。
 
 运行时配置与启动：
 
-6. Step 5.5 生成的外部 `config/application.yml`（现 626-645 行 heredoc）增加一行 `app.edition: ${EDITION}`（沿用该文件扁平覆盖既有风格，chmod 600 不变）——UAT 的持久化载体即此文件（每次部署由 `.uat/env.conf` 重新生成）；do_start 回显行同步打印 edition；
-7. do_start 健康检查通过后（现 321-344 行之后）增加**线别校验**：curl 管理端口 `/health` —— `EDITION=ai` 必须存在 `components.ai.details.edition=ai`；`EDITION=standard` 必须不存在 `ai` 块；不符合即调用既有 `rollback "运行线别与 EDITION 不一致"`；rollback 恢复旧 jar/dist 后，须把 yml 的 `app.edition` 改回**持久配置值**（env.conf 的 EDITION，缺省 standard；因 CLI 一次性覆盖不应留下）再重启，保证旧产物与旧线别成对恢复；
-8. Step 4 替换前端产物前增加 `edition.txt` 配对校验（§3.7.1），不一致直接 rollback。
+7. Step 5.5 生成的外部 `config/application.yml`（现 626-645 行 heredoc）增加一行 `app.edition: ${EDITION}`（沿用该文件扁平覆盖既有风格，chmod 600 不变）——UAT 的持久化载体即此文件（每次部署由 `.uat/env.conf` 重新生成）；do_start 回显行同步打印 edition；
+8. do_start 健康检查通过后（现 321-344 行之后）增加**线别校验**：curl 管理端口 `/health` —— `EDITION=ai` 必须存在 `components.ai.details.edition=ai`；`EDITION=standard` 必须不存在 `ai` 块；不符合即调用既有 `rollback "运行线别与 EDITION 不一致"`；rollback 恢复旧 jar/dist 后，须把 yml 的 `app.edition` 改回**持久配置值**（env.conf 的 EDITION，缺省 standard；因 CLI 一次性覆盖不应留下）再重启，保证旧产物与旧线别成对恢复；
+9. Step 4 替换前端产物前增加 `edition.txt` 配对校验（§3.7.1），不一致直接 rollback。
 
 env.conf：
 
-9. `deploy/env.conf.example` 与 UAT 说明中增加 `EDITION=standard|ai`；脚本按「非敏感可 fallback」变量处理（缺省 standard），不设为必填 hard fail（与 PROFILE/APP_PORT 同类）。
+10. `deploy/env.conf.example` 与 UAT 说明中增加 `EDITION=standard|ai`；脚本按「非敏感可 fallback」变量处理（缺省 standard），不设为必填 hard fail（与 PROFILE/APP_PORT 同类）。
 
 #### 3.7.4 deploy.sh（生产远端链路；持久化与回滚闭环）
 
@@ -449,3 +459,10 @@ env.conf：
     - 生产：`bash deploy/build.sh --edition standard`｜`bash deploy/build.sh --edition ai`；
     - UAT：`bash deploy/deploy-uat.sh --edition ai`（或在 `.uat/env.conf` 写 `EDITION=ai` 后直接 `bash deploy/deploy-uat.sh`；智能构建会自动以对应线别调 build.sh）；
     - 切换 UAT 线别时无需删产物，脚本依据 `dist/edition.txt` 自动触发正确线别的重建。
+
+**换线契约（standard ↔ ai）**：
+
+- **后端同一个 jar 不动、不重新构建**：线别由部署级配置（生产 `/etc/apms/env.conf` 的 `EDITION`；UAT 外部 `config/application.yml` 的 `app.edition`）在启动时决定，`systemctl restart`/进程重启即生效且不漂移；
+- **前端必须换为对应 Edition 的独立构建产物**（dist/edition.txt 标记）；UAT 智能构建识别为纯切线时只跑 vite（`--skip-maven`，已实测 jar 字节级不变）；
+- **前后端线别一致性是强制门禁**：部署时 dist/edition.txt 与 EDITION 配对校验 + 启动后管理端口 /health 双向校验，任一不符即拒绝/回滚，不存在错配运行的可能；
+- 数据库两线完全同构同数据，换线全程零 SQL。

@@ -28,11 +28,16 @@ public class VersionController {
     @Value("${app.build.timestamp:unknown}")
     private String buildTimestamp;
 
+    /** 产品线：standard（默认）| ai，部署级配置（env.conf / --app.edition），非构建期属性 */
+    @Value("${app.edition:standard}")
+    private String edition;
+
     @GetMapping
     public Map<String, Object> info() {
         Map<String, Object> info = new HashMap<>();
         info.put("name", appName);
         info.put("version", version);
+        info.put("edition", edition);
         info.put("framework", framework);
         info.put("buildAt", buildTimestamp);
         info.put("java", System.getProperty("java.version"));

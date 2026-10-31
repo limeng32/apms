@@ -1,9 +1,11 @@
 # 系统级 RPA 助手（伪 RPA · 流式）实施计划
 
-> 状态：**M1 已实现**（2026-10-31）
+> 状态：**M1 已实现**（2026-10-31）；**已迁入 ruoyi-ai 的 rpa 插件**（见 [edition_split_plan.md](edition_split_plan.md)）
 > 范围：M1 伪 RPA（不接 Agent）
 > 更新时间：2026-10-31
-> 关联文档：[DESIGN.md](../DESIGN.md)、[demo_mode_plan.md](./demo_mode_plan.md)、[demo_mode_maintenance.md](./demo_mode_maintenance.md)、[PERMISSION_DESIGN.md](../PERMISSION_DESIGN.md)
+> 关联文档：[edition_split_plan.md](edition_split_plan.md)、[DESIGN.md](../DESIGN.md)、[demo_mode_plan.md](./demo_mode_plan.md)、[demo_mode_maintenance.md](./demo_mode_maintenance.md)、[PERMISSION_DESIGN.md](../PERMISSION_DESIGN.md)
+
+> **架构变更说明（2026-10-31 晚）**：本功能后端代码已迁入新模块 **ruoyi-ai** 的 `com.ruoyi.ai.plugin.rpa` 包，前端迁入 `ruoyi-ui/src/ai/plugins/rpa/`；端点由 `/apms/assistant/*` 改为 **`/apms/ai/rpa/*`**；受部署级 `app.edition=ai` 与热开关 `sys.ai.rpa.enabled` 双重门控。本文档其余内容（意图表、SSE 协议、限流、审计、前端打字机/锚点等）描述的行为均保持不变。
 
 ---
 
