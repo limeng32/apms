@@ -1,6 +1,6 @@
 # APMS 双产品线（apms-standard / apms-ai）与 ruoyi-ai 插件化模块实施计划
 
-> 状态：待评审（2026-10-31，第三版：Edition 定为部署级 · 后端单 jar 条件装配 · 两线同库结构）
+> 状态：待评审（2026-10-31，第四版：数据库完全统一 —— 同 DDL/同补丁/同 DML，禁止 Edition 专属 SQL）
 > 范围：后端单产物 + 部署级 Edition 条件装配、AI 插件框架（SPI）、Feature Flags、前端双构建零 AI 代码、统一数据库结构、构建/部署脚本适配
 > 关联文档：[rpa_assistant_plan.md](rpa_assistant_plan.md)（首个 AI 插件：RPA 助手 M1）
 
@@ -14,11 +14,11 @@
 2. AI 代码全部收拢到新模块 **ruoyi-ai**，内部采用**插件模式**：RPA 助手为首个插件，后续 RAG / Data / Coach 以同构插件加入（新增插件 = 新增插件包 + 一个描述符，容器主干零改动）。
 3. **Edition 是部署级概念（v3 核心）**：
    - **后端只构建一个 jar**；是否启用 AI 由部署服务器的 `EDITION` 配置在**启动时**决定 —— standard 部署不注册任何 AI 业务 Bean，AI 端点全部 404；
-   - 换线不改产物：同一 jar 改 `EDITION` 重启即可在 standard / ai 之间切换；
+   - 后端换线不改 jar：同一 jar 改 `EDITION` 重启即切换；前端换线需配套对应线别的 dist（部署脚本强制配对），**数据库任何方向都不需要迁移**；
    - **前端保持双构建**：按 `VITE_EDITION` 产出两份 dist，standard 的浏览器产物中零 AI 代码；
    - 部署时强制「前端 dist 线别 = 后端运行线别」一致（脚本校验，不一致即部署失败）。
-4. **两条产品线数据库结构完全一致**：所有插件的表结构在 standard 与 ai 库中都存在（DDL 统一执行）；仅 AI 专属*数据*（开关参数、AI 菜单授权）按线裁剪。换线/备份/恢复/升级面对同一套 schema。
-5. 运行时管控采用 **Edition 封顶 + 插件级 Feature Flag（sys_config 热开关）**：flag 只在 ai 部署有意义；ai 版中各插件默认开启、可热关闭。
+4. **两条产品线数据库完全统一（结构 + 迁移 + 初始化数据）**：standard 与 ai 执行**完全相同的 DDL 补丁与 DML 初始化脚本**，所有 Edition 跑同一套数据库迁移，**不存在任何 Edition 专属 SQL**。AI 专属数据（插件开关、未来 AI 菜单/授权等）允许存在于统一库中，standard 只是不提供对应业务能力。**standard ↔ ai 双向切换零数据库迁移**。
+5. 运行时管控采用 **Edition 封顶 + 插件级 Feature Flag（sys_config 热开关）**：Edition 差异仅由应用构建（前端）与运行配置（后端 EDITION）决定；flag 数据两线都在，仅 ai 部署消费；ai 版中各插件默认开启、可热关闭。
 
 ### 1.2 已确认决策（2026-10-31，三轮收敛）
 
@@ -27,8 +27,8 @@
 | 1 | 后端形态 | **单一 jar**：ruoyi-ai 始终在产物中；启动时按部署级 `EDITION` 条件装配，standard 不加载 AI Bean |
 | 2 | Edition 来源 | **部署级配置**：`env.conf` 的 `EDITION=standard\|ai`（缺省 standard，fail-safe），经 deploy.sh 传入 Spring 属性 `app.edition` |
 | 3 | 前端形态 | **双构建**：`VITE_EDITION` + Vite 别名桩替换，standard dist 零 AI 代码 |
-| 4 | 数据库 | **两线表结构完全一致**：插件 DDL 随公共补丁在两线执行；仅 AI 专属 DML 按线分发 |
-| 5 | Feature Flag | Edition 封顶 + `sys.ai.<plugin>.enabled` 热开关（沿用 sys_config 缓存即清机制），ai 版默认开启 |
+| 4 | 数据库 | **两线完全同构同数据**：相同 DDL、相同补丁序列、相同 DML 初始化；**禁止 Edition 专属 SQL**；双向换线零迁移 |
+| 5 | Feature Flag | Edition 封顶 + `sys.ai.<plugin>.enabled` 热开关；种子随统一脚本两线都插入，仅 ai 部署读取消费；ai 版默认开启 |
 | 6 | ruoyi-ai 组织 | 容器核心 core + 插件 plugin.<key>（首发 rpa，预留 rag/data/coach） |
 
 ### 1.3 明确不做（边界）
@@ -37,8 +37,8 @@
 - 本期不为每个插件建 Maven 子模块：插件先以模块内包 + SPI 存在；未来某插件引入重型依赖（如 RAG 向量库客户端）时再演进为 `ruoyi-ai-plugin-*` 子模块，SPI 契约不变；
 - 不做 license / 授权码：产品线由部署配置与前端产物共同决定；
 - 不删除任何 AI 代码，只做迁移、分层与门控；
-- standard 数据库中**保留** AI 插件的空表（结构一致要求），不做 DROP；
-- standard 侧仅允许一个 AI 接缝：页面惰性 `data-rpa` 锚点（无行为、无依赖，§5.4）。
+- 数据库不做任何 Edition 分化：不建 `patches/ai/`、不写按线分发的补丁、不为换线准备迁移脚本；
+- standard 侧仅允许一个 AI 接缝：页面惰性 `data-rpa` 锚点（无行为、无依赖，§3.6）。
 
 ---
 
@@ -174,6 +174,13 @@ public interface AiPlugin {
   "plugins": { "rpa": { "enabled": true, "name": "RPA 助手", "description": "..." } } } }
 ```
 
+Flag 注册表（种子两线统一插入，见 §3.5；standard 不消费）：
+
+| sys_config 键 | 插件 | 默认 | 热生效方式 |
+|---|---|---|---|
+| `sys.ai.rpa.enabled` | RPA 助手 | true | 参数设置保存清缓存，下一次请求即受控，无需重启 |
+| `sys.ai.rag.enabled` / `sys.ai.data.enabled` / `sys.ai.coach.enabled` | 未来插件 | 随其统一补丁声明 | 同左 |
+
 URL 规范化（UAT/生产未发布，无兼容负担；dev 同批改）：
 
 | 旧 | 新 |
@@ -184,7 +191,7 @@ URL 规范化（UAT/生产未发布，无兼容负担；dev 同批改）：
 
 SSE 事件协议、16KB 限制、20 次/60s 限流、15s 心跳、CAS 终态、审计一条、`X-Accel-Buffering: no` 全部不变。
 
-**新增插件接入模板（rag/data/coach）**：① 建 `com.ruoyi.ai.plugin.<key>` 包（web/service/domain/persistence）与 `resources/mapper/<key>/`；② 写一个 `@AiEnabled` 的 `AiPlugin` 描述符；③ Controller 挂 `/apms/ai/<key>/**` + `@RequireAiPlugin`；④ 表 DDL 进公共 `patches/`（两线都执行），flag 种子与菜单授权进 `patches/ai/`（仅 ai 线）；⑤ 前端建 `src/ai/plugins/<key>/`（glob 自动发现）；⑥ 补桩测/接口验证。plugin key 发布后不可改。
+**新增插件接入模板（rag/data/coach）**：① 建 `com.ruoyi.ai.plugin.<key>` 包（web/service/domain/persistence）与 `resources/mapper/<key>/`；② 写一个 `@AiEnabled` 的 `AiPlugin` 描述符；③ Controller 挂 `/apms/ai/<key>/**` + `@RequireAiPlugin`；④ 该插件的**全部**表结构、字典、`sys.ai.<key>.enabled` 种子、菜单与授权一律进普通 `patches/*.sql`（两线统一执行，禁止按线拆分，见 §3.5）；若带页面，菜单标识遵循 `apms:ai:<key>:*` 约定并依赖服务端线别过滤；⑤ 前端建 `src/ai/plugins/<key>/`（glob 自动发现）；⑥ 补桩测/接口验证。plugin key 发布后不可改。
 
 ### 3.4 健康检查与部署线别校验
 
@@ -197,21 +204,18 @@ SSE 事件协议、16KB 限制、20 次/60s 限流、15s 心跳、CAS 终态、�
 - standard 部署无此指示器 → `/health` 中无 `ai` 块；
 - deploy.sh 启动后以管理端口免 token 校验：`EDITION=ai` 必须存在 `components.ai.details.edition=="ai"` 且插件列表非空；`EDITION=standard` 必须**不存在** `ai` 块；不一致即判定部署失败、走既有自动回滚。同时校验前端 dist 与 EDITION 配对（build.sh 以 `--edition` 同时决定 vite mode 与上传清单，产物天然成对）。
 
-### 3.5 统一数据库结构（两线一致）
+### 3.5 统一数据库（两线同构 · 同迁移 · 同初始化数据）
 
-**铁律：凡 DDL 一律两线统一；AI 专属 DML 才允许按线分发。**
+**铁律：APMS-Standard 与 APMS-AI 使用完全相同的数据库结构、DDL 补丁和 DML 初始化脚本；所有 Edition 执行同一套数据库迁移；不允许存在任何 Edition 专属 SQL。Edition 差异仅由应用构建（前端）与运行配置（后端 EDITION）决定。**
 
-| 补丁位置 | 内容 | standard | ai |
-|---|---|---|---|
-| `patches/*.sql`（现有机制不变） | **全部建表/改表 DDL** + 两线共用数据 | 执行 | 执行 |
-| `patches/ai/*.sql`（新增目录，仅 DML） | `sys.ai.<plugin>.enabled` 种子、AI 菜单/角色授权 | 不执行 | 执行 |
+落地规则：
 
-- 现有 `patches/patch-1.0-261031125227.sql` **保持原位不移动**（建表 DDL 两线统一，dev 已执行无需重跑）；
-- 新增一枚 AI 专属 DML 补丁 `patches/ai/rpa-seed-<时间戳>.sql`：幂等插入 `sys.ai.rpa.enabled=true`（含 config_name 等列，参数设置可见）；dev 由我给 SQL 清单、**您本人执行**；UAT/生产 ai 部署时自动执行；
-- `patches/ai/` 中**严禁出现 DDL**（脚本评审 + 本计划约束；deploy.sh 对该目录文件做 `grep -Ei 'create|alter|drop'` 防呆，命中即拒绝部署）；
-- 收益：standard 与 ai 备份/恢复同构；standard → ai 升级 = 换 ai 构建的 dist + 改 EDITION 重启 + 补 ai DML，**零结构迁移**；
-- dev 已有的 AI 表与两线一致原则天然吻合；不回收、不 DROP；
-- 未来 AI 页面菜单（RAG/Data/Coach 带来真实页面时）：菜单行进 `patches/ai/`；**需配套服务端菜单过滤**（standard 部署即使库中残留 AI 菜单行，getRouters 也必须剔除）——首个带页面的插件落地时在 `SysMenuServiceImpl`/Mapper 增加按 `app.edition` 过滤的实现（菜单以权限标识前缀 `apms:ai:<plugin>:` 或专用标记列识别），本期 RPA 无菜单、不提前建设，仅在此登记技术债。
+1. **单一补丁流**：沿用现有 `patches/*.sql` 平铺机制，两线执行的文件集合、顺序、去重记录（`apms_db_version`）完全一致；**不新增 `patches/ai/` 或任何按线目录**；deploy.sh / deploy-uat.sh 的补丁步骤零分化。
+2. **RPA 建表补丁不动**：现有 `patches/patch-1.0-261031125227.sql`（`apms_assistant_log`）保持原位，两线都会执行；dev 已执行无需重跑。
+3. **AI 开关种子走统一补丁**：新增普通补丁 `patches/patch-1.0-<新时间戳>.sql`，幂等插入 `sys.ai.rpa.enabled=true`（config_name 写明「AI · RPA 助手开关」，参数设置列表可见）。**两线库都有该行**：ai 部署由 `AiFeatureService` 消费；standard 部署无 AI Bean，该行只是无人读取的普通参数。dev 由我提供 SQL 清单、**您本人执行**；UAT/生产随下次发版自动执行。
+4. **未来 AI 表与初始化数据同样统一**：插件 DDL、字典、`sys_config`、菜单与角色授权（RAG/Data/Coach 落地时）全部进普通补丁，两线全量存在；standard 不提供对应能力，但数据与结构不缺斤短两。
+5. **AI 菜单在 standard 的可见性**：库中菜单行两线一致，因此未来出现 AI 页面插件时，**服务端 `getRouters` 必须按运行线别过滤**（standard 运行时不返回 AI 菜单，避免 standard dist 无对应组件导致空页/报错）。识别约定：AI 菜单权限标识统一前缀 `apms:ai:<plugin>:*`、组件路径统一 `ai/<plugin>/...`，在菜单服务按 `app.edition` 过滤。本期 RPA 无菜单，该过滤随**首个带页面的 AI 插件**一并实现，此处定为强制规则而非可选项。
+6. **双向换线**：standard → ai：部署 ai dist + `EDITION=ai` 重启，即获全部 AI 能力；ai → standard：部署 standard dist + `EDITION=standard` 重启，AI 数据原样保留。两个方向都**不执行任何额外 SQL**；备份/恢复也不区分线别。
 
 ### 3.6 前端：插件容器 + 双构建零 AI 代码
 
@@ -281,7 +285,7 @@ env/scripts：新增 `.env.standard`、`.env.ai`（生产变量 + VITE_EDITION�
 - Maven 步骤不带 profile（单 jar 恒构建，不区分线）；
 - 前端步骤改为 `npx vite build --mode ${EDITION}`；
 - 构建后自检：① jar 内 ruoyi-ai 恒存在；② `dist/edition.txt` 内容 == 入参 EDITION；③ standard 构建 dist 中 `assistant`/`rk-assistant` 关键字零命中；
-- rsync/scp 始终包含 `patches/` 与 `patches/ai/`（远端是否执行 ai 目录取决于运行线别）。
+- patches 同步行为与现状完全一致（仅平铺 `patches/*.sql`），**不随线别变化、不增加任何按线目录**。
 
 #### 3.7.3 deploy-uat.sh（UAT 本地自包含链路，按现状逐点改造）
 
@@ -297,25 +301,23 @@ env/scripts：新增 `.env.standard`、`.env.ai`（生产变量 + VITE_EDITION�
 
 SQL 补丁（现 Step 3，505-566 行）：
 
-5. 公共补丁维持从 repo `patches/*.sql` 同步并执行（两线一致，含全部插件 DDL）；
-6. EDITION=ai 时额外：`mkdir -p "${PATCHES_LOCAL}/ai"`、拷贝 repo `patches/ai/*.sql`、用同一 `APPLIED_LIST` 去重集合再跑一轮循环（basename 天然不与根目录冲突）；standard 模式完全不碰该目录；
-7. ai 目录执行前 DDL 防呆：`grep -Eiq 'create[[:space:]]+(table|index)|alter[[:space:]]+table|drop' patches/ai/*.sql` 命中即拒绝部署（该目录只允许 DML）。
+5. **补丁步骤零改造**：统一补丁流两线执行完全相同的 `patches/*.sql`，不按 EDITION 增加任何分支或目录（§3.5）。
 
 运行时配置与启动：
 
-8. Step 5.5 生成的外部 `config/application.yml`（现 626-645 行 heredoc）增加一行 `app.edition: ${EDITION}`（沿用该文件扁平覆盖既有风格，chmod 600 不变）；do_start 回显行同步打印 edition；
-9. do_start 健康检查通过后（现 321-344 行之后）增加**线别校验**：curl 管理端口 `/health` —— `EDITION=ai` 必须存在 `components.ai.details.edition=ai`；`EDITION=standard` 必须不存在 `ai` 块；不符合即调用既有 `rollback "运行线别与 EDITION 不一致"` 终止；
-10. Step 4 替换前端产物前增加 `edition.txt` 配对校验（§3.7.1），不一致直接 rollback。
+6. Step 5.5 生成的外部 `config/application.yml`（现 626-645 行 heredoc）增加一行 `app.edition: ${EDITION}`（沿用该文件扁平覆盖既有风格，chmod 600 不变）；do_start 回显行同步打印 edition；
+7. do_start 健康检查通过后（现 321-344 行之后）增加**线别校验**：curl 管理端口 `/health` —— `EDITION=ai` 必须存在 `components.ai.details.edition=ai`；`EDITION=standard` 必须不存在 `ai` 块；不符合即调用既有 `rollback "运行线别与 EDITION 不一致"` 终止；
+8. Step 4 替换前端产物前增加 `edition.txt` 配对校验（§3.7.1），不一致直接 rollback。
 
 env.conf：
 
-11. `deploy/env.conf.example` 与 UAT 说明中增加 `EDITION=standard|ai`；脚本按「非敏感可 fallback」变量处理（缺省 standard），不设为必填 hard fail（与 PROFILE/APP_PORT 同类）。
+9. `deploy/env.conf.example` 与 UAT 说明中增加 `EDITION=standard|ai`；脚本按「非敏感可 fallback」变量处理（缺省 standard），不设为必填 hard fail（与 PROFILE/APP_PORT 同类）。
 
 #### 3.7.4 deploy.sh（生产远端链路）
 
 - 新增 `--edition standard|ai`（缺省 standard，向后兼容），命令行优先，其次远端 env.conf；
 - 启动命令（现 385-393 行 JVM 参数区）追加 `--app.edition="${EDITION}"`；
-- 补丁循环（现 736-794 行）：根目录 `patches/*.sql` 始终执行；ai 线额外执行 `patches/ai/*.sql`（共用 `apms_db_version` basename 去重），执行前同样做 DDL 防呆；
+- 补丁循环（现 736-794 行）**零改造**：两线同一套 `patches/*.sql`，不按 EDITION 分支（§3.5）；
 - 启动后按 §3.4 用管理端口 `/health` 做线别双向校验，不一致走既有失败停机/回滚分支；
 - 前端产物落盘前比对 dist 内 `edition.txt`。
 
@@ -328,7 +330,7 @@ env.conf：
 
 ## 4. 文件变更清单
 
-**新增**：`ruoyi-ai/pom.xml` + core 约 12 个类；plugin/rpa 迁入的 14 文件（控制器改名、包名/XML/URL 同步）；`resources/mapper/rpa/*.xml`；前端 `src/ai/**`、`src/ai-stub/index.js`、`src/utils/features.js`；3 个 env 文件；`patches/ai/rpa-seed-*.sql`。
+**新增**：`ruoyi-ai/pom.xml` + core 约 12 个类；plugin/rpa 迁入的 14 文件（控制器改名、包名/XML/URL 同步）；`resources/mapper/rpa/*.xml`；前端 `src/ai/**`、`src/ai-stub/index.js`、`src/utils/features.js`；3 个 env 文件；统一补丁 `patches/patch-1.0-<新时间戳>.sql`（`sys.ai.rpa.enabled` 种子，两线统一执行）。
 
 **修改**：根 pom.xml（module + dependencyManagement，**无 profile**）、ruoyi-admin/pom.xml（常依赖 ruoyi-ai）、application.yml（app.edition 默认值）、VersionController；vite.config.js、vite/plugins（新增 edition.txt 生成插件）、package.json、main.js/permission.js、layout/index.vue、user.js、demo.js、mock/handlers/index.js；build.sh、deploy.sh、deploy-uat.sh、env.conf.example；assistant.mjs（路径 + 空桩同形断言）。
 
@@ -342,11 +344,11 @@ env.conf：
 2. **RPA 插件迁移**：14 文件 git mv 到 `plugin/rpa`（Mapper 接口改放 `.persistence`）；改名/import/XML namespace/URL/注解；`RpaPlugin` 描述符。
 3. **Edition 上报**：application.yml 默认值 + VersionController。
 4. **后端双模式验证**（同一 jar 两种启动参数）：§6 矩阵。
-5. **SQL**：新建 `patches/ai/rpa-seed-*.sql`；输出 dev 手工执行清单（您本人执行）。
+5. **SQL**：新建统一补丁 `patches/patch-1.0-<新时间戳>.sql`（仅含 `sys.ai.rpa.enabled` 幂等种子，两线统一）；输出 dev 手工执行清单（**您本人执行**）；不产生任何按线 SQL。
 6. **前端容器化**：src/ai + rpa 插件 + 空桩 + glob 注册 + features store；集成点改造；env/scripts。
 7. **前端双构建验证**：dist grep + dev 两模式 + demo + flag 热开关。
 8. **桩测**：7 项原断言 + 空桩同形契约。
-9. **部署脚本**：按 §3.7 落地——vite `edition.txt` 产物标记；build.sh `--edition`（可与 --only-build 组合）；**deploy-uat.sh 十一点改造**（入参/env.conf 默认值、智能构建透传线别、edition.txt 触发重建、ai 补丁目录、DDL 防呆、外部 yml 注入 app.edition、health 线别校验、dist 配对校验）；deploy.sh 生产链路同步；`bash -n`/`--help` 验证；**不执行部署**（由您本人运行）。
+9. **部署脚本**：按 §3.7 落地——vite `edition.txt` 产物标记；build.sh `--edition`（可与 --only-build 组合）；**deploy-uat.sh 九点改造**（入参/env.conf 默认值、智能构建透传线别、edition.txt 不符触发重建、补丁步骤零分化、外部 yml 注入 app.edition、health 线别校验、dist 配对校验）；deploy.sh 生产链路同步；`bash -n`/`--help` 验证；**不执行部署**（由您本人运行）。
 10. **收口**：更新 rpa_assistant_plan.md 指引；输出两线发版命令、dev 启动参数、git 提交清单。
 
 ---
@@ -362,11 +364,12 @@ env.conf：
 | `/apms/ai/rpa/capabilities`、`/chat` | 404 | 能力表 200；SSE 四事件 + X-Accel-Buffering |
 | AI Mapper Bean | 不注册（条件 MapperScan） | 注册；审计正常落库 |
 | `sys.ai.rpa.enabled=false` | — | features 实时 false、rpa 两端点 404、悬浮球消失；复原即恢复 |
-| 数据库 | 含 apms_assistant_log 等全部插件表（结构一致） | 同左 + sys_config 种子 |
+| 数据库 | 与 ai 完全一致：全部插件表 + `sys.ai.rpa.enabled` 种子行均存在（仅无代码消费） | 与 standard 完全一致；同补丁序列、同初始化数据 |
+| 换线演练 | standard→ai、ai→standard 各一次：只换 dist + EDITION 重启，全程**不执行任何 SQL**，业务与助手状态符合目标线 | 同左 |
 | 既有业务回归 | 登录/getRouters/花名册等全正常 | 同左；限流/审计/413/UUID 校验行为不变 |
 | 前端 dist | grep assistant/rk-assistant 零命中；无球、Alt+A 无效、demo 无助手 | rpa chunk 在；真后端 + mock 全功能；登出/演示会话清理正常 |
 | 构建 | `mvn clean install -DskipTests` 单 jar SUCCESS；`vite build --mode standard/ai` 均成功 | — |
-| 部署 | UAT/生产：dist `edition.txt` 与 EDITION 不一致即拒绝/回滚；运行线别与 EDITION 不一致（health ai 块双向校验）即回滚；非法 EDITION 入参 hard fail；`patches/ai/` 出现 DDL 关键字即拒绝 | ai 线自动执行 ai DML、standard 线跳过；切换线别触发正确重建 |
+| 部署 | UAT/生产：dist `edition.txt` 与 EDITION 不一致即拒绝/回滚；运行线别与 EDITION 不一致（health ai 块双向校验）即回滚；非法 EDITION 入参 hard fail；SQL 步骤两线完全相同无分支 | 切换线别依据 edition.txt 自动触发正确重建 |
 
 `node .trae/demo-tests/assistant.mjs`：原 7 项 + 空桩同形断言全绿。
 
@@ -380,9 +383,9 @@ env.conf：
 | AI Mapper 被全局 `@MapperScan("com.ruoyi.**.mapper")` 扫到 | Mapper 接口统一放 `.persistence` 子包 + 条件 MapperScan；XML 在 standard 被解析但表存在、无入口可达 |
 | 环境未配 EDITION | 默认 standard（fail-safe），能力默认关闭而非误开 |
 | 前端 dist 与后端线别错配 | build.sh 成对产出；deploy.sh health 双向校验；错配即回滚 |
-| standard 库执行 AI 表 DDL 的接受度 | 已确认为目标要求：两线结构一致；空表零运行成本，收益是换线零迁移 |
-| patches/ai 误放 DDL 破坏两线结构一致 | 文件名/目录约定 + deploy.sh DDL 关键字防呆拒绝执行 |
-| ai → standard 回退且库中已有 AI 菜单（未来页面插件） | 本期无 AI 菜单；已登记：首个页面插件必须同步实现 getRouters 按线过滤 |
+| 团队后续误写「Edition 专属 SQL」破坏统一库原则 | 计划明示禁止；评审以「补丁清单两线一致」为硬检查项；脚本不提供任何按线执行能力，从机制上无处可放 |
+| standard 参数设置中出现 AI 开关行，管理员误以为可开启 | config_name 显式标注「AI ·」前缀；standard 无消费代码，改了无任何效果（无副作用）；不做按线隐藏，避免引入数据分化 |
+| 未来 AI 页面菜单在 standard 运行时可见但 standard dist 无组件 | 定为强制规则：首个带页面的 AI 插件必须同步实现 getRouters 按 app.edition 过滤（菜单标识 apms:ai:<plugin>:*）；本期 RPA 无菜单 |
 | 条件注解与组件扫描不生效（认知误区） | 已核实 ClassPath 扫描执行 ConditionEvaluator；标准启动实测为准 |
 | 改后端后运行旧 jar（~/.m2 老问题） | 沿用纪律：mvn install 后重启；EDITION 仅启动参数变化，无需重构建 |
 | 插件间相互调用 | 禁止；共性下沉 core，必要时 core 事件解耦 |
