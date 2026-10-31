@@ -1,6 +1,6 @@
 # APMS 双产品线（apms-standard / apms-ai）与 ruoyi-ai 插件化模块实施计划
 
-> 状态：待评审（2026-10-31，第四版：数据库完全统一 —— 同 DDL/同补丁/同 DML，禁止 Edition 专属 SQL）
+> 状态：待评审（2026-10-31，第五版：补齐生产 build→deploy Edition 透传与 systemd 持久化闭环）
 > 范围：后端单产物 + 部署级 Edition 条件装配、AI 插件框架（SPI）、Feature Flags、前端双构建零 AI 代码、统一数据库结构、构建/部署脚本适配
 > 关联文档：[rpa_assistant_plan.md](rpa_assistant_plan.md)（首个 AI 插件：RPA 助手 M1）
 
@@ -279,13 +279,34 @@ env/scripts：新增 `.env.standard`、`.env.ai`（生产变量 + VITE_EDITION�
 - 后端为单 jar、无构建线别，运行线别以管理端口 `/health` 的 `ai` 块为准（§3.4）；
 - 任何部署脚本在替换前端产物前，必须读 `dist/edition.txt` 并与本次 `EDITION` 比对，不一致即拒绝部署（防止拿错 dist）。
 
-#### 3.7.2 build.sh（本机构建，UAT 与生产共用入口）
+#### 3.7.2 build.sh（本机构建，UAT 与生产共用入口；Edition 传递起点）
 
-- 新增 `--edition standard|ai`（缺省 standard），**必须与 `--only-build` 可组合**；
+- 新增 `--edition standard|ai`（缺省 standard），**必须与 `--only-build` 可组合**；入参即时校验（非法值直接 err，不进入构建）；
 - Maven 步骤不带 profile（单 jar 恒构建，不区分线）；
 - 前端步骤改为 `npx vite build --mode ${EDITION}`；
 - 构建后自检：① jar 内 ruoyi-ai 恒存在；② `dist/edition.txt` 内容 == 入参 EDITION；③ standard 构建 dist 中 `assistant`/`rk-assistant` 关键字零命中；
-- patches 同步行为与现状完全一致（仅平铺 `patches/*.sql`），**不随线别变化、不增加任何按线目录**。
+- patches 同步行为与现状完全一致（仅平铺 `patches/*.sql`），**不随线别变化、不增加任何按线目录**；
+- **远端调用必须透传 Edition（闭环关键）**：现有 ssh 调用 `deploy.sh --version ${VERSION} ${DEPLOY_SKIP_ARGS}`（build.sh 现 Step 4）改为拼接 `--edition ${EDITION}`，即：
+  `bash ${REMOTE_DIR}/deploy.sh --version ${VERSION} --edition ${EDITION} ${DEPLOY_SKIP_ARGS}`；
+- 构建横幅与结尾日志显著打印 EDITION，避免「本地默认 standard、远端原是 ai」的静默切线。
+
+生产完整链路（契约）：
+
+```
+bash deploy/build.sh --edition ai
+   │  ① mvn 单 jar（不分线）+ vite build --mode ai → dist/edition.txt=ai + 三项构建自检
+   │  ② scp 上传 jar / dist / patches / service（补丁集两线相同）
+   ▼
+ssh deploy.sh --version X --edition ai
+   │  ③ 解析最终 EDITION：命令行 > /etc/apms/env.conf > 缺省 standard；非法即失败
+   │  ④ 幂等持久化到 /etc/apms/env.conf（EDITION=ai，chmod 600，其他行原样保留）
+   │  ⑤ 重新生成 /opt/apms/start-backend.sh：java 参数含 --app.edition="${EDITION:-standard}"
+   │  ⑥ systemctl start apms-backend（start-backend.sh source env.conf 拿到同一 EDITION）
+   │  ⑦ /health 线别双向校验 + dist/edition.txt 配对校验
+   ▼
+通过：完成。此后任何 systemctl restart / 宕机自启 都读持久化配置，线别不漂移
+失败：回滚旧 jar/dist，并把 env.conf 的 EDITION 恢复为部署前值后再重启（见 §3.7.4）
+```
 
 #### 3.7.3 deploy-uat.sh（UAT 本地自包含链路，按现状逐点改造）
 
@@ -305,21 +326,40 @@ SQL 补丁（现 Step 3，505-566 行）：
 
 运行时配置与启动：
 
-6. Step 5.5 生成的外部 `config/application.yml`（现 626-645 行 heredoc）增加一行 `app.edition: ${EDITION}`（沿用该文件扁平覆盖既有风格，chmod 600 不变）；do_start 回显行同步打印 edition；
-7. do_start 健康检查通过后（现 321-344 行之后）增加**线别校验**：curl 管理端口 `/health` —— `EDITION=ai` 必须存在 `components.ai.details.edition=ai`；`EDITION=standard` 必须不存在 `ai` 块；不符合即调用既有 `rollback "运行线别与 EDITION 不一致"` 终止；
+6. Step 5.5 生成的外部 `config/application.yml`（现 626-645 行 heredoc）增加一行 `app.edition: ${EDITION}`（沿用该文件扁平覆盖既有风格，chmod 600 不变）——UAT 的持久化载体即此文件（每次部署由 `.uat/env.conf` 重新生成）；do_start 回显行同步打印 edition；
+7. do_start 健康检查通过后（现 321-344 行之后）增加**线别校验**：curl 管理端口 `/health` —— `EDITION=ai` 必须存在 `components.ai.details.edition=ai`；`EDITION=standard` 必须不存在 `ai` 块；不符合即调用既有 `rollback "运行线别与 EDITION 不一致"`；rollback 恢复旧 jar/dist 后，须把 yml 的 `app.edition` 改回**持久配置值**（env.conf 的 EDITION，缺省 standard；因 CLI 一次性覆盖不应留下）再重启，保证旧产物与旧线别成对恢复；
 8. Step 4 替换前端产物前增加 `edition.txt` 配对校验（§3.7.1），不一致直接 rollback。
 
 env.conf：
 
 9. `deploy/env.conf.example` 与 UAT 说明中增加 `EDITION=standard|ai`；脚本按「非敏感可 fallback」变量处理（缺省 standard），不设为必填 hard fail（与 PROFILE/APP_PORT 同类）。
 
-#### 3.7.4 deploy.sh（生产远端链路）
+#### 3.7.4 deploy.sh（生产远端链路；持久化与回滚闭环）
 
-- 新增 `--edition standard|ai`（缺省 standard，向后兼容），命令行优先，其次远端 env.conf；
-- 启动命令（现 385-393 行 JVM 参数区）追加 `--app.edition="${EDITION}"`；
+参数解析与最终线别确定：
+
+- 参数循环（现 40-48 行）增加 `--edition`，先记录为 `CLI_EDITION`（该循环在 source env.conf 之前执行）；
+- source `/etc/apms/env.conf`（现 50-56 行）之后解析最终值：
+  `EDITION="${CLI_EDITION:-${EDITION:-standard}}"`；不属于 standard/ai 立即 err；
+- 部署横幅、结尾汇总、回滚提示均打印最终 EDITION。
+
+持久化（解决「systemd 重启后回到旧线」）：
+
+- 参照现 350-356 行 JAVA_BIN 的幂等回写先例，在停服前：① 记录 env.conf 中 EDITION 的部署前状态（旧值或「未设置」）到变量供回滚使用；② 以 sed 幂等更新 `/etc/apms/env.conf`：有 `^EDITION=` 行则替换、无则追加 `EDITION=${EDITION}`，chmod 600 不变，其他行原样保留；
+- 重新生成 `/opt/apms/start-backend.sh`（现 363-401 行 heredoc）时，在 java 参数中增加一行：
+  `--app.edition="${EDITION:-standard}"`；
+  该脚本由 systemd ExecStart 调用、启动时 source env.conf，因此**以后任何 `systemctl restart apms-backend`、宕机自启都得到同一线别**；运维单独改 env.conf 的 EDITION 再 restart 即手动换线（下次 build.sh 部署会再次对齐）。
+
+执行与校验：
+
 - 补丁循环（现 736-794 行）**零改造**：两线同一套 `patches/*.sql`，不按 EDITION 分支（§3.5）；
-- 启动后按 §3.4 用管理端口 `/health` 做线别双向校验，不一致走既有失败停机/回滚分支；
-- 前端产物落盘前比对 dist 内 `edition.txt`。
+- systemctl start 后按 §3.4 用管理端口 `/health` 做线别双向校验（ai 必有 ai 块 / standard 必无）；前端产物落盘前比对 dist 内 `edition.txt`；任一不符即进入失败分支；
+- 失败回滚闭环：既有回滚在恢复旧 jar/dist 后重启，**额外把 env.conf 的 EDITION 恢复为部署前状态**（旧值 sed 写回；原本未设置则删除该行），保证「旧产物 + 旧线别配置」成对恢复，systemd 重启后不错线。
+
+手工/边缘场景：
+
+- 不经过 build.sh 直接在服务器跑 `deploy.sh --edition <线>` 同样完成「解析→持久化→启动→校验」全闭环；
+- 不带 `--edition` 时以 env.conf 现值为准（没有则 standard），不会改变当前线别。
 
 #### 3.7.5 不变项
 
@@ -348,7 +388,7 @@ env.conf：
 6. **前端容器化**：src/ai + rpa 插件 + 空桩 + glob 注册 + features store；集成点改造；env/scripts。
 7. **前端双构建验证**：dist grep + dev 两模式 + demo + flag 热开关。
 8. **桩测**：7 项原断言 + 空桩同形契约。
-9. **部署脚本**：按 §3.7 落地——vite `edition.txt` 产物标记；build.sh `--edition`（可与 --only-build 组合）；**deploy-uat.sh 九点改造**（入参/env.conf 默认值、智能构建透传线别、edition.txt 不符触发重建、补丁步骤零分化、外部 yml 注入 app.edition、health 线别校验、dist 配对校验）；deploy.sh 生产链路同步；`bash -n`/`--help` 验证；**不执行部署**（由您本人运行）。
+9. **部署脚本**：按 §3.7 落地——vite `edition.txt` 产物标记；build.sh `--edition`（可与 --only-build 组合）并**透传到远端 deploy.sh**；**deploy-uat.sh 九点改造**（入参/env.conf、智能构建透传线别、edition.txt 不符触发重建、补丁零分化、yml 持久化 app.edition、health 线别校验、dist 配对、回滚恢复线别）；**deploy.sh 生产闭环**（CLI_EDITION→env.conf 解析、幂等回写持久化、start-backend.sh 注入 `--app.edition`、health/edition.txt 校验、回滚恢复 env.conf）；`bash -n`/`--help` 验证；**不执行部署**（由您本人运行）。
 10. **收口**：更新 rpa_assistant_plan.md 指引；输出两线发版命令、dev 启动参数、git 提交清单。
 
 ---
@@ -369,7 +409,7 @@ env.conf：
 | 既有业务回归 | 登录/getRouters/花名册等全正常 | 同左；限流/审计/413/UUID 校验行为不变 |
 | 前端 dist | grep assistant/rk-assistant 零命中；无球、Alt+A 无效、demo 无助手 | rpa chunk 在；真后端 + mock 全功能；登出/演示会话清理正常 |
 | 构建 | `mvn clean install -DskipTests` 单 jar SUCCESS；`vite build --mode standard/ai` 均成功 | — |
-| 部署 | UAT/生产：dist `edition.txt` 与 EDITION 不一致即拒绝/回滚；运行线别与 EDITION 不一致（health ai 块双向校验）即回滚；非法 EDITION 入参 hard fail；SQL 步骤两线完全相同无分支 | 切换线别依据 edition.txt 自动触发正确重建 |
+| 部署 | UAT/生产：build.sh → deploy.sh Edition 透传闭环；dist `edition.txt` 与 EDITION 不一致即拒绝/回滚；health ai 块双向校验；非法 EDITION hard fail；SQL 两线相同无分支 | 生产部署成功后**裸执行一次 `systemctl restart apms-backend`**，重启后 /health 仍为 ai（持久化不漂移）；env.conf 可见 `EDITION=ai`；UAT 经 config/application.yml 同等验证 |
 
 `node .trae/demo-tests/assistant.mjs`：原 7 项 + 空桩同形断言全绿。
 
@@ -382,7 +422,10 @@ env.conf：
 | 漏标 `@AiEnabled` 导致 AI Bean 在 standard 被注册 | 验证以 standard 启动的 /health 与全部 /apms/ai/** 404 兜底；code review 清单化；可加启动自检（core 扫描 com.ruoyi.ai 下存在未标注的构造型即告警失败） |
 | AI Mapper 被全局 `@MapperScan("com.ruoyi.**.mapper")` 扫到 | Mapper 接口统一放 `.persistence` 子包 + 条件 MapperScan；XML 在 standard 被解析但表存在、无入口可达 |
 | 环境未配 EDITION | 默认 standard（fail-safe），能力默认关闭而非误开 |
-| 前端 dist 与后端线别错配 | build.sh 成对产出；deploy.sh health 双向校验；错配即回滚 |
+| 前端 dist 与后端线别错配 | build.sh 成对产出；deploy.sh health 双向校验 + edition.txt 配对；错配即回滚 |
+| build.sh 的 `--edition` 未透传到远端 deploy.sh（本次发现的断点） | ssh 调用显式拼接 `--edition ${EDITION}`；远端解析优先级 CLI > env.conf > standard |
+| 线别只在本次启动生效，systemd/宕机重启后漂回旧线 | deploy.sh 幂等回写 `/etc/apms/env.conf` + start-backend.sh 带 `--app.edition`；UAT 经外部 yml 持久；验证含一次裸 `systemctl restart` |
+| 部署失败回滚后产物与线别配置错配 | 回滚同时恢复 env.conf（生产）/yml（UAT）的部署前线别状态，再重启 |
 | 团队后续误写「Edition 专属 SQL」破坏统一库原则 | 计划明示禁止；评审以「补丁清单两线一致」为硬检查项；脚本不提供任何按线执行能力，从机制上无处可放 |
 | standard 参数设置中出现 AI 开关行，管理员误以为可开启 | config_name 显式标注「AI ·」前缀；standard 无消费代码，改了无任何效果（无副作用）；不做按线隐藏，避免引入数据分化 |
 | 未来 AI 页面菜单在 standard 运行时可见但 standard dist 无组件 | 定为强制规则：首个带页面的 AI 插件必须同步实现 getRouters 按 app.edition 过滤（菜单标识 apms:ai:<plugin>:*）；本期 RPA 无菜单 |
