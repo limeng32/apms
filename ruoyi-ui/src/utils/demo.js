@@ -14,6 +14,7 @@ import {
 } from '@/utils/auth'
 import { resetDb } from '@/mock/db'
 import useUserStore from '@/store/modules/user'
+import { clearAssistantSession } from '@/utils/assistantSession'
 
 /* 纯前端口令，F12 可见，仅防普通访客；env 可覆盖 */
 const ENV = (typeof import.meta !== 'undefined' && import.meta.env) || {}
@@ -38,6 +39,8 @@ export function enterDemo(passcode) {
   }
   // 原子写入单键会话；setItem 在 Web Storage 被禁时抛错——此时不重置 db/store、不跳转
   setDemoSession(DEMO_TOKEN_PREFIX + Date.now())
+  // Demo 与真实模式会话隔离
+  clearAssistantSession()
 
   // 显式取一份全新数据（防御：db 模块在登录页就已随 request.js 被 import，
   // 模块级那份虽无人动过，仍换新）
@@ -59,6 +62,7 @@ export function enterDemo(passcode) {
  */
 export function exitDemo() {
   clearDemoSession()
+  clearAssistantSession()
   const userStore = useUserStore()
   userStore.token = ''
   userStore.roles = []

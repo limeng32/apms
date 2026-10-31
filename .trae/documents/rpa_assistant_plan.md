@@ -1,8 +1,8 @@
 # 系统级 RPA 助手（伪 RPA · 流式）实施计划
 
-> 状态：**规划已确认，待实施**
+> 状态：**M1 已实现**（2026-10-31）
 > 范围：M1 伪 RPA（不接 Agent）
-> 更新时间：2026-10-30
+> 更新时间：2026-10-31
 > 关联文档：[DESIGN.md](../DESIGN.md)、[demo_mode_plan.md](./demo_mode_plan.md)、[demo_mode_maintenance.md](./demo_mode_maintenance.md)、[PERMISSION_DESIGN.md](../PERMISSION_DESIGN.md)
 
 ---
@@ -52,6 +52,7 @@
 | P1 | 会话未按账号/Demo 模式隔离；`question varchar(1000)` 无前置长度校验；审计终态可能重复或遗漏 | sessionStorage 增加 owner 校验与清除触发点；DTO 前置校验；CAS 终态 + `message_id` 唯一索引（§4.6 / §5.8） |
 | P1 | `IMPORT_RESULT` 高亮 `task-create`、`REPORT_DOWNLOAD` 高亮 `report-generate`，与用户实际问题不一致 | 严格一致原则：M1 仅保留 `athlete-add` 一个页面级稳定锚点；导入成绩、组合评分、报告下载、RTP 处置只导航并说明下一步（§4.3 / §6） |
 | P1 | `dispatch` / `comboDispatch` 是 Tab 结构，非激活 Tab 内按钮不在 DOM，5s 等待也不会出现 | M1 不自动切 Tab；仅对默认可见锚点下发 `highlightKey`；目标在子页签时只导航，回答写明页签名（§3.3 / §5.5.6） |
+| P2 | SSE 在 `apms-nginx.conf` 三个 server 块各加精确 location，其中品牌展示域（无登录）用不到，且 UAT 需手动同步配置 | 改为后端响应头 `X-Accel-Buffering: no`：nginx 对该响应自动关缓冲，两个 nginx 配置文件恢复零改动，UAT 无需同步（§8.2，2026-10-31 修订） |
 
 ### 1.5 阶段路线
 
@@ -175,14 +176,15 @@ ruoyi-system/src/main/java/com/ruoyi/system/
 ├── mapper/apms/ApmsAssistantLogMapper.java
 └── service/apms/assistant/
     ├── AssistantProvider.java            # 流式 Provider 接口（M4 预留）
-    ├── PseudoAssistantProvider.java      # 规则意图 + 回答模板
-    ├── AssistantIntentCatalog.java       # 意图/关键词/同义词目录
-    ├── CapabilityResolver.java           # buildMenus → 完整路由集合
-    ├── AssistantActionFactory.java       # 仅构建 navigate / highlight
+    ├── PseudoAssistantProvider.java      # 规则意图目录 + 回答模板 + 动作构建
+    ├── AssistantCapabilityResolver.java  # buildMenus → 完整路由集合
     ├── AssistantContext.java             # route/pageTitle 等
-    ├── AssistantChatRequest.java          # 请求 DTO（@Size/URL/UUID 校验）
+    ├── AssistantChatRequest.java          # 请求 DTO（手动校验，避免 4xx 被全局处理器吞掉）
     ├── AssistantPrincipal.java           # 请求线程身份快照
-    └── impl/AssistantServiceImpl.java    # SSE 编排、限流、审计
+    └── impl/AssistantServiceImpl.java    # 身份快照、能力路由、输入校验
+
+ruoyi-framework/src/main/java/com/ruoyi/framework/assistant/
+└── AssistantStreamService.java           # SSE 编排、心跳、CAS 终态审计（依赖 webmvc）
 
 ruoyi-framework/src/main/java/com/ruoyi/framework/aspectj/
 └── AssistantRateLimiter.java             # 按 userId 限流（复用 limitScript，与 IpRateLimiter 并列）
@@ -372,10 +374,13 @@ ruoyi-ui/src/components/Assistant/
 ├── AssistantPanel.vue        # 抽屉、消息列表、建议问题、停止/清空
 ├── AssistantMessage.vue      # 流式文本 + 动作 chip
 ├── assistantClient.js        # baseURL/Bearer/Demo 分流 + fetch SSE + 错误映射
+├── assistantSse.js           # 纯函数 SSE 解析器（可 Node 桩测）
 ├── assistantDemo.js          # 本地能力表 + 本地伪流式（chat/capabilities 共用）
-├── assistantSession.js       # 会话存储、owner 校验、清除（叶子模块，供 user/demo 调用）
 ├── assistantActions.js       # navigate / highlight 白名单执行
 └── assistantStore.js         # Pinia：会话、上下文、打开状态
+
+ruoyi-ui/src/utils/
+└── assistantSession.js       # 会话存储、owner 校验、清除（叶子模块，供 user/demo 调用）
 ```
 
 ### 5.2 挂载
@@ -599,7 +604,7 @@ export async function streamChat(payload, { onEvent, signal }) {
 - `demoCapabilities()`：返回 2400 菜单树对应的固定路径与建议问题，与演示环境 `getRouters` 的静态结果保持一致；
 - `demoChatStream()`：本地意图表 + `setTimeout` 伪流式，返回 `meta/delta/action/done` 同构事件，动作同样受本地 allowedPaths 限制；
 - 第二道防线：在 `src/mock/handlers/` 增加 `/apms/assistant/capabilities` handler（若未来有人误用 axios 调它，Demo Adapter 也不会发真实请求）；
-- `.trae/demo-tests/run.mjs` 增加：
+- `.trae/demo-tests/assistant.mjs` 增加（已实现）：
   - Demo 下 `getCapabilities()` 与 `streamChat()` 均零网络（对 `fetch` 与 axios 打桩断言调用次数为 0）；
   - 真实模式下 URL 为 `VITE_APP_BASE_API + '/apms/assistant/chat'` 且带 Bearer；
   - SSE 多行 `data`、心跳注释、`error` 事件解析；
@@ -682,73 +687,37 @@ const payload = {
 
 > 写死端口会导致 UAT/生产 502。Agent 不执行部署，部署与 env.conf 修改由用户本人操作。
 
-### 8.2 SSE 与现有 nginx 配置（最小差异，不重写现有 location）
+### 8.2 SSE 与现有 nginx 配置（响应头方案，nginx 零改动）
 
-仓库已有两套可用配置，SSE 只做增量，不替换原有代理块：
+仓库已有两套可用配置，SSE **不新增任何 location**，由后端响应头让 nginx 自动关闭该响应的缓冲：
 
 - **生产** [apms-nginx.conf](file:///Users/limeng/Documents/trae_projects/apms/deploy/apms-nginx.conf)：HTTP default、HTTPS `aoti.apms.top`、HTTPS `www.apms.top` 三个 server 块，各自包含
   `location ^~ /prod-api/`（`rewrite ^/prod-api/(.*)$ /$1 break;`、透传 `Host/X-Real-IP/X-Forwarded-For/X-Forwarded-Proto`、`proxy_pass http://127.0.0.1:10080;`、connect 30s / read 60s / send 30s）。
 - **UAT** [apms-uat.conf](file:///Users/limeng/Documents/trae_projects/apms/deploy/apms-uat.conf)：`listen 8088`，`location /prod-api/` 反代 `localhost:9080`，read 60s。
 
-做法：在原 `location ^~ /prod-api/` **之前**增加一个精确匹配 `location =`（nginx 中 `=` 优先级高于 `^~`），只对助手流式接口关闭缓冲，其他 API 保持原行为。
+做法（[ApmsAssistantController.java](file:///Users/limeng/Documents/trae_projects/apms/ruoyi-admin/src/main/java/com/ruoyi/web/controller/apms/ApmsAssistantController.java)）：
 
-生产 `deploy/apms-nginx.conf`（在 HTTP default 与 HTTPS aoti 两个业务 server 块各加一份；www 品牌展示页无登录，可不加）：
-
-```nginx
-# SSE：RPA 助手流式接口（必须放在原有 ^~ /prod-api/ 之前）
-location = /prod-api/apms/assistant/chat {
-    proxy_set_header Host $http_host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header REMOTE-HOST $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    rewrite ^/prod-api/(.*)$ /$1 break;
-
-    proxy_pass http://127.0.0.1:10080;
-    proxy_http_version 1.1;
-    proxy_set_header Connection '';
-    proxy_buffering off;
-    proxy_cache off;
-    proxy_read_timeout 180s;
-    proxy_send_timeout 180s;
-}
-```
-
-UAT `deploy/apms-uat.conf`（`listen 8088` 的 server 块内）：
-
-```nginx
-location = /prod-api/apms/assistant/chat {
-    proxy_set_header Host $http_host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    rewrite ^/prod-api/(.*)$ /$1 break;
-
-    proxy_pass http://localhost:9080;
-    proxy_http_version 1.1;
-    proxy_set_header Connection '';
-    proxy_buffering off;
-    proxy_cache off;
-    proxy_read_timeout 180s;
-    proxy_send_timeout 180s;
-}
+```java
+// chat() 返回 SseEmitter 之前，在同一 HttpServletResponse 上设置
+response.setHeader("X-Accel-Buffering", "no");
 ```
 
 说明：
 
-- 原 `proxy_read_timeout 60s` 对 SSE 偏短；精确块提升到 180s，配合后端 15s 心跳，正常不会被掐断。
-- 不要直接在 `^~ /prod-api/` 上关闭 `proxy_buffering`：那会让所有 API 和文件下载都失去缓冲，影响面更大；精确块只作用于助手。
-- 生产链路：`build.sh` 上传 `deploy/apms-nginx.conf` → 远端 `deploy.sh` 安装到 `/etc/nginx/conf.d/apms.conf`，先备份旧配置、`nginx -t` 通过才 `reload`，失败自动恢复。因此改仓库配置后正常发版即可，无需登录服务器手改。
-- UAT 链路：`deploy-uat.sh` **不自动安装** `apms-uat.conf`，只在 Step 7 执行 `nginx -t` 与 reload；需要手动同步该文件后再 reload。
+- `X-Accel-Buffering: no` 是 nginx 专有响应头约定：识别到该头后，nginx 只对**这一条响应**关闭 `proxy_buffering`，立即向下游转发，等价于精确 location 的 `proxy_buffering off`，但无需区分 server 块、无需改配置。
+- 对 dev 直连、Vite 代理、非 nginx 服务器该头被忽略，无副作用；`text/event-stream` 不在 nginx `gzip_types` 中，也不会被 gzip 缓冲。
+- 超时无需调整：后端 15s 一次心跳会持续刷新 nginx 的 60s `proxy_read_timeout`；M1 回答本身毫秒级完成。
+- 因此 **`deploy/apms-nginx.conf` 与 `deploy/apms-uat.conf` 均不包含 SSE 改动**，生产随 `deploy.sh` 正常发版、UAT 无需同步 nginx 配置。
 - dev：Vite `/dev-api` 代理不做缓冲，无需额外配置。
+- 未来注意：若 M4 真实 Agent 出现**连续超过 60s 既无 token 又无心跳**，再评估调高超时（按现有 15s 心跳设计不会发生）。
 
 ### 8.3 发版链路（与 SSE 相关的实际行为）
 
 | 脚本 | 实际行为 | 对 SSE 的影响 |
 |---|---|---|
-| `deploy/build.sh` | 本地执行：`mvn clean package -DskipTests -Dapms.version=...` → `npx vite build` → 上传 jar、dist、`apms-nginx.conf`、`apms-backend.service`、TLS 证书、`patches/*.sql` 到 `/opt/apms/upload/` → 远端执行 `deploy.sh` | 发版即替换前后端；助手接口随 jar/dist 一起上线 |
+| `deploy/build.sh` | 本地执行：`mvn clean package -DskipTests -Dapms.version=...` → `npx vite build` → 上传 jar、dist、`apms-nginx.conf`、`apms-backend.service`、TLS 证书、`patches/*.sql` 到 `/opt/apms/upload/` → 远端执行 `deploy.sh` | 发版即替换前后端；助手接口随 jar/dist 一起上线，nginx 配置无差异 |
 | `deploy/deploy.sh` | 生产：备份、停服、同步 `dist`、应用补丁（按 `apms_db_version` 去重）、安装 `/etc/nginx/conf.d/apms.conf`（`nginx -t` 通过才 reload，失败回滚旧配置）、systemd 启动、`10081/health` 检查、外网验证 | 停服会断开正在进行的 SSE；前端需把断流显示为“连接已断开”，不当作回答完成 |
-| `deploy/deploy-uat.sh` | 本机 UAT：默认智能构建（产物比源码旧时自动 `build.sh --only-build`），`/opt/apms-uat`，`9080/9081`，`8088` nginx，Step 7 仅 `nginx -t` + reload，**不自动安装 `apms-uat.conf`** | 改 UAT nginx 后需手动同步 `apms-uat.conf` 再 reload；否则 SSE 仍按旧配置 60s 超时 |
+| `deploy/deploy-uat.sh` | 本机 UAT：默认智能构建（产物比源码旧时自动 `build.sh --only-build`），`/opt/apms-uat`，`9080/9081`，`8088` nginx，Step 7 仅 `nginx -t` 与 reload | SSE 走响应头方案，**无需同步 `apms-uat.conf`** |
 
 > 发版脚本、SQL 补丁、nginx 配置更新均由用户本人执行，Agent 不运行部署、不拷贝产物到 `.uat/`。
 
@@ -777,7 +746,7 @@ location = /prod-api/apms/assistant/chat {
 
 | 风险 | 对策 |
 |---|---|
-| SSE 被 nginx 缓冲 | 关闭 `proxy_buffering`，心跳 15s |
+| SSE 被 nginx 缓冲 | 后端响应头 `X-Accel-Buffering: no`（nginx 零配置），心跳 15s 刷新 60s 读超时 |
 | 事件流被安全过滤器拦截 | 使用 Bearer 头 + `fetch`，接口与普通鉴权接口同链路 |
 | 动作路径越权 | `buildMenus` 还原完整路由 + 后端 allowedPaths + 前端 `router.resolve` 三重校验 |
 | 菜单相对路径误判 | 禁止直接比较 `menu.path`；统一走 `buildMenus → RouterVo` 递归拼接 |

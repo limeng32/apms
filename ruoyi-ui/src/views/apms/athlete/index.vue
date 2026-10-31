@@ -30,6 +30,7 @@
         <el-button
           type="primary"
           class="rp-btn-primary"
+          data-rpa="athlete-add"
           :icon="Plus"
           @click="handleAdd"
           v-hasPermi="['apms:athlete:add']"

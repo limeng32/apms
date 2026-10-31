@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.apms.ApmsAssistantLogMapper">
+
+    <resultMap id="ApmsAssistantLogResult" type="com.ruoyi.system.domain.apms.ApmsAssistantLog">
+        <id     column="id"          property="id"/>
+        <result column="session_id"  property="sessionId"/>
+        <result column="message_id"  property="messageId"/>
+        <result column="user_id"     property="userId"/>
+        <result column="user_name"   property="userName"/>
+        <result column="question"    property="question"/>
+        <result column="answer"      property="answer"/>
+        <result column="intent"      property="intent"/>
+        <result column="action_json" property="actionJson"/>
+        <result column="provider"    property="provider"/>
+        <result column="status"      property="status"/>
+        <result column="error_msg"   property="errorMsg"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsAssistantLog"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO apms_assistant_log
+            (session_id, message_id, user_id, user_name, question, answer,
+             intent, action_json, provider, status, error_msg, create_time)
+        VALUES
+            (#{sessionId}, #{messageId}, #{userId}, #{userName}, #{question}, #{answer},
+             #{intent}, #{actionJson}, #{provider}, #{status}, #{errorMsg}, NOW())
+    </insert>
+
+</mapper>

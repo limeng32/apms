@@ -23,6 +23,7 @@ import { comboModelHandlers } from './comboModel'
 import { comboScoreHandlers } from './comboScore'
 import { medicalHandlers } from './medical'
 import { reportHandlers } from './report'
+import { assistantHandlers } from './assistant'
 
 export const handlers = [
   ...frameworkHandlers,
@@ -42,5 +43,6 @@ export const handlers = [
   ...comboModelHandlers,
   ...comboScoreHandlers,
   ...medicalHandlers,
-  ...reportHandlers
+  ...reportHandlers,
+  ...assistantHandlers
 ]
