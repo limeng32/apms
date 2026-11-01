@@ -129,6 +129,68 @@ read_previous_edition() {
     esac
 }
 
+# 只读解析「本次部署最终生效的前端线别」（UAT 本地链路）：
+# Step 4 会把较新的 ruoyi-ui/dist 同步到 upload/dist，随后 upload/dist 优先于现场 dist；
+# 这里在不改任何文件的前提下预测同步结果，供停服前预检使用。结果置全局：
+#   PREFLIGHT_FRONT_SOURCE = upload（含待同步）| existing
+#   PREFLIGHT_DIST_EDITION = 将生效的 edition.txt 内容（空串=无标记/无前端）
+resolve_uat_effective_front() {
+    local target_dist="${PROJECT_ROOT}/ruoyi-ui/dist"
+    local upload_dist="${UPLOAD}/dist"
+    if [ -d "${target_dist}" ] && { [ ! -d "${upload_dist}" ] || [ "${target_dist}" -nt "${upload_dist}" ]; }; then
+        PREFLIGHT_FRONT_SOURCE="upload"
+        PREFLIGHT_DIST_EDITION=$(tr -d '[:space:]' < "${target_dist}/edition.txt" 2>/dev/null || echo "")
+    elif [ -d "${upload_dist}" ]; then
+        PREFLIGHT_FRONT_SOURCE="upload"
+        PREFLIGHT_DIST_EDITION=$(tr -d '[:space:]' < "${upload_dist}/edition.txt" 2>/dev/null || echo "")
+    else
+        PREFLIGHT_FRONT_SOURCE="existing"
+        PREFLIGHT_DIST_EDITION=""
+        [ -f "${FRONTIR}/dist/edition.txt" ] && \
+            PREFLIGHT_DIST_EDITION=$(tr -d '[:space:]' < "${FRONTIR}/dist/edition.txt" 2>/dev/null || echo "")
+    fi
+}
+
+# 前端线别裁决（停服前预检与 Step 4 落盘前共用同一套规则）。
+# $1=fail_action：prestop → 直接 err（服务未停、无任何变更）；否则 rollback（已停服窗口）。
+assert_front_edition_ok() {
+    local fail_action="${1:-prestop}"
+    local fail_prefix
+    if [ "${fail_action}" = "prestop" ]; then
+        fail_prefix="停服前预检"
+    else
+        fail_prefix="落盘前校验"
+    fi
+    if [ "${PREFLIGHT_FRONT_SOURCE}" = "upload" ]; then
+        if [ "${PREFLIGHT_DIST_EDITION}" != "${EDITION}" ]; then
+            if [ "${fail_action}" = "prestop" ]; then
+                err "${fail_prefix}失败：待部署前端 edition.txt='${PREFLIGHT_DIST_EDITION:-缺失}' 与目标 ${EDITION} 不一致。
+    未停服、未执行 SQL、未替换任何产物。请用 build.sh --edition ${EDITION} 构建正确前端后重跑。"
+            fi
+            rollback "前端产物线别不匹配（edition.txt='${PREFLIGHT_DIST_EDITION:-缺失}'，目标 ${EDITION}）"
+            exit 1
+        fi
+    else
+        # 沿用服务器现有前端
+        if [ -n "${PREFLIGHT_DIST_EDITION}" ] && [ "${PREFLIGHT_DIST_EDITION}" != "${EDITION}" ]; then
+            if [ "${fail_action}" = "prestop" ]; then
+                err "${fail_prefix}失败：服务器现有前端为 ${PREFLIGHT_DIST_EDITION}，本次目标 ${EDITION}，且无对应线别新前端。
+    未停服、未执行 SQL。切线部署必须随包提供 ${EDITION} 前端（build.sh --edition ${EDITION}）。"
+            fi
+            rollback "现有前端线别 ${PREFLIGHT_DIST_EDITION} 与目标 ${EDITION} 冲突"
+            exit 1
+        fi
+        if [ -z "${PREFLIGHT_DIST_EDITION}" ] && [ -d "${FRONTIR}/dist" ] && [ "${EDITION}" != "${PREVIOUS_EDITION}" ]; then
+            if [ "${fail_action}" = "prestop" ]; then
+                err "${fail_prefix}失败：检测到切线（${PREVIOUS_EDITION} → ${EDITION}），但现有前端无线别标记且无新前端，无法保证前后端同线。
+    未停服、未执行 SQL。请用 build.sh --edition ${EDITION} 完整发版。"
+            fi
+            rollback "切线部署但现有前端无标记且无新前端（${PREVIOUS_EDITION} → ${EDITION}）"
+            exit 1
+        fi
+    fi
+}
+
 # ⚠️ 密码里可能有 !#$ 等特殊字符，必须用函数形式避免 bash 解释
 # ${1+"${@}"} 兼容 macOS 自带 bash 3.2：set -u 下无参调用时裸 "${@}" 会报 unbound variable
 mysql_cli() { mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" --password="${DB_PASS}" "${DB_NAME}" ${1+"${@}"}; }
@@ -295,6 +357,11 @@ find_java17() {
     return 1
 }
 
+# 回滚闸门：0=正常部署启动（健康失败允许触发自动回滚）；1=回滚流程中启动旧版本
+# （健康失败只报告人工介入，禁止再次 rollback，杜绝 do_start→rollback→do_start 递归）。
+# 必须在文件顶层初始化（set -u 下函数引用才安全）。
+ROLLBACK_IN_PROGRESS=0
+
 # ===== do_start: 启动后端进程 =====
 do_start() {
     JAVA_BIN=$(find_java17) || err "找不到 Java 17"
@@ -361,6 +428,11 @@ do_start() {
         fi
         if ! kill -0 "${PID}" 2>/dev/null; then
             rm -f "${PIDFILE}"
+            if [ "${ROLLBACK_IN_PROGRESS}" -eq 1 ]; then
+                # 回滚模式：旧版本进程也退出，只报告并终止，禁止二次回滚
+                err "  ❌ 回滚后的旧版本进程 ${PID} 也已退出！不再二次回滚，服务保持停止。
+      请人工介入：tail -f ${LOGDIR}/stdout.log；恢复后手动 bash deploy/deploy-uat.sh start"
+            fi
             err "  ❌ 进程 ${PID} 已退出! 查看: tail -f ${LOGDIR}/stdout.log"
         fi
         sleep 2
@@ -370,19 +442,34 @@ do_start() {
         warn "  ❌ 90s 内未就绪"
         warn "  日志: tail -f ${LOGDIR}/stdout.log"
         echo ""
+        if [ "${ROLLBACK_IN_PROGRESS}" -eq 1 ]; then
+            # 回滚模式：旧版本也起不来，递归到此为止（不允许再次 rollback）
+            err "❌ 回滚后的旧版本 90s 内仍未就绪，自动回滚到此为止（不再二次回滚）。
+    服务保持停止，请人工介入：
+      - 日志: tail -f ${LOGDIR}/stdout.log
+      - 确认旧版本可启动后手动拉起: bash deploy/deploy-uat.sh start
+      - 本次备份目录仍保留，可手工核对/恢复"
+        fi
         rollback "健康检查超时 (MGMT_PORT=${MGMT_PORT})"
         exit 1
     fi
     echo ""
 }
 
-# ===== rollback: 恢复上一版产物 + 重启 =====
+# ===== rollback: 恢复上一版产物 + 重启（单次闸门，禁止嵌套/递归）=====
 rollback() {
+    # 防重入：回滚流程中 do_start 失败会以「回滚模式」直接终止，不应再次进入本函数
+    if [ "${ROLLBACK_IN_PROGRESS:-0}" -eq 1 ]; then
+        warn "⚠️ 已在回滚流程中，拒绝嵌套回滚（防止递归）；当前失败需人工介入"
+        return 1
+    fi
+    ROLLBACK_IN_PROGRESS=1
+
     local FAIL_REASON="${1}"
     echo ""
     warn "╔══════════════════════════════════════════════════════╗"
     warn "║  ❌ 部署失败: ${FAIL_REASON}"
-    warn "║  🔄  自动回滚到上一版本（线别恢复 env.conf 持久值 ${CONF_EDITION}）..."
+    warn "║  🔄  自动回滚到上一版本（线别恢复部署前实际值 ${PREVIOUS_EDITION:-${CONF_EDITION}}）..."
     warn "╚══════════════════════════════════════════════════════╝"
     echo ""
 
@@ -424,10 +511,10 @@ rollback() {
         printf '\napp.edition: %s\n' "${ROLLBACK_EDITION}" >> "${CONFIGDIR}/application.yml"
     fi
     log "  运行线别恢复为部署前实际值: app.edition=${ROLLBACK_EDITION}"
-    # 5. 重新 nohup 启动（复用 do_start 的逻辑，但通过 env.conf 读参数）
-    log "  重启后端..."
-    # do_start 会读 env.conf，里面有 APP_PORT/MGMT_PORT 等
-    do_start || true   # do_start 里有自己的健康检查 + rollback 递归保护
+    # 5. 重新 nohup 启动旧版本（ROLLBACK_IN_PROGRESS=1：do_start 处于「回滚模式」，
+    #    旧版本健康失败只报告人工介入，不会再回调 rollback，递归在此终止）
+    log "  重启后端（回滚模式，失败不再二次回滚）..."
+    do_start || true
     return 1
 }
 
@@ -543,13 +630,20 @@ REDIS_ARGS="-h ${REDIS_HOST} -p ${REDIS_PORT}"
 REDIS_OLD_VERSION=$(redis-cli ${REDIS_ARGS} -n "${REDIS_DB}" GET "apms:version" 2>/dev/null || echo "")
 log "  旧版本: ${REDIS_OLD_VERSION:-<空>} (Redis DB ${REDIS_DB})"
 
-# ===== Step 1: 停服务 =====
-do_stop
-
-# 快照「部署前实际运行线别」（必须在 Step 5.5 重写 application.yml 之前）。
-# 回滚恢复的旧产物来自本次 BKDIR，其线别与此快照一致，绝不能用 env.conf 的 CONF_EDITION 推导。
+# 快照「部署前实际运行线别」（读取运行配置文件，与服务是否运行无关，故可在停服前完成）。
 PREVIOUS_EDITION=$(read_previous_edition)
 log "  线别快照: 部署前实际运行=${PREVIOUS_EDITION}；env.conf 持久值=${CONF_EDITION}；本次目标=${EDITION}"
+
+# ===== Step 0.5: 停服前预检（产物完整性 + 前后端线别；可提前发现的打包错误必须在变更前拦截）=====
+# 此阶段服务仍在运行、数据库未备份/未打补丁、任何产物未替换；不通过只 err 退出，现场零影响。
+log "Step 0.5: 停服前预检（jar 存在性 + 前端线别）..."
+[ -f "${_TARGET_JAR}" ] || err "停服前预检失败：后端 jar 不存在 ${_TARGET_JAR}，请先构建（mvn install 或去掉 --skip-maven）"
+resolve_uat_effective_front
+assert_front_edition_ok prestop
+log "  预检通过：后端 jar 就绪；前端来源=${PREFLIGHT_FRONT_SOURCE}，生效 edition=${PREFLIGHT_DIST_EDITION:-无前端}，目标=${EDITION}"
+
+# ===== Step 1: 停服务 =====
+do_stop
 
 # ===== Step 2: DB 备份 =====
 BACKUP_TS=$(date '+%Y%m%d_%H%M%S')
@@ -716,43 +810,28 @@ if [ -d "${_VITE_DIST}" ]; then
     fi
 fi
 
-# 前端线别预检（替换任何产物之前；规则与生产 deploy.sh 一致）：
-#   upload/dist 存在 → 其 edition.txt 必须 == EDITION；
-#   upload/dist 缺失 → 沿用现有 FRONTIR/dist，有标记且冲突即拒绝；无标记旧产物仅在非切线放行。
-CURRENT_DIST_EDITION=""
-if [ -f "${FRONTIR}/dist/edition.txt" ]; then
-    CURRENT_DIST_EDITION=$(tr -d '[:space:]' < "${FRONTIR}/dist/edition.txt" 2>/dev/null || echo "")
-fi
+# 前端线别第二道闸（落盘前）：target→upload 同步已完成，按 upload 实际状态重新解析，
+# 复用与停服前预检相同的裁决；此处已停服且旧产物已备份，失败走 rollback。
 if [ -d "${UPLOAD}/dist" ]; then
-    FRONT_SOURCE="upload"
-    UPLOAD_DIST_EDITION=$(tr -d '[:space:]' < "${UPLOAD}/dist/edition.txt" 2>/dev/null || echo "")
-    if [ "${UPLOAD_DIST_EDITION}" != "${EDITION}" ]; then
-        rollback "前端产物线别不匹配（upload/dist/edition.txt='${UPLOAD_DIST_EDITION:-缺失}'，本次 EDITION=${EDITION}）"
-        exit 1
-    fi
-    EFFECTIVE_DIST_EDITION="${UPLOAD_DIST_EDITION}"
+    PREFLIGHT_FRONT_SOURCE="upload"
+    PREFLIGHT_DIST_EDITION=$(tr -d '[:space:]' < "${UPLOAD}/dist/edition.txt" 2>/dev/null || echo "")
 else
-    FRONT_SOURCE="existing"
-    EFFECTIVE_DIST_EDITION="${CURRENT_DIST_EDITION}"
-    if [ -n "${EFFECTIVE_DIST_EDITION}" ] && [ "${EFFECTIVE_DIST_EDITION}" != "${EDITION}" ]; then
-        rollback "服务器现有前端线别 ${EFFECTIVE_DIST_EDITION} 与本次 EDITION=${EDITION} 冲突，且本次未提供对应线别 dist"
-        exit 1
-    fi
-    if [ -z "${EFFECTIVE_DIST_EDITION}" ] && [ -d "${FRONTIR}/dist" ] && [ "${EDITION}" != "${PREVIOUS_EDITION}" ]; then
-        rollback "检测到切线部署（${PREVIOUS_EDITION} → ${EDITION}），但现有前端无线别标记且本次无新 dist，无法保证前后端同线"
-        exit 1
-    fi
+    PREFLIGHT_FRONT_SOURCE="existing"
+    PREFLIGHT_DIST_EDITION=""
+    [ -f "${FRONTIR}/dist/edition.txt" ] && \
+        PREFLIGHT_DIST_EDITION=$(tr -d '[:space:]' < "${FRONTIR}/dist/edition.txt" 2>/dev/null || echo "")
 fi
-log "  前端线别预检通过（来源=${FRONT_SOURCE}，生效 edition=${EFFECTIVE_DIST_EDITION:-无前端}，目标=${EDITION}）"
-[ "${FRONT_SOURCE}" = "existing" ] && warn "  本次无新 dist，沿用现有前端（edition=${CURRENT_DIST_EDITION:-无标记}）；仅建议同线后端升级"
+assert_front_edition_ok rollback
+log "  前端线别落盘校验通过（来源=${PREFLIGHT_FRONT_SOURCE}，生效 edition=${PREFLIGHT_DIST_EDITION:-无前端}，目标=${EDITION}）"
+[ "${PREFLIGHT_FRONT_SOURCE}" = "existing" ] && warn "  本次无新 dist，沿用现有前端（edition=${PREFLIGHT_DIST_EDITION:-无标记}）；仅建议同线后端升级"
 
 cp -f "${UPLOAD}/apms.jar" "${JARDIR}/apms.jar"
 log "  jar: $(ls -lh "${JARDIR}/apms.jar" | awk '{print $5}')"
 
-if [ "${FRONT_SOURCE}" = "upload" ]; then
+if [ "${PREFLIGHT_FRONT_SOURCE}" = "upload" ]; then
     rm -rf "${FRONTIR}/dist"
     cp -a "${UPLOAD}/dist" "${FRONTIR}/dist"
-    log "  前端: $(find "${FRONTIR}/dist" -type f | wc -l | tr -d ' ') files（edition=${EFFECTIVE_DIST_EDITION}）"
+    log "  前端: $(find "${FRONTIR}/dist" -type f | wc -l | tr -d ' ') files（edition=${PREFLIGHT_DIST_EDITION}）"
 fi
 
 # ===== Step 5: Redis 选择性清缓存（版本驱动）=====

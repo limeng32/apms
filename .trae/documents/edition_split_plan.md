@@ -12,6 +12,8 @@
 > 5. P1 修复（同日）：UAT 回滚线别改为恢复部署前从实际运行配置 `config/application.yml` 读取的 `PREVIOUS_EDITION` 快照，而非 env.conf 的 CONF_EDITION（UAT 不回写 env.conf，二者在 CLI `--edition` 成功部署后会脱节，曾可能导致「旧 ai 产物 + standard 配置」错配）。生产 deploy.sh 无此问题（每次成功部署都 persist env.conf，CONF_EDITION 即上次成功值）。
 > 6. P1 修复（同日）：前端配对校验不再因 `upload/dist` 缺失而跳过——生产与 UAT 均在替换产物前读取「将生效的前端」（上传包优先，否则服务器现有 dist）线别，与目标 EDITION 冲突即拒绝回滚；无 edition.txt 的旧前端仅在非切线时警告放行。
 > 7. P1 修复（同日）：build.sh 删除「node_modules 不存在则 warn 跳过前端构建」的隐式分支——前端构建失败或环境缺失一律 err 终止；只有显式 `--skip-frontend` 才允许保留现有 dist，杜绝静默沿用旧产物并通过线别自检的假成功。
+> 8. P1 修复（同日）：deploy-uat.sh 增加回滚闸门 `ROLLBACK_IN_PROGRESS`——do_start 区分「正常启动」（健康失败可触发 rollback）与「回滚启动」（旧版本进程退出/健康超时只 err 报告人工介入，不再二次 rollback）；rollback 入口防重入。修复了「新版本失败→回滚→旧版本也失败→再次回滚……」的无限递归。生产 deploy.sh 本就用独立健康检查循环、不复用 do_start，无此问题。
+> 9. P1 修复（同日）：前端线别/产物完整性预检**前移到停服前（Step 0.5，服务运行中）**——生产与 UAT 均在「停服→DB 备份→SQL 补丁」之前只读校验「将生效的前端 edition.txt」与 jar 存在性，不通过直接 err、现场零变更；Step 4 落盘前保留同一裁决作为第二道闸（UAT 失败走 rollback）。避免一个可提前发现的打包错误引发不必要的 DB 变更。SQL 迁移遵循 Expand-Contract、补丁向后兼容，回滚不回滚数据库（§3.5 第 7 点）。
 
 ---
 
@@ -225,6 +227,7 @@ SSE 事件协议、16KB 限制、20 次/60s 限流、15s 心跳、CAS 终态、�
 4. **未来 AI 表与初始化数据同样统一**：插件 DDL、字典、`sys_config`、菜单与角色授权（RAG/Data/Coach 落地时）全部进普通补丁，两线全量存在；standard 不提供对应能力，但数据与结构不缺斤短两。
 5. **AI 菜单在 standard 的可见性**：库中菜单行两线一致，因此未来出现 AI 页面插件时，**服务端 `getRouters` 必须按运行线别过滤**（standard 运行时不返回 AI 菜单，避免 standard dist 无对应组件导致空页/报错）。识别约定：AI 菜单权限标识统一前缀 `apms:ai:<plugin>:*`、组件路径统一 `ai/<plugin>/...`，在菜单服务按 `app.edition` 过滤。本期 RPA 无菜单，该过滤随**首个带页面的 AI 插件**一并实现，此处定为强制规则而非可选项。
 6. **双向换线**：standard → ai：部署 ai dist + `EDITION=ai` 重启，即获全部 AI 能力；ai → standard：部署 standard dist + `EDITION=standard` 重启，AI 数据原样保留。两个方向都**不执行任何额外 SQL**；备份/恢复也不区分线别。
+7. **迁移顺序纪律（Expand-Contract）**：产物线别/完整性预检在**停服前**完成（可提前发现的打包错误绝不进入 DB 变更）；部署顺序固定为「预检（服务运行中）→ 停服 → DB 备份 → SQL 补丁 → 替换产物 → 启动」。回滚**不回滚数据库**（可能已产生业务数据），因此所有 SQL 补丁必须**向后兼容**（Expand：先加列/加表/双写，旧版本读到新结构不报错；Contract：列删除/语义收紧必须等所有环境新版本稳定后在后续独立补丁进行），不能依赖应用回滚来解决数据库兼容性。
 
 ### 3.6 前端：插件容器 + 双构建零 AI 代码
 
@@ -341,7 +344,7 @@ SQL 补丁（现 Step 3）：
 运行时配置与启动：
 
 7. Step 5.5 生成的外部 `config/application.yml`（现 626-645 行 heredoc）增加一行 `app.edition: ${EDITION}`（沿用该文件扁平覆盖既有风格，chmod 600 不变）——UAT 的持久化载体即此文件（每次部署由 `.uat/env.conf` 重新生成）；do_start 回显行同步打印 edition；
-8. do_start 健康检查通过后（现 321-344 行之后）增加**线别校验**：curl 管理端口 `/health` —— `EDITION=ai` 必须存在 `components.ai.details.edition=ai`；`EDITION=standard` 必须不存在 `ai` 块；不符合即调用既有 `rollback "运行线别与 EDITION 不一致"`；**rollback 恢复的线别是 `PREVIOUS_EDITION`——Step 1 停服后、重写 yml 前，从当前 `config/application.yml` 的 `app.edition` 读取的「部署前实际运行值」快照**（读不到/值非法才回退 env.conf 的 CONF_EDITION）。不能直接用 env.conf 推导：UAT 不回写 env.conf，CLI `--edition` 成功部署后 env.conf 与实际运行值会脱节，否则会出现「旧 ai 产物 + standard 配置」错配；
+8. do_start 健康检查通过后（现 321-344 行之后）增加**线别校验**：curl 管理端口 `/health` —— `EDITION=ai` 必须存在 `components.ai.details.edition=ai`；`EDITION=standard` 必须不存在 `ai` 块；不符合即调用既有 `rollback "运行线别与 EDITION 不一致"`；**rollback 恢复的线别是 `PREVIOUS_EDITION`——Step 1 停服后、重写 yml 前，从当前 `config/application.yml` 的 `app.edition` 读取的「部署前实际运行值」快照**（读不到/值非法才回退 env.conf 的 CONF_EDITION）。不能直接用 env.conf 推导：UAT 不回写 env.conf，CLI `--edition` 成功部署后 env.conf 与实际运行值会脱节，否则会出现「旧 ai 产物 + standard 配置」错配。**回滚递归保护**：`ROLLBACK_IN_PROGRESS` 闸门 + rollback 入口防重入——回滚流程中 do_start 处于「回滚启动」模式，旧版本不健康只 err 终止并交人工，不再二次 rollback；
 9. Step 4 前端线别预检**提前到替换任何产物之前**，并覆盖「未上传 dist」分支（生产与 UAT 同规则）：① 有 upload/dist → edition.txt 必须存在且 == EDITION（无标记即产物不合规，拒绝）；② 无 upload/dist → 沿用服务器现有前端——现有标记与 EDITION 冲突即拒绝（您报告的 P1：切 ai 但现场仍是 standard dist）；现有为无标记旧产物时，仅在**非切线**（EDITION 与上次成功线别一致）警告放行，切线拒绝；服务器无前端目录（纯后端/首次）警告放行。任一拒绝走 rollback。
 
 env.conf：

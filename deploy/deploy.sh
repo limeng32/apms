@@ -654,6 +654,31 @@ if command -v redis-cli >/dev/null 2>&1; then
     REDIS_OLD_VERSION=$(redis-cli ${REDIS_ARGS} -n "${REDIS_DB}" GET "apms:version" 2>/dev/null || echo "")
 fi
 
+# ===== Step 0.5: 停服前预检（产物完整性 + 前后端线别；在任何停服/SQL/产物变更前拦截打包错误）=====
+# 生产 upload 是唯一新产物源：有 upload/dist → 其 edition.txt 必须 == EDITION；
+# 无 upload/dist → 沿用服务器现有前端，冲突/切线无标记即拒绝。不通过只 err，现场零影响。
+PROD_CURRENT_DIST_EDITION=""
+[ -f "${FRONTIR}/dist/edition.txt" ] && \
+    PROD_CURRENT_DIST_EDITION=$(tr -d '[:space:]' < "${FRONTIR}/dist/edition.txt" 2>/dev/null || echo "")
+if [ -d "${UPLOAD}/dist" ]; then
+    PROD_UPLOAD_DIST_EDITION=$(tr -d '[:space:]' < "${UPLOAD}/dist/edition.txt" 2>/dev/null || echo "")
+    if [ "${PROD_UPLOAD_DIST_EDITION}" != "${EDITION}" ]; then
+        err "停服前预检失败：upload/dist/edition.txt='${PROD_UPLOAD_DIST_EDITION:-缺失}' 与目标 ${EDITION} 不一致。
+    未停服、未执行 SQL、未替换任何产物。请用 build.sh --edition ${EDITION} 构建并随包上传对应前端。"
+    fi
+    log "  前端预检通过（来源=upload，edition=${PROD_UPLOAD_DIST_EDITION}）"
+else
+    if [ -n "${PROD_CURRENT_DIST_EDITION}" ] && [ "${PROD_CURRENT_DIST_EDITION}" != "${EDITION}" ]; then
+        err "停服前预检失败：服务器现有前端 ${PROD_CURRENT_DIST_EDITION} 与目标 ${EDITION} 冲突，且未随包上传对应线别 dist。
+    未停服、未执行 SQL。切线部署必须用 build.sh --edition ${EDITION} 完整发版。"
+    fi
+    if [ -z "${PROD_CURRENT_DIST_EDITION}" ] && [ -d "${FRONTIR}/dist" ] && [ "${EDITION}" != "${CONF_EDITION}" ]; then
+        err "停服前预检失败：检测到切线（${CONF_EDITION} → ${EDITION}），但现有前端无线别标记且未随包上传新 dist。
+    未停服、未执行 SQL。请用 build.sh --edition ${EDITION} 完整发版。"
+    fi
+    warn "  前端预检通过（无 upload/dist，沿用现有前端 edition=${PROD_CURRENT_DIST_EDITION:-无标记}）；仅建议同线后端升级"
+fi
+
 # ===== 备份保留策略 =====
 # 规则：保留"每天的第一个备份" + "最新一次备份"，其余删除。
 # 仅处理形如 YYYYMMDD_HHMMSS 的备份目录（目录名即时间戳，字典序=时间序）。
