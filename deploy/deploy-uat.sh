@@ -105,13 +105,29 @@ SMS_SIGN_NAME="${SMS_SIGN_NAME:-北京康耐特体育}"
 SMS_TEMPLATE_CODE="${SMS_TEMPLATE_CODE:-SMS_512565975}"
 
 # ===== 产品线裁定：命令行 > env.conf > 缺省 standard =====
-# CONF_EDITION 是 env.conf 持久值：CLI 一次性覆盖失败回滚时，运行配置恢复为该值
+# CONF_EDITION 是 env.conf 持久值（仅作缺省/兜底；UAT 不会把成功部署的线别回写 env.conf）
 CONF_EDITION="${EDITION:-standard}"
 EDITION="${CLI_EDITION:-${CONF_EDITION}}"
 case "${EDITION}" in
     standard|ai) ;;
     *) err "非法 --edition: ${EDITION}（只允许 standard|ai）" ;;
 esac
+
+# 读取「部署前实际运行线别」：UAT 的运行线别只存在于上次成功部署生成的
+# config/application.yml（app.edition），与 env.conf 的 CONF_EDITION 可能脱节
+# （例如 env.conf=standard，但上次用 --edition ai 部署成功，实际跑的是 ai）。
+# 回滚必须恢复此实际值，才能与备份的旧 jar/dist 成对；旧版本无该标记时回退 CONF_EDITION。
+read_previous_edition() {
+    local prev=""
+    if [ -f "${CONFIGDIR}/application.yml" ]; then
+        prev=$(grep -E '^app\.edition:' "${CONFIGDIR}/application.yml" 2>/dev/null | tail -1 \
+            | sed -E 's/^app\.edition:[[:space:]]*//; s/[[:space:]]*$//; s/^"//; s/"$//')
+    fi
+    case "${prev}" in
+        ai|standard) printf '%s' "${prev}" ;;
+        *)           printf '%s' "${CONF_EDITION}" ;;
+    esac
+}
 
 # ⚠️ 密码里可能有 !#$ 等特殊字符，必须用函数形式避免 bash 解释
 # ${1+"${@}"} 兼容 macOS 自带 bash 3.2：set -u 下无参调用时裸 "${@}" 会报 unbound variable
@@ -393,16 +409,21 @@ rollback() {
         cp -a "${LAST_BK}/dist_old" "${FRONTIR}/dist"
         log "  ✅ 恢复 dist"
     fi
-    # 4.5 恢复运行线别：CLI --edition 是一次性覆盖，回滚后外部 yml 必须改回 env.conf 持久值，
-    #     保证「旧产物 + 持久线别」成对恢复（yml 尚不存在时跳过，do_start 不依赖它）
-    if [ -f "${CONFIGDIR}/application.yml" ]; then
-        if grep -q '^app.edition:' "${CONFIGDIR}/application.yml"; then
-            sed -i.bak "s|^app.edition:.*|app.edition: ${CONF_EDITION}|" "${CONFIGDIR}/application.yml" && rm -f "${CONFIGDIR}/application.yml.bak"
-        else
-            printf '\napp.edition: %s\n' "${CONF_EDITION}" >> "${CONFIGDIR}/application.yml"
-        fi
-        log "  运行线别恢复为 env.conf 持久值: app.edition=${CONF_EDITION}"
+    # 4.5 恢复运行线别：必须与刚恢复的旧 jar/dist（上一次成功部署的产物）成对，
+    #     使用部署开始时快照的实际运行值 PREVIOUS_EDITION（不是 env.conf 的 CONF_EDITION——
+    #     CLI --edition 成功部署后 env.conf 与实际运行值会脱节）。
+    ROLLBACK_EDITION="${PREVIOUS_EDITION:-${CONF_EDITION}}"
+    case "${ROLLBACK_EDITION}" in
+        standard|ai) ;;
+        *) ROLLBACK_EDITION="standard" ;;
+    esac
+    mkdir -p "${CONFIGDIR}"
+    if [ -f "${CONFIGDIR}/application.yml" ] && grep -q '^app.edition:' "${CONFIGDIR}/application.yml"; then
+        sed -i.bak "s|^app.edition:.*|app.edition: ${ROLLBACK_EDITION}|" "${CONFIGDIR}/application.yml" && rm -f "${CONFIGDIR}/application.yml.bak"
+    else
+        printf '\napp.edition: %s\n' "${ROLLBACK_EDITION}" >> "${CONFIGDIR}/application.yml"
     fi
+    log "  运行线别恢复为部署前实际值: app.edition=${ROLLBACK_EDITION}"
     # 5. 重新 nohup 启动（复用 do_start 的逻辑，但通过 env.conf 读参数）
     log "  重启后端..."
     # do_start 会读 env.conf，里面有 APP_PORT/MGMT_PORT 等
@@ -524,6 +545,11 @@ log "  旧版本: ${REDIS_OLD_VERSION:-<空>} (Redis DB ${REDIS_DB})"
 
 # ===== Step 1: 停服务 =====
 do_stop
+
+# 快照「部署前实际运行线别」（必须在 Step 5.5 重写 application.yml 之前）。
+# 回滚恢复的旧产物来自本次 BKDIR，其线别与此快照一致，绝不能用 env.conf 的 CONF_EDITION 推导。
+PREVIOUS_EDITION=$(read_previous_edition)
+log "  线别快照: 部署前实际运行=${PREVIOUS_EDITION}；env.conf 持久值=${CONF_EDITION}；本次目标=${EDITION}"
 
 # ===== Step 2: DB 备份 =====
 BACKUP_TS=$(date '+%Y%m%d_%H%M%S')
@@ -679,8 +705,6 @@ if [ -f "${_TARGET_JAR}" ]; then
     fi
 fi
 [ -f "${UPLOAD}/apms.jar" ] || err "找不到 apms.jar（请先 mvn clean package）"
-cp -f "${UPLOAD}/apms.jar" "${JARDIR}/apms.jar"
-log "  jar: $(ls -lh "${JARDIR}/apms.jar" | awk '{print $5}')"
 
 # 自动同步 vite dist → upload/dist（如果 dist 更新）
 _VITE_DIST="${PROJECT_ROOT}/ruoyi-ui/dist"
@@ -692,17 +716,43 @@ if [ -d "${_VITE_DIST}" ]; then
     fi
 fi
 
-# 前端产物线别配对：dist/edition.txt 必须与本次 EDITION 一致，不一致直接回滚（防止错线上线）
+# 前端线别预检（替换任何产物之前；规则与生产 deploy.sh 一致）：
+#   upload/dist 存在 → 其 edition.txt 必须 == EDITION；
+#   upload/dist 缺失 → 沿用现有 FRONTIR/dist，有标记且冲突即拒绝；无标记旧产物仅在非切线放行。
+CURRENT_DIST_EDITION=""
+if [ -f "${FRONTIR}/dist/edition.txt" ]; then
+    CURRENT_DIST_EDITION=$(tr -d '[:space:]' < "${FRONTIR}/dist/edition.txt" 2>/dev/null || echo "")
+fi
 if [ -d "${UPLOAD}/dist" ]; then
+    FRONT_SOURCE="upload"
     UPLOAD_DIST_EDITION=$(tr -d '[:space:]' < "${UPLOAD}/dist/edition.txt" 2>/dev/null || echo "")
     if [ "${UPLOAD_DIST_EDITION}" != "${EDITION}" ]; then
-        rollback "前端产物线别不匹配（dist/edition.txt='${UPLOAD_DIST_EDITION:-缺失}'，本次 EDITION=${EDITION}）"
+        rollback "前端产物线别不匹配（upload/dist/edition.txt='${UPLOAD_DIST_EDITION:-缺失}'，本次 EDITION=${EDITION}）"
         exit 1
     fi
-    log "  前端线别配对通过: edition.txt=${UPLOAD_DIST_EDITION}"
+    EFFECTIVE_DIST_EDITION="${UPLOAD_DIST_EDITION}"
+else
+    FRONT_SOURCE="existing"
+    EFFECTIVE_DIST_EDITION="${CURRENT_DIST_EDITION}"
+    if [ -n "${EFFECTIVE_DIST_EDITION}" ] && [ "${EFFECTIVE_DIST_EDITION}" != "${EDITION}" ]; then
+        rollback "服务器现有前端线别 ${EFFECTIVE_DIST_EDITION} 与本次 EDITION=${EDITION} 冲突，且本次未提供对应线别 dist"
+        exit 1
+    fi
+    if [ -z "${EFFECTIVE_DIST_EDITION}" ] && [ -d "${FRONTIR}/dist" ] && [ "${EDITION}" != "${PREVIOUS_EDITION}" ]; then
+        rollback "检测到切线部署（${PREVIOUS_EDITION} → ${EDITION}），但现有前端无线别标记且本次无新 dist，无法保证前后端同线"
+        exit 1
+    fi
+fi
+log "  前端线别预检通过（来源=${FRONT_SOURCE}，生效 edition=${EFFECTIVE_DIST_EDITION:-无前端}，目标=${EDITION}）"
+[ "${FRONT_SOURCE}" = "existing" ] && warn "  本次无新 dist，沿用现有前端（edition=${CURRENT_DIST_EDITION:-无标记}）；仅建议同线后端升级"
+
+cp -f "${UPLOAD}/apms.jar" "${JARDIR}/apms.jar"
+log "  jar: $(ls -lh "${JARDIR}/apms.jar" | awk '{print $5}')"
+
+if [ "${FRONT_SOURCE}" = "upload" ]; then
     rm -rf "${FRONTIR}/dist"
     cp -a "${UPLOAD}/dist" "${FRONTIR}/dist"
-    log "  前端: $(find "${FRONTIR}/dist" -type f | wc -l | tr -d ' ') files"
+    log "  前端: $(find "${FRONTIR}/dist" -type f | wc -l | tr -d ' ') files（edition=${EFFECTIVE_DIST_EDITION}）"
 fi
 
 # ===== Step 5: Redis 选择性清缓存（版本驱动）=====

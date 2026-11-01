@@ -8,7 +8,10 @@
 > 1. standard 部署下未映射的 `/apms/ai/**` 返回与全站任意不存在路径**完全一致**的表现（HTTP 200 + AjaxResult code=500「No static resource」，本框架全局行为），功能不可达且不可区分；ai 线 flag 关闭时拦截器仍返回**真实 HTTP 404**。
 > 2. dev 库在热开关验证时已手工植入 `sys.ai.rpa.enabled=true`（与统一补丁目标态一致），补丁 `patches/patch-1.0-261031224744.sql` 在 dev 执行将是幂等无操作。
 > 3. deploy-uat.sh 顺手补齐了既有缺口：Step 4 现在会把当前 jar/dist 备份到本次 BKDIR（此前 UAT 回滚函数引用的 apms.jar/dist_old 实际无人产出）。
-> 4. 追加加固（同日）：UAT 公共 SQL 补丁失败由「warn 后继续」改为**立即硬终止、绝不启动新版本**，失败日志持久化进本次备份目录交人工处理（§3.7.3 第 5 点）。
+> 4. 追加加固（同日）：UAT 公共 SQL 补丁失败由「warn 后继续」改为**立即硬终止、绝不启动新版本**，失败日志持久化进本次备份目录交人工处理（§3.7.3 第 6 点）。
+> 5. P1 修复（同日）：UAT 回滚线别改为恢复部署前从实际运行配置 `config/application.yml` 读取的 `PREVIOUS_EDITION` 快照，而非 env.conf 的 CONF_EDITION（UAT 不回写 env.conf，二者在 CLI `--edition` 成功部署后会脱节，曾可能导致「旧 ai 产物 + standard 配置」错配）。生产 deploy.sh 无此问题（每次成功部署都 persist env.conf，CONF_EDITION 即上次成功值）。
+> 6. P1 修复（同日）：前端配对校验不再因 `upload/dist` 缺失而跳过——生产与 UAT 均在替换产物前读取「将生效的前端」（上传包优先，否则服务器现有 dist）线别，与目标 EDITION 冲突即拒绝回滚；无 edition.txt 的旧前端仅在非切线时警告放行。
+> 7. P1 修复（同日）：build.sh 删除「node_modules 不存在则 warn 跳过前端构建」的隐式分支——前端构建失败或环境缺失一律 err 终止；只有显式 `--skip-frontend` 才允许保留现有 dist，杜绝静默沿用旧产物并通过线别自检的假成功。
 
 ---
 
@@ -291,6 +294,7 @@ env/scripts：新增 `.env.standard`、`.env.ai`（生产变量 + VITE_EDITION�
 - 后端构建与前端构建解耦，新增细粒度开关（UAT 智能构建透传，生产手工发版不传、保持全量）：
   - `--skip-maven`：复用现有 target jar，**不重打后端**（纯切线别场景；jar 缺失则 err）；
   - `--skip-frontend`：保留现有 dist，不跑 vite；
+  - **前端构建只允许「显式跳过」一种跳过方式**：未传 `--skip-frontend` 时，node_modules 缺失或 vite 构建失败都直接 err 终止（不再 warn 隐式跳过——旧逻辑会静默沿用旧 dist，edition.txt 恰好同线即蒙混过关，导致显示成功却上传旧前端）；
   - 后端是**与 Edition 无关的单 jar**，Maven 步骤本身也不带任何 profile；
 - 前端步骤为 `npx vite build --mode ${EDITION}`；
 - 构建后自检（执行前端构建时）：① `dist/edition.txt` 内容 == 入参 EDITION；② standard 构建 dist 中 `apms/ai/rpa` 零命中；
@@ -337,14 +341,16 @@ SQL 补丁（现 Step 3）：
 运行时配置与启动：
 
 7. Step 5.5 生成的外部 `config/application.yml`（现 626-645 行 heredoc）增加一行 `app.edition: ${EDITION}`（沿用该文件扁平覆盖既有风格，chmod 600 不变）——UAT 的持久化载体即此文件（每次部署由 `.uat/env.conf` 重新生成）；do_start 回显行同步打印 edition；
-8. do_start 健康检查通过后（现 321-344 行之后）增加**线别校验**：curl 管理端口 `/health` —— `EDITION=ai` 必须存在 `components.ai.details.edition=ai`；`EDITION=standard` 必须不存在 `ai` 块；不符合即调用既有 `rollback "运行线别与 EDITION 不一致"`；rollback 恢复旧 jar/dist 后，须把 yml 的 `app.edition` 改回**持久配置值**（env.conf 的 EDITION，缺省 standard；因 CLI 一次性覆盖不应留下）再重启，保证旧产物与旧线别成对恢复；
-9. Step 4 替换前端产物前增加 `edition.txt` 配对校验（§3.7.1），不一致直接 rollback。
+8. do_start 健康检查通过后（现 321-344 行之后）增加**线别校验**：curl 管理端口 `/health` —— `EDITION=ai` 必须存在 `components.ai.details.edition=ai`；`EDITION=standard` 必须不存在 `ai` 块；不符合即调用既有 `rollback "运行线别与 EDITION 不一致"`；**rollback 恢复的线别是 `PREVIOUS_EDITION`——Step 1 停服后、重写 yml 前，从当前 `config/application.yml` 的 `app.edition` 读取的「部署前实际运行值」快照**（读不到/值非法才回退 env.conf 的 CONF_EDITION）。不能直接用 env.conf 推导：UAT 不回写 env.conf，CLI `--edition` 成功部署后 env.conf 与实际运行值会脱节，否则会出现「旧 ai 产物 + standard 配置」错配；
+9. Step 4 前端线别预检**提前到替换任何产物之前**，并覆盖「未上传 dist」分支（生产与 UAT 同规则）：① 有 upload/dist → edition.txt 必须存在且 == EDITION（无标记即产物不合规，拒绝）；② 无 upload/dist → 沿用服务器现有前端——现有标记与 EDITION 冲突即拒绝（您报告的 P1：切 ai 但现场仍是 standard dist）；现有为无标记旧产物时，仅在**非切线**（EDITION 与上次成功线别一致）警告放行，切线拒绝；服务器无前端目录（纯后端/首次）警告放行。任一拒绝走 rollback。
 
 env.conf：
 
 10. `deploy/env.conf.example` 与 UAT 说明中增加 `EDITION=standard|ai`；脚本按「非敏感可 fallback」变量处理（缺省 standard），不设为必填 hard fail（与 PROFILE/APP_PORT 同类）。
 
 #### 3.7.4 deploy.sh（生产远端链路；持久化与回滚闭环）
+
+> 前端配对校验与 UAT 同一套规则且在替换产物**之前**执行（§3.7.3 第 9 点）：未上传 dist 不再静默跳过，而是校验服务器现有 dist/edition.txt；切线场景必须有对应线别 dist，否则拒绝并回滚。
 
 参数解析与最终线别确定：
 

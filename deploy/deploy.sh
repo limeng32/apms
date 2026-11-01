@@ -861,20 +861,48 @@ login_config_restore "${BKDIR}"
 
 # ===== Step 4: 替换产物 =====
 log "Step 4: 替换产物..."
+
+# 前端线别预检（必须在替换任何产物之前；防止「未上传新 dist → 静默沿用旧线别 dist」错配）：
+#   ① 上传了 upload/dist：其 edition.txt 必须存在且 == EDITION，否则拒绝（产物不合规/拿错线）；
+#   ② 未上传 upload/dist：沿用服务器现有前端，其 edition.txt 必须与 EDITION 不冲突——
+#      有标记且不同 = 明确错配（如切线 ai 但现场仍是 standard dist）→ 拒绝；
+#      无标记（早于线别特性的旧 dist）：仅在「非切线」（EDITION 与上次成功线别一致）时警告放行，切线拒绝；
+#      无前端目录：不构成错配，警告放行（纯后端/首次部署）。
+CURRENT_DIST_EDITION=""
+if [ -f "${FRONTIR}/dist/edition.txt" ]; then
+    CURRENT_DIST_EDITION=$(tr -d '[:space:]' < "${FRONTIR}/dist/edition.txt" 2>/dev/null || echo "")
+fi
+
+if [ -d "${UPLOAD}/dist" ]; then
+    FRONT_SOURCE="upload"
+    UPLOAD_DIST_EDITION=$(tr -d '[:space:]' < "${UPLOAD}/dist/edition.txt" 2>/dev/null || echo "")
+    if [ "${UPLOAD_DIST_EDITION}" != "${EDITION}" ]; then
+        rollback "前端产物线别不匹配（upload/dist/edition.txt='${UPLOAD_DIST_EDITION:-缺失}'，本次 EDITION=${EDITION}）；切线部署必须用 build.sh --edition ${EDITION} 构建并随包上传对应 dist"
+        exit 1
+    fi
+    EFFECTIVE_DIST_EDITION="${UPLOAD_DIST_EDITION}"
+else
+    FRONT_SOURCE="existing"
+    EFFECTIVE_DIST_EDITION="${CURRENT_DIST_EDITION}"
+    if [ -n "${EFFECTIVE_DIST_EDITION}" ] && [ "${EFFECTIVE_DIST_EDITION}" != "${EDITION}" ]; then
+        rollback "服务器现有前端线别 ${EFFECTIVE_DIST_EDITION} 与本次 EDITION=${EDITION} 冲突，且本次未上传对应线别 dist；请用 build.sh --edition ${EDITION} 完整发版"
+        exit 1
+    fi
+    if [ -z "${EFFECTIVE_DIST_EDITION}" ] && [ -d "${FRONTIR}/dist" ] && [ "${EDITION}" != "${CONF_EDITION}" ]; then
+        rollback "检测到切线部署（${CONF_EDITION} → ${EDITION}），但服务器现有前端无线别标记（早于线别特性的旧产物）且未上传新 dist，无法保证前后端同线；请用 build.sh --edition ${EDITION} 完整发版"
+        exit 1
+    fi
+fi
+log "  前端线别预检通过（来源=${FRONT_SOURCE}，生效 edition=${EFFECTIVE_DIST_EDITION:-无前端}，目标=${EDITION}）"
+[ "${FRONT_SOURCE}" = "existing" ] && warn "  本次未上传 dist，沿用服务器现有前端（edition=${CURRENT_DIST_EDITION:-无标记}）；仅建议用于同线后端升级"
+
 cp -f "${UPLOAD}/apms.jar" "${JARDIR}/apms.jar"
 log "  jar: $(ls -lh "${JARDIR}/apms.jar" | awk '{print $5}')"
 
-if [ -d "${UPLOAD}/dist" ]; then
-    # 前端产物线别配对：edition.txt 必须与本次 EDITION 一致，不一致直接回滚（防止错线上线）
-    UPLOAD_DIST_EDITION=$(tr -d '[:space:]' < "${UPLOAD}/dist/edition.txt" 2>/dev/null || echo "")
-    if [ "${UPLOAD_DIST_EDITION}" != "${EDITION}" ]; then
-        rollback "前端产物线别不匹配（dist/edition.txt='${UPLOAD_DIST_EDITION:-缺失}'，本次 EDITION=${EDITION}）"
-        exit 1
-    fi
-    log "  前端线别配对通过: edition.txt=${UPLOAD_DIST_EDITION}"
+if [ "${FRONT_SOURCE}" = "upload" ]; then
     rm -rf "${FRONTIR}/dist"
     cp -a "${UPLOAD}/dist" "${FRONTIR}/dist"
-    log "  前端: $(find "${FRONTIR}/dist" -type f | wc -l) files"
+    log "  前端: $(find "${FRONTIR}/dist" -type f | wc -l) files（edition=${EFFECTIVE_DIST_EDITION}）"
 fi
 
 # ===== Step 4.5: 生成外部运行时 yml =====

@@ -121,18 +121,17 @@ INJECTED_VERSION=$(unzip -p "${JAR_FILE}" BOOT-INF/classes/version.properties 2>
 log "  jar: $(ls -lh "${JAR_FILE}" | awk '{print $5}')"
 log "  版本注入验证: ${INJECTED_VERSION:-⚠️ 未注入}"
 
-# ===== Step 2: Vue 前端（按产品线构建；--skip-frontend 时保留现有 dist）=====
+# ===== Step 2: Vue 前端（按产品线构建；仅 --skip-frontend 可显式保留现有 dist）=====
 DIST_DIR="${PROJECT_ROOT}/ruoyi-ui/dist"
 if [ "${SKIP_FRONTEND}" -eq 1 ]; then
     log "Step 2: 跳过前端构建 (--skip-frontend)，保留现有 dist"
 else
     log "Step 2: Vue 前端构建 (--mode ${EDITION})..."
     cd "${PROJECT_ROOT}/ruoyi-ui"
-    if [ -d node_modules ]; then
-        npx vite build --mode "${EDITION}" 2>&1 | tail -5 || err "Vite build 失败"
-    else
-        warn "  node_modules 不存在，跳过前端构建"
-    fi
+    # 不允许隐式跳过：node_modules 缺失或 vite 构建失败都直接终止——
+    # 否则会静默沿用旧 dist（edition.txt 可能恰好同线而通过后续校验），导致「显示成功却上传旧前端」。
+    [ -d node_modules ] || err "ruoyi-ui/node_modules 不存在，无法构建前端。请先在 ruoyi-ui 执行 pnpm install；如确需保留现有 dist，请显式传 --skip-frontend"
+    npx vite build --mode "${EDITION}" 2>&1 | tail -5 || err "Vite build (--mode ${EDITION}) 失败，终止；未改动/未上传任何前端产物"
     cd "${PROJECT_ROOT}"
 
     # 前端线别自检：edition.txt 必须与入参一致；standard 产物中不允许出现 rpa 插件 URL 痕迹
