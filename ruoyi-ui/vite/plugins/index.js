@@ -11,8 +11,8 @@ export default function createVitePlugins(viteEnv, isBuild = false) {
   vitePlugins.push(createAutoImport())
   vitePlugins.push(createSetupExtend())
   vitePlugins.push(createSvgIcon(isBuild))
-  // 构建产物写 edition.txt（standard|ai），供部署脚本做线别配对校验
-  isBuild && vitePlugins.push(createEditionMarker(viteEnv.VITE_EDITION))
+  // 构建产物写 edition.txt（standard|ai），供部署脚本做线别配对校验；trial 构建额外写 trial.txt
+  isBuild && vitePlugins.push(createEditionMarker(viteEnv.VITE_EDITION, viteEnv.VITE_DEMO_LOCKED === 'true'))
   isBuild && vitePlugins.push(...createCompression(viteEnv))
   return vitePlugins
 }

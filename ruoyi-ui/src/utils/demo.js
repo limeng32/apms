@@ -24,6 +24,16 @@ export function isDemoEnabled() {
   return ENV.VITE_DEMO_ENABLED !== 'false'
 }
 
+/**
+ * 是否为演示锁定构建（trial 包，VITE_DEMO_LOCKED=true）。
+ * 构建期常量：正式 standard/ai 构建中恒为 false，锁定分支随 tree-shaking 剔除，主站零行为变化。
+ * 叶子/基础设施模块（auth.js、loginConfig.js、ClickCaptcha）直接读 import.meta.env 以避免循环依赖，
+ * 应用层（store、守卫、页面）统一使用本原语。
+ */
+export function isDemoLocked() {
+  return ENV.VITE_DEMO_LOCKED === 'true'
+}
+
 /** 演示口令（默认 8888，VITE_DEMO_PASSCODE 可覆盖） */
 export const PASSCODE = ENV.VITE_DEMO_PASSCODE || '8888'
 

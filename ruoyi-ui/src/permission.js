@@ -11,6 +11,8 @@ import useLockStore from '@/store/modules/lock'
 import useSettingsStore from '@/store/modules/settings'
 import usePermissionStore from '@/store/modules/permission'
 import { isShowcaseHost } from '@/utils/entry'
+import { isDemoLocked, isDemoMode } from '@/utils/demo'
+import { resolveLockedNavigation } from '@/utils/trial'
 
 NProgress.configure({ showSpinner: false })
 
@@ -32,6 +34,17 @@ router.beforeEach(async (to, from) => {
     }
     NProgress.done()
     return { path: '/', replace: true }
+  }
+  // trial 演示锁定闸门（先于一切真实登录判断，对每次导航全局生效；裁决矩阵见 trial_demo_plan §3.2.0b）：
+  // 未进入演示会话（none/broken/storage-error）时只放 /login，/register、/showcase 等原白名单一律不可达；
+  // demo 态落入下方既有流程（getToken 返回 demo token，getInfo/getRouters 走 mock 本地闭环）。
+  if (isDemoLocked()) {
+    const verdict = resolveLockedNavigation({ demo: isDemoMode(), toPath: to.path })
+    if (verdict === true) return true
+    if (verdict) {
+      NProgress.done()
+      return verdict
+    }
   }
   // 业务域（aoti/IP/localhost）：根路径 / 的 matcher 被展示页 alias 占用，
   // 这里改投 /index；/index 在下方按角色统一重定向到真实菜单落点。

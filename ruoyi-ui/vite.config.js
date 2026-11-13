@@ -18,7 +18,8 @@ export default defineConfig(({ mode, command }) => {
     // 部署生产环境和开发环境下的URL。
     // 默认情况下，vite 会假设你的应用是被部署在一个域名的根路径上
     // 例如 https://www.ruoyi.vip/。如果应用被部署在一个子路径上，你就需要用 baseUrl 设置这个子路径。例如，如果你的应用被部署在 https://www.ruoyi.vip/admin/，则设置 baseUrl 为 /admin/。
-    base: VITE_APP_ENV === 'production' ? '/' : '/',
+    // trial 构建经 VITE_APP_BASEPATH=/trial/ 挂同域子路径；其余 mode 缺省回退根路径，行为不变
+    base: env.VITE_APP_BASEPATH || '/',
     define: {
       __BUILD_ID__: JSON.stringify(BUILD_ID)
     },
@@ -48,7 +49,8 @@ export default defineConfig(({ mode, command }) => {
     build: {
       // https://vite.dev/config/build-options.html
       sourcemap: command === 'build' ? false : 'inline',
-      outDir: 'dist',
+      // trial 构建输出 dist-trial，与正式构建的 dist 物理隔离；其余 mode 缺省 dist
+      outDir: env.VITE_BUILD_OUTDIR || 'dist',
       assetsDir: 'assets',
       chunkSizeWarningLimit: 2000,
       rollupOptions: {

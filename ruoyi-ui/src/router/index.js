@@ -200,7 +200,9 @@ export const dynamicRoutes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  // 显式传 Vite base：trial 子路径构建为 /trial/，正式构建为 /（与无参回退等价，零回归）。
+  // vue-router 4.6.4 无参时不自动读取 Vite base，子路径部署必须显式传入。
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: constantRoutes,
   scrollBehavior(to, from, savedPosition) {
     if (savedPosition) {

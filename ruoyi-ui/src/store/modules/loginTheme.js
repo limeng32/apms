@@ -1,6 +1,7 @@
 import { getPublicLoginConfig } from '@/api/loginConfig'
 import { cloneDefaults, mergeWithDefaults, resolveBrowserTitle } from '@/views/login/login.utils'
 import { isShowcaseHost } from '@/utils/entry'
+import { isDemoLocked } from '@/utils/demo'
 
 /**
  * 登录页主题配置 Store
@@ -60,6 +61,10 @@ const useLoginThemeStore = defineStore(
        * @param {string} [entry] 不传则按 hostname 自动判定；'portal' 业务站 / 'showcase' 展示站
        */
       loadConfig(entry) {
+        // trial 演示锁定：不请求 /login/config（P1 零真实请求）。
+        // state.config 初始即 cloneDefaults() 完整默认值，首帧渲染无空窗；smsEnabled 保持 false，短信 tab 隐藏。
+        // 一处短路覆盖 App.vue / login.vue / lock.vue / showcase 四个调用点。
+        if (isDemoLocked()) return Promise.resolve()
         const target = entry || (isShowcaseHost() ? 'showcase' : 'portal')
         // 同入口并发（App 启动预加载 + 页面挂载加载）复用同一 Promise，
         // 保证所有调用方 .then 时配置都已就绪，不会被 this.loading 提前吞掉

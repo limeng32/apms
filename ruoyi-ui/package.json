@@ -10,6 +10,7 @@
     "dev:ai": "vite --mode development-ai",
     "build:standard": "vite build --mode standard",
     "build:ai": "vite build --mode ai",
+    "build:trial": "vite build --mode trial",
     "build:prod": "vite build --mode standard",
     "build:stage": "vite build --mode staging",
     "preview": "vite preview"

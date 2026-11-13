@@ -15,6 +15,15 @@ const publicHttp = axios.create({
   headers: { isToken: false }
 })
 
+// 纵深兜底（P1 零真实请求）：trial 锁定构建中公开配置实例一律不发请求。
+// 主短路在 loginTheme.loadConfig；即使未来新增调用点绕过 store，请求也在此被拦下。
+publicHttp.interceptors.request.use((config) => {
+  if (import.meta.env.VITE_DEMO_LOCKED === 'true') {
+    return Promise.reject(new Error('demo locked: publicHttp request blocked'))
+  }
+  return config
+})
+
 /**
  * 获取登录页公开配置
  * @param {string} [entry] 入口：'portal'（业务站，默认）| 'showcase'（展示站）

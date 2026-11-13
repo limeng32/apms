@@ -261,6 +261,9 @@ function close() {
 defineExpose({ open, close })
 
 onMounted(() => {
+  // trial 演示锁定：不探测验证码开关（GET /captcha/click），零真实请求。
+  // 登录页对本组件另有 v-if 不挂载，此为组件级兜底，防未来其他页面引用时复发。
+  if (import.meta.env.VITE_DEMO_LOCKED === 'true') return
   // 仅探测开关 + 预取第一道题，模态不展示
   loadChallenge()
 })

@@ -84,18 +84,31 @@ export function isDemoMode() {
   return s.state === 'demo' || s.state === 'broken' || s.state === 'storage-error'
 }
 
+/**
+ * trial 演示锁定构建常量（构建期注入）。
+ * 正式 standard/ai 构建中恒为 false，以下短路分支被 tree-shaking，Cookie 读写逻辑零变化。
+ */
+const DEMO_LOCKED = import.meta.env.VITE_DEMO_LOCKED === 'true'
+
 export function getToken() {
   const s = readDemoSessionState()
   if (s.state === 'demo') return s.token
+  // 锁定构建：none/broken/storage-error 一律 undefined，彻底不回落同域 Admin-Token Cookie，
+  // 保证「先在主站登录、再打开 /trial/」无法以真实凭证绕过演示锁定
+  if (DEMO_LOCKED) return undefined
   // broken / storage-error：fail-closed，无条件 undefined，永不回落 Admin-Token
   if (s.state === 'broken' || s.state === 'storage-error') return undefined
   return Cookies.get(TokenKey) || (TokenKey !== LegacyTokenKey ? Cookies.get(LegacyTokenKey) : undefined)
 }
 export function setToken(token) {
+  // 锁定构建 fail-closed：真实登录 UI 已隐藏，此路径正常不可达；短路为纵深防御，不写真实 Cookie
+  if (DEMO_LOCKED) return
   return Cookies.set(TokenKey, token, { expires: TOKEN_COOKIE_DAYS })
 }
 
 export function removeToken() {
+  // 锁定构建 no-op：绝不删除同域主站的真实登录 Cookie，避免 trial 内 401/登出流程跨上下文破坏主站会话
+  if (DEMO_LOCKED) return
   // 同时清理本环境新名与历史旧名（旧名可能正承载本次会话的 token）
   Cookies.remove(TokenKey)
   if (TokenKey !== LegacyTokenKey) Cookies.remove(LegacyTokenKey)

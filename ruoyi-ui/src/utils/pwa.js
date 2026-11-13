@@ -41,6 +41,9 @@ function registerServiceWorker() {
 export function setupPortalPwa() {
   if (!import.meta.env.PROD) return
   if (isShowcaseHost()) return
+  // trial 演示锁定：不注入 manifest、不注册 SW——演示站无需 PWA 安装能力，
+  // 同时避免根绝对路径资源请求与同域 SW scope 重叠（正式构建行为不变）
+  if (import.meta.env.VITE_DEMO_LOCKED === 'true') return
   injectManifest()
   registerServiceWorker()
 }

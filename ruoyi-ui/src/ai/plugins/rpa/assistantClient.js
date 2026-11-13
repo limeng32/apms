@@ -115,7 +115,7 @@ function promptRelogin(msg) {
   }).then(() => {
     isRelogin.show = false
     useUserStore().logOut().then(() => {
-      location.href = '/index'
+      location.href = `${import.meta.env.BASE_URL}index`
     })
   }).catch(() => {
     isRelogin.show = false

@@ -1,8 +1,16 @@
 # 同域演示站（/trial/）规划：演示态固定 AI 全量，正式入口按部署 Edition 提供能力
 
-> 状态：规划待评审（未写实现代码）
+> 状态：**已实施，待人工 UAT/生产部署**（代码与本地验收 2026-11-13 完成；SQL/部署仍由人工执行）
 > 日期：2026-11-13
 > 关联文档：edition_split_plan.md（双产品线/双构建架构）、demo_mode_plan.md（一键体验机制）
+>
+> 实施记录（2026-11-13，与 §7 九步对应）：
+> - 新增：`ruoyi-ui/.env.trial`、`src/utils/trial.js`（isDemoLocked 原语在 demo.js；openTrial/hasTrialUrl/resolveLockedNavigation 在 trial.js）、`deploy/nginx-trial.conf.sample`、`.trae/demo-tests/trial.mjs`（23 项桩测）；
+> - 构建：vite.config.js（base/outDir env 化）、edition 插件双标记、package.json `build:trial`、.gitignore、index.html（`%BASE_URL%`/`%VITE_DEMO_LOCKED%` 占位）、.env.standard/.env.ai（TRIAL_URL 注释样例）；
+> - 锁定与安全：loginTheme.loadConfig 短路、ClickCaptcha onMounted 短路 + login.vue v-if、loginConfig publicHttp 拦截兜底、auth.js 三函数 fail-closed、permission.js 前置闸门（裁决走 trial.js 纯函数）、pwa.js 锁定跳过、login.vue 四态自动弹框与副作用门控；
+> - 子路径：router 显式 BASE_URL + 4 处 `/index` 修复；
+> - 部署：build.sh `--edition trial` 独立支线（dist-trial → 远端 frontend/trial-dist，不走 deploy.sh）；
+> - 本地验收：三模式构建通过、standard 零 AI 回归、桩测 52+8+23 全过、浏览器冒烟 12 项断言全过（自动弹框/深链弹回/8888 进入/RPA 可用/全程零 /prod-api/退出回登录页）。
 
 ## 1. 需求与约束
 

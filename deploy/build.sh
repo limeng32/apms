@@ -16,6 +16,11 @@
 #   bash build.sh --edition ai
 #   bash build.sh --only-build --edition ai
 #
+#   # 同域演示站（trial）：前端-only 独立支线，产物 dist-trial 单独 rsync 到
+#   # 远端 trial-dist/，不打 jar、不走 deploy.sh、不碰正式 dist 与后端
+#   bash build.sh --edition trial
+#   bash build.sh --only-build --edition trial
+#
 # 这个脚本做的事：
 #   (1) Maven clean package -DskipTests（注入 apms.version）
 #   (2) Vue vite build
@@ -66,7 +71,8 @@ err()  { echo -e "${RED}[ERR  ]${NC} ${*}"; exit 1; }
 # ===== 参数 =====
 VERSION=""
 ONLY_BUILD=0
-# 产品线：standard（缺省，前端零 AI 代码）| ai（含 AI 插件）；后端为单 jar，线别只影响前端构建与远端运行配置
+# 产品线：standard（缺省，前端零 AI 代码）| ai（含 AI 插件）| trial（同域演示站，前端-only 独立支线）；
+# standard/ai 后端为单 jar，线别只影响前端构建与远端运行配置；trial 不打 jar、不走 deploy.sh 主链路
 EDITION="standard"
 # 细粒度构建开关（供 deploy-uat.sh 智能构建透传：纯切线别时只重建前端，不重打后端 jar）
 SKIP_MAVEN=0
@@ -85,9 +91,13 @@ while [[ ${#} -gt 0 ]]; do
     esac
 done
 case "${EDITION}" in
-    standard|ai) ;;
-    *) err "未知 --edition: ${EDITION}（只允许 standard|ai）" ;;
+    standard|ai|trial) ;;
+    *) err "未知 --edition: ${EDITION}（只允许 standard|ai|trial）" ;;
 esac
+# trial 支线必须实际构建前端，不允许 --skip-frontend（演示产物没有「沿用旧包」语义）
+if [ "${EDITION}" = "trial" ] && [ "${SKIP_FRONTEND}" -eq 1 ]; then
+    err "--edition trial 不支持 --skip-frontend：演示支线必须重新构建 dist-trial"
+fi
 
 # 版本号：优先 --version 参数，否则读 pom.xml <apms.version>
 if [ -z "${VERSION}" ]; then
@@ -105,6 +115,52 @@ echo "=========================================="
 echo "  APMS Build → ${VERSION} (edition=${EDITION})"
 echo "=========================================="
 echo ""
+
+# ===== Trial 独立支线：前端-only，不打 jar、不走 deploy.sh、不碰正式 dist 与后端 =====
+if [ "${EDITION}" = "trial" ]; then
+    TRIAL_DIR="${PROJECT_ROOT}/ruoyi-ui/dist-trial"
+    log "Trial 支线：构建同域演示站（固定 AI 全量 + 演示锁定 + base=/trial/）"
+
+    # T1. Vite trial 构建（失败即终止，无隐式跳过）
+    cd "${PROJECT_ROOT}/ruoyi-ui"
+    [ -d node_modules ] || err "ruoyi-ui/node_modules 不存在，无法构建 trial 包。请先在 ruoyi-ui 执行 pnpm install"
+    npx vite build --mode trial 2>&1 | tail -5 || err "Vite build (--mode trial) 失败，终止；未分发任何 trial 产物"
+    cd "${PROJECT_ROOT}"
+
+    # T2. 产物三件套自检：双标记 + 子路径 base（任一不符即终止，杜绝错包上线）
+    TRIAL_EDITION=$(tr -d '[:space:]' < "${TRIAL_DIR}/edition.txt" 2>/dev/null || echo "")
+    [ "${TRIAL_EDITION}" = "ai" ] || err "dist-trial/edition.txt='${TRIAL_EDITION}' 必须为 ai，拒绝继续"
+    TRIAL_MARKER=$(tr -d '[:space:]' < "${TRIAL_DIR}/trial.txt" 2>/dev/null || echo "")
+    [ "${TRIAL_MARKER}" = "trial" ] || err "dist-trial/trial.txt='${TRIAL_MARKER}' 必须为 trial，拒绝继续"
+    grep -q 'src="/trial/' "${TRIAL_DIR}/index.html" || err "dist-trial/index.html 资源未以 /trial/ 为 base，子路径部署会 404"
+    log "  trial 自检通过: edition.txt=ai, trial.txt=trial, base=/trial/"
+
+    if [ "${ONLY_BUILD}" -eq 1 ]; then
+        log "✅ Trial build 完成 (--only-build)，产物位置：${TRIAL_DIR}/"
+        exit 0
+    fi
+
+    # T3. 独立 rsync 到远端 frontend/trial-dist/（与正式 frontend/dist 并列；
+    # --delete 只清理该目录，绝不触碰正式 upload/dist 与 deploy.sh 备份链路）
+    REMOTE_TRIAL_DIR="${REMOTE_DIR}/frontend/trial-dist"
+    log "Trial 分发：${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_TRIAL_DIR}/"
+    ssh "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p '${REMOTE_TRIAL_DIR}'"
+    RSYNC_SSH="ssh"
+    [ "${KNOWN_HOSTS_FILE:-}" = "/dev/null" ] && \
+        RSYNC_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+    if rsync -avz --delete -e "${RSYNC_SSH}" \
+        "${TRIAL_DIR}/" \
+        "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_TRIAL_DIR}/"; then
+        log "  trial 产物 rsync 完成"
+    else
+        err "trial rsync 失败，终止（未执行任何远端部署动作；正式站不受影响）"
+    fi
+
+    # T4. 不执行 deploy.sh：nginx location /trial/ 需人工预置（样例 deploy/nginx-trial.conf.sample）
+    log "✅ Trial 全流程完成 → ${VERSION}（未打 jar、未执行 deploy.sh、正式 dist 与后端零改动）"
+    log "   提醒：确认 aoti 443 server 块已含 location ^~ /trial/（alias ${REMOTE_TRIAL_DIR}/），样例见 deploy/nginx-trial.conf.sample"
+    exit 0
+fi
 
 # ===== Step 1: Maven 后端（单 jar，与 Edition 无关；--skip-maven 时复用现有 jar）=====
 JAR_FILE="${PROJECT_ROOT}/ruoyi-admin/target/apms.jar"

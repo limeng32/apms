@@ -10,6 +10,21 @@
         <el-button type="primary" @click="reloadPage">重新检测</el-button>
       </div>
       <template v-else>
+        <!-- trial 演示锁定：真实登录表单全部隐藏，只留「一键体验」口令入口（强制要求一见 §3.2.0） -->
+        <div v-if="demoLocked" class="trial-locked-entry">
+          <p class="trial-locked-tip">演示环境 · 数据均为样本，所有操作不影响真实系统</p>
+          <el-button type="primary" class="trial-locked-btn" @click="demoDialogVisible = true">
+            <svg
+              class="trial-locked-zap" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02H20a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02H4Z"/>
+            </svg>
+            一键体验
+          </el-button>
+        </div>
+        <template v-else>
         <!-- 登录方式切换：短信开启且主 Logo 后门已解锁时才出现（未解锁只呈现短信登录单形态） -->
         <div v-if="smsEnabled && accountUnlocked" class="login-mode-tabs">
           <button type="button"
@@ -25,27 +40,29 @@
           v-model="loginForm"
           :config="loginThemeStore.config"
           :loading="loading"
-          :demo-entry="demoEnabled"
+          :demo-entry="demoEntryEnabled"
           @submit="handleLogin"
           @forgot="handleForgot"
-          @demo="demoDialogVisible = true"
+          @demo="onDemoEntryClick"
         />
         <SmsLoginForm
           v-show="smsEnabled && activeTab === 'sms'"
           ref="smsFormRef"
           :loading="loading"
-          :demo-entry="demoEnabled"
+          :demo-entry="demoEntryEnabled"
           @submit="onSmsSubmit"
           @need-slider="onSmsNeedSlider"
           @select="onSmsSelectAccount"
-          @demo="demoDialogVisible = true"
+          @demo="onDemoEntryClick"
         />
+        </template>
       </template>
     </template>
   </LoginRenderer>
 
-  <!-- 图形点选验证码（模态框；点登录时弹出，通过后自动发起登录） -->
+  <!-- 图形点选验证码（模态框；点登录时弹出，通过后自动发起登录）；trial 锁定态不挂载，杜绝 /captcha/click 探测 -->
   <ClickCaptcha
+    v-if="!demoLocked"
     ref="sliderRef"
     @verified="onSliderVerified"
     @enabled-change="onSliderEnabledChange"
@@ -68,7 +85,8 @@ import DemoPassDialog from './login/DemoPassDialog.vue'
 import useLoginThemeStore from '@/store/modules/loginTheme'
 import { applyLoginHead, restoreLoginHead, resolveBrowserTitle } from './login/login.utils'
 import { readDemoSessionState, clearDemoSession } from '@/utils/auth'
-import { isDemoEnabled } from '@/utils/demo'
+import { isDemoEnabled, isDemoLocked } from '@/utils/demo'
+import { hasTrialUrl, openTrial } from '@/utils/trial'
 import { isShowcaseHost } from '@/utils/entry'
 
 const userStore = useUserStore()
@@ -79,8 +97,20 @@ const { proxy } = getCurrentInstance()
 
 // 一键体验：入口开关（env 可关）+ 口令弹窗 + 会话四态（storage-error 阻断、broken 自愈）
 const demoEnabled = isDemoEnabled()
+// trial 演示锁定构建（构建期常量，正式构建恒 false，本分支随 tree-shaking 剔除）
+const demoLocked = isDemoLocked()
+// 正式站配置 VITE_TRIAL_URL 后收口到外部 trial 标签、隐藏原地口令演示；
+// trial 构建自身不配置该 env，恒为 false（Edition 无关，standard/ai 行为一致）
+const trialExternal = hasTrialUrl()
+const demoEntryEnabled = demoEnabled && !trialExternal
 const demoDialogVisible = ref(false)
 const sessionState = ref(readDemoSessionState().state)
+
+/** 「一键体验」点击：正式站配了 TRIAL_URL 则 noopener 新开 trial 标签；否则唤起本地口令弹窗 */
+function onDemoEntryClick() {
+  if (trialExternal && openTrial()) return
+  demoDialogVisible.value = true
+}
 
 const loginFieldsRef = ref(null)
 const smsFormRef = ref(null)
@@ -164,14 +194,21 @@ function applyHead() {
 // 进入 /login：首帧用默认配置渲染，挂载后异步拉取（失败静默回退，绝不阻断）
 onMounted(() => {
   applyHead()
+  // 锁定构建中 loadConfig 直接短路（零真实请求），.then(applyHead) 仍以默认配置执行一次
   loginThemeStore.loadConfig().then(applyHead)
-  setupAutoFullscreen()
+  // trial 锁定态不请求全屏：首交互即口令输入，全屏提示会打断口令流程
+  if (!demoLocked) setupAutoFullscreen()
   // broken 自愈：演示单键损坏时清掉异常键并提示，本次回到普通登录（isDemoMode 翻 false）。
   // storage-error 不在此处理（模板渲染阻断页，任何登录入口都不出现）。
   if (sessionState.value === 'broken') {
     clearDemoSession()
     sessionState.value = 'none'
     proxy.$modal.msgInfo('演示状态数据异常，已退出演示模式')
+  }
+  // 强制要求一：锁定构建挂载即自动弹出口令框（四态裁决，详见 trial_demo_plan §3.2.0）。
+  // none（含 broken 自愈后）→ 自动弹；storage-error → 阻断页不弹；demo → 防御性不弹（正常情况下守卫已重定向走）。
+  if (demoLocked && sessionState.value !== 'storage-error' && sessionState.value !== 'demo') {
+    demoDialogVisible.value = true
   }
 })
 onBeforeUnmount(() => {
@@ -335,10 +372,36 @@ function handleForgot() {
   proxy.$modal.msgWarning(msg)
 }
 
-getCookie()
+// 锁定构建不读/删同域主站的非认证遗留 Cookie（username/rememberMe/password），登录表单本就隐藏
+if (!demoLocked) getCookie()
 </script>
 
 <style lang='scss' scoped>
+/* trial 演示锁定入口（替代真实登录表单） */
+.trial-locked-entry {
+  margin-top: 30px;
+  padding: 28px 18px;
+  text-align: center;
+  border: 1px solid var(--login-border);
+  border-radius: var(--login-radius);
+  background: var(--login-page-bg);
+}
+.trial-locked-tip {
+  margin: 0 0 20px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--login-text-2);
+}
+.trial-locked-btn {
+  height: 46px;
+  min-width: 200px;
+  border-radius: var(--login-radius);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+.trial-locked-zap { width: 17px; height: 17px; flex: none; }
+
 /* 账号登录 / 短信登录 切换条 */
 .login-mode-tabs {
   display: flex;

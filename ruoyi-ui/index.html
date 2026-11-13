@@ -17,7 +17,11 @@
      */
     (function () {
       try {
-        if (location.pathname !== '/login') return
+        // 演示锁定构建不做动态 favicon：避免同域 localStorage 中的 /profile/ 图标触发真实图片请求，
+        // 统一回退下方静态 %BASE_URL%favicon.ico（trial 零真实请求口径）
+        if ('%VITE_DEMO_LOCKED%' === 'true') return
+        // %BASE_URL% 构建期替换：根部署为 '/'，trial 子路径为 '/trial/'
+        if (location.pathname !== '%BASE_URL%login') return
         var h = localStorage.getItem('apms_login_favicon')
         if (typeof h === 'string' && /^\/(dev-api|prod-api)?\/profile\//.test(h)) {
           document.write('<link rel="icon" type="image/png" data-login-favicon="boot" href="' + h + '">')
@@ -26,7 +30,7 @@
     })()
   </script>
   <!-- v=构建号：重新部署后强制浏览器拉新 favicon，绕过对 .ico 的 7 天强缓存 -->
-  <link rel="icon" href="/favicon.ico?v=%BUILD_ID%">
+  <link rel="icon" href="%BASE_URL%favicon.ico?v=%BUILD_ID%">
   <title>%VITE_APP_TITLE%</title>
   <script>
     /*
@@ -39,6 +43,8 @@
      */
     (function () {
       try {
+        // 演示锁定构建保持 .env.trial 的构建标题（演示环境），不被同域缓存的主站标题覆盖
+        if ('%VITE_DEMO_LOCKED%' === 'true') return
         var host = location.hostname
         var showcase = host === 'apms.top' || host === 'www.apms.top'
         if (!showcase) {
@@ -62,7 +68,7 @@
       } catch (e) { /* 异常时保留 <title> 构建默认值 */ }
     })()
   </script>
-  <!--[if lt IE 11]><script>window.location.href='/html/ie.html';</script><![endif]-->
+  <!--[if lt IE 11]><script>window.location.href='%BASE_URL%html/ie.html';</script><![endif]-->
   <style>
     html,
     body,

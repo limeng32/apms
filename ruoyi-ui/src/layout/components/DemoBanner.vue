@@ -53,8 +53,8 @@ const shown = computed(() => inDemo.value && (!dismissed.value || broken.value))
 function exit() {
   exitDemo()
   userStore.token = ''
-  // 与 Navbar 退出一致，回到入口页
-  window.location.href = '/index'
+  // 与 Navbar 退出一致，回到入口页（BASE_URL：正式构建 '/'，trial 构建 '/trial/'）
+  window.location.href = `${import.meta.env.BASE_URL}index`
 }
 </script>
 
