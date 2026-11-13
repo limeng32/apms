@@ -11,6 +11,8 @@
 - 生产域名 `aoti.apms.top` 维持现状：真实账号登录后只看到 **standard 版**内容，standard 交付物保持「零 AI 代码」物理隔离；
 - 同一域名的**演示环境**中可以体验 RPA 助手等 **ai 版全部内容**；
 - 演示进入方式**保持现有「一键体验 + 8888 口令」交互不变**（DemoPassDialog），不做免口令自动进入；
+- **强制要求一**：进入 Trial（登录页挂载，含深链被守卫弹回的场景）自动弹出口令框，无需手动点击；
+- **强制要求二**：所有演示业务路由（静态/动态/应用内二次导航）必须经过演示会话检查，未进入演示会话只允许访问 Trial 登录入口；
 - 演示态仍是纯前端 mock：零真实 HTTP、静态样本数据、刷新还原、退出演示回登录页。
 
 ### 1.2 关键约束（已代码取证）
@@ -25,6 +27,16 @@
    - `layout/components/Navbar.vue:105` `location.href='/index'`
    - `ai/plugins/rpa/assistantClient.js:118` `location.href='/index'`
    - `utils/request.js:98` `location.href='/index'`
+7. **输口令前的真实后端请求排查（P1，评审发现）**：用户首次打开 `/trial/`、尚未输入 8888 时 `isDemoMode()=false`，demoAdapter 尚未接管，全量审计后确认有 2 处真实请求：
+   - **请求 A（独立 axios 实例，永远绕过 demoAdapter）**：`App.vue onMounted → loginThemeStore.loadConfig() → api/loginConfig.js 的 publicHttp → GET /prod-api/login/config`（login.vue onMounted 再次调用但被 inflight 去重；lock.vue、showcase/index.vue 也调用同一 action）；
+   - **请求 B（全局实例，但此时未进 demo 态）**：`ClickCaptcha.vue` 在登录页**常驻挂载**，`onMounted → loadChallenge() → GET /captcha/click` 探测验证码开关；
+   - 已排除项：短信验证码仅点击时发送、`getCodeImg` 仅 register.vue 使用（锁定态注册页不可达）、其余请求均发生在登录之后。
+8. **同源会话边界排查（P1 安全，评审发现）**：`/` 与 `/trial/` 同 Origin，Cookie/localStorage/sessionStorage 不按路径隔离：
+   - `auth.js getToken()` 在 `readDemoSessionState().state==='none'` 时**回落读取真实 Admin-Token Cookie**（L92）。若用户先在主站登录过，再打开 `/trial/`（未输 8888），getToken() 返回真实 JWT → permission.js L42 进入真实登录分支 → getInfo() 经全局实例发出**带真实凭证的请求**，演示锁定被完全绕过；
+   - 全量审计确认认证凭证消费点共 14 处（request.js 注入头、permission 守卫、user store、download.js×3、upload 组件×7、ai/features、rpa/assistantClient），**全部经由 getToken() 单一函数**，无第二条读取路径；
+   - 反向风险：`removeToken()`（user.logOut / 401 重登流程会调）在 trial 内若被触发，会删掉同域主站的真实登录 Cookie，构成跨上下文破坏；
+   - sessionStorage：`window.open` 打开的新浏览上下文会复制 opener 的 sessionStorage 初始副本（之后各自独立），主站跳 trial 若不加 noopener，可能把主站标签的会话副本带入 trial（其中虽无 token 凭证，但违反最小暴露）；
+   - 非凭证 Cookie（sidebarStatus/size/username/rememberMe）同域共享仅影响 UI 偏好，不构成认证边界问题，不纳入本次收口。
 
 ## 2. 方案选型
 
@@ -81,6 +93,116 @@ package.json 增脚本：`"build:trial": "vite build --mode trial"`。
 3. **退出演示**：DemoBanner/Navbar 的退出动作回到 **trial 自己的登录页**（配合 3.3 的 base 修复），不会落到主站；
 4. DemoBanner 文案在锁定态追加「演示环境」标识（可选增强，低优先级）。
 
+#### 3.2.0 强制要求一：进入 Trial 自动弹出口令框
+
+锁定态下口令框不依赖用户点击，登录页挂载即自动弹出，保证访客打开 `/trial/`（或被守卫弹回登录页）后第一交互只能是输口令：
+
+- 触发点：login.vue `onMounted`（与现有 `demoDialogVisible` ref、DemoPassDialog 组件复用，不新增弹窗组件）；
+- 触发条件（与会话四态严格对齐）：
+
+  | 挂载时会话状态 | 行为 |
+  |---|---|
+  | none（正常首次/被守卫弹回/取消后重进） | **自动弹出口令框** |
+  | demo | 正常不会停在登录页（守卫直接放行业务路由）；防御性不弹窗 |
+  | broken | 先执行既有 broken 自愈清键 → 状态转 none → 自动弹出 |
+  | storage-error | 不弹窗，渲染存储阻断页（与主站行为一致，无法进入任何流程） |
+
+- 用户点「取消」关闭弹窗后，锁定态登录壳上仍保留「一键体验」按钮可手动再次唤起（不会卡死在空白登录页）；
+- 口令错误沿用现有抖动/错误文案，弹窗保持打开；
+- 深链场景闭环：直接访问 `/trial/apms/xxx` → 守卫（§3.2.2 规则 2）弹回 `/login` → 登录页挂载 → 自动弹框，访客无任何绕过口令接触业务页面的路径；
+- standard/ai 构建中该自动弹出逻辑被构建期常量剔除，主站仍保持手动点击「一键体验」。
+
+#### 3.2.0b 强制要求二：所有演示业务路由必须经过演示会话检查
+
+- 检查点唯一且全局：`router.beforeEach` 中的锁定闸门（§3.2.2 规则 2）对**每一次导航**生效，覆盖静态路由（/index、/lock、个人中心、404 兜底等）、动态路由（getInfo 后 addRoute 的全部 `/apms/**` 菜单）以及应用内 `router.push` 触发的二次导航——不存在只在首屏检查、之后放行的缺口；
+- 锁定态路由裁决矩阵：
+
+  | 会话状态 | 访问 /login | 访问任意其他路径（含白名单 /register、/showcase） |
+  |---|---|---|
+  | none | 放行（并自动弹框） | 重定向 /login |
+  | demo | 重定向首页（既有逻辑） | 放行，业务请求由 demoAdapter 本地闭环 |
+  | broken | 放行（自愈后弹框） | 重定向 /login |
+  | storage-error | 放行（渲染阻断页） | 重定向 /login（阻断页） |
+
+- 会话中途失效（用户点「退出演示」清掉 demo 单键）后，下一次任意导航立即重新过闸并被弹回登录页，不依赖刷新；
+- 后端侧不新增校验：演示态零真实 HTTP，本要求是纯前端路由不变量；桩测需覆盖矩阵全部格子。
+
+### 3.2.1 零真实请求保证（P1 修复，评审发现）
+
+目标：`VITE_DEMO_LOCKED=true` 的 trial 包，**从打开 `/trial/` 到退出演示的全生命周期，网络面板零真实后端请求**（含输口令之前）。按评审意见采用「锁定态本地短路」，不改造 mock 系统、不动 publicHttp 实例本身：
+
+1. **请求 A 修复——loginTheme store 集中短路**（一处覆盖 App.vue / login.vue / lock.vue / showcase 四个调用点）：
+   `store/modules/loginTheme.js` 的 `loadConfig()` 入口判断：锁定态直接 `return Promise.resolve()`，不调用 `getPublicLoginConfig`；state 初始值本就是 `cloneDefaults()` 完整默认配置，首帧渲染无空窗；`smsEnabled` 保持默认 false，短信 tab 自然隐藏；
+2. **请求 B 修复——ClickCaptcha 双层处理**：
+   - login.vue 模板对 `<ClickCaptcha>` 加 `v-if="!demoLocked"`，锁定态组件**不挂载**，onMounted 探测根本不执行（真实登录表单已隐藏，验证码在 trial 无任何使用场景）；
+   - 组件内 `onMounted` 再加 env 短路兜底（`VITE_DEMO_LOCKED==='true'` 时直接 return），防止未来其他页面引用时复发；
+3. **构建期保证**：`VITE_DEMO_LOCKED` 是构建期常量，短路分支在 standard/ai 产物中被 tree-shaking，主站包零行为变化；
+4. **口令流程本身零请求**：`enterDemo` 只写 sessionStorage + 重置内存 DB，不经过 HTTP；进入 demo 态后全部请求由 demoAdapter 本地闭环（既有机制）；
+5. 防御性兜底（可选，评审决定是否做）：在 `api/loginConfig.js` 的 publicHttp 请求拦截器中再判一次锁定态并 reject，作为最后一道闸——若 1/2 被后续重构绕过，请求也发不出去。
+
+### 3.2.2 同源会话安全边界（P1 修复，评审发现）
+
+目标：trial 构建对真实认证凭证「读不到、写不进、删不掉」，演示锁定不可被同域 Cookie 绕过。三条规则落地：
+
+**规则 1：trial 构建的 getToken() 永不读取真实 Cookie（auth.js 单点收口）**
+
+利用「14 处消费点全部经由 getToken()」的事实，只改 auth.js 一个文件：
+
+```js
+// 构建期常量；standard/ai 产物中该分支被 tree-shaking，原 Cookie 回落逻辑零变化
+const DEMO_LOCKED = import.meta.env.VITE_DEMO_LOCKED === 'true'
+
+export function getToken() {
+  const s = readDemoSessionState()
+  if (s.state === 'demo') return s.token
+  // locked 构建：none/broken/storage-error 一律 undefined，彻底不回落 Admin-Token
+  if (DEMO_LOCKED) return undefined
+  if (s.state === 'broken' || s.state === 'storage-error') return undefined
+  return Cookies.get(TokenKey) || (TokenKey !== LegacyTokenKey ? Cookies.get(LegacyTokenKey) : undefined)
+}
+```
+
+同步对写/删入口做 fail-closed 防御（真实登录 UI 已隐藏，这些路径正常不可达，短路是纵深防御）：
+
+- `setToken()`：locked 下 no-op（不写真实 Cookie）；
+- `removeToken()`：locked 下 no-op（**绝不删除同域主站的真实登录 Cookie**，避免 trial 内任何 401/登出流程跨上下文破坏主站会话）；
+- 效果：request.js 的 Authorization 注入、download.js、7 处 upload header、AI 客户端在非 demo 态全部拿不到凭证，即使手工构造业务 URL 也只会以匿名身份被守卫弹回登录页。
+
+**规则 2：路由守卫锁定检查先于一切真实登录判断（permission.js）——落实强制要求二**
+
+在 `isShowcaseHost()` 判断之后、`if (getToken())` 之前插入锁定闸门，对每次导航全局生效，完整裁决矩阵见 §3.2.0b：
+
+```js
+if (DEMO_LOCKED) {
+  if (!isDemoMode()) {
+    // 未进入演示会话（none/broken/storage-error）：只允许 trial 登录入口；
+    // /register、/showcase 等原白名单一律不放行
+    if (to.path === '/login') return true
+    NProgress.done()
+    return { path: '/login', replace: true }
+  }
+  // demo 态落入下方既有流程（getToken 返回 demo token，getInfo/getRouters 走 mock）
+}
+```
+
+- 白名单在锁定态收窄：原 `whiteList` 含 `/register`、`/showcase`，锁定闸门先于白名单判断，trial 中这些路径不可达；
+- 覆盖范围含静态路由、动态 addRoute 的全部 `/apms/**`、应用内二次导航；退出演示后首次导航即重新过闸（§3.2.0b）；
+- 与规则 1 互为兜底：即使未来 getToken 短路被重构误伤，守卫仍按 sessionStorage 的 demo 会话状态裁决，不承认任何 Cookie 凭证。
+
+**规则 3：主站打开 trial 显式 noopener（login.vue 入口）**
+
+§3.4 的「一键体验」跳转统一使用：
+
+```js
+window.open(import.meta.env.VITE_TRIAL_URL, '_blank', 'noopener,noreferrer')
+```
+
+- noopener 使新浏览上下文 `opener=null` 且获得**空的 sessionStorage**，不复制主站标签会话副本；
+- 不用 `<a target=_blank>` 裸写（漏 rel=noopener 即失效），封装为单一工具函数 `openTrial()`，全仓只此一个打开点；
+- 纵深说明：即便某浏览器对 noopener 处理有差异，复制过去的也只可能是 demo 会话（真实 JWT 仅存于 Cookie，而规则 1 已保证 trial 不读 Cookie），不构成凭证泄漏。
+
+**不变量与验收口径**：trial 构建中「真实 JWT」在任何存储状态组合（none/demo/broken/storage-error）下都不可被 JS 读取、不会出现在任何请求头中；主站 Admin-Token Cookie 的生命周期不受 trial 内任何操作影响。
+
 ### 3.3 子路径适配（base=/trial/）
 
 - 4 处硬编码 `/index` 统一改为 `` `${import.meta.env.BASE_URL}index` ``（standard/ai 的 BASE_URL 为 `/`，改写后行为等价，零回归）；
@@ -93,16 +215,17 @@ package.json 增脚本：`"build:trial": "vite build --mode trial"`。
 主站登录页「一键体验」按钮行为由 env 控制：
 
 - 新增 `VITE_TRIAL_URL`（生产 standard 构建配 `https://aoti.apms.top/trial/`）：
-  - 配置后：点击「一键体验」**新开标签**打开 trial 站，由 trial 登录页承接 8888 口令流程；主站**隐藏原地口令演示**（避免「无 RPA 的原地演示」与「全量 trial 演示」两个口径并存）；
+  - 配置后：点击「一键体验」经封装的 `openTrial()` **新开标签**打开 trial 站（强制 `noopener,noreferrer`，见 §3.2.2 规则 3），由 trial 登录页承接 8888 口令流程；主站**隐藏原地口令演示**（避免「无 RPA 的原地演示」与「全量 trial 演示」两个口径并存）；
   - 未配置（本地 dev、UAT）：保持现有原地口令演示行为，零影响；
 - 改动集中在 login.vue 入口判断与 DemoPassDialog 触发处，standard 包不含任何 AI 代码的原则不变。
 
-### 3.5 同源存储隔离分析
+### 3.5 同源存储隔离分析（与 §3.2.2 配套）
 
-- 两应用同源（协议+host+port 相同），共享 Web Storage；
-- 现有设计中 demo 会话为 sessionStorage 单键、真实 token 为独立键，本就分键；trial 锁定态只写 demo 键、永不写真实 token；
-- 主站与 trial 通过**新标签**打开，各自标签的会话生命周期独立；退出演示/关闭标签即清理；
-- 实施时补桩测：主站真实登录后新开 trial 标签，双方 token/角色互不可见、互不污染（复用现有 assistantSession owner 隔离测试的套路）。
+- 两应用同源（协议+host+port 相同），Cookie 与 Web Storage 物理共享，**不依赖存储天然隔离，而靠认证收口建立逻辑边界**；
+- 真实 JWT 只存于 Admin-Token Cookie；trial 构建的 getToken/setToken/removeToken 三函数全部短路（§3.2.2 规则 1），该 Cookie 对 trial 应用等价于不存在：读不到、不会被覆盖、不会被删除；
+- demo 会话只存 sessionStorage 单键；主站开 trial 强制 noopener，新标签获得空 sessionStorage（规则 3）；退出演示/关闭标签即清理；
+- 非认证 Cookie（侧边栏状态、字号、记住的用户名）可能同域共享，仅影响 UI 偏好，无安全含义；
+- 实施时补桩测：① 预置 Admin-Token Cookie 后以 trial 构建运行，四种存储状态下 getToken() 断言；② 主站真实登录后新开 trial 标签，双方 token/角色互不可见、trial 内操作后主站 Cookie 不变；③ 守卫对未授权 URL 的重定向断言。
 
 ### 3.6 部署设计（人工执行，Agent 不代发）
 
@@ -139,9 +262,13 @@ location /trial/ {
 | 改 | `ruoyi-ui/vite.config.js` | base/outDir 读 env |
 | 改 | `ruoyi-ui/vite/plugins/edition.js` | trial.txt 标识 |
 | 改 | `ruoyi-ui/package.json` | build:trial 脚本 |
-| 改 | `src/views/login.vue` | 演示锁定 + TRIAL_URL 跳转 |
-| 改 | `src/permission.js` | 锁定态会话守卫 |
-| 改 | `src/utils/demo.js` 或 auth.js | 锁定态判定原语（按需） |
+| 改 | `src/views/login.vue` | 演示锁定 + **挂载自动弹口令框（§3.2.0）** + openTrial() noopener 跳转 + ClickCaptcha 锁定态 v-if |
+| 改 | `src/views/login/ClickCaptcha.vue` | onMounted 锁定态短路（P1 请求 B 兜底） |
+| 改 | `src/store/modules/loginTheme.js` | loadConfig 锁定态短路，不调 /login/config（P1 请求 A） |
+| 改 | `src/utils/auth.js` | **P1 安全**：locked 下 getToken/setToken/removeToken 全短路，不碰真实 Cookie |
+| 改 | `src/permission.js` | 锁定闸门前置（先于 getToken 判断），全局每次导航过闸，未进 demo 只放 /login（§3.2.0b） |
+| 改 | `src/utils/demo.js` 或新增 `src/utils/trial.js` | 锁定态判定原语 + openTrial() 封装 |
+| 改（可选） | `src/api/loginConfig.js` | publicHttp 锁定态拦截兜底 |
 | 改 | DemoBanner.vue / Navbar.vue / assistantClient.js / request.js | 4 处 BASE_URL 跳转修复 |
 | 改 | `deploy/build.sh` | trial 构建与独立产物分发 |
 | 新增（运维侧，只提供样例） | nginx location 片段 | `/trial/` 静态站点 |
@@ -151,29 +278,40 @@ location /trial/ {
 
 1. `npm run build:standard` 产物 grep `apms/ai/rpa` 仍 **0 命中**、edition.txt=standard（零 AI 不回归）；
 2. `npm run build:trial` 成功：dist-trial 根含 edition.txt=ai、trial.txt=trial；产物内含 RPA 组件与 mock handler；index.html 资源路径全部以 `/trial/` 开头；
-3. 本地以 `/trial/` base 起静态服务：打开 `/trial/` 只见演示入口；输错口令拒绝；8888 进入后悬浮球/RPA 面板可用，SSE 走 mock 全闭环，网络面板**无真实后端请求**；
-4. trial 内手输业务 URL/刷新丢会话 → 回 trial 登录页，无法进入真实登录链路；
-5. 退出演示回到 `/trial/` 登录页（不跳主站）；
-6. 主站 `/` standard 包：配置 TRIAL_URL 后一键体验新开 `/trial/` 标签；未配置时原地演示行为不变；
-7. 存储隔离桩测通过：主站真实登录与 trial 演示会话互不污染；
-8. 现有 demo-tests 全量桩测（52+8 项）无回归；三部署脚本 bash 3.2/5.x 语法检查通过。
+3. 本地以 `/trial/` base 起静态服务：打开 `/trial/` 自动弹出口令框（无需点击）；取消后可用「一键体验」手动唤起；输错口令拒绝并停留弹窗；8888 进入后悬浮球/RPA 面板可用，SSE 走 mock 全闭环，网络面板**无真实后端请求**；
+3.1 **强制要求一验收**：全新标签打开 `/trial/`、深链访问 `/trial/apms/athlete`、broken 自愈后三种入口，口令框均自动弹出；storage-error 态不弹窗只显示阻断页；standard 构建回归验证登录页不会自动弹窗；
+3.2 **强制要求二验收（路由矩阵桩测）**：按 §3.2.0b 矩阵逐格断言——none/broken/storage-error 下访问任意非 /login 路径（含 /register、/showcase、静态 /index、动态 /apms/**、404 兜底）一律重定向 /login；demo 态全部放行；演示中退出会话后首次 router.push 即被弹回，无需刷新；
+4. **P1 零网络验收（输口令前）**：全新标签打开 `/trial/` 停在登录页、不做任何操作，DevTools Network 录制 3 秒：对 `/prod-api/**`（含 `/login/config`、`/captcha/click`）的真实请求数为 **0**；输错口令同样零请求；输入 8888 进入演示后仍为零真实请求（只有 mock adapter 内部分派，无 XHR/fetch 出网）；
+5. **P1 会话安全验收（Cookie 绕过攻击面）**：
+   - 预置同域 Admin-Token Cookie（模拟主站已登录）后打开 `/trial/`：未输口令时停在登录页，守卫不进入任何业务路由，Network 无带 Authorization 的请求；手工访问 `/apms/athlete`、`/index` 等任意业务 URL 一律被重定向回 `/trial/login`；
+   - 桩测断言：trial 构建在 none/demo/broken/storage-error 四种存储状态下，getToken() 仅 demo 态返回 demo token，其余均为 undefined；setToken/removeToken 调用后 Cookie 无变化（主站凭证不被写入/删除）；
+   - 主站「一键体验」打开的新标签 `window.opener === null`，且 sessionStorage 中无主站键（noopener 生效）；
+6. trial 内手输业务 URL/刷新丢会话 → 回 trial 登录页，无法进入真实登录链路；
+7. 退出演示回到 `/trial/` 登录页（不跳主站）；
+8. 主站 `/` standard 包：配置 TRIAL_URL 后一键体验新开 `/trial/` 标签；未配置时原地演示行为不变；
+9. 现有 demo-tests 全量桩测（52+8 项）无回归；三部署脚本 bash 3.2/5.x 语法检查通过。
 
 ## 6. 风险与回滚
 
 | 风险 | 缓解 |
 |---|---|
-| 子路径硬编码遗漏导致跳转 404 | 4 处已定位 + 实施时全局复扫 + 验收第 5 条专项走查 |
+| 子路径硬编码遗漏导致跳转 404 | 4 处已定位 + 实施时全局复扫 + 验收第 7 条专项走查 |
 | trial 包含 AI 源码被公开访问 | 演示包本无真实数据/接口；可选 nginx 口令或 IP 白名单 |
 | 同源 Storage 键冲突 | demo/真实分键 + 新标签隔离 + 桩测验收 |
+| 输口令前泄漏真实请求（P1） | loginTheme/ClickCaptcha 锁定态短路 + 验收第 4 条 Network 零请求录制；可选 publicHttp 拦截器兜底 |
+| 同域 Cookie 绕过演示锁定（P1） | auth.js 三函数锁定态短路 + 守卫前置闸门 + noopener，验收第 5 条攻击面走查 |
+| trial 内误删主站登录 Cookie | removeToken 锁定态 no-op，桩测断言 Cookie 生命周期不受影响 |
 | 主站发版误传 dist-trial | 独立目录、独立 rsync，不进 deploy.sh 主链路 |
 | 回滚 | 删除 nginx location 与 trial 目录即完全撤销；主站无任何依赖，零影响 |
 
 ## 7. 实施顺序（建议）
 
 1. Vite 构建体系（env/config/edition 插件/package 脚本）+ 构建产物自检；
-2. 4 处 BASE_URL 修复 + 全局硬编码复扫；
-3. 演示锁定（login/permission/demo 原语）；
-4. 主站入口 TRIAL_URL 逻辑；
-5. Node 桩测（锁定态、隔离、标识）+ 现有桩测回归；
-6. build.sh trial 分支；
-7. 输出 nginx 配置样例交人工部署与验收。
+2. **P1 零网络短路**：loginTheme.loadConfig 锁定态短路 + ClickCaptcha v-if/onMounted 短路；
+3. **P1 安全边界收口**：auth.js 三函数（getToken/setToken/removeToken）锁定态短路 + permission.js 前置锁定闸门；
+4. 4 处 BASE_URL 修复 + 全局硬编码复扫；
+5. 演示锁定 UI（login.vue 含自动弹口令框 §3.2.0）+ openTrial() noopener 封装；
+6. 主站入口 TRIAL_URL 逻辑；
+7. Node 桩测（四态 token 断言、§3.2.0b 路由矩阵全格、自动弹框触发条件、隔离、构建标识）+ 浏览器零网络/Cookie 攻击面验收 + 现有桩测回归；
+8. build.sh trial 分支；
+9. 输出 nginx 配置样例交人工部署与验收。
