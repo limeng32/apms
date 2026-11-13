@@ -1,4 +1,4 @@
-# 同域演示站（/trial/）规划：演示态含 RPA，正式登录保持 Standard
+# 同域演示站（/trial/）规划：演示态固定 AI 全量，正式入口按部署 Edition 提供能力
 
 > 状态：规划待评审（未写实现代码）
 > 日期：2026-11-13
@@ -8,8 +8,10 @@
 
 ### 1.1 目标
 
-- 生产域名 `aoti.apms.top` 维持现状：真实账号登录后只看到 **standard 版**内容，standard 交付物保持「零 AI 代码」物理隔离；
-- 同一域名的**演示环境**中可以体验 RPA 助手等 **ai 版全部内容**；
+- 两个入口的内容口径固定为：
+  - **正式入口 `/`**：按实际部署的 Edition 提供功能——部署 standard 即标准版（零 AI），部署 ai 即含 AI 能力，本规划不对正式部署的 Edition 做任何限定或改动；
+  - **演示入口 `/trial/`**：**固定使用 AI 全量前端构建**，无论正式环境部署的是 standard 还是 ai，演示态始终提供包含 RPA 在内的完整 AI 功能；
+- standard 交付物的「零 AI 代码」物理隔离原则仅约束 standard 正式构建本身；trial 是独立的第三份构建产物，不受该原则约束，也不改变正式部署 Edition（standard 或 ai）的任何产物；
 - 演示进入方式**保持现有「一键体验 + 8888 口令」交互不变**（DemoPassDialog），不做免口令自动进入；
 - **强制要求一**：进入 Trial（登录页挂载，含深链被守卫弹回的场景）自动弹出口令框，无需手动点击；
 - **强制要求二**：所有演示业务路由（静态/动态/应用内二次导航）必须经过演示会话检查，未进入演示会话只允许访问 Trial 登录入口；
@@ -17,10 +19,10 @@
 
 ### 1.2 关键约束（已代码取证）
 
-1. standard 构建经 Vite 别名 `@ai → src/ai-stub`，AI 代码**不进产物**，build.sh 另有 grep 零 AI 校验。运行时开关无法让不存在的代码出现，因此不能在 standard 单包内解决；
+1. 当正式部署为 standard 时，其构建经 Vite 别名 `@ai → src/ai-stub`，AI 代码**不进产物**，build.sh 另有 grep 零 AI 校验，运行时开关无法让不存在的代码出现；正式部署为 ai 时虽含 AI 代码，但演示需要的「口令锁定/零真实请求/独立入口」也不应污染正式包——因此无论正式 Edition 为何，独立 trial 构建都是必要的；
 2. 现有 demo 机制已完整：口令弹窗、demoAdapter 全接管、内存 DB、demo/真实 token 分键隔离；
-3. ai 构建的 `features.js` 对 demo 态默认**全插件启用且不发请求**，RPA mock handler 已随 ai 构建注册——演示态 RPA 的前后端链路现成；
-4. 后端 `@AiEnabled` 条件装配保证：即使拿到 ai 前端，真实态在 standard 后端下 AI 接口一律 404。**本需求后端零改动、零 SQL**；
+3. ai 构建的 `features.js` 对 demo 态默认**全插件启用且不发请求**，RPA mock handler 已随 ai 构建注册——trial 直接复用该模式，演示态 RPA 的前后端链路现成；
+4. 后端 `@AiEnabled` 条件装配保证纵深防御：即使拿到 ai 前端，standard 后端下 AI 接口一律 404；ai 后端下业务接口仍需真实 JWT，demo token 不被服务端认可。**本需求后端零改动、零 SQL**；
 5. 路由为 `createWebHistory()`（无参）；已取证 vue-router 4.6.4 无参时 base 回退字面量 `/`、**不自动读取 Vite base**，子路径部署必须显式改为 `createWebHistory(import.meta.env.BASE_URL)`（见 §3.3）；
 6. 已发现 4 处硬编码根路径跳转，子路径部署必须改造：
    - `layout/components/DemoBanner.vue:57` `location.href='/index'`
@@ -42,15 +44,15 @@
 
 | 方案 | 形态 | 评价 |
 |---|---|---|
-| **A. 同域路径隔离（采纳）** | `/` 挂 standard dist；`/trial/` 挂第三份 trial dist（ai 代码 + 演示锁定 + base=/trial/） | 主站零改动、零 AI 原则保留、同源免跨域；新增一个构建 mode 与一个 nginx location |
+| **A. 同域路径隔离（采纳）** | `/` 挂正式 dist（standard 或 ai，按实际部署）；`/trial/` 挂第三份 trial dist（固定 ai 全量 + 演示锁定 + base=/trial/） | 正式站零改动、两个 Edition 通用、同源免跨域；新增一个构建 mode 与一个 nginx location |
 | B. 独立子域名 | trial.apms.top 挂 ai dist | 用户明确要求同域名，不采纳 |
-| C. AI 代码合入 standard 包，运行时门控 | 单构建，demo 解锁 | 推翻零 AI 物理隔离、build/部署校验返工、源码可从公网包提取，不采纳 |
+| C. AI 代码合入正式包，运行时门控 | 单构建，demo 解锁 | 推翻 standard 零 AI 物理隔离、build/部署校验返工、源码可从公网包提取，不采纳 |
 
-最终形态：
+最终形态（正式站 Edition 任意，trial 内容恒定）：
 
 ```
-https://aoti.apms.top/          → dist（standard，现状，真实登录=标准版）
-https://aoti.apms.top/trial/    → dist-trial（ai 全量 + 演示锁定，8888 口令进入，含 RPA）
+https://aoti.apms.top/          → dist 或 dist-ai（按实际部署 Edition，真实登录后功能随线别）
+https://aoti.apms.top/trial/    → dist-trial（固定 ai 全量 + 演示锁定，8888 口令进入，始终含 RPA）
 ```
 
 ## 3. 详细设计
@@ -67,7 +69,7 @@ VITE_APP_ENV = 'production'
 VITE_APP_BASE_API = '/prod-api'          # 兜底值；demo 态零请求，实际不使用
 VITE_EDITION = ai                        # 包含 AI 容器与全部插件
 VITE_APP_BASEPATH = '/trial/'            # Vite base（子路径，喂给 vite.config 与 router）
-VITE_BUILD_OUTDIR = 'dist-trial'         # P1：独立输出目录，绝不覆盖 standard 的 dist
+VITE_BUILD_OUTDIR = 'dist-trial'         # P1：独立输出目录，绝不覆盖正式构建（standard/ai 均输出 dist）
 VITE_DEMO_LOCKED = 'true'                # 演示锁定：隐藏真实登录，只留口令入口
 VITE_DEMO_PASSCODE = '8888'              # 沿用现有口令机制（env 可覆盖）
 ```
@@ -75,13 +77,13 @@ VITE_DEMO_PASSCODE = '8888'              # 沿用现有口令机制（env 可覆
 vite.config.js 改造（均带缺省值，standard/ai 现有 mode 行为不变）：
 
 - `base: env.VITE_APP_BASEPATH || '/'`；
-- `build.outDir: env.VITE_BUILD_OUTDIR || 'dist'`（trial 输出 `dist-trial`，避免覆盖 standard 的 dist）；
-- 别名逻辑不动：trial 的 `VITE_EDITION=ai` 自然解析到 `src/ai`。
+- `build.outDir: env.VITE_BUILD_OUTDIR || 'dist'`（trial 输出 `dist-trial`，避免覆盖正式构建的 dist）；
+- 别名逻辑不动：trial 的 `VITE_EDITION=ai` 自然解析到 `src/ai`，与正式站当前是哪个 Edition 无关。
 
 edition 标记插件（`vite/plugins/edition.js`）：
 
 - trial 包 `edition.txt` 仍写 `ai`（不侵入部署脚本 standard|ai 枚举）；
-- 额外写 `trial.txt`（内容 `trial`）作为演示包标识，供人工/脚本识别，不参与主站部署门禁。
+- 额外写 `trial.txt`（内容 `trial`）作为演示包标识，供人工/脚本识别，不参与正式站部署门禁。
 
 package.json 增脚本：`"build:trial": "vite build --mode trial"`。
 
@@ -218,14 +220,15 @@ window.open(import.meta.env.VITE_TRIAL_URL, '_blank', 'noopener,noreferrer')
 - 静态资源 URL 由 Vite 按 base 自动改写，无需手工处理；实施时全局再扫一遍 `'/index'`、`'/static'`、`public/` 引用确认无遗漏；
 - 实施时排查 `public/` 下资源是否有以根路径硬引用的写法（favicon、BUILD_ID 注入点）。
 
-### 3.4 主站（standard）入口调整
+### 3.4 正式站入口调整（适用全部 Edition）
 
-主站登录页「一键体验」按钮行为由 env 控制：
+正式站（standard 或 ai 构建）登录页「一键体验」按钮行为由 env 控制，**`VITE_TRIAL_URL` 是 Edition 无关的通用配置**：
 
-- 新增 `VITE_TRIAL_URL`（生产 standard 构建配 `https://aoti.apms.top/trial/`）：
-  - 配置后：点击「一键体验」经封装的 `openTrial()` **新开标签**打开 trial 站（强制 `noopener,noreferrer`，见 §3.2.2 规则 3），由 trial 登录页承接 8888 口令流程；主站**隐藏原地口令演示**（避免「无 RPA 的原地演示」与「全量 trial 演示」两个口径并存）；
+- 新增 `VITE_TRIAL_URL`（生产构建统一配 `https://aoti.apms.top/trial/`，standard 与 ai 的 env 中都可配置同值）：
+  - 配置后：点击「一键体验」经封装的 `openTrial()` **新开标签**打开 trial 站（强制 `noopener,noreferrer`，见 §3.2.2 规则 3），由 trial 登录页承接 8888 口令流程；正式站**隐藏原地口令演示**（避免「正式包内的原地演示」与「全量 trial 演示」两个口径并存）；
   - 未配置（本地 dev、UAT）：保持现有原地口令演示行为，零影响；
-- 改动集中在 login.vue 入口判断与 DemoPassDialog 触发处，standard 包不含任何 AI 代码的原则不变。
+- 对 ai 正式站的语义：其原地演示本就含 RPA，但仍统一收口到 trial——trial 额外提供演示锁定与零真实请求保证，演示行为与口令在两个 Edition 的正式站之间完全一致；
+- 改动集中在 login.vue 入口判断与 DemoPassDialog 触发处，以构建期 env 门控：不配置 TRIAL_URL 时两个 Edition 的现有构建行为均不变。
 
 ### 3.5 同源存储隔离分析（与 §3.2.2 配套）
 
@@ -259,7 +262,7 @@ location /trial/ {
 
 ### 3.7 后端与数据
 
-- 后端：无改动。trial 演示态零真实请求；即便有人绕过前端直接调接口，standard 后端 AI 路径 404、业务接口需真实 JWT，demo token 不被服务端认可；
+- 后端：无改动。trial 演示态零真实请求；即便有人绕过前端直接调接口——standard 后端的 AI 路径一律 404，ai 后端的业务接口仍需真实 JWT——两种 Edition 下 demo token 均不被服务端认可；
 - 数据库/Redis：无改动、无新补丁。
 
 ## 4. 改动文件清单（预估）
@@ -285,11 +288,11 @@ location /trial/ {
 
 ## 5. 验收标准
 
-1. `npm run build:standard` 产物 grep `apms/ai/rpa` 仍 **0 命中**、edition.txt=standard（零 AI 不回归）；随后执行 `npm run build:trial`，**standard 的 dist 目录内容不被改动**（trial 必须落在独立 dist-trial，可按目录 mtime/文件数比对验证）；
+1. `npm run build:standard` 产物 grep `apms/ai/rpa` 仍 **0 命中**、edition.txt=standard（零 AI 不回归）；随后执行 `npm run build:trial`，**正式构建的 dist 目录内容不被改动**（无论正式线别是 standard 还是 ai，trial 必须落在独立 dist-trial，可按目录 mtime/文件数比对验证）；
 2. `npm run build:trial` 成功：dist-trial 根含 edition.txt=ai、trial.txt=trial；产物内含 RPA 组件与 mock handler；index.html 资源路径全部以 `/trial/` 开头；
 2.1 **P1 路由 base 验收**：dist-trial 内 grep 打包产物确认 router 以 `/trial/` 为 history base；浏览器深链直接访问 `/trial/login`、`/trial/apms/athlete` 不出现跳到根域 `/login` 的现象；standard/ai 构建回归：BASE_URL=/ 下路由行为与改动前一致；
 3. 本地以 `/trial/` base 起静态服务：打开 `/trial/` 自动弹出口令框（无需点击）；取消后可用「一键体验」手动唤起；输错口令拒绝并停留弹窗；8888 进入后悬浮球/RPA 面板可用，SSE 走 mock 全闭环，网络面板**无真实后端请求**；
-3.1 **强制要求一验收**：全新标签打开 `/trial/`、深链访问 `/trial/apms/athlete`、broken 自愈后三种入口，口令框均自动弹出；storage-error 态不弹窗只显示阻断页；standard 构建回归验证登录页不会自动弹窗；
+3.1 **强制要求一验收**：全新标签打开 `/trial/`、深链访问 `/trial/apms/athlete`、broken 自愈后三种入口，口令框均自动弹出；storage-error 态不弹窗只显示阻断页；standard 与 ai 两种正式构建均回归验证登录页不会自动弹窗；
 3.2 **强制要求二验收（路由矩阵桩测）**：按 §3.2.0b 矩阵逐格断言——none/broken/storage-error 下访问任意非 /login 路径（含 /register、/showcase、静态 /index、动态 /apms/**、404 兜底）一律重定向 /login；demo 态全部放行；演示中退出会话后首次 router.push 即被弹回，无需刷新；
 4. **P1 零网络验收（输口令前）**：全新标签打开 `/trial/` 停在登录页、不做任何操作，DevTools Network 录制 3 秒：对 `/prod-api/**`（含 `/login/config`、`/captcha/click`）的真实请求数为 **0**；输错口令同样零请求；输入 8888 进入演示后仍为零真实请求（只有 mock adapter 内部分派，无 XHR/fetch 出网）；
 5. **P1 会话安全验收（Cookie 绕过攻击面）**：
@@ -298,7 +301,7 @@ location /trial/ {
    - 主站「一键体验」打开的新标签 `window.opener === null`，且 sessionStorage 中无主站键（noopener 生效）；
 6. trial 内手输业务 URL/刷新丢会话 → 回 trial 登录页，无法进入真实登录链路；
 7. 退出演示回到 `/trial/` 登录页（不跳主站）；
-8. 主站 `/` standard 包：配置 TRIAL_URL 后一键体验新开 `/trial/` 标签；未配置时原地演示行为不变；
+8. 正式站 `/`（standard 或 ai 构建，两种 Edition 各验一遍）：配置 TRIAL_URL 后一键体验新开 `/trial/` 标签；未配置时原地演示行为不变；
 9. 现有 demo-tests 全量桩测（52+8 项）无回归；三部署脚本 bash 3.2/5.x 语法检查通过。
 
 ## 6. 风险与回滚
@@ -307,7 +310,7 @@ location /trial/ {
 |---|---|
 | 子路径硬编码遗漏导致跳转 404 | 4 处已定位 + 实施时全局复扫 + 验收第 7 条专项走查 |
 | vue-router 无参 base 回退 `/` 致子路径失效（P1） | 显式 createWebHistory(import.meta.env.BASE_URL)，验收第 2.1 条深链走查 |
-| trial 构建覆盖 standard dist（P1） | .env.trial 固定 VITE_BUILD_OUTDIR=dist-trial，验收第 1 条目录隔离比对 |
+| trial 构建覆盖正式构建 dist（P1） | .env.trial 固定 VITE_BUILD_OUTDIR=dist-trial（与正式线别 standard/ai 无关），验收第 1 条目录隔离比对 |
 | trial 包含 AI 源码被公开访问 | 演示包本无真实数据/接口；可选 nginx 口令或 IP 白名单 |
 | 同源 Storage 键冲突 | demo/真实分键 + 新标签隔离 + 桩测验收 |
 | 输口令前泄漏真实请求（P1） | loginTheme/ClickCaptcha 锁定态短路 + 验收第 4 条 Network 零请求录制；可选 publicHttp 拦截器兜底 |
@@ -323,7 +326,7 @@ location /trial/ {
 3. **P1 安全边界收口**：auth.js 三函数（getToken/setToken/removeToken）锁定态短路 + permission.js 前置锁定闸门；
 4. 子路径适配：router/index.js 显式传 BASE_URL（P1）+ 4 处硬编码 /index 修复 + 全局硬编码复扫；
 5. 演示锁定 UI（login.vue 含自动弹口令框 §3.2.0）+ openTrial() noopener 封装；
-6. 主站入口 TRIAL_URL 逻辑；
+6. 正式站入口 TRIAL_URL 逻辑（Edition 无关，standard/ai 同一套 env 门控）；
 7. Node 桩测（四态 token 断言、§3.2.0b 路由矩阵全格、自动弹框触发条件、隔离、构建标识）+ 浏览器零网络/Cookie 攻击面验收 + 现有桩测回归；
 8. build.sh trial 分支；
 9. 输出 nginx 配置样例交人工部署与验收。
