@@ -1,6 +1,11 @@
 <template>
   <teleport to="body">
-    <div v-if="store.open" class="as-mask" @click.self="store.closePanel()">
+    <!-- 遮罩关闭的判定锚定在 pointerdown（DOM 尚未被本次点击逻辑改变，祖先链稳定）：
+         记录手势是否起源于面板内；click 阶段只信该标志。
+         不能只靠 click 时 target.closest——点击 chip 触发 send 后建议区被 v-if 卸载，
+         target 成为脱离文档的节点，closest 返回 null 会误判为点了外部而关闭面板。
+         aside @click.stop 再做一道物理阻断，双保险。 -->
+    <div v-if="store.open" class="as-mask" @pointerdown="onMaskPointerDown" @click="onMaskClick">
       <aside class="as-panel" role="dialog" aria-label="APMS 助手" @click.stop>
         <header class="as-head">
           <div class="as-head-main">
@@ -33,7 +38,7 @@
         </main>
 
         <footer class="as-foot">
-          <textarea ref="inputRef" v-model="draft" class="as-input" rows="2"
+          <textarea v-model="draft" class="as-input" rows="2"
                     placeholder="问页面、功能或操作步骤…（Alt+A 呼出，Esc 关闭）"
                     @keydown.enter.exact="onEnterKey" />
           <div class="as-foot-actions">
@@ -54,10 +59,10 @@ import { nextTick, ref, watch } from 'vue'
 import { Close, Delete } from '@element-plus/icons-vue'
 import useAssistantStore from './assistantStore'
 import AssistantMessage from './AssistantMessage.vue'
+import { createDismissState } from './useMaskDismiss'
 
 const store = useAssistantStore()
 const draft = ref('')
-const inputRef = ref(null)
 const bodyRef = ref(null)
 
 function scrollBottom() {
@@ -67,10 +72,9 @@ function scrollBottom() {
 }
 
 watch(() => store.open, (open) => {
-  if (open) {
-    scrollBottom()
-    nextTick(() => inputRef.value && inputRef.value.focus())
-  }
+  // 展开面板不自动聚焦输入域：移动端会因此弹出软键盘遮挡面板，桌面端也会抢走页面焦点；
+  // 用户需要输入时手动点击 textarea 即可。仅保留滚动定位。
+  if (open) scrollBottom()
 })
 
 watch(() => store.messages, scrollBottom, { deep: true })
@@ -95,6 +99,20 @@ function sendSuggestion(text) {
 
 function onAction(message) {
   store.executeAction(message)
+}
+
+/**
+ * 遮罩关闭采用「pointerdown 起源 + click 裁决」两段式（状态机见 useMaskDismiss.js，有桩测），
+ * 规避 click 阶段 DOM 已被本次交互重渲染（如建议 chip 卸载）导致 target.closest 失效。
+ */
+const dismiss = createDismissState()
+
+function onMaskPointerDown(e) {
+  dismiss.notePointerDown(e.target)
+}
+
+function onMaskClick() {
+  if (dismiss.shouldDismissOnClick()) store.closePanel()
 }
 </script>
 

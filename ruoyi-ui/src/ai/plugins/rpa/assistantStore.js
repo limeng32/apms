@@ -288,7 +288,10 @@ const useAssistantStore = defineStore('assistant', {
     },
 
     clear() {
-      this.resetSession(true)
+      // 只清空会话内容，不关闭面板（用户在助手内点垃圾桶后应停留在空态，可继续选建议/提问）。
+      // resetSession 会把 suggestions/能力表一并清掉，这里重新预热，让空态建议 chip 恢复。
+      this.resetSession(false)
+      this.loadCapabilities()
     },
 
     resetSession(close = false, clearStorage = true) {
