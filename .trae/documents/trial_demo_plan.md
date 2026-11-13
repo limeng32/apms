@@ -21,7 +21,7 @@
 2. 现有 demo 机制已完整：口令弹窗、demoAdapter 全接管、内存 DB、demo/真实 token 分键隔离；
 3. ai 构建的 `features.js` 对 demo 态默认**全插件启用且不发请求**，RPA mock handler 已随 ai 构建注册——演示态 RPA 的前后端链路现成；
 4. 后端 `@AiEnabled` 条件装配保证：即使拿到 ai 前端，真实态在 standard 后端下 AI 接口一律 404。**本需求后端零改动、零 SQL**；
-5. 路由为 `createWebHistory()`（无参，自动取 Vite `base`），支持子路径部署；
+5. 路由为 `createWebHistory()`（无参）；已取证 vue-router 4.6.4 无参时 base 回退字面量 `/`、**不自动读取 Vite base**，子路径部署必须显式改为 `createWebHistory(import.meta.env.BASE_URL)`（见 §3.3）；
 6. 已发现 4 处硬编码根路径跳转，子路径部署必须改造：
    - `layout/components/DemoBanner.vue:57` `location.href='/index'`
    - `layout/components/Navbar.vue:105` `location.href='/index'`
@@ -66,7 +66,8 @@ VITE_APP_TITLE = 运动员训练数据管理系统（演示环境）
 VITE_APP_ENV = 'production'
 VITE_APP_BASE_API = '/prod-api'          # 兜底值；demo 态零请求，实际不使用
 VITE_EDITION = ai                        # 包含 AI 容器与全部插件
-VITE_APP_BASEPATH = '/trial/'            # Vite base（子路径）
+VITE_APP_BASEPATH = '/trial/'            # Vite base（子路径，喂给 vite.config 与 router）
+VITE_BUILD_OUTDIR = 'dist-trial'         # P1：独立输出目录，绝不覆盖 standard 的 dist
 VITE_DEMO_LOCKED = 'true'                # 演示锁定：隐藏真实登录，只留口令入口
 VITE_DEMO_PASSCODE = '8888'              # 沿用现有口令机制（env 可覆盖）
 ```
@@ -205,9 +206,16 @@ window.open(import.meta.env.VITE_TRIAL_URL, '_blank', 'noopener,noreferrer')
 
 ### 3.3 子路径适配（base=/trial/）
 
+- **P1：router 必须显式传 base（评审发现，原「无需改」结论错误）**。已对实际安装的 vue-router 4.6.4 源码取证：`createWebHistory()` 无参时经 `normalizeBase(undefined)` 回退到 HTML `<base>` 元素或字面量 `'/'`，**整个 dist 中不存在任何 `import.meta.env.BASE_URL` 引用**（grep 零命中），即该版本不会自动读取 Vite base。必须修改 `src/router/index.js`：
+
+  ```js
+  // 改前：history: createWebHistory()
+  history: createWebHistory(import.meta.env.BASE_URL)
+  ```
+
+  否则 `/trial/login` 解析、动态路由跳转、router.push 的 URL 拼接全部按根 `/` 计算，子路径部署直接失效。standard/ai 构建的 BASE_URL 为 `/`，显式传参与无参行为完全等价，零回归；
 - 4 处硬编码 `/index` 统一改为 `` `${import.meta.env.BASE_URL}index` ``（standard/ai 的 BASE_URL 为 `/`，改写后行为等价，零回归）；
 - 静态资源 URL 由 Vite 按 base 自动改写，无需手工处理；实施时全局再扫一遍 `'/index'`、`'/static'`、`public/` 引用确认无遗漏；
-- router 无需改：`createWebHistory()` 默认读取 BASE_URL，router-link/ push 绝对路径均自动带 base；
 - 实施时排查 `public/` 下资源是否有以根路径硬引用的写法（favicon、BUILD_ID 注入点）。
 
 ### 3.4 主站（standard）入口调整
@@ -258,10 +266,11 @@ location /trial/ {
 
 | 类型 | 文件 | 说明 |
 |---|---|---|
-| 新增 | `ruoyi-ui/.env.trial` | trial mode 环境变量 |
+| 新增 | `ruoyi-ui/.env.trial` | trial mode 环境变量（含 VITE_BUILD_OUTDIR=dist-trial） |
 | 改 | `ruoyi-ui/vite.config.js` | base/outDir 读 env |
 | 改 | `ruoyi-ui/vite/plugins/edition.js` | trial.txt 标识 |
 | 改 | `ruoyi-ui/package.json` | build:trial 脚本 |
+| 改 | `src/router/index.js` | **P1**：createWebHistory 显式传 import.meta.env.BASE_URL |
 | 改 | `src/views/login.vue` | 演示锁定 + **挂载自动弹口令框（§3.2.0）** + openTrial() noopener 跳转 + ClickCaptcha 锁定态 v-if |
 | 改 | `src/views/login/ClickCaptcha.vue` | onMounted 锁定态短路（P1 请求 B 兜底） |
 | 改 | `src/store/modules/loginTheme.js` | loadConfig 锁定态短路，不调 /login/config（P1 请求 A） |
@@ -276,8 +285,9 @@ location /trial/ {
 
 ## 5. 验收标准
 
-1. `npm run build:standard` 产物 grep `apms/ai/rpa` 仍 **0 命中**、edition.txt=standard（零 AI 不回归）；
+1. `npm run build:standard` 产物 grep `apms/ai/rpa` 仍 **0 命中**、edition.txt=standard（零 AI 不回归）；随后执行 `npm run build:trial`，**standard 的 dist 目录内容不被改动**（trial 必须落在独立 dist-trial，可按目录 mtime/文件数比对验证）；
 2. `npm run build:trial` 成功：dist-trial 根含 edition.txt=ai、trial.txt=trial；产物内含 RPA 组件与 mock handler；index.html 资源路径全部以 `/trial/` 开头；
+2.1 **P1 路由 base 验收**：dist-trial 内 grep 打包产物确认 router 以 `/trial/` 为 history base；浏览器深链直接访问 `/trial/login`、`/trial/apms/athlete` 不出现跳到根域 `/login` 的现象；standard/ai 构建回归：BASE_URL=/ 下路由行为与改动前一致；
 3. 本地以 `/trial/` base 起静态服务：打开 `/trial/` 自动弹出口令框（无需点击）；取消后可用「一键体验」手动唤起；输错口令拒绝并停留弹窗；8888 进入后悬浮球/RPA 面板可用，SSE 走 mock 全闭环，网络面板**无真实后端请求**；
 3.1 **强制要求一验收**：全新标签打开 `/trial/`、深链访问 `/trial/apms/athlete`、broken 自愈后三种入口，口令框均自动弹出；storage-error 态不弹窗只显示阻断页；standard 构建回归验证登录页不会自动弹窗；
 3.2 **强制要求二验收（路由矩阵桩测）**：按 §3.2.0b 矩阵逐格断言——none/broken/storage-error 下访问任意非 /login 路径（含 /register、/showcase、静态 /index、动态 /apms/**、404 兜底）一律重定向 /login；demo 态全部放行；演示中退出会话后首次 router.push 即被弹回，无需刷新；
@@ -296,6 +306,8 @@ location /trial/ {
 | 风险 | 缓解 |
 |---|---|
 | 子路径硬编码遗漏导致跳转 404 | 4 处已定位 + 实施时全局复扫 + 验收第 7 条专项走查 |
+| vue-router 无参 base 回退 `/` 致子路径失效（P1） | 显式 createWebHistory(import.meta.env.BASE_URL)，验收第 2.1 条深链走查 |
+| trial 构建覆盖 standard dist（P1） | .env.trial 固定 VITE_BUILD_OUTDIR=dist-trial，验收第 1 条目录隔离比对 |
 | trial 包含 AI 源码被公开访问 | 演示包本无真实数据/接口；可选 nginx 口令或 IP 白名单 |
 | 同源 Storage 键冲突 | demo/真实分键 + 新标签隔离 + 桩测验收 |
 | 输口令前泄漏真实请求（P1） | loginTheme/ClickCaptcha 锁定态短路 + 验收第 4 条 Network 零请求录制；可选 publicHttp 拦截器兜底 |
@@ -309,7 +321,7 @@ location /trial/ {
 1. Vite 构建体系（env/config/edition 插件/package 脚本）+ 构建产物自检；
 2. **P1 零网络短路**：loginTheme.loadConfig 锁定态短路 + ClickCaptcha v-if/onMounted 短路；
 3. **P1 安全边界收口**：auth.js 三函数（getToken/setToken/removeToken）锁定态短路 + permission.js 前置锁定闸门；
-4. 4 处 BASE_URL 修复 + 全局硬编码复扫；
+4. 子路径适配：router/index.js 显式传 BASE_URL（P1）+ 4 处硬编码 /index 修复 + 全局硬编码复扫；
 5. 演示锁定 UI（login.vue 含自动弹口令框 §3.2.0）+ openTrial() noopener 封装；
 6. 主站入口 TRIAL_URL 逻辑；
 7. Node 桩测（四态 token 断言、§3.2.0b 路由矩阵全格、自动弹框触发条件、隔离、构建标识）+ 浏览器零网络/Cookie 攻击面验收 + 现有桩测回归；
