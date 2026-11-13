@@ -14,7 +14,8 @@
 > - 评审修复（2026-11-13）：
 >   1. P1 入口显隐：`VITE_TRIAL_URL` 只切换「一键体验」按钮行为、不控制显隐（`demoEntryEnabled = demoEnabled`），修正配置后按钮消失导致 openTrial 无触发点的缺陷；
 >   2. P2 异常态绕过：路由闸门由 `isDemoMode()` 宽判定改为 `readDemoSessionState().state === 'demo'` 严格判定——broken/storage-error 不再漏过闸门被 `/register`、`/showcase` 白名单放行；网络层 `isDemoMode()` fail-closed 宽判定保持不变，两层分离；trial.mjs T2 同步改为四态矩阵断言（24 项）；
->   3. P3 生产零手工启用：`.env.standard`/`.env.ai` 直接提交启用 `VITE_TRIAL_URL`（生产默认值，发版无需改文件）；deploy-uat.sh 构建时注 `VITE_TRIAL_URL=''` 进程环境覆盖（Vite 进程环境优先于 .env，已实测），UAT 与 dev 保持原地口令演示；trial.mjs 增补空串 opt-out 断言。
+>   3. P3 生产零手工启用：`.env.standard`/`.env.ai` 直接提交启用 `VITE_TRIAL_URL`（生产默认值，发版无需改文件）；deploy-uat.sh 构建时注 `VITE_TRIAL_URL=''` 进程环境覆盖（Vite 进程环境优先于 .env，已实测），UAT 与 dev 保持原地口令演示；trial.mjs 增补空串 opt-out 断言；
+>   4. P4 Nginx 合入 canonical：trial 三个 location（`^~ /trial/static/`、`= /trial/index.html`、`^~ /trial/`）直接合入 `deploy/apms-nginx.conf` aoti 443 块，随 deploy.sh Step 5b 覆盖+`nginx -t`+reload 自动上线（失败自动回滚），消除「样例未接入导致 /trial/ 被正式 `location /` 兜底返回错误 index」的隐患；本地 nginx 1.27 实测 11 项路由断言全过。
 
 ## 1. 需求与约束
 
@@ -260,25 +261,38 @@ window.open(import.meta.env.VITE_TRIAL_URL, '_blank', 'noopener,noreferrer')
 
 ### 3.6 部署设计（人工执行，Agent 不代发）
 
-**构建侧（build.sh）**：
+**构建侧（build.sh，已实现）**：
 
-- 新增 `--edition trial`（或独立 `--trial` 开关，评审时定）：执行 `vite build --mode trial`，产物为 `ruoyi-ui/dist-trial/`；
-- trial 产物**独立 rsync 到远端独立目录**（如 `${REMOTE_DIR}/trial-dist/`），不走主站 deploy.sh 的 upload/dist、edition.txt 配对、回滚链路；
+- `--edition trial`：执行 `vite build --mode trial`，产物为 `ruoyi-ui/dist-trial/`，三件套自检（edition.txt=ai、trial.txt=trial、index.html base=/trial/）；
+- trial 产物**独立 rsync 到 `${REMOTE_DIR}/frontend/trial-dist/`**（与正式 `frontend/dist` 并列，`--delete` 只清理该目录），不走主站 deploy.sh 的 upload/dist、edition.txt 配对、回滚链路；
 - 主站 standard/ai 的构建与部署流程一行不改。
 
-**nginx（aoti.apms.top server 块内增量）**：
+**nginx（已合入 canonical 配置，随正式部署自动生效）**：
+
+trial location 已直接合入 `deploy/apms-nginx.conf` 的 aoti 443 server 块（不再只留样例）。deploy.sh Step 5b 每次部署用仓库配置覆盖 `/etc/nginx/conf.d/apms.conf`，先 `nginx -t` 再 reload、失败自动恢复旧配置，因此 trial 路由随版本发布自动上线，无需上线时手工改配置：
 
 ```nginx
-location /trial/ {
-    alias /usr/share/nginx/apms-trial/;          # dist-trial 落地目录
-    try_files $uri $uri/ /trial/index.html;     # SPA history 路由兜底
+# 三块均为 ^~/= 前缀匹配，优先级高于 server 级静态资源正则 location（防 /trial 静态资源被正则块抢走到正式 dist）
+location ^~ /trial/static/ {
+    alias /opt/apms/frontend/trial-dist/static/;
+    expires 7d; access_log off;
+    try_files $uri =404;
+}
+location = /trial/index.html {
+    alias /opt/apms/frontend/trial-dist/index.html;
+    add_header Cache-Control "no-cache, no-store, must-revalidate";
+}
+location ^~ /trial/ {
+    alias /opt/apms/frontend/trial-dist/;
     index index.html;
-    # 静态资源缓存策略与主站一致；demo 零请求，无需反代 /prod-api
+    try_files $uri $uri/ /trial/index.html;   # SPA history 路由兜底
 }
 ```
 
-- `location /` 与现有 `/prod-api` 反代均不动；
-- 可选加固（评审决定）：nginx 层加访问口令（auth_basic）或 IP 白名单；trial 包本就含全量 AI 源码且无真实数据，不加也不泄露业务数据。
+- 拆三块且各自显式 alias，避免嵌套 location 继承 alias 的路径拼接歧义；gzip 继承 server 级配置；demo 零请求，不反代 /prod-api；
+- 80 块只做 301 跳 HTTPS，`http://aoti/trial/` 自动升级到 443 块；展示域（www/apms.top）与 IP 直连 default_server 不含 trial 块，trial 仅在 aoti 域名可达；
+- 本地 nginx 1.27 实测 11 项断言全过：301 升级、/trial/ 与深链回退返回 trial index（标题含「演示环境」）、与正式 index 字节不同（证明未被 `location /` 兜底）、static 7d 缓存、index.html no-cache、favicon 200、缺失 static 资源 404、正式站静态正则 location 不受影响；
+- 可选加固（评审决定）：nginx 层加访问口令（auth_basic）或 IP 白名单（样例见 `deploy/nginx-trial.conf.sample`）；trial 包本就含全量 AI 源码且无真实数据，不加也不泄露业务数据。
 
 ### 3.7 后端与数据
 
@@ -303,7 +317,8 @@ location /trial/ {
 | 改（可选） | `src/api/loginConfig.js` | publicHttp 锁定态拦截兜底 |
 | 改 | DemoBanner.vue / Navbar.vue / assistantClient.js / request.js | 4 处 BASE_URL 跳转修复 |
 | 改 | `deploy/build.sh` | trial 构建与独立产物分发 |
-| 新增（运维侧，只提供样例） | nginx location 片段 | `/trial/` 静态站点 |
+| 改 | `deploy/apms-nginx.conf` | aoti 443 块合入三个 `/trial/` location（随 deploy.sh 自动上线） |
+| 新增（说明性样例） | `deploy/nginx-trial.conf.sample` | 同结构说明 + 可选加固方案，canonical 以 apms-nginx.conf 为准 |
 | 新增 | `.trae/demo-tests/trial.mjs`（或并入现有 assistant.mjs） | 锁定态/存储隔离/构建标识桩测 |
 
 ## 5. 验收标准
@@ -349,4 +364,4 @@ location /trial/ {
 6. 正式站入口 TRIAL_URL 逻辑（Edition 无关，standard/ai 同一套 env 门控）；
 7. Node 桩测（四态 token 断言、§3.2.0b 路由矩阵全格、自动弹框触发条件、隔离、构建标识）+ 浏览器零网络/Cookie 攻击面验收 + 现有桩测回归；
 8. build.sh trial 分支；
-9. 输出 nginx 配置样例交人工部署与验收。
+9. nginx：trial location 合入 `deploy/apms-nginx.conf`（随正式部署自动覆盖+reload），本地 nginx 实例完成路由矩阵验收，样例文件仅留说明与可选加固。

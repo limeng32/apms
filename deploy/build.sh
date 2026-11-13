@@ -156,9 +156,10 @@ if [ "${EDITION}" = "trial" ]; then
         err "trial rsync 失败，终止（未执行任何远端部署动作；正式站不受影响）"
     fi
 
-    # T4. 不执行 deploy.sh：nginx location /trial/ 需人工预置（样例 deploy/nginx-trial.conf.sample）
+    # T4. 不执行 deploy.sh：/trial/ 的 nginx location 已合入 deploy/apms-nginx.conf，
+    # 随下次正式部署自动生效；本支线只负责把产物放到 alias 指向的目录
     log "✅ Trial 全流程完成 → ${VERSION}（未打 jar、未执行 deploy.sh、正式 dist 与后端零改动）"
-    log "   提醒：确认 aoti 443 server 块已含 location ^~ /trial/（alias ${REMOTE_TRIAL_DIR}/），样例见 deploy/nginx-trial.conf.sample"
+    log "   提醒：aoti 443 server 块的 location ^~ /trial/ 已在 apms-nginx.conf（alias ${REMOTE_TRIAL_DIR}/），随正式部署 reload；说明见 deploy/nginx-trial.conf.sample"
     exit 0
 fi
 

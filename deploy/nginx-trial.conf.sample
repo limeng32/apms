@@ -1,39 +1,42 @@
 # =====================================================================
-# 同域演示站 /trial/ 的 nginx 增量配置（人工部署，Agent 不代发）
+# 同域演示站 /trial/ 的 Nginx 配置（说明性样例）
 # ---------------------------------------------------------------------
+#  canonical 配置已合入 deploy/apms-nginx.conf 的 aoti 443 server 块，
+#  随 deploy.sh 正式部署自动覆盖 /etc/nginx/conf.d/apms.conf 并经 nginx -t
+#  校验后 reload（失败自动回滚），无需上线时手工修改。
+#
+#  本文件仅保留独立说明与可选加固方案；若与 apms-nginx.conf 出现分歧，以后者为准。
+#
 # 前置条件：
 #   1. 已执行 bash deploy/build.sh --edition trial，
 #      产物经独立 rsync 落在 /opt/apms/frontend/trial-dist/（与正式 dist 并列）；
-#   2. 将下方 location 块放入 apms-nginx.conf 中 aoti.apms.top 的 **443 server 块**
-#      （80 块只做 301 跳 HTTPS，无需改动；HTTP 访问 /trial/ 会随全站跳转自动升级）。
+#   2. 仅需放入 aoti.apms.top 的 443 server 块；80 块只做 301 跳 HTTPS，
+#      HTTP 访问 /trial/ 会随全站跳转自动升级，无需改动。
 #
-# 关键：必须用 ^~ 前缀。server 级存在静态资源正则 location
-# （~* \.(js|css|png...)$，expires 7d），普通前缀 location /trial/ 优先级低于正则，
-# /trial/static/js/*.js 会被正则块按 server root 解析到正式 dist 而 404；
-# ^~ 命中后跳过正则匹配，保证全部子路径走本 alias。
-#
-# 演示态零真实后端请求（demoAdapter 本地闭环 + 锁定短路），因此本块**不需要**反代 /prod-api。
+# 关键设计：
+#   - 必须用 ^~ 前缀：server 级存在静态资源正则 location（~* \.(js|css...)$），
+#     普通前缀 /trial/ 优先级低于正则，/trial/static/js/*.js 会被正则块按
+#     server root（正式 dist）解析而 404；^~ 命中后跳过正则匹配；
+#   - 拆成三个并列块且各自显式 alias，避免嵌套 location 继承 alias 的路径拼接歧义；
+#   - 演示态零真实后端请求（demoAdapter 本地闭环 + 锁定短路），不需要反代 /prod-api。
 # =====================================================================
+
+location ^~ /trial/static/ {
+    alias /opt/apms/frontend/trial-dist/static/;
+    expires 7d;
+    access_log off;
+    try_files $uri =404;
+}
+
+location = /trial/index.html {
+    alias /opt/apms/frontend/trial-dist/index.html;
+    add_header Cache-Control "no-cache, no-store, must-revalidate";
+}
 
 location ^~ /trial/ {
     alias /opt/apms/frontend/trial-dist/;
     index index.html;
     try_files $uri $uri/ /trial/index.html;
-
-    # 与主站一致的压缩策略
-    gzip on;
-    gzip_types text/plain text/css application/json application/javascript text/xml application/xml text/javascript image/svg+xml application/xml+rss application/vnd.ms-fontobject application/x-font-ttf font/opentype;
-    gzip_min_length 1024;
-    gzip_comp_level 6;
-
-    # 带内容哈希的构建产物可长缓存；index.html 不缓存，保证发版后入口即时更新
-    location ~* ^/trial/static/ {
-        expires 7d;
-        access_log off;
-    }
-    location = /trial/index.html {
-        add_header Cache-Control "no-cache, no-store, must-revalidate";
-    }
 }
 
 # ---------------------------------------------------------------------
@@ -55,6 +58,6 @@ location ^~ /trial/ {
 #       ...其余同上...
 #   }
 #
-# 变更后执行：nginx -t && nginx -s reload
-# 回滚：删除本 location 块并 reload，再 rm -rf /opt/apms/frontend/trial-dist/，正式站零影响。
+# 手工变更后执行：nginx -t && nginx -s reload
+# 回滚：删除三个 trial location 块并 reload，再 rm -rf /opt/apms/frontend/trial-dist/，正式站零影响。
 # =====================================================================
