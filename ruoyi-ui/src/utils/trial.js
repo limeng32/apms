@@ -21,16 +21,25 @@ export function hasTrialUrl() {
 /**
  * 锁定闸门路由裁决（纯函数，permission.js 与 Node 桩测共用；裁决矩阵见 trial_demo_plan §3.2.0b）。
  * 调用前提：当前为锁定构建（isDemoLocked()===true）。
+ *
+ * 注意路由层与网络层的判定严格分离：
+ * - 本函数只承认**严格有效**的演示会话（readDemoSessionState().state==='demo'）；
+ *   broken/storage-error 属于异常态，一律按未授权弹回 /login，不允许借 isDemoMode() 的
+ *   fail-closed 宽判定落入下方既有白名单（/register、/showcase 会被直接放行，构成绕过）；
+ * - 网络层（request.js 的 demoAdapter、download/upload 守卫）继续用 isDemoMode() 宽判定，
+ *   保证异常态下绝不发出真实请求——两层不变量不可混用。
+ *
  * @param {object} args
- * @param {boolean} args.demo 当前是否演示会话（isDemoMode()，broken/storage-error 也算 true）
+ * @param {boolean} args.validDemo 当前是否为严格有效的演示会话（仅 state==='demo' 为 true）
  * @param {string} args.toPath 本次导航目标路径
  * @returns {null|true|{path:string, replace:boolean}}
  *   null=不干预，落入下方既有流程；true=放行 /login；普通对象=重定向到 /login
  */
-export function resolveLockedNavigation({ demo, toPath }) {
-  // demo 态：交给既有 getToken 流程（demo token + mock getInfo/getRouters）
-  if (demo) return null
-  // 未进入演示会话（none/broken/storage-error）：只放 /login，其余一律弹回（含原白名单 /register、/showcase）
+export function resolveLockedNavigation({ validDemo, toPath }) {
+  // 严格 demo 态：交给既有 getToken 流程（demo token + mock getInfo/getRouters）
+  if (validDemo) return null
+  // 未授权（none/broken/storage-error）：只放 /login（broken 在登录页自愈、storage-error 渲染阻断页），
+  // 其余一律弹回——含原白名单 /register、/showcase，锁定态下这些路径不可达
   if (toPath === '/login') return true
   return { path: '/login', replace: true }
 }

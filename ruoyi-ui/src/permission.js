@@ -2,7 +2,7 @@ import router from './router'
 import { ElMessage } from 'element-plus'
 import NProgress from 'nprogress'
 import 'nprogress/nprogress.css'
-import { getToken } from '@/utils/auth'
+import { getToken, readDemoSessionState } from '@/utils/auth'
 import { isHttp, isPathMatch } from '@/utils/validate'
 import { isRelogin } from '@/utils/request'
 import useUserStore from '@/store/modules/user'
@@ -11,7 +11,7 @@ import useLockStore from '@/store/modules/lock'
 import useSettingsStore from '@/store/modules/settings'
 import usePermissionStore from '@/store/modules/permission'
 import { isShowcaseHost } from '@/utils/entry'
-import { isDemoLocked, isDemoMode } from '@/utils/demo'
+import { isDemoLocked } from '@/utils/demo'
 import { resolveLockedNavigation } from '@/utils/trial'
 
 NProgress.configure({ showSpinner: false })
@@ -36,10 +36,13 @@ router.beforeEach(async (to, from) => {
     return { path: '/', replace: true }
   }
   // trial 演示锁定闸门（先于一切真实登录判断，对每次导航全局生效；裁决矩阵见 trial_demo_plan §3.2.0b）：
-  // 未进入演示会话（none/broken/storage-error）时只放 /login，/register、/showcase 等原白名单一律不可达；
-  // demo 态落入下方既有流程（getToken 返回 demo token，getInfo/getRouters 走 mock 本地闭环）。
+  // 路由层只承认严格有效的 demo 会话（state==='demo'）；none/broken/storage-error 一律只放 /login，
+  // /register、/showcase 等原白名单在锁定态不可达。
+  // 注意不能用 isDemoMode()：它对 broken/storage-error 也返回 true（网络层 fail-closed 语义），
+  // 会让异常态漏过本闸门、再被下方白名单放行。
   if (isDemoLocked()) {
-    const verdict = resolveLockedNavigation({ demo: isDemoMode(), toPath: to.path })
+    const validDemo = readDemoSessionState().state === 'demo'
+    const verdict = resolveLockedNavigation({ validDemo, toPath: to.path })
     if (verdict === true) return true
     if (verdict) {
       NProgress.done()

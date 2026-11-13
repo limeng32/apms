@@ -176,25 +176,50 @@ const NON_LOGIN_PATHS = ['/register', '/showcase', '/index', '/apms/athlete', '/
 
 test('T2', '未进演示会话（none）：/login 放行，其余任意路径（含白名单）一律重定向 /login', async () => {
   const t = await fresh(TRIAL_URL)
-  assertEq(t.resolveLockedNavigation({ demo: false, toPath: '/login' }), true, '/login 放行')
+  assertEq(t.resolveLockedNavigation({ validDemo: false, toPath: '/login' }), true, '/login 放行')
   for (const p of NON_LOGIN_PATHS) {
-    assertDeep(t.resolveLockedNavigation({ demo: false, toPath: p }),
+    assertDeep(t.resolveLockedNavigation({ validDemo: false, toPath: p }),
       { path: '/login', replace: true }, `${p} 必须重定向`)
   }
 })
 
-test('T2', 'demo 态：任意路径均不干预（null），落入既有 mock 流程', async () => {
+test('T2', '严格 demo 态：任意路径均不干预（null），落入既有 mock 流程', async () => {
   const t = await fresh(TRIAL_URL)
   for (const p of ['/login', '/index', '/apms/athlete', '/register']) {
-    assertEq(t.resolveLockedNavigation({ demo: true, toPath: p }), null, `${p} demo 态不干预`)
+    assertEq(t.resolveLockedNavigation({ validDemo: true, toPath: p }), null, `${p} demo 态不干预`)
   }
 })
 
-test('T2', 'broken/storage-error（isDemoMode=true）：不进锁定分支，由既有 fail-closed 链路收口', async () => {
+test('T2', 'broken/storage-error 异常态：路由层按未授权处理，/login 放行、白名单与业务路径一律弹回', async () => {
   const t = await fresh(TRIAL_URL)
-  // 与 permission.js 实际调用一致：broken/storage-error 下 isDemoMode()=true → 裁决 null，
-  // 随后 getToken()=undefined → 无 token 分支重定向 /login（T1 已证 getToken fail-closed）
-  assertEq(t.resolveLockedNavigation({ demo: true, toPath: '/apms/athlete' }), null)
+  // 复刻 permission.js 的严格判定表达式：readDemoSessionState().state === 'demo'
+  // （旧实现误用 isDemoMode()，异常态返回 true 会漏过锁定闸门，再被 /register 白名单放行）
+  lockOn()
+  for (const mode of ['broken-json', 'broken-struct', 'storage-error']) {
+    ss.set(mode)
+    const auth = await fresh(AUTH_URL)
+    const validDemo = auth.readDemoSessionState().state === 'demo'
+    assertEq(validDemo, false, `${mode} 不得被路由层承认为有效演示会话`)
+    // /login 放行：broken 在登录页 onMounted 自愈后弹框，storage-error 渲染存储阻断页
+    assertEq(t.resolveLockedNavigation({ validDemo, toPath: '/login' }), true, `${mode} 访问 /login 放行`)
+    // 原白名单（/register、/showcase）与业务/静态/404 路径一律重定向，无任何漏网
+    for (const p of NON_LOGIN_PATHS) {
+      assertDeep(t.resolveLockedNavigation({ validDemo, toPath: p }),
+        { path: '/login', replace: true }, `${mode} 访问 ${p} 必须重定向 /login`)
+    }
+  }
+})
+
+test('T2', '网络层 fail-closed 宽判定保持不变：异常态 isDemoMode() 仍为 true（adapter 绝不卸载）', async () => {
+  // 路由层收紧不影响网络层：broken/storage-error 下 isDemoMode() 必须仍为 true，
+  // request.js 的 demoAdapter 挂接与 download/upload 守卫继续拦截，零真实请求口径不变
+  lockOn()
+  for (const mode of ['broken-json', 'broken-struct', 'storage-error']) {
+    ss.set(mode)
+    const auth = await fresh(AUTH_URL)
+    assertEq(auth.isDemoMode(), true, `${mode} 下 isDemoMode() 必须保持 true（网络层 fail-closed）`)
+    assertEq(auth.getToken(), undefined, `${mode} 下 getToken() 仍 fail-closed 返回 undefined`)
+  }
 })
 
 /* ============================ T3. 零真实请求：publicHttp 拦截兜底 ============================ */

@@ -10,7 +10,10 @@
 > - 锁定与安全：loginTheme.loadConfig 短路、ClickCaptcha onMounted 短路 + login.vue v-if、loginConfig publicHttp 拦截兜底、auth.js 三函数 fail-closed、permission.js 前置闸门（裁决走 trial.js 纯函数）、pwa.js 锁定跳过、login.vue 四态自动弹框与副作用门控；
 > - 子路径：router 显式 BASE_URL + 4 处 `/index` 修复；
 > - 部署：build.sh `--edition trial` 独立支线（dist-trial → 远端 frontend/trial-dist，不走 deploy.sh）；
-> - 本地验收：三模式构建通过、standard 零 AI 回归、桩测 52+8+23 全过、浏览器冒烟 12 项断言全过（自动弹框/深链弹回/8888 进入/RPA 可用/全程零 /prod-api/退出回登录页）。
+> - 本地验收：三模式构建通过、standard 零 AI 回归、桩测 52+8+24 全过、浏览器冒烟 12 项断言全过（自动弹框/深链弹回/8888 进入/RPA 可用/全程零 /prod-api/退出回登录页）。
+> - 评审修复（2026-11-13）：
+>   1. P1 入口显隐：`VITE_TRIAL_URL` 只切换「一键体验」按钮行为、不控制显隐（`demoEntryEnabled = demoEnabled`），修正配置后按钮消失导致 openTrial 无触发点的缺陷；
+>   2. P2 异常态绕过：路由闸门由 `isDemoMode()` 宽判定改为 `readDemoSessionState().state === 'demo'` 严格判定——broken/storage-error 不再漏过闸门被 `/register`、`/showcase` 白名单放行；网络层 `isDemoMode()` fail-closed 宽判定保持不变，两层分离；trial.mjs T2 同步改为四态矩阵断言（24 项）。
 
 ## 1. 需求与约束
 
@@ -185,17 +188,17 @@ export function getToken() {
 
 ```js
 if (DEMO_LOCKED) {
-  if (!isDemoMode()) {
-    // 未进入演示会话（none/broken/storage-error）：只允许 trial 登录入口；
-    // /register、/showcase 等原白名单一律不放行
-    if (to.path === '/login') return true
-    NProgress.done()
-    return { path: '/login', replace: true }
-  }
-  // demo 态落入下方既有流程（getToken 返回 demo token，getInfo/getRouters 走 mock）
+  // 路由层只承认严格有效的 demo 会话；不能用 isDemoMode()——它对 broken/storage-error
+  // 也返回 true（网络层 fail-closed 语义），异常态会漏过闸门再被 /register 白名单放行（P2 修复）
+  const validDemo = readDemoSessionState().state === 'demo'
+  const verdict = resolveLockedNavigation({ validDemo, toPath: to.path })
+  if (verdict === true) return true
+  if (verdict) { NProgress.done(); return verdict }
+  // 严格 demo 态落入下方既有流程（getToken 返回 demo token，getInfo/getRouters 走 mock）
 }
 ```
 
+- **路由层与网络层判定严格分离（P2 修复要点）**：路由守卫用 `state==='demo'` 严格判定，broken/storage-error 按未授权弹回；网络层（request.js 的 demoAdapter、download/upload 守卫）继续用 `isDemoMode()` 宽判定，保证异常态下 adapter 绝不卸载、零真实请求——两层不变量不可混用；
 - 白名单在锁定态收窄：原 `whiteList` 含 `/register`、`/showcase`，锁定闸门先于白名单判断，trial 中这些路径不可达；
 - 覆盖范围含静态路由、动态 addRoute 的全部 `/apms/**`、应用内二次导航；退出演示后首次导航即重新过闸（§3.2.0b）；
 - 与规则 1 互为兜底：即使未来 getToken 短路被重构误伤，守卫仍按 sessionStorage 的 demo 会话状态裁决，不承认任何 Cookie 凭证。
@@ -233,10 +236,10 @@ window.open(import.meta.env.VITE_TRIAL_URL, '_blank', 'noopener,noreferrer')
 正式站（standard 或 ai 构建）登录页「一键体验」按钮行为由 env 控制，**`VITE_TRIAL_URL` 是 Edition 无关的通用配置**：
 
 - 新增 `VITE_TRIAL_URL`（生产构建统一配 `https://aoti.apms.top/trial/`，standard 与 ai 的 env 中都可配置同值）：
-  - 配置后：点击「一键体验」经封装的 `openTrial()` **新开标签**打开 trial 站（强制 `noopener,noreferrer`，见 §3.2.2 规则 3），由 trial 登录页承接 8888 口令流程；正式站**隐藏原地口令演示**（避免「正式包内的原地演示」与「全量 trial 演示」两个口径并存）；
+  - 配置后：**「一键体验」按钮保持显示**（显隐只由 `VITE_DEMO_ENABLED` 控制，与 TRIAL_URL 无关），点击行为经封装的 `openTrial()` **新开标签**打开 trial 站（强制 `noopener,noreferrer`，见 §3.2.2 规则 3），由 trial 登录页承接 8888 口令流程；正式站本地 DemoPassDialog 不再被触发（避免「正式包内的原地演示」与「全量 trial 演示」两个口径并存）——切换的是按钮行为，不是按钮显隐；
   - 未配置（本地 dev、UAT）：保持现有原地口令演示行为，零影响；
 - 对 ai 正式站的语义：其原地演示本就含 RPA，但仍统一收口到 trial——trial 额外提供演示锁定与零真实请求保证，演示行为与口令在两个 Edition 的正式站之间完全一致；
-- 改动集中在 login.vue 入口判断与 DemoPassDialog 触发处，以构建期 env 门控：不配置 TRIAL_URL 时两个 Edition 的现有构建行为均不变。
+- 改动集中在 login.vue 的 `onDemoEntryClick()` 行为分支与 DemoPassDialog 触发处，以构建期 env 门控：不配置 TRIAL_URL 时两个 Edition 的现有构建行为均不变。
 
 ### 3.5 同源存储隔离分析（与 §3.2.2 配套）
 
@@ -309,7 +312,7 @@ location /trial/ {
    - 主站「一键体验」打开的新标签 `window.opener === null`，且 sessionStorage 中无主站键（noopener 生效）；
 6. trial 内手输业务 URL/刷新丢会话 → 回 trial 登录页，无法进入真实登录链路；
 7. 退出演示回到 `/trial/` 登录页（不跳主站）；
-8. 正式站 `/`（standard 或 ai 构建，两种 Edition 各验一遍）：配置 TRIAL_URL 后一键体验新开 `/trial/` 标签；未配置时原地演示行为不变；
+8. 正式站 `/`（standard 或 ai 构建，两种 Edition 各验一遍）：配置 TRIAL_URL 后「一键体验」按钮仍显示且点击新开 `/trial/` 标签（本地口令弹窗不弹出）；未配置时按钮同样显示、点击唤起原地口令弹窗，行为不变；
 9. 现有 demo-tests 全量桩测（52+8 项）无回归；三部署脚本 bash 3.2/5.x 语法检查通过。
 
 ## 6. 风险与回滚

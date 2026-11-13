@@ -99,10 +99,12 @@ const { proxy } = getCurrentInstance()
 const demoEnabled = isDemoEnabled()
 // trial 演示锁定构建（构建期常量，正式构建恒 false，本分支随 tree-shaking 剔除）
 const demoLocked = isDemoLocked()
-// 正式站配置 VITE_TRIAL_URL 后收口到外部 trial 标签、隐藏原地口令演示；
-// trial 构建自身不配置该 env，恒为 false（Edition 无关，standard/ai 行为一致）
+// 正式站配置 VITE_TRIAL_URL 后，「一键体验」的点击行为收口到外部 trial 标签；
+// trial 构建自身不配置该 env，恒为 false（Edition 无关，standard/ai 行为一致）。
+// 注意：该开关只切换按钮行为，不控制按钮显隐——入口始终随 demoEnabled 渲染，
+// 否则配置 TRIAL_URL 后按钮消失，openTrial() 反而没有触发点。
 const trialExternal = hasTrialUrl()
-const demoEntryEnabled = demoEnabled && !trialExternal
+const demoEntryEnabled = demoEnabled
 const demoDialogVisible = ref(false)
 const sessionState = ref(readDemoSessionState().state)
 
