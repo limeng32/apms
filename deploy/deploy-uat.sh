@@ -587,7 +587,10 @@ else
     [ "${BACKEND_NEED_BUILD}" -eq 0 ]  && _BUILD_ARGS+=(--skip-maven)
     [ "${FRONTEND_NEED_BUILD}" -eq 0 ] && _BUILD_ARGS+=(--skip-frontend)
     log "智能构建 → 后端:$([ "${BACKEND_NEED_BUILD}" -eq 1 ] && echo 重建 || echo 复用) 前端:$([ "${FRONTEND_NEED_BUILD}" -eq 1 ] && echo "重建(${EDITION})" || echo 复用)"
-    bash "${_SCRIPT_DIR}/build.sh" "${_BUILD_ARGS[@]}"
+    # UAT 保留原地口令演示：空串覆盖 .env.standard/.env.ai 提交的生产 VITE_TRIAL_URL。
+    # Vite 对已存在的进程环境 VITE_* 变量优先级高于 .env 文件，空串经 hasTrialUrl() 长度判定为 false；
+    # 生产发版走 build.sh 直连不经本脚本，env 文件中的生产 URL 正常烘焙。
+    VITE_TRIAL_URL='' bash "${_SCRIPT_DIR}/build.sh" "${_BUILD_ARGS[@]}"
 fi
 
 # ===== 版本号推导（优先从 mvn target 读，避免 upload 里是旧 jar）=====

@@ -92,11 +92,16 @@ test('T0', 'isDemoLocked 随构建期 env 翻转', async () => {
   lockOff()
 })
 
-test('T0', 'hasTrialUrl：未配置 false，配置后 true（Edition 无关字符串判定）', async () => {
+test('T0', 'hasTrialUrl：未配置/空串 false，配置后 true（Edition 无关字符串判定）', async () => {
   lockOff()
   delete globalThis.__VITE_ENV__.VITE_TRIAL_URL
   const t0 = await fresh(TRIAL_URL)
-  assertEq(t0.hasTrialUrl(), false)
+  assertEq(t0.hasTrialUrl(), false, '未配置（dev 形态）必须 false')
+  // 空串是 UAT opt-out 机制（deploy-uat.sh 注入 VITE_TRIAL_URL='' 覆盖 .env 生产值），必须判 false
+  globalThis.__VITE_ENV__.VITE_TRIAL_URL = ''
+  const tEmpty = await fresh(TRIAL_URL)
+  assertEq(tEmpty.hasTrialUrl(), false, '空串（UAT 覆盖）必须 false')
+  assertEq(tEmpty.openTrial(), false, '空串下 openTrial 不得打开标签')
   globalThis.__VITE_ENV__.VITE_TRIAL_URL = 'https://aoti.apms.top/trial/'
   const t1 = await fresh(TRIAL_URL)
   assertEq(t1.hasTrialUrl(), true)

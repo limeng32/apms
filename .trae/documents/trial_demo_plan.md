@@ -13,7 +13,8 @@
 > - 本地验收：三模式构建通过、standard 零 AI 回归、桩测 52+8+24 全过、浏览器冒烟 12 项断言全过（自动弹框/深链弹回/8888 进入/RPA 可用/全程零 /prod-api/退出回登录页）。
 > - 评审修复（2026-11-13）：
 >   1. P1 入口显隐：`VITE_TRIAL_URL` 只切换「一键体验」按钮行为、不控制显隐（`demoEntryEnabled = demoEnabled`），修正配置后按钮消失导致 openTrial 无触发点的缺陷；
->   2. P2 异常态绕过：路由闸门由 `isDemoMode()` 宽判定改为 `readDemoSessionState().state === 'demo'` 严格判定——broken/storage-error 不再漏过闸门被 `/register`、`/showcase` 白名单放行；网络层 `isDemoMode()` fail-closed 宽判定保持不变，两层分离；trial.mjs T2 同步改为四态矩阵断言（24 项）。
+>   2. P2 异常态绕过：路由闸门由 `isDemoMode()` 宽判定改为 `readDemoSessionState().state === 'demo'` 严格判定——broken/storage-error 不再漏过闸门被 `/register`、`/showcase` 白名单放行；网络层 `isDemoMode()` fail-closed 宽判定保持不变，两层分离；trial.mjs T2 同步改为四态矩阵断言（24 项）；
+>   3. P3 生产零手工启用：`.env.standard`/`.env.ai` 直接提交启用 `VITE_TRIAL_URL`（生产默认值，发版无需改文件）；deploy-uat.sh 构建时注 `VITE_TRIAL_URL=''` 进程环境覆盖（Vite 进程环境优先于 .env，已实测），UAT 与 dev 保持原地口令演示；trial.mjs 增补空串 opt-out 断言。
 
 ## 1. 需求与约束
 
@@ -235,11 +236,19 @@ window.open(import.meta.env.VITE_TRIAL_URL, '_blank', 'noopener,noreferrer')
 
 正式站（standard 或 ai 构建）登录页「一键体验」按钮行为由 env 控制，**`VITE_TRIAL_URL` 是 Edition 无关的通用配置**：
 
-- 新增 `VITE_TRIAL_URL`（生产构建统一配 `https://aoti.apms.top/trial/`，standard 与 ai 的 env 中都可配置同值）：
-  - 配置后：**「一键体验」按钮保持显示**（显隐只由 `VITE_DEMO_ENABLED` 控制，与 TRIAL_URL 无关），点击行为经封装的 `openTrial()` **新开标签**打开 trial 站（强制 `noopener,noreferrer`，见 §3.2.2 规则 3），由 trial 登录页承接 8888 口令流程；正式站本地 DemoPassDialog 不再被触发（避免「正式包内的原地演示」与「全量 trial 演示」两个口径并存）——切换的是按钮行为，不是按钮显隐；
-  - 未配置（本地 dev、UAT）：保持现有原地口令演示行为，零影响；
+- `VITE_TRIAL_URL` 的环境映射（随仓库提交，发版零手工修改）：
+
+  | 环境 | 构建 mode | VITE_TRIAL_URL 来源 | 一键体验行为 |
+  |---|---|---|---|
+  | 本地 dev | development / development-ai | 无此键（dev env 不含） | 原地口令弹窗 |
+  | UAT | standard / ai（deploy-uat.sh） | 脚本注入 `VITE_TRIAL_URL=''` 进程环境覆盖 | 原地口令弹窗 |
+  | 生产 | standard / ai（build.sh 直连） | `.env.standard`/`.env.ai` 提交值 `https://aoti.apms.top/trial/` | noopener 新开 /trial/ |
+
+  - 生产值直接启用并提交在两个正式 env 中，一次配置永久生效，不需要每次发版改文件；
+  - UAT 与生产共用同一 vite mode，区分依赖 Vite 的优先级规则：**已存在的进程环境 `VITE_*` 变量覆盖 .env 文件值**（已用两次实测构建验证），deploy-uat.sh 在调 build.sh 前注空串；
+  - 任意环境下 **「一键体验」按钮都保持显示**（显隐只由 `VITE_DEMO_ENABLED` 控制）：有 URL 时经 `openTrial()` 新开标签（强制 `noopener,noreferrer`，见 §3.2.2 规则 3），无 URL/空串时唤起本地 DemoPassDialog——切换的是按钮行为，不是按钮显隐；
 - 对 ai 正式站的语义：其原地演示本就含 RPA，但仍统一收口到 trial——trial 额外提供演示锁定与零真实请求保证，演示行为与口令在两个 Edition 的正式站之间完全一致；
-- 改动集中在 login.vue 的 `onDemoEntryClick()` 行为分支与 DemoPassDialog 触发处，以构建期 env 门控：不配置 TRIAL_URL 时两个 Edition 的现有构建行为均不变。
+- 改动集中在 login.vue 的 `onDemoEntryClick()` 行为分支、两个正式 env 与 deploy-uat.sh 的构建调用处。
 
 ### 3.5 同源存储隔离分析（与 §3.2.2 配套）
 
@@ -312,7 +321,7 @@ location /trial/ {
    - 主站「一键体验」打开的新标签 `window.opener === null`，且 sessionStorage 中无主站键（noopener 生效）；
 6. trial 内手输业务 URL/刷新丢会话 → 回 trial 登录页，无法进入真实登录链路；
 7. 退出演示回到 `/trial/` 登录页（不跳主站）；
-8. 正式站 `/`（standard 或 ai 构建，两种 Edition 各验一遍）：配置 TRIAL_URL 后「一键体验」按钮仍显示且点击新开 `/trial/` 标签（本地口令弹窗不弹出）；未配置时按钮同样显示、点击唤起原地口令弹窗，行为不变；
+8. 正式站 `/`（standard 或 ai 构建，两种 Edition 各验一遍）：生产构建产物 grep 含 `aoti.apms.top/trial/`，「一键体验」按钮显示且点击新开 `/trial/` 标签（本地口令弹窗不弹出）；`VITE_TRIAL_URL=''` 覆盖构建（UAT 形态）产物 grep 不含该 URL，按钮同样显示、点击唤起原地口令弹窗；dev mode 无此键，行为不变；
 9. 现有 demo-tests 全量桩测（52+8 项）无回归；三部署脚本 bash 3.2/5.x 语法检查通过。
 
 ## 6. 风险与回滚
