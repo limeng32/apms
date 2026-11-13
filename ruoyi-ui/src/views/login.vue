@@ -86,7 +86,7 @@ import useLoginThemeStore from '@/store/modules/loginTheme'
 import { applyLoginHead, restoreLoginHead, resolveBrowserTitle } from './login/login.utils'
 import { readDemoSessionState, clearDemoSession } from '@/utils/auth'
 import { isDemoEnabled, isDemoLocked } from '@/utils/demo'
-import { hasTrialUrl, openTrial } from '@/utils/trial'
+import { hasTrialUrl, navigateToTrial } from '@/utils/trial'
 import { isShowcaseHost } from '@/utils/entry'
 
 const userStore = useUserStore()
@@ -99,18 +99,17 @@ const { proxy } = getCurrentInstance()
 const demoEnabled = isDemoEnabled()
 // trial 演示锁定构建（构建期常量，正式构建恒 false，本分支随 tree-shaking 剔除）
 const demoLocked = isDemoLocked()
-// 正式站配置 VITE_TRIAL_URL 后，「一键体验」的点击行为收口到外部 trial 标签；
+// 正式站配置 VITE_TRIAL_URL 后，「一键体验」口令校验通过的去向收口到外部 trial 应用；
 // trial 构建自身不配置该 env，恒为 false（Edition 无关，standard/ai 行为一致）。
-// 注意：该开关只切换按钮行为，不控制按钮显隐——入口始终随 demoEnabled 渲染，
-// 否则配置 TRIAL_URL 后按钮消失，openTrial() 反而没有触发点。
+// 注意：该开关只切换校验通过后的跳转行为，不控制按钮/弹窗显隐——
+// 两种配置下都先在当前页弹出口令框（口令前置），避免「先跳转新页面再输口令」的割裂。
 const trialExternal = hasTrialUrl()
 const demoEntryEnabled = demoEnabled
 const demoDialogVisible = ref(false)
 const sessionState = ref(readDemoSessionState().state)
 
-/** 「一键体验」点击：正式站配了 TRIAL_URL 则 noopener 新开 trial 标签；否则唤起本地口令弹窗 */
+/** 「一键体验」点击：一律先在当前页唤起口令弹窗；跳转与否由 handleDemoSuccess 按配置分流 */
 function onDemoEntryClick() {
-  if (trialExternal && openTrial()) return
   demoDialogVisible.value = true
 }
 
@@ -253,9 +252,15 @@ function setupAutoFullscreen() {
   autoFullscreenBound = true
 }
 
-// 口令正确、enterDemo 完成：守卫检测 roles.length===0 走真实链路拉 mock getInfo/路由。
-// 落地页与真实 super 一致：总览 → 数据驾驶舱（/overview/cockpit）
+// 口令正确、enterDemo 完成（demo 会话单键已写入 sessionStorage）后的去向分流：
+// - 配置了外部 trial：同标签整页跳转，trial 读到有效会话直接进业务页，不再二次弹口令；
+// - 未配置（dev/UAT/原地演示）：守卫检测 roles.length===0 走真实链路拉 mock getInfo/路由，
+//   落地页与真实 super 一致：总览 → 数据驾驶舱（/overview/cockpit）
 function handleDemoSuccess() {
+  if (trialExternal) {
+    navigateToTrial()
+    return
+  }
   router.replace('/overview/cockpit')
 }
 

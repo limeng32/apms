@@ -60,6 +60,7 @@ import useLockStore from '@/store/modules/lock'
 import useSettingsStore from '@/store/modules/settings'
 import HeaderNotice from './HeaderNotice'
 import { isDemoMode } from '@/utils/auth'
+import { exitToFormal } from '@/utils/trial'
 
 const route = useRoute()
 const router = useRouter()
@@ -102,6 +103,7 @@ function logout() {
     type: 'warning'
   }).then(() => {
     userStore.logOut().then(() => {
+      if (exitToFormal()) return
       location.href = `${import.meta.env.BASE_URL}index`
     })
   }).catch(() => { })

@@ -4,7 +4,7 @@
  * 运行（必须在仓库根目录）：node .trae/demo-tests/trial.mjs
  *
  * 覆盖（对应 .trae/documents/trial_demo_plan.md 验收条目）：
- * T0. 构建期锁定原语 isDemoLocked / TRIAL_URL 判定 / openTrial noopener 单点
+ * T0. 构建期锁定原语 isDemoLocked / TRIAL_URL 判定 / navigateToTrial 同标签跳转单点
  * T1. 锁定构建 auth 四态：getToken 永不回落真实 Cookie；setToken/removeToken 全 no-op（§3.2.2 规则1、验收5）
  * T2. 锁定闸门路由裁决矩阵全格（§3.2.0b、验收3.2）
  * T3. 零真实请求：publicHttp 拦截器在锁定构建中 reject（§3.2.1 兜底、验收4）
@@ -65,10 +65,17 @@ globalThis.sessionStorage = {
 }
 
 // window 探针：location 供 ruoyi.js cookieName 模块初始化读取（生产 hostname → Cookie 名不加端口后缀）；
-// open 记录 openTrial 单点调用
+// href setter 记录 navigateToTrial 的同标签跳转；open 保留探针兼容旧引用检查
 const openCalls = []
+const navCalls = []
 globalThis.window = {
-  location: { hostname: 'aoti.apms.top', port: '', pathname: '/trial/login' },
+  location: {
+    hostname: 'aoti.apms.top',
+    port: '',
+    pathname: '/trial/login',
+    set href(v) { navCalls.push(v) },
+    get href() { return navCalls[navCalls.length - 1] || '' }
+  },
   open: (...a) => { openCalls.push(a); return {} }
 }
 
@@ -82,13 +89,17 @@ const lockOn = () => { globalThis.__VITE_ENV__.VITE_DEMO_LOCKED = 'true' }
 const lockOff = () => { delete globalThis.__VITE_ENV__.VITE_DEMO_LOCKED }
 
 /* ============================ T0. 锁定原语与 TRIAL_URL ============================ */
-test('T0', 'isDemoLocked 随构建期 env 翻转', async () => {
+test('T0', 'isDemoLocked 随构建期 env 翻转（demo.js 与 trial.js 两个导出同值）', async () => {
   lockOff()
   const d0 = await fresh(DEMO_URL)
-  assertEq(d0.isDemoLocked(), false, '未配置时 false（正式构建）')
+  const t0 = await fresh(TRIAL_URL)
+  assertEq(d0.isDemoLocked(), false, 'demo.js：未配置时 false（正式构建）')
+  assertEq(t0.isDemoLocked(), false, 'trial.js：未配置时 false（与 demo.js 同值）')
   lockOn()
   const d1 = await fresh(DEMO_URL)
-  assertEq(d1.isDemoLocked(), true, "VITE_DEMO_LOCKED='true' 时 true（trial 构建）")
+  const t1 = await fresh(TRIAL_URL)
+  assertEq(d1.isDemoLocked(), true, "demo.js：VITE_DEMO_LOCKED='true' 时 true（trial 构建）")
+  assertEq(t1.isDemoLocked(), true, 'trial.js：与 demo.js 同值 true')
   lockOff()
 })
 
@@ -101,27 +112,44 @@ test('T0', 'hasTrialUrl：未配置/空串 false，配置后 true（Edition 无�
   globalThis.__VITE_ENV__.VITE_TRIAL_URL = ''
   const tEmpty = await fresh(TRIAL_URL)
   assertEq(tEmpty.hasTrialUrl(), false, '空串（UAT 覆盖）必须 false')
-  assertEq(tEmpty.openTrial(), false, '空串下 openTrial 不得打开标签')
+  assertEq(tEmpty.navigateToTrial(), false, '空串下 navigateToTrial 不得跳转')
   globalThis.__VITE_ENV__.VITE_TRIAL_URL = 'https://aoti.apms.top/trial/'
   const t1 = await fresh(TRIAL_URL)
   assertEq(t1.hasTrialUrl(), true)
   delete globalThis.__VITE_ENV__.VITE_TRIAL_URL
 })
 
-test('T0', 'openTrial：noopener,noreferrer 新标签单点；未配置返回 false 且不调用 window.open', async () => {
+test('T0', 'navigateToTrial：同标签 location 跳转单点；未配置返回 false 且不跳转', async () => {
   delete globalThis.__VITE_ENV__.VITE_TRIAL_URL
   const t0 = await fresh(TRIAL_URL)
-  openCalls.length = 0
-  assertEq(t0.openTrial(), false, '未配置返回 false')
-  assertEq(openCalls.length, 0, '未配置不得打开标签')
+  navCalls.length = 0
+  assertEq(t0.navigateToTrial(), false, '未配置返回 false')
+  assertEq(navCalls.length, 0, '未配置不得修改 location.href')
 
   globalThis.__VITE_ENV__.VITE_TRIAL_URL = 'https://aoti.apms.top/trial/'
   const t1 = await fresh(TRIAL_URL)
-  openCalls.length = 0
-  assertEq(t1.openTrial(), true, '配置后返回 true')
-  assertEq(openCalls.length, 1)
-  assertDeep(openCalls[0], ['https://aoti.apms.top/trial/', '_blank', 'noopener,noreferrer'], '打开参数必须含 noopener,noreferrer')
+  navCalls.length = 0
+  assertEq(t1.navigateToTrial(), true, '配置后返回 true')
+  assertEq(navCalls.length, 1)
+  assertEq(navCalls[0], 'https://aoti.apms.top/trial/', '必须以 location.href 同标签跳转（非 window.open 新标签）')
+  assertEq(openCalls.length, 0, '口令前置方案不得再 window.open 新标签')
   delete globalThis.__VITE_ENV__.VITE_TRIAL_URL
+})
+
+test('T0', 'exitToFormal：锁定构建跳同域正式站根 /，非锁定返回 false 且不跳转', async () => {
+  lockOff()
+  const t0 = await fresh(TRIAL_URL)
+  navCalls.length = 0
+  assertEq(t0.exitToFormal(), false, '正式构建必须返回 false（调用方走原入口页逻辑）')
+  assertEq(navCalls.length, 0, '正式构建不得修改 location.href')
+
+  lockOn()
+  const t1 = await fresh(TRIAL_URL)
+  navCalls.length = 0
+  assertEq(t1.exitToFormal(), true, 'trial 锁定构建返回 true')
+  assertEq(navCalls.length, 1)
+  assertEq(navCalls[0], '/', '必须跳 origin 根（nginx location / 承载的正式站），而非 /trial/index')
+  lockOff()
 })
 
 /* ============================ T1. 锁定构建 auth 四态 ============================ */

@@ -37,6 +37,7 @@ import { ref, computed } from 'vue'
 import { MagicStick, WarningFilled, Close } from '@element-plus/icons-vue'
 import { readDemoSessionState } from '@/utils/auth'
 import { exitDemo } from '@/utils/demo'
+import { exitToFormal } from '@/utils/trial'
 import useUserStore from '@/store/modules/user'
 
 const userStore = useUserStore()
@@ -53,7 +54,9 @@ const shown = computed(() => inDemo.value && (!dismissed.value || broken.value))
 function exit() {
   exitDemo()
   userStore.token = ''
-  // 与 Navbar 退出一致，回到入口页（BASE_URL：正式构建 '/'，trial 构建 '/trial/'）
+  // trial 锁定构建：离开演示应用、回同域正式站根（避免跳 /trial/index 被守卫弹回 /trial/login 困住）；
+  // 正式构建：exitToFormal 返回 false，保持原入口页逻辑
+  if (exitToFormal()) return
   window.location.href = `${import.meta.env.BASE_URL}index`
 }
 </script>

@@ -4,6 +4,7 @@ import { getToken, isDemoMode } from '@/utils/auth'
 import useUserStore from '@/store/modules/user'
 import { demoCapabilities, demoChatStream } from './assistantDemo'
 import { parseSse } from './assistantSse'
+import { exitToFormal } from '@/utils/trial'
 
 const BASE = import.meta.env.VITE_APP_BASE_API || ''
 
@@ -115,6 +116,7 @@ function promptRelogin(msg) {
   }).then(() => {
     isRelogin.show = false
     useUserStore().logOut().then(() => {
+      if (exitToFormal()) return
       location.href = `${import.meta.env.BASE_URL}index`
     })
   }).catch(() => {

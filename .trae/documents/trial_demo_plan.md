@@ -5,21 +5,23 @@
 > 关联文档：edition_split_plan.md（双产品线/双构建架构）、demo_mode_plan.md（一键体验机制）
 >
 > 实施记录（2026-11-13，与 §7 九步对应）：
-> - 新增：`ruoyi-ui/.env.trial`、`src/utils/trial.js`（isDemoLocked 原语在 demo.js；openTrial/hasTrialUrl/resolveLockedNavigation 在 trial.js）、`deploy/nginx-trial.conf.sample`、`.trae/demo-tests/trial.mjs`（23 项桩测）；
+> - 新增：`ruoyi-ui/.env.trial`、`src/utils/trial.js`（isDemoLocked 原语在 demo.js；navigateToTrial/hasTrialUrl/resolveLockedNavigation 在 trial.js）、`deploy/nginx-trial.conf.sample`、`.trae/demo-tests/trial.mjs`（24 项桩测）；
 > - 构建：vite.config.js（base/outDir env 化）、edition 插件双标记、package.json `build:trial`、.gitignore、index.html（`%BASE_URL%`/`%VITE_DEMO_LOCKED%` 占位）、.env.standard/.env.ai（TRIAL_URL 注释样例）；
 > - 锁定与安全：loginTheme.loadConfig 短路、ClickCaptcha onMounted 短路 + login.vue v-if、loginConfig publicHttp 拦截兜底、auth.js 三函数 fail-closed、permission.js 前置闸门（裁决走 trial.js 纯函数）、pwa.js 锁定跳过、login.vue 四态自动弹框与副作用门控；
 > - 子路径：router 显式 BASE_URL + 4 处 `/index` 修复；
 > - 部署：build.sh `--edition trial` 独立支线（dist-trial → 远端 frontend/trial-dist，不走 deploy.sh）；
 > - 本地验收：三模式构建通过、standard 零 AI 回归、桩测 52+8+24 全过、浏览器冒烟 12 项断言全过（自动弹框/深链弹回/8888 进入/RPA 可用/全程零 /prod-api/退出回登录页）。
 > - 评审修复（2026-11-13）：
->   1. P1 入口显隐：`VITE_TRIAL_URL` 只切换「一键体验」按钮行为、不控制显隐（`demoEntryEnabled = demoEnabled`），修正配置后按钮消失导致 openTrial 无触发点的缺陷；
+>   1. P1 入口显隐：`VITE_TRIAL_URL` 只切换「一键体验」校验通过后的去向、不控制显隐（`demoEntryEnabled = demoEnabled`），修正配置后按钮消失导致跳转函数无触发点的缺陷；
 >   2. P2 异常态绕过：路由闸门由 `isDemoMode()` 宽判定改为 `readDemoSessionState().state === 'demo'` 严格判定——broken/storage-error 不再漏过闸门被 `/register`、`/showcase` 白名单放行；网络层 `isDemoMode()` fail-closed 宽判定保持不变，两层分离；trial.mjs T2 同步改为四态矩阵断言（24 项）；
 >   3. P3 生产零手工启用：`.env.standard`/`.env.ai` 直接提交启用 `VITE_TRIAL_URL`（生产默认值，发版无需改文件）；deploy-uat.sh 构建时注 `VITE_TRIAL_URL=''` 进程环境覆盖（Vite 进程环境优先于 .env，已实测），UAT 与 dev 保持原地口令演示；trial.mjs 增补空串 opt-out 断言；
 >   4. P4 Nginx 合入 canonical：trial 三个 location（`^~ /trial/static/`、`= /trial/index.html`、`^~ /trial/`）直接合入 `deploy/apms-nginx.conf` aoti 443 块，随 deploy.sh Step 5b 覆盖+`nginx -t`+reload 自动上线（失败自动回滚），消除「样例未接入导致 /trial/ 被正式 `location /` 兜底返回错误 index」的隐患；本地 nginx 1.27 实测 11 项路由断言全过；
 >   5. P5 产物复用双向错配防护（同一根因：同 Edition 下生产/UAT 是两种产物，时间戳与 edition.txt 无法区分）：
 >      - UAT 侧（deploy-uat.sh）：智能构建在时间戳/线别判定之外增加产物内容探针，dist/static/js 烘焙了生产 Trial URL 即强制置 FRONTEND_NEED_BUILD=1 重建，堵住「先生产构建后 UAT 部署、源码未动导致空串覆盖无机会生效」；重建后 grep 不命中即可正常复用，不反复重建；
 >      - 生产侧（build.sh `--skip-frontend` 分支）：复用前按进程环境 `${VITE_TRIAL_URL+x}` 识别调用方——UAT 调用（显式空串）发现 dist 含生产 URL 即 err 中止；生产调用（未设该变量）发现 dist 未烘焙生产 URL（疑似 UAT/旧产物）同样 err 中止；均提示去掉 `--skip-frontend` 完整构建，fail-closed 不带病发版；
->      - 四象限实测（生产/UAT 上下文 × 生产/UAT 形态 dist）行为全部符合预期，真实退出码 1 验证。
+>      - 四象限实测（生产/UAT 上下文 × 生产/UAT 形态 dist）行为全部符合预期，真实退出码 1 验证；
+>   6. P6 口令前置交互：废弃 noopener 新标签方案（先跳转后输口令的割裂），`openTrial()` 改为 `navigateToTrial()` 同标签 `location.href` 跳转；两种配置下点击「一键体验」都先在当前页弹 DemoPassDialog，校验通过写 demo 会话后再跳，trial 识别有效会话直达业务页、不二次弹框；本地 nginx 双产物拓扑浏览器实测全链路通过；
+>   7. P7 退出回正式站：新增零依赖叶子模块函数 `exitToFormal()`（trial.js 内联锁定判定，不 import demo.js 以规避 request→trial→demo→@ai→assistantClient→request 循环依赖）；DemoBanner/Navbar/request.js/assistantClient 四个退出终态统一接入——trial 锁定构建跳 origin 根 `/` 回正式站，解决「退出后跳 /trial/index 被守卫弹回 /trial/login、用户被困演示应用」；25 项 trial 桩测 + 浏览器实测闭环。
 
 ## 1. 需求与约束
 
@@ -54,7 +56,7 @@
    - `auth.js getToken()` 在 `readDemoSessionState().state==='none'` 时**回落读取真实 Admin-Token Cookie**（L92）。若用户先在主站登录过，再打开 `/trial/`（未输 8888），getToken() 返回真实 JWT → permission.js L42 进入真实登录分支 → getInfo() 经全局实例发出**带真实凭证的请求**，演示锁定被完全绕过；
    - 全量审计确认认证凭证消费点共 14 处（request.js 注入头、permission 守卫、user store、download.js×3、upload 组件×7、ai/features、rpa/assistantClient），**全部经由 getToken() 单一函数**，无第二条读取路径；
    - 反向风险：`removeToken()`（user.logOut / 401 重登流程会调）在 trial 内若被触发，会删掉同域主站的真实登录 Cookie，构成跨上下文破坏；
-   - sessionStorage：`window.open` 打开的新浏览上下文会复制 opener 的 sessionStorage 初始副本（之后各自独立），主站跳 trial 若不加 noopener，可能把主站标签的会话副本带入 trial（其中虽无 token 凭证，但违反最小暴露）；
+   - sessionStorage：口令前置方案为同标签同 origin 导航，sessionStorage 按浏览上下文保留——这是传递 demo 会话单键的预期通道；其中不含真实 token 凭证（真实 JWT 仅存 Cookie，trial 锁定态不读 Cookie），最小暴露由 auth.js fail-closed 保证；
    - 非凭证 Cookie（sidebarStatus/size/username/rememberMe）同域共享仅影响 UI 偏好，不构成认证边界问题，不纳入本次收口。
 
 ## 2. 方案选型
@@ -209,17 +211,24 @@ if (DEMO_LOCKED) {
 - 覆盖范围含静态路由、动态 addRoute 的全部 `/apms/**`、应用内二次导航；退出演示后首次导航即重新过闸（§3.2.0b）；
 - 与规则 1 互为兜底：即使未来 getToken 短路被重构误伤，守卫仍按 sessionStorage 的 demo 会话状态裁决，不承认任何 Cookie 凭证。
 
-**规则 3：主站打开 trial 显式 noopener（login.vue 入口）**
+**规则 3：口令前置 + 同标签跳转（login.vue 入口，P6 交互修订）**
 
-§3.4 的「一键体验」跳转统一使用：
+早期方案为 noopener 新标签（`window.open(...,'_blank','noopener,noreferrer')`），存在「先跳转新页面、再要求输口令」的交互割裂；现改为口令前置：
 
 ```js
-window.open(import.meta.env.VITE_TRIAL_URL, '_blank', 'noopener,noreferrer')
+// 点击「一键体验」：两种配置都先在当前页弹 DemoPassDialog，不跳转、不新开标签
+// 口令校验通过（enterDemo 已写 demo 会话单键）后 handleDemoSuccess 分流：
+if (trialExternal) {
+  window.location.href = import.meta.env.VITE_TRIAL_URL  // navigateToTrial()，全仓唯一跳转点
+} else {
+  router.replace('/overview/cockpit')                     // dev/UAT 原地演示
+}
 ```
 
-- noopener 使新浏览上下文 `opener=null` 且获得**空的 sessionStorage**，不复制主站标签会话副本；
-- 不用 `<a target=_blank>` 裸写（漏 rel=noopener 即失效），封装为单一工具函数 `openTrial()`，全仓只此一个打开点；
-- 纵深说明：即便某浏览器对 noopener 处理有差异，复制过去的也只可能是 demo 会话（真实 JWT 仅存于 Cookie，而规则 1 已保证 trial 不读 Cookie），不构成凭证泄漏。
+- 同 origin 同标签导航保留 sessionStorage，trial 加载后 `readDemoSessionState()` 识别有效 demo 会话，路由闸门直接放行进业务页，**不再二次弹口令框**；
+- 安全模型变化：同标签导航无 `window.opener` 关系（无反向 tab 操纵面）、同站导航无外发 referer；真实 Admin-Token Cookie 物理共存但规则 1 已保证 trial 锁定态三函数 fail-closed 不读写删，凭证逻辑不可达；传递的仅为无真实价值的静态 demo 会话键；
+- 封装为单一工具函数 `navigateToTrial()`（trial.js），全仓只此一个 trial 跳转点，禁止组件裸写 location/window.open；
+- 本地 nginx 双产物拓扑实测：formal 页原地弹框（标签数 1、URL 不离开根路径）→ 输一次 8888 → 同标签落到 `/trial/overview/cockpit`，直达驾驶舱与演示横幅、无二次弹框、零 /prod-api/ 请求。
 
 **不变量与验收口径**：trial 构建中「真实 JWT」在任何存储状态组合（none/demo/broken/storage-error）下都不可被 JS 读取、不会出现在任何请求头中；主站 Admin-Token Cookie 的生命周期不受 trial 内任何操作影响。
 
@@ -247,13 +256,13 @@ window.open(import.meta.env.VITE_TRIAL_URL, '_blank', 'noopener,noreferrer')
   |---|---|---|---|
   | 本地 dev | development / development-ai | 无此键（dev env 不含） | 原地口令弹窗 |
   | UAT | standard / ai（deploy-uat.sh） | 脚本注入 `VITE_TRIAL_URL=''` 进程环境覆盖 | 原地口令弹窗 |
-  | 生产 | standard / ai（build.sh 直连） | `.env.standard`/`.env.ai` 提交值 `https://aoti.apms.top/trial/` | noopener 新开 /trial/ |
+  | 生产 | standard / ai（build.sh 直连） | `.env.standard`/`.env.ai` 提交值 `https://aoti.apms.top/trial/` | 原地弹口令框，校验后同标签跳 /trial/ |
 
   - 生产值直接启用并提交在两个正式 env 中，一次配置永久生效，不需要每次发版改文件；
   - UAT 与生产共用同一 vite mode，区分依赖 Vite 的优先级规则：**已存在的进程环境 `VITE_*` 变量覆盖 .env 文件值**（已用两次实测构建验证），deploy-uat.sh 在调 build.sh 前注空串；
   - UAT 双重保障：除构建时注空串外，deploy-uat.sh 复用 dist 前还会 grep 产物内容，发现烘焙了生产 Trial URL（典型场景：本机先跑生产 build.sh 再 UAT 部署）即强制重建，避免智能构建的时间戳判定跳过空串覆盖；
   - 生产对称保障：build.sh `--skip-frontend` 复用 dist 前做反向校验，未烘焙生产 Trial URL 的产物（UAT/旧包）直接 err，禁止生产复用 UAT 产物；
-  - 任意环境下 **「一键体验」按钮都保持显示**（显隐只由 `VITE_DEMO_ENABLED` 控制）：有 URL 时经 `openTrial()` 新开标签（强制 `noopener,noreferrer`，见 §3.2.2 规则 3），无 URL/空串时唤起本地 DemoPassDialog——切换的是按钮行为，不是按钮显隐；
+  - 任意环境下 **「一键体验」按钮都保持显示**（显隐只由 `VITE_DEMO_ENABLED` 控制），且点击后一律先在当前页弹 DemoPassDialog（口令前置，见 §3.2.2 规则 3）：有 URL 时校验通过经 `navigateToTrial()` 同标签跳转，无 URL/空串时校验通过走原地 mock 演示——切换的是校验后的去向，不是按钮/弹窗显隐；
 - 对 ai 正式站的语义：其原地演示本就含 RPA，但仍统一收口到 trial——trial 额外提供演示锁定与零真实请求保证，演示行为与口令在两个 Edition 的正式站之间完全一致；
 - 改动集中在 login.vue 的 `onDemoEntryClick()` 行为分支、两个正式 env 与 deploy-uat.sh 的构建调用处。
 
@@ -261,7 +270,7 @@ window.open(import.meta.env.VITE_TRIAL_URL, '_blank', 'noopener,noreferrer')
 
 - 两应用同源（协议+host+port 相同），Cookie 与 Web Storage 物理共享，**不依赖存储天然隔离，而靠认证收口建立逻辑边界**；
 - 真实 JWT 只存于 Admin-Token Cookie；trial 构建的 getToken/setToken/removeToken 三函数全部短路（§3.2.2 规则 1），该 Cookie 对 trial 应用等价于不存在：读不到、不会被覆盖、不会被删除；
-- demo 会话只存 sessionStorage 单键；主站开 trial 强制 noopener，新标签获得空 sessionStorage（规则 3）；退出演示/关闭标签即清理；
+- demo 会话只存 sessionStorage 单键；口令前置后同标签导航携带该单键到 trial（规则 3），真实 Cookie 仍由锁定态 auth 三函数隔离；退出演示/关闭标签即清理；
 - 非认证 Cookie（侧边栏状态、字号、记住的用户名）可能同域共享，仅影响 UI 偏好，无安全含义；
 - 实施时补桩测：① 预置 Admin-Token Cookie 后以 trial 构建运行，四种存储状态下 getToken() 断言；② 主站真实登录后新开 trial 标签，双方 token/角色互不可见、trial 内操作后主站 Cookie 不变；③ 守卫对未授权 URL 的重定向断言。
 
@@ -314,12 +323,12 @@ location ^~ /trial/ {
 | 改 | `ruoyi-ui/vite/plugins/edition.js` | trial.txt 标识 |
 | 改 | `ruoyi-ui/package.json` | build:trial 脚本 |
 | 改 | `src/router/index.js` | **P1**：createWebHistory 显式传 import.meta.env.BASE_URL |
-| 改 | `src/views/login.vue` | 演示锁定 + **挂载自动弹口令框（§3.2.0）** + openTrial() noopener 跳转 + ClickCaptcha 锁定态 v-if |
+| 改 | `src/views/login.vue` | 演示锁定 + **挂载自动弹口令框（§3.2.0）** + 口令前置与 navigateToTrial() 同标签跳转 + ClickCaptcha 锁定态 v-if |
 | 改 | `src/views/login/ClickCaptcha.vue` | onMounted 锁定态短路（P1 请求 B 兜底） |
 | 改 | `src/store/modules/loginTheme.js` | loadConfig 锁定态短路，不调 /login/config（P1 请求 A） |
 | 改 | `src/utils/auth.js` | **P1 安全**：locked 下 getToken/setToken/removeToken 全短路，不碰真实 Cookie |
 | 改 | `src/permission.js` | 锁定闸门前置（先于 getToken 判断），全局每次导航过闸，未进 demo 只放 /login（§3.2.0b） |
-| 改 | `src/utils/demo.js` 或新增 `src/utils/trial.js` | 锁定态判定原语 + openTrial() 封装 |
+| 改 | `src/utils/demo.js` 或新增 `src/utils/trial.js` | 锁定态判定原语 + navigateToTrial() 封装 |
 | 改（可选） | `src/api/loginConfig.js` | publicHttp 锁定态拦截兜底 |
 | 改 | DemoBanner.vue / Navbar.vue / assistantClient.js / request.js | 4 处 BASE_URL 跳转修复 |
 | 改 | `deploy/build.sh` | trial 构建与独立产物分发 |
@@ -339,10 +348,10 @@ location ^~ /trial/ {
 5. **P1 会话安全验收（Cookie 绕过攻击面）**：
    - 预置同域 Admin-Token Cookie（模拟主站已登录）后打开 `/trial/`：未输口令时停在登录页，守卫不进入任何业务路由，Network 无带 Authorization 的请求；手工访问 `/apms/athlete`、`/index` 等任意业务 URL 一律被重定向回 `/trial/login`；
    - 桩测断言：trial 构建在 none/demo/broken/storage-error 四种存储状态下，getToken() 仅 demo 态返回 demo token，其余均为 undefined；setToken/removeToken 调用后 Cookie 无变化（主站凭证不被写入/删除）；
-   - 主站「一键体验」打开的新标签 `window.opener === null`，且 sessionStorage 中无主站键（noopener 生效）；
+   - 主站「一键体验」口令前置链路：当前页弹框（标签数不增、URL 不离开 formal）→ 输一次 8888 → 同标签落 `/trial/overview/cockpit`，无二次口令框、无新开标签（P6 浏览器实测）；
 6. trial 内手输业务 URL/刷新丢会话 → 回 trial 登录页，无法进入真实登录链路；
-7. 退出演示回到 `/trial/` 登录页（不跳主站）；
-8. 正式站 `/`（standard 或 ai 构建，两种 Edition 各验一遍）：生产构建产物 grep 含 `aoti.apms.top/trial/`，「一键体验」按钮显示且点击新开 `/trial/` 标签（本地口令弹窗不弹出）；`VITE_TRIAL_URL=''` 覆盖构建（UAT 形态）产物 grep 不含该 URL，按钮同样显示、点击唤起原地口令弹窗；dev mode 无此键，行为不变；
+7. 退出演示闭环（P7）：trial 内任一退出路径（DemoBanner「退出演示」、Navbar 注销、401 重登兜底）经 `exitToFormal()` 同标签跳 origin 根 `/`，回到同域正式站（nginx `location /`），不得停在 `/trial/login` 被困；正式构建该函数返回 false，原有 `${BASE_URL}index` 入口页逻辑不变；浏览器实测退出前 `/trial/overview/cockpit` → 退出后 formal `/login`；
+8. 正式站 `/`（standard 或 ai 构建，两种 Edition 各验一遍）：生产构建产物 grep 含 `aoti.apms.top/trial/`，「一键体验」点击后**当前页先弹口令框**（不跳转、不新开标签），输 8888 后同标签跳 `/trial/` 且直达业务页无二次弹框；`VITE_TRIAL_URL=''` 覆盖构建（UAT 形态）产物 grep 不含该 URL，按钮同样显示、口令校验后走原地 mock 演示；dev mode 无此键，行为不变；
 9. 现有 demo-tests 全量桩测（52+8 项）无回归；三部署脚本 bash 3.2/5.x 语法检查通过。
 
 ## 6. 风险与回滚
@@ -353,9 +362,9 @@ location ^~ /trial/ {
 | vue-router 无参 base 回退 `/` 致子路径失效（P1） | 显式 createWebHistory(import.meta.env.BASE_URL)，验收第 2.1 条深链走查 |
 | trial 构建覆盖正式构建 dist（P1） | .env.trial 固定 VITE_BUILD_OUTDIR=dist-trial（与正式线别 standard/ai 无关），验收第 1 条目录隔离比对 |
 | trial 包含 AI 源码被公开访问 | 演示包本无真实数据/接口；可选 nginx 口令或 IP 白名单 |
-| 同源 Storage 键冲突 | demo/真实分键 + 新标签隔离 + 桩测验收 |
+| 同源 Storage 键冲突 | demo/真实分键 + 同标签仅传递 demo 单键（真实 Cookie 由锁定态 auth 隔离）+ 桩测验收 |
 | 输口令前泄漏真实请求（P1） | loginTheme/ClickCaptcha 锁定态短路 + 验收第 4 条 Network 零请求录制；可选 publicHttp 拦截器兜底 |
-| 同域 Cookie 绕过演示锁定（P1） | auth.js 三函数锁定态短路 + 守卫前置闸门 + noopener，验收第 5 条攻击面走查 |
+| 同域 Cookie 绕过演示锁定（P1） | auth.js 三函数锁定态短路 + 守卫前置闸门 + 口令前置同标签跳转，验收第 5 条攻击面走查 |
 | trial 内误删主站登录 Cookie | removeToken 锁定态 no-op，桩测断言 Cookie 生命周期不受影响 |
 | 主站发版误传 dist-trial | 独立目录、独立 rsync，不进 deploy.sh 主链路 |
 | 回滚 | 删除 nginx location 与 trial 目录即完全撤销；主站无任何依赖，零影响 |
@@ -366,7 +375,7 @@ location ^~ /trial/ {
 2. **P1 零网络短路**：loginTheme.loadConfig 锁定态短路 + ClickCaptcha v-if/onMounted 短路；
 3. **P1 安全边界收口**：auth.js 三函数（getToken/setToken/removeToken）锁定态短路 + permission.js 前置锁定闸门；
 4. 子路径适配：router/index.js 显式传 BASE_URL（P1）+ 4 处硬编码 /index 修复 + 全局硬编码复扫；
-5. 演示锁定 UI（login.vue 含自动弹口令框 §3.2.0）+ openTrial() noopener 封装；
+5. 演示锁定 UI（login.vue 含自动弹口令框 §3.2.0）+ 口令前置与 navigateToTrial() 同标签跳转封装；
 6. 正式站入口 TRIAL_URL 逻辑（Edition 无关，standard/ai 同一套 env 门控）；
 7. Node 桩测（四态 token 断言、§3.2.0b 路由矩阵全格、自动弹框触发条件、隔离、构建标识）+ 浏览器零网络/Cookie 攻击面验收 + 现有桩测回归；
 8. build.sh trial 分支；
