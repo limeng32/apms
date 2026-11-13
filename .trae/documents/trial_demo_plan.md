@@ -15,7 +15,11 @@
 >   1. P1 入口显隐：`VITE_TRIAL_URL` 只切换「一键体验」按钮行为、不控制显隐（`demoEntryEnabled = demoEnabled`），修正配置后按钮消失导致 openTrial 无触发点的缺陷；
 >   2. P2 异常态绕过：路由闸门由 `isDemoMode()` 宽判定改为 `readDemoSessionState().state === 'demo'` 严格判定——broken/storage-error 不再漏过闸门被 `/register`、`/showcase` 白名单放行；网络层 `isDemoMode()` fail-closed 宽判定保持不变，两层分离；trial.mjs T2 同步改为四态矩阵断言（24 项）；
 >   3. P3 生产零手工启用：`.env.standard`/`.env.ai` 直接提交启用 `VITE_TRIAL_URL`（生产默认值，发版无需改文件）；deploy-uat.sh 构建时注 `VITE_TRIAL_URL=''` 进程环境覆盖（Vite 进程环境优先于 .env，已实测），UAT 与 dev 保持原地口令演示；trial.mjs 增补空串 opt-out 断言；
->   4. P4 Nginx 合入 canonical：trial 三个 location（`^~ /trial/static/`、`= /trial/index.html`、`^~ /trial/`）直接合入 `deploy/apms-nginx.conf` aoti 443 块，随 deploy.sh Step 5b 覆盖+`nginx -t`+reload 自动上线（失败自动回滚），消除「样例未接入导致 /trial/ 被正式 `location /` 兜底返回错误 index」的隐患；本地 nginx 1.27 实测 11 项路由断言全过。
+>   4. P4 Nginx 合入 canonical：trial 三个 location（`^~ /trial/static/`、`= /trial/index.html`、`^~ /trial/`）直接合入 `deploy/apms-nginx.conf` aoti 443 块，随 deploy.sh Step 5b 覆盖+`nginx -t`+reload 自动上线（失败自动回滚），消除「样例未接入导致 /trial/ 被正式 `location /` 兜底返回错误 index」的隐患；本地 nginx 1.27 实测 11 项路由断言全过；
+>   5. P5 产物复用双向错配防护（同一根因：同 Edition 下生产/UAT 是两种产物，时间戳与 edition.txt 无法区分）：
+>      - UAT 侧（deploy-uat.sh）：智能构建在时间戳/线别判定之外增加产物内容探针，dist/static/js 烘焙了生产 Trial URL 即强制置 FRONTEND_NEED_BUILD=1 重建，堵住「先生产构建后 UAT 部署、源码未动导致空串覆盖无机会生效」；重建后 grep 不命中即可正常复用，不反复重建；
+>      - 生产侧（build.sh `--skip-frontend` 分支）：复用前按进程环境 `${VITE_TRIAL_URL+x}` 识别调用方——UAT 调用（显式空串）发现 dist 含生产 URL 即 err 中止；生产调用（未设该变量）发现 dist 未烘焙生产 URL（疑似 UAT/旧产物）同样 err 中止；均提示去掉 `--skip-frontend` 完整构建，fail-closed 不带病发版；
+>      - 四象限实测（生产/UAT 上下文 × 生产/UAT 形态 dist）行为全部符合预期，真实退出码 1 验证。
 
 ## 1. 需求与约束
 
@@ -247,6 +251,8 @@ window.open(import.meta.env.VITE_TRIAL_URL, '_blank', 'noopener,noreferrer')
 
   - 生产值直接启用并提交在两个正式 env 中，一次配置永久生效，不需要每次发版改文件；
   - UAT 与生产共用同一 vite mode，区分依赖 Vite 的优先级规则：**已存在的进程环境 `VITE_*` 变量覆盖 .env 文件值**（已用两次实测构建验证），deploy-uat.sh 在调 build.sh 前注空串；
+  - UAT 双重保障：除构建时注空串外，deploy-uat.sh 复用 dist 前还会 grep 产物内容，发现烘焙了生产 Trial URL（典型场景：本机先跑生产 build.sh 再 UAT 部署）即强制重建，避免智能构建的时间戳判定跳过空串覆盖；
+  - 生产对称保障：build.sh `--skip-frontend` 复用 dist 前做反向校验，未烘焙生产 Trial URL 的产物（UAT/旧包）直接 err，禁止生产复用 UAT 产物；
   - 任意环境下 **「一键体验」按钮都保持显示**（显隐只由 `VITE_DEMO_ENABLED` 控制）：有 URL 时经 `openTrial()` 新开标签（强制 `noopener,noreferrer`，见 §3.2.2 规则 3），无 URL/空串时唤起本地 DemoPassDialog——切换的是按钮行为，不是按钮显隐；
 - 对 ai 正式站的语义：其原地演示本就含 RPA，但仍统一收口到 trial——trial 额外提供演示锁定与零真实请求保证，演示行为与口令在两个 Edition 的正式站之间完全一致；
 - 改动集中在 login.vue 的 `onDemoEntryClick()` 行为分支、两个正式 env 与 deploy-uat.sh 的构建调用处。

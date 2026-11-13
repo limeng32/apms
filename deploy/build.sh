@@ -180,8 +180,28 @@ log "  版本注入验证: ${INJECTED_VERSION:-⚠️ 未注入}"
 
 # ===== Step 2: Vue 前端（按产品线构建；仅 --skip-frontend 可显式保留现有 dist）=====
 DIST_DIR="${PROJECT_ROOT}/ruoyi-ui/dist"
+# 生产 Trial URL 标记（与 .env.standard/.env.ai 提交值、deploy-uat.sh 检查保持同源，改动需三处同步）
+readonly PROD_TRIAL_URL_MARKER="aoti.apms.top/trial"
 if [ "${SKIP_FRONTEND}" -eq 1 ]; then
     log "Step 2: 跳过前端构建 (--skip-frontend)，保留现有 dist"
+    [ -d "${DIST_DIR}/static/js" ] || err "--skip-frontend 但 ${DIST_DIR}/static/js 不存在，无可复用的前端产物，请去掉该参数完整构建"
+    # 产物形态一致性闸（与 deploy-uat.sh 的强制重建检查对称，构建系统不重构）：
+    # 同一 Edition 下生产（烘焙 Trial URL）与 UAT（VITE_TRIAL_URL='' 空串覆盖，无该 URL）是两种不同产物，
+    # 时间戳/edition.txt 无法区分，复用错配会让环境间一键体验跳错入口。
+    # 调用场景识别：deploy-uat.sh 以 VITE_TRIAL_URL='' 进程环境调本脚本；生产直连不设该变量。
+    if [ "${VITE_TRIAL_URL+x}" = "x" ] && [ -z "${VITE_TRIAL_URL}" ]; then
+        # UAT 上下文：复用的 dist 不得含生产 Trial URL（deploy-uat 已先做强制重建，此处为最后一道闸）
+        if grep -rl "${PROD_TRIAL_URL_MARKER}" "${DIST_DIR}/static/js" >/dev/null 2>&1; then
+            err "UAT 构建试图复用含生产 Trial URL 的 dist（疑似生产产物）；请去掉 --skip-frontend 完整重建"
+        fi
+        log "  UAT 产物形态校验通过：dist 不含生产 Trial URL"
+    else
+        # 生产上下文：复用的 dist 必须已烘焙生产 Trial URL，否则疑似 UAT 产物或早于该特性的旧包
+        if ! grep -rl "${PROD_TRIAL_URL_MARKER}" "${DIST_DIR}/static/js" >/dev/null 2>&1; then
+            err "生产构建复用的 dist 未烘焙生产 VITE_TRIAL_URL（疑似 UAT/旧产物）；请去掉 --skip-frontend 完整构建后再发版"
+        fi
+        log "  生产产物形态校验通过：dist 已烘焙 Trial URL"
+    fi
 else
     log "Step 2: Vue 前端构建 (--mode ${EDITION})..."
     cd "${PROJECT_ROOT}/ruoyi-ui"

@@ -152,7 +152,7 @@ resolve_uat_effective_front() {
 }
 
 # 前端线别裁决（停服前预检与 Step 4 落盘前共用同一套规则）。
-# $1=fail_action：prestop → 直接 err（服务未停、无任何变更）；否则 rollback（已停服窗口）。
+# ${1}=fail_action：prestop → 直接 err（服务未停、无任何变更）；否则 rollback（已停服窗口）。
 assert_front_edition_ok() {
     local fail_action="${1:-prestop}"
     local fail_prefix
@@ -577,6 +577,18 @@ else
       || [ "${DIST_EDITION}" != "${EDITION}" ] \
       || [ -n "$(find "${PROJECT_ROOT}/ruoyi-ui/src" "${PROJECT_ROOT}/ruoyi-ui/index.html" "${PROJECT_ROOT}/ruoyi-ui/vite.config.js" -type f -newer "${_VITE_DIST_IDX}" -print -quit 2>/dev/null)" ]; then
         FRONTEND_NEED_BUILD=1
+    fi
+fi
+
+# UAT 产物形态校验（配置维度，时间戳/线别判定覆盖不到）：
+# 本机可能先跑过生产 build.sh，dist 已烘焙生产 Trial URL；随后 UAT 部署若 edition 未变、
+# 源码未动，上面的新鲜度判定会误判「无需重建」，VITE_TRIAL_URL='' 覆盖便没有机会参与构建，
+# UAT 的「一键体验」会错误跳生产 Trial。命中生产 URL 即强制重建，让下方空串覆盖真正生效。
+if [ "${FRONTEND_NEED_BUILD}" -eq 0 ] && [ -d "${PROJECT_ROOT}/ruoyi-ui/dist/static/js" ]; then
+    # 标记字符串与 build.sh 的 PROD_TRIAL_URL_MARKER、.env.*/VITE_TRIAL_URL 同源，改动需三处同步
+    if grep -rl "aoti.apms.top/trial" "${PROJECT_ROOT}/ruoyi-ui/dist/static/js" >/dev/null 2>&1; then
+        FRONTEND_NEED_BUILD=1
+        log "检测到 dist 烘焙了生产 Trial URL（疑似复用生产构建产物），UAT 强制重建前端以注入 VITE_TRIAL_URL=''"
     fi
 fi
 
