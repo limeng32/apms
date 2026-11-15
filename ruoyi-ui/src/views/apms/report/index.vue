@@ -64,7 +64,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="row in reportList" :key="row.id" class="rk-row"
+                  <tr v-for="row in reportList" :key="row.id" class="rk-row rk-row-clickable"
                       :class="{ 'is-selected': current && current.id === row.id }"
                       @click="handleRowClick(row)">
                     <td class="text-center">
@@ -74,7 +74,7 @@
                     </td>
                     <td>
                       <div class="rp-subject">
-                        <span class="rp-subject-name">
+                        <span class="rp-subject-name rk-row-link">
                           {{ subjectOf(row) }}
                           <GenderBadge v-if="row.reportType === 'INDIVIDUAL'" :gender="row.athleteGender" :size="14"/>
                         </span>
@@ -86,6 +86,7 @@
                       <span class="rk-soft-chip rp-ver-chip">{{ row.templateVersion || '—' }}</span>
                     </td>
                     <td class="text-center col-ops">
+                      <button type="button" class="rk-link rk-row-detail" @click.stop="openDetail(row)">详情</button>
                       <button v-if="row.filePath" type="button" class="rk-link" @click.stop="handleDownload(row)"
                               v-hasPermi="['apms:report:download']">下载</button>
                       <span v-else class="rk-dash">—</span>
@@ -271,10 +272,12 @@ import { Plus, RefreshLeft, ArrowLeft, ArrowRight, Download, Document, Close } f
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import ReadOnlyBlock from '@/components/ReadOnlyBlock/index.vue'
 import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
+import { useTouchViewport } from '@/utils/touchViewport'
 
 const { proxy } = getCurrentInstance()
 const { drawerPanelStyle } = useDrawerOffset()
 const { drawerSize } = useDrawerSize('880px')
+const { isTouchViewport } = useTouchViewport()
 
 const PAGE_SIZE = 10
 
@@ -418,7 +421,7 @@ async function loadPdfPreview(row) {
   }
 }
 
-function handleRowClick(row) {
+function openDetail(row) {
   current.value = row
   detailDrawerVisible.value = true
   detailLoading.value = true
@@ -429,6 +432,10 @@ function handleRowClick(row) {
     current.value = r.data
     loadPdfPreview(r.data)
   }).finally(() => { detailLoading.value = false })
+}
+function handleRowClick(row) {
+  if (isTouchViewport.value) return
+  openDetail(row)
 }
 
 /** 抽屉关闭：销毁 iframe 同时回收 blob URL，重置选中态 */
@@ -585,7 +592,7 @@ loadStats()
 .col-ver { width: 72px; }
 .col-ops { width: 104px; }
 .rk-empty-cell { padding: 36px 0; }
-.rp-table tbody tr { cursor: pointer; }
+/* 行光标统一由 roster-kit 的 .rk-row-clickable 控制（桌面 pointer / H5 default） */
 .rp-time { font-size: 12px; color: $rk-text-2; }
 .rp-subject { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .rp-subject-name {

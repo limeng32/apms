@@ -143,7 +143,7 @@
                 'row-red': rosterStatus === 'active' && row.rtpStatus === 'r',
                 'row-amber': rosterStatus === 'active' && row.rtpStatus === 'y'
               }"
-              @click="handleDetail(row)"
+              @click="handleRowClick(row)"
             >
               <td v-if="rosterStatus === 'active'" class="col-check" @click.stop>
                 <input
@@ -215,7 +215,7 @@
               <td>
                 <div class="rp-actions">
                   <!-- 统一行操作：≤3 个全部平铺；离队行有 4 个（查看/编辑/退役/重入队），后两个收 ⋮ -->
-                  <button type="button" class="rp-link" @click.stop="handleDetail(row)">查看</button>
+                  <button type="button" class="rp-link" @click.stop="openDetail(row)">查看</button>
                   <button
                     type="button"
                     class="rp-link"
@@ -490,6 +490,7 @@ import RkPager from '@/components/RkPager/index.vue'
 import ReadOnlyBlock from '@/components/ReadOnlyBlock/index.vue'
 import { ageAvatarColor } from '@/utils/athleteAvatar'
 import { useDict } from '@/utils/dict'
+import { useTouchViewport } from '@/utils/touchViewport'
 import { Plus, Search, RefreshLeft, MoreFilled, OfficeBuilding } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
@@ -834,9 +835,16 @@ function submitRejoin() {
 /* ===== 详情（整行点击）：右侧抽屉，不切换 location ===== */
 const detailOpen = ref(false)
 const detailAthleteId = ref(null)
-function handleDetail(row) {
+// H5 整行点击易误触（滚动/勾选擦碰即开抽屉）：窄屏仅行内「查看」按钮可开详情。
+// 与 medical 等页同模式：openDetail 无守卫供按钮调用，handleRowClick 加视口守卫供整行调用。
+const { isTouchViewport } = useTouchViewport()
+function openDetail(row) {
   detailAthleteId.value = row.athleteId
   detailOpen.value = true
+}
+function handleRowClick(row) {
+  if (isTouchViewport.value) return
+  openDetail(row)
 }
 // 抽屉内数据变更（RTP/体态/小组等）后同步列表行徽章与统计
 function handleDetailChanged() {
@@ -1449,6 +1457,31 @@ $rp-empty-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg
   .rpf-right { margin-left: 0; width: 100%; }
   .rp-search-input { width: 100%; }
   .rp-search { flex: 1; }
+}
+
+/* H5（≤768px，与 touchViewport/roster-kit 断点一致）：
+   表格列多，窄屏不再压缩列宽（否则姓名逐字竖排、头像错位），改为保持桌面形态
+   在 .rp-table-scroll 内横向滚动；文本一律 nowrap 杜绝竖排。 */
+@media (max-width: 768px) {
+  .rp-table { min-width: 800px; }
+  .rp-table thead th { padding: 10px 12px; }
+  .rp-table tbody td { padding: 10px 12px; }
+  .rp-table .col-check { width: 36px; padding-left: 12px; }
+  .rp-user { gap: 8px; }
+  .rp-user-name { white-space: nowrap; }
+  .rp-user-sub { white-space: nowrap; }
+  .rp-age-badge,
+  .rp-status-badge,
+  .rp-last-team,
+  .rp-group-chip { white-space: nowrap; }
+  .rp-actions { flex-wrap: nowrap; }
+  .rp-link { white-space: nowrap; }
+
+  /* 窄屏整行不可点（仅「查看」按钮开详情抽屉）：去手型与 hover 暗示，
+     斑马纹/红黄状态行的静态底色与左侧色条保持不变 */
+  .rp-row { cursor: default; }
+  .rp-row:hover { background: #fff; }
+  .rp-row.is-zebra:hover { background: #fafbfd; }
 }
 
 /* 赛季晋升弹窗 */

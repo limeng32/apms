@@ -18,4 +18,7 @@ public interface ApmsComboScoreMapper {
     int deleteByUnique(Long athleteId, Long comboModelId, Long triggerResultId);
 
     int deleteById(Long id);
+
+    /** 统计某组合评分方案下的历史评分数（删除前引用校验，防孤儿评分记录） */
+    int countByComboModelId(Long comboModelId);
 }

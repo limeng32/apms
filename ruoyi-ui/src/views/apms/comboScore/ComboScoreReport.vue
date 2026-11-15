@@ -13,7 +13,7 @@
           </div>
           <div class="report-info">
             <div class="info-row"><span class="info-label">队员</span><b>{{ row?.athleteName }}</b></div>
-            <div class="info-row"><span class="info-label">组合模型</span>{{ row?.comboModelName || ('Model #' + row?.comboModelId) }}</div>
+            <div class="info-row"><span class="info-label">评分方案</span>{{ row?.comboVersionLabel || row?.comboModelName || ('Model #' + row?.comboModelId) }}</div>
             <div class="info-row"><span class="info-label">算法版本</span><el-tag size="small" type="warning">{{ snapshotData.algoVersion }}</el-tag></div>
             <div class="info-row"><span class="info-label">归一化</span><el-tag size="small">{{ snapshotData.normalization }}</el-tag></div>
             <div class="info-row"><span class="info-label">计算时间</span>{{ row?.calculatedAt }}</div>

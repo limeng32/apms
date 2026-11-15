@@ -47,3 +47,14 @@ description: APMS 部署脚本与 SQL 补丁编写规范。用户要求修改/�
 - 发版清缓存：版本号变化时**选择性清理** Redis（`flush_redis_keep "login_tokens:"`，SCAN→分批 DEL，失败零变更），**禁止恢复 FLUSHDB**——发版不踢在线用户。副作用须知晓：在线用户 login_token 内缓存的是旧权限集合，改了菜单/角色权限需在「在线用户」踢出或等其重登。
 - 回滚靠 backup 目录旧产物；新增 Step 失败路径必须考虑「已停服」窗口，脚本错误应在停服前暴露（语法、变量未绑定都要本地先验）。
 - 在 IDE agent 的 sandbox 内执行部署：前台命令结束后 nohup 的 Java 会被进程组回收（health 200 后随即退出，日志无异常）。验证持久运行需用户在自己的终端执行 `bash deploy/deploy-uat.sh start`；agent 只能做接口级瞬时验证。
+
+## 4. Vite 前端构建僵死：先修后诊，禁止长链路取证（教训 2026-11-21）
+
+- **判定信号（满足即按本节处置，不要先 sample/lsof/父链排查）**：`vite build` 超过 90s 无输出且进程 0% CPU（本机健康构建 standard≈10s、trial≈17s）；典型佐证是 `sample <vite-pid>` 主线程停在 `uv_fs_read/pread`，lsof 快照显示 REG fd 数秒才前进一个小文件。
+- **根因背景**：本仓 `ruoyi-ui/node_modules` 已多次出现文件系统层损坏/缓存污染（强杀 esbuild、sandbox 文件回收等诱因），表现为模块读取极慢而非报错；清 `.vite` 不一定够，必要时整包重建。
+- **处置阶梯（每步后立即重跑 `npx vite build --mode standard`，成功即停；全程先 `pkill -9 -f "vite/bin/vite.js"; pkill -9 -f "esbuild/darwin-arm64"` 清残留）**：
+  1. 清构建缓存：`cd ruoyi-ui && rm -rf node_modules/.vite node_modules/.vite-temp`；
+  2. 仍僵死 → 整包重建（frozen-lockfile 保证版本零漂移，实测约 1 分钟）：`rm -rf node_modules && pnpm store prune && pnpm install --frozen-lockfile`；
+  3. 仅当 1、2 都无效，才允许做 sample/lsof/esbuild IPC 等取证。
+- **行为铁律**：用户要的是「构建发布成功」，不是根因报告。廉价可逆的修复（缓存/依赖重建）必须先于诊断执行；诊断只在修复失败后启动。2026-11-21 事故中 agent 反复取证 30+ 分钟、由用户提示才清 node_modules，属于明确的流程错误。
+- 环境备忘：本机 `/opt/homebrew/opt/node@18` 已被 icu4c 升级破坏（缺 libicui18n.74.dylib），当前有效 Node 为 Homebrew Node 26.x；pnpm 10.x，锁文件 `pnpm-lock.yaml`，重装必须带 `--frozen-lockfile`。

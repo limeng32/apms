@@ -25,15 +25,15 @@
       </div>
 
       <section class="ha-block" v-show="activeTab === 'model'">
-        <TestModelPage v-if="loaded.model" embedded />
+        <TestModelPage v-if="loaded.model" ref="modelPageRef" embedded />
       </section>
 
       <section class="ha-block" v-show="activeTab === 'combo'">
-        <ComboModelPage v-if="loaded.combo" embedded />
+        <ComboModelPage v-if="loaded.combo" ref="comboPageRef" embedded />
       </section>
 
       <section class="ha-block" v-show="activeTab === 'score'">
-        <ComboScorePage v-if="loaded.score" embedded />
+        <ComboScorePage v-if="loaded.score" ref="scorePageRef" embedded />
       </section>
     </div>
     </read-only-block>
@@ -57,6 +57,11 @@ const TAB_KEYS = TABS.map(t => t.key)
 const route = useRoute()
 const router = useRouter()
 
+// 子页实例引用：子页已懒挂载常驻，切回 tab 时需手动调其 refresh 拉取跨 tab 变更
+const modelPageRef = ref(null)
+const comboPageRef = ref(null)
+const scorePageRef = ref(null)
+
 // 初始 Tab 取自 URL ?tab=（非法值回落到「测试模型」）
 const initialTab = TAB_KEYS.includes(route.query.tab) ? route.query.tab : 'model'
 const activeTab = ref(initialTab)
@@ -64,10 +69,20 @@ const activeTab = ref(initialTab)
 const loaded = reactive({ model: false, combo: false, score: false })
 loaded[initialTab] = true
 
+// 子页刷新方法映射（组件 defineExpose 暴露）
+const REFRESH_REF = { model: modelPageRef, combo: comboPageRef, score: scorePageRef }
+function refreshActiveTab(key) {
+  // 等 v-if 懒挂载的组件在 nextTick 渲染完成后再调，首次挂载自身会拉数据，重复请求幂等无害
+  nextTick(() => REFRESH_REF[key]?.value?.refresh?.())
+}
+
 function switchTab(key) {
   if (activeTab.value === key) return
   activeTab.value = key
+  const wasLoaded = loaded[key]
   loaded[key] = true
+  // 已挂载过的页面不会重新 mount，必须主动刷新以反映其他 tab 的数据变更（如新建组合体系）
+  if (wasLoaded) refreshActiveTab(key)
   // replace 同步 URL，不污染浏览历史
   if (route.query.tab !== key) {
     router.replace({ query: { ...route.query, tab: key } })
@@ -78,8 +93,10 @@ function switchTab(key) {
 watch(() => route.query.tab, (v) => {
   const key = TAB_KEYS.includes(v) ? v : 'model'
   if (key !== activeTab.value) {
+    const wasLoaded = loaded[key]
     activeTab.value = key
     loaded[key] = true
+    if (wasLoaded) refreshActiveTab(key)
   }
 })
 </script>

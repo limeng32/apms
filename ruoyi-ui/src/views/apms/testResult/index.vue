@@ -107,11 +107,12 @@
                     <th class="col-item">项目</th>
                     <th class="text-center col-attempt">尝试</th>
                     <th class="text-center col-date">日期</th>
+                    <th class="text-center col-detail">详情</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="row in resultList" :key="row.id"
-                      class="rk-row"
+                      class="rk-row rk-row-clickable"
                       :class="{ 'is-selected': current && current.id === row.id }"
                       @click="handleRowClick(row)">
                     <td class="col-check" v-if="hasRemovePerm" @click.stop>
@@ -121,7 +122,7 @@
                     </td>
                     <td>
                       <div class="tr-athlete">
-                        <span class="tr-name">{{ row.athleteName }}</span>
+                        <span class="tr-name rk-row-link">{{ row.athleteName }}</span>
                         <GenderBadge :gender="row.athleteGender" :size="15"/>
                       </div>
                     </td>
@@ -141,9 +142,12 @@
                       <span v-else class="tr-attempt is-alt">#{{ row.attemptNo }}</span>
                     </td>
                     <td class="text-center rk-mono">{{ formatDate(row.measureDate) }}</td>
+                    <td class="text-center col-detail">
+                      <button type="button" class="rk-link rk-row-detail" @click.stop="openDetail(row)">详情</button>
+                    </td>
                   </tr>
                   <tr v-if="!loading && resultList.length === 0">
-                    <td :colspan="hasRemovePerm ? 6 : 5" class="rk-empty-cell">
+                    <td :colspan="hasRemovePerm ? 7 : 6" class="rk-empty-cell">
                       <div class="rk-empty">
                         <p class="rk-empty-title">暂无结果</p>
                         <p class="rk-empty-desc">调整筛选条件，或先通过 CSV 导入成绩</p>
@@ -362,10 +366,12 @@ import GenderBadge from '@/components/GenderBadge/index.vue'
 import { checkPermi } from '@/utils/permission'
 import { EditPen, Grid, Connection, RefreshLeft, ArrowLeft, ArrowRight, Close, Upload, Delete } from '@element-plus/icons-vue'
 import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
+import { useTouchViewport } from '@/utils/touchViewport'
 
 const { proxy } = getCurrentInstance()
 const { drawerPanelStyle } = useDrawerOffset()
 const { drawerSize } = useDrawerSize('720px')
+const { isTouchViewport } = useTouchViewport()
 
 const PAGE_SIZE = 10
 
@@ -518,10 +524,14 @@ const attempts = ref([])
 const detailLoading = ref(false)
 const selectingId = ref(null)  // 手动选为最佳的锁
 
-function handleRowClick(row) {
+function openDetail(row) {
   current.value = row
   detailDrawerVisible.value = true
   loadDetail(row.id)
+}
+function handleRowClick(row) {
+  if (isTouchViewport.value) return
+  openDetail(row)
 }
 function loadDetail(id) {
   detailLoading.value = true
@@ -634,12 +644,13 @@ loadStats()
 .tr-link-danger:hover { color: #b91c1c; text-decoration: underline; }
 
 /* 左表 */
-.tr-table tbody tr { cursor: pointer; }
+/* 行光标统一由 roster-kit 的 .rk-row-clickable 控制（桌面 pointer / H5 default） */
 .col-id { width: 52px; }
 .col-athlete { width: 104px; }
 .col-type { width: 68px; }
 .col-attempt { width: 64px; }
 .col-date { width: 112px; }
+.col-detail { width: 72px; }
 .rk-empty-cell { padding: 36px 0; }
 
 .tr-athlete { display: flex; align-items: center; gap: 6px; }

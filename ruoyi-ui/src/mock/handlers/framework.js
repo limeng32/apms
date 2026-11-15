@@ -3,7 +3,7 @@
  * 业务模块 handler 见同目录其他文件，由 index.js 汇总。
  */
 import { getInfoBody, apmsRouters, dictMap } from '../fixtures/system'
-import { getDb, route, ok, detail, listData, paginate } from '../handle'
+import { getDb, route, ok, detail, listData, paginate, like, eq } from '../handle'
 
 export const frameworkHandlers = [
   // 身份与菜单（进入演示后守卫首先拉取）
@@ -44,8 +44,19 @@ export const frameworkHandlers = [
   }),
   route('get', '/system/notice/readUsers/list/:id', () => listData([])),
 
-  // 部门树（花名册筛选/归属使用）
-  route('get', '/system/dept/list', () => ({ code: 200, msg: '操作成功', data: getDb().depts })),
+  // 部门树（花名册筛选/归属使用），支持 deptName 模糊 / status 等值，与真实
+  // selectDeptList 查询条件同口径。
+  // 出库必须给副本：前端 handleTree（utils/ruoyi.js）会原地在节点上写 children，
+  // 若返回内存库活引用，重复进入组织架构页/反复打开弹窗时会把子部门一遍遍挂回
+  // 同一节点，表现为「每切一次模块部门数据累加一轮」。真实 HTTP 响应本就是
+  // 序列化副本，mock 边界对齐该语义，内存库只允许写 handler 变更。
+  route('get', '/system/dept/list', (ctx) => {
+    const q = ctx.query || {}
+    let rows = getDb().depts
+    if (q.deptName) rows = rows.filter(d => like(d.deptName, q.deptName))
+    if (q.status !== undefined && q.status !== '') rows = rows.filter(d => eq(d.status, q.status))
+    return { code: 200, msg: '操作成功', data: structuredClone(rows) }
+  }),
 
   // 个人中心（头像下拉可进入；演示给只读静态数据）
   route('get', '/system/user/profile', () => ({

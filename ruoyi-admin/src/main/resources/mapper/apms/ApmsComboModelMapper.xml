@@ -6,6 +6,9 @@
     <resultMap id="ApmsComboModelResult" type="com.ruoyi.system.domain.apms.ApmsComboModel">
         <id     column="cm_id"                property="id"/>
         <result column="cm_model_id"          property="modelId"/>
+        <result column="version_label"        property="versionLabel"/>
+        <result column="status"               property="status"/>
+        <result column="is_default"           property="isDefault"/>
         <result column="normalization_method" property="normalizationMethod"/>
         <result column="formula"              property="formula"/>
         <result column="ref_version"          property="refVersion"/>
@@ -16,6 +19,7 @@
 
     <sql id="selectVo">
         SELECT cm.id AS cm_id, cm.model_id AS cm_model_id,
+               cm.version_label, cm.status, cm.is_default,
                cm.normalization_method, cm.formula, cm.ref_version, cm.algo_version,
                tm.code AS tm_code, tm.name AS tm_name
         FROM apms_combo_model cm
@@ -26,8 +30,9 @@
         <include refid="selectVo"/>
         <where>
             <if test="modelId != null"> AND cm.model_id = #{modelId}</if>
+            <if test="status != null and status != ''"> AND cm.status = #{status}</if>
         </where>
-        ORDER BY cm.id ASC
+        ORDER BY cm.model_id ASC, cm.is_default DESC, cm.id ASC
     </select>
 
     <select id="selectById" parameterType="Long" resultMap="ApmsComboModelResult">
@@ -35,16 +40,33 @@
     </select>
 
     <insert id="insert" parameterType="com.ruoyi.system.domain.apms.ApmsComboModel" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO apms_combo_model (model_id, normalization_method, formula, ref_version, algo_version)
-        VALUES (#{modelId}, #{normalizationMethod}, #{formula}, #{refVersion}, #{algoVersion})
+        INSERT INTO apms_combo_model
+            (model_id, version_label, status, is_default,
+             normalization_method, formula, ref_version, algo_version)
+        VALUES
+            (#{modelId}, #{versionLabel}, #{status}, #{isDefault},
+             #{normalizationMethod}, #{formula}, #{refVersion}, #{algoVersion})
     </insert>
 
     <update id="update" parameterType="com.ruoyi.system.domain.apms.ApmsComboModel">
         UPDATE apms_combo_model
-        SET model_id = #{modelId}, normalization_method = #{normalizationMethod},
+        SET model_id = #{modelId}, version_label = #{versionLabel},
+            status = #{status}, is_default = #{isDefault},
+            normalization_method = #{normalizationMethod},
             formula = #{formula}, ref_version = #{refVersion}, algo_version = #{algoVersion}
         WHERE id = #{id}
     </update>
+
+    <update id="clearDefaultByModelId">
+        UPDATE apms_combo_model
+        SET is_default = '0'
+        WHERE model_id = #{modelId}
+        <if test="excludeId != null"> AND id &lt;&gt; #{excludeId}</if>
+    </update>
+
+    <select id="countByModelId" parameterType="Long" resultType="int">
+        SELECT COUNT(*) FROM apms_combo_model WHERE model_id = #{modelId}
+    </select>
 
     <delete id="deleteByIds" parameterType="String">
         DELETE FROM apms_combo_model WHERE id IN

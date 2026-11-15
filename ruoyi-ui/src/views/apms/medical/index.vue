@@ -85,11 +85,11 @@
                 </thead>
                 <tbody>
                   <tr v-for="row in recordList" :key="row.id"
-                      class="rk-row md-row"
+                      class="rk-row rk-row-clickable md-row"
                       :class="{ 'is-selected': current && current.id === row.id }"
                       @click="handleRowClick(row)">
                     <td class="col-athlete">
-                      <span class="md-name">{{ row.athleteName || '—' }}</span>
+                      <span class="md-name rk-row-link">{{ row.athleteName || '—' }}</span>
                       <GenderBadge :gender="row.athleteGender" :size="15" class="md-gender-ic"/>
                     </td>
                     <td class="text-center col-type">
@@ -112,6 +112,7 @@
                     </td>
                     <td class="text-right col-actions">
                       <div class="rk-actions">
+                        <button type="button" class="rk-link rk-row-detail" @click.stop="openDetail(row)">详情</button>
                         <button type="button" class="rk-link" @click.stop="handleEdit(row)">编辑</button>
                       </div>
                     </td>
@@ -357,6 +358,7 @@ import { getToken, isDemoMode } from '@/utils/auth'
 import { Plus, RefreshLeft, ArrowLeft, ArrowRight, Lock, UploadFilled, Close, Edit } from '@element-plus/icons-vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import { useDrawerOffset } from '@/utils/drawerOffset'
+import { useTouchViewport } from '@/utils/touchViewport'
 import BodyMap from './components/BodyMap.vue'
 import ReadOnlyBlock from '@/components/ReadOnlyBlock/index.vue'
 import { BODY_SITE_GROUPS, siteLabel } from './bodySites'
@@ -523,12 +525,18 @@ const athleteOptions = ref([])
 listAthlete({ pageNum: 1, pageSize: 300 }).then(r => { athleteOptions.value = r.rows || [] })
 
 // ========= 主从（点行打开详情抽屉，含 files） =========
+const { isTouchViewport } = useTouchViewport()
 const drawerVisible = ref(false)
 const current = ref(null)
-function handleRowClick(row) {
+function openDetail(row) {
   current.value = row
   drawerVisible.value = true
   loadDetail(row.id)
+}
+function handleRowClick(row) {
+  // H5 整行点击易误触：窄屏仅「详情」按钮可开抽屉
+  if (isTouchViewport.value) return
+  openDetail(row)
 }
 function loadDetail(id) {
   getMedical(id).then(r => {

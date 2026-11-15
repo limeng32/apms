@@ -27,6 +27,10 @@ export const comboScoreHandlers = [
     const db = getDb()
     const model = db.comboModels.find(m => String(m.id) === String(comboModelId))
     if (!model) return { code: 601, msg: '组合模型不存在' }
+    // 停用方案禁止计算（与后端 batchCalculate 拦截对齐）
+    if (model.status === '1') {
+      return { code: 601, msg: `评分方案「${model.versionLabel || model.id}」已停用，请选择启用中的方案` }
+    }
     const components = db.comboComponents
       .filter(c => String(c.comboModelId) === String(comboModelId))
       .sort((a, c2) => Number(a.sortOrder) - Number(c2.sortOrder))

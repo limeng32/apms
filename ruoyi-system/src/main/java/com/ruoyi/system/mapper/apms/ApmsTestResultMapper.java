@@ -41,4 +41,7 @@ public interface ApmsTestResultMapper {
 
     int deleteById(Long id);
     int deleteByTaskId(Long taskId);
+
+    /** 统计某测试模型下的历史测试结果数（删除前引用校验） */
+    int countByModelId(Long modelId);
 }

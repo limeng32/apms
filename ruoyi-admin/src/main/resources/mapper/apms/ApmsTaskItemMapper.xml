@@ -61,4 +61,8 @@
         DELETE FROM apms_task_item WHERE task_id = #{taskId}
     </delete>
 
+    <select id="countByModelId" parameterType="Long" resultType="int">
+        SELECT COUNT(*) FROM apms_task_item WHERE model_id = #{modelId}
+    </select>
+
 </mapper>

@@ -247,12 +247,13 @@ test('D1', '框架接口：getInfo/getRouters/字典/公告/部门', async () =>
   assertEq(info.user.userName, 'super')
   assert(info.user.userId < 0, '演示 userId 必须为负数，避免与真实账号撞 ID')
 
-  // 与真实 super（role_id=200）2400 分组树一致：6 个顶级分组、10 个 C 页
+  // 与真实 super（role_id=200）2400 分组树一致：6 个顶级分组、11 个 C 页
+  // （patch-0.0.9 在「系统」下新增用户管理后由 10 增至 11）
   const routers = mockDispatch({ method: 'get', path: '/getRouters', query: {}, body: {} })
   const groups = routers.data
   assertEq(groups.length, 6, '六个顶级分组：总览/运动员/测试/健康/分析/系统')
   assertEq(groups[0].path, '/overview')
-  assertEq(groups.reduce((n, g) => n + g.children.length, 0), 10, '10 个 C 型页面')
+  assertEq(groups.reduce((n, g) => n + g.children.length, 0), 11, '11 个 C 型页面')
   const flat = groups.flatMap(g => g.children.map(c => `${g.path}/${c.path}`))
   ;[
     '/overview/cockpit',
@@ -260,7 +261,7 @@ test('D1', '框架接口：getInfo/getRouters/字典/公告/部门', async () =>
     '/testings/dispatch', '/testings/combo-dispatch',
     '/healthcare/alert-center', '/healthcare/medical-care',
     '/analytics/report-center',
-    '/sysmgr/role-acl', '/sysmgr/org'
+    '/sysmgr/role-acl', '/sysmgr/org', '/sysmgr/user'
   ].forEach(p => assert(flat.includes(p), `菜单包含 ${p}`))
   // RTP 状态/风险预警已并入「健康预警中心」合并页，不再有独立 C 菜单
   assert(!flat.some(p => p.endsWith('/rtp') || p.endsWith('/rtpWarning')), '无独立 RTP C 菜单')
@@ -365,7 +366,7 @@ test('G1', '模块加载即初始化：表齐全、无 undefined', async () => {
   const db = await import(src('mock/db'))
   const d = db.getDb()
   const tables = Object.keys(d)
-  assertEq(tables.length, 26, `表数量 ${tables.length}`)
+  assertEq(tables.length, 28, `表数量 ${tables.length}`)
   for (const t of tables) assert(Array.isArray(d[t]), `${t} 必须是数组`)
   assertEq(d.notices.length, 2)
   // depts 与真实接口一致：扁平列表（children 均为空，树由前端构建）
@@ -374,6 +375,10 @@ test('G1', '模块加载即初始化：表齐全、无 undefined', async () => {
   // 系统组角色列表：super + 三门户专岗
   assertEq(d.roles.length, 4, '角色 4 条')
   assertEq(d.roles[0].roleKey, 'super')
+  // 用户管理蓝本：3 个岗位 + 5 个账号（含 1 个停用示例、1 个受保护 super）
+  assertEq(d.posts.length, 3, '岗位 3 条')
+  assertEq(d.users.length, 5, '用户 5 条')
+  assertEq(d.users[0].userName, 'super', '首条为受保护 super 账号')
 })
 
 test('G2', 'resetDb 还原 + 与 fixtures 深隔离', async () => {
@@ -605,8 +610,80 @@ test('H4', '测试模型/组合模型：字段、成分子路由 + 主表 CRUD',
   expect200(comps); assertEq(comps.data.length, 4)
   const cmd = call('get', '/apms/combo-model/1')
   expect200(cmd); assertEq(cmd.data.components.length, 4, '组合模型详情挂 components')
-  const addC = call('post', '/apms/combo-model', { name: '演示新组合', code: 'DEMO_C' })
-  expect200(addC); assertEq(db().comboModels.length, 2)
+  // 关联模式：非组合类模型（id=1 YOYO_IR1, is_combo=0）必须被拒，不增加行数
+  const badC = call('post', '/apms/combo-model', {}, { modelId: 1, versionLabel: '错误关联' })
+  assertEq(badC.code, 601, '非组合类模型关联拦截')
+  // 方案名称必填拦截
+  assertEq(call('post', '/apms/combo-model', {}, {
+    modelId: 4, versionLabel: '   '
+  }).code, 601, '方案空名称拦截')
+  // 关联模式：COMPOSITE_FITNESS（id=4, is_combo=1）；蓝本 id=1 已是默认，新行应自动为非默认
+  const addC = call('post', '/apms/combo-model', {}, {
+    modelId: 4, versionLabel: '综合体能评价 v2', normalizationMethod: 'z_score'
+  })
+  expect200(addC); assertEq(db().comboModels.length, 2, '关联模式新增一条')
+  const v2 = db().comboModels.find(m => m.versionLabel === '综合体能评价 v2')
+  assert(v2 && v2.isDefault === '0', '已有默认时新方案不抢默认')
+  assertEq(db().comboModels.filter(m => m.isDefault === '1').length, 1, '默认方案仍只有 1 个')
+  // 把 v2 设为默认：互斥生效，蓝本 id=1 被挤下
+  const setDef = call('put', '/apms/combo-model', {}, { ...v2, isDefault: '1' })
+  expect200(setDef, '设为默认 200')
+  const refreshed = db().comboModels
+  assertEq(refreshed.find(m => m.id === v2.id).isDefault, '1', 'v2 已成为默认')
+  assertEq(refreshed.find(m => m.id === 1).isDefault, '0', '原默认被清除')
+  // 停用保护：默认方案（v2）停用必须被拒
+  assertEq(call('put', '/apms/combo-model', {}, { ...v2, isDefault: '1', status: '1' }).code,
+    601, '默认方案停用拦截')
+  // 停用非默认方案（蓝本 id=1）后，计算接口必须拒绝该方案
+  const m1 = refreshed.find(m => m.id === 1)
+  expect200(call('put', '/apms/combo-model', {}, { ...m1, status: '1' }), '非默认方案可停用')
+  const calcBlocked = call('post', '/apms/combo-score/calculate', {}, { comboModelId: 1, taskId: 1 })
+  assertEq(calcBlocked.code, 601, '停用方案参与计算被拦截')
+  // 新建模式：同事务创建 is_combo=1 载体 + 组合模型（新载体自动成为默认）
+  const newC = call('post', '/apms/combo-model', {}, {
+    newModelCode: 'DEMO_NEW_COMPOSITE', newModelName: '演示新建体系',
+    versionLabel: '演示体系首版', normalizationMethod: 'z_score'
+  })
+  expect200(newC, '新建模式 200')
+  assertEq(db().comboModels.length, 3, '新建模式再增一条')
+  const carrier = db().testModels.find(m => m.code === 'DEMO_NEW_COMPOSITE')
+  assert(carrier && carrier.isCombo === '1', '载体已建且 is_combo=1')
+  const linked = db().comboModels.find(m => m.testModelCode === 'DEMO_NEW_COMPOSITE')
+  assert(linked && linked.modelId === carrier.id && linked.isDefault === '1', '新载体首方案自动默认')
+  // 新建模式防护：编码重复、空编码
+  assertEq(call('post', '/apms/combo-model', {}, {
+    newModelCode: 'DEMO_NEW_COMPOSITE', newModelName: '重复体系', versionLabel: '重复'
+  }).code, 601, '体系编码重复拦截')
+  assertEq(call('post', '/apms/combo-model', {}, {
+    newModelCode: '   ', newModelName: '空编码', versionLabel: 'x'
+  }).code, 601, '空编码拦截')
+
+  // 测试模型删除引用校验：id=4 被蓝本组合模型引用，删除必须被拒且不产生删除
+  const beforeModelCnt = db().testModels.length
+  const delBlocked = call('delete', '/apms/test-model/4')
+  assertEq(delBlocked.code, 601, '被组合方案引用的模型删除拦截')
+  assert(String(delBlocked.msg).includes('引用'), '拦截信息说明引用去向: ' + delBlocked.msg)
+  assertEq(db().testModels.length, beforeModelCnt, '拦截后模型未被删除')
+  // 无引用的新建模型可正常删除（字段子表级联）
+  const freeModel = call('post', '/apms/test-model', {}, {
+    category: '敏捷', code: 'TEMP_FREE_MODEL', name: '临时无引用模型', isCombo: '0', status: '0'
+  })
+  expect200(freeModel)
+  const freeId = db().testModels.find(m => m.code === 'TEMP_FREE_MODEL').id
+  expect200(call('delete', '/apms/test-model/' + freeId), '无引用模型允许删除')
+  assert(!db().testModels.some(m => m.id === freeId), '无引用模型已删除')
+
+  // 组合评分方案删除：蓝本 id=1 有历史 comboScores，必须拒绝物理删除
+  const scoreBefore = db().comboScores.length
+  const delScored = call('delete', '/apms/combo-model/1')
+  assertEq(delScored.code, 601, '有历史评分的方案删除拦截')
+  assert(String(delScored.msg).includes('停用'), '拦截信息引导改用停用: ' + delScored.msg)
+  assertEq(db().comboScores.length, scoreBefore, '拦截后历史评分未受影响')
+  assert(db().comboModels.some(m => m.id === 1), '拦截后方案仍存在')
+  // 无历史评分的新建方案（v2）允许删除，其组成项一并清理
+  const v2Id = db().comboModels.find(m => m.versionLabel === '综合体能评价 v2').id
+  expect200(call('delete', '/apms/combo-model/' + v2Id), '无评分方案允许删除')
+  assert(!db().comboModels.some(m => m.id === v2Id), '无评分方案已删除')
 })
 
 test('H5', '测试任务：详情聚合 items/members/统计，报名/批量/移除/状态', async () => {
@@ -1297,8 +1374,10 @@ test('H16', 'strict 模式：super 分组页面真实请求序列零 MISS', asyn
     ['get', '/apms/medical-record/1'],
     ['get', '/apms/report/list?pageNum=1&pageSize=10'],
     ['get', '/apms/report/1'],
-    // 系统组：角色权限管理 + 组织架构（/system/dept/list 已在序列前部）
-    ['get', '/system/role/list?pageNum=1&pageSize=10']
+    // 系统组：角色权限管理 + 组织架构（/system/dept/list 已在序列前部）+ 用户管理
+    ['get', '/system/role/list?pageNum=1&pageSize=10'],
+    ['get', '/system/user/list?pageNum=1&pageSize=10'],
+    ['get', '/system/user/deptTree']
   ]
   // mockDispatch 只收 path/query，序列里的 querystring 先规范化
   for (const [method, raw] of seq) {
@@ -1310,6 +1389,185 @@ test('H16', 'strict 模式：super 分组页面真实请求序列零 MISS', asyn
   }
   assertEq(missLog.length, 0, '全序列零 MISS')
   delete globalThis.__VITE_ENV__.VITE_DEMO_MOCK_STRICT
+})
+
+test('H18', '用户管理：列表筛选/部门树/CRUD/受保护账号/状态与重置密码', async () => {
+  reset()
+  // 会话身份必须携带归属部门 200：用户管理页对非 admin 账号按本部门裁剪部门树，
+  // 缺 deptId 会被 cropTreeToOwnDept 裁成空树（与真实 super 归属 APMS 总部一致）
+  const info = call('get', '/getInfo')
+  expect200(info)
+  assertEq(info.user.deptId, 200, '演示 super 会话归属 APMS 总部')
+  // 列表分页 + 蓝本 5 个账号
+  const list = call('get', '/system/user/list', { pageNum: '1', pageSize: '10' })
+  expect200(list); assertEq(list.total, 5, '蓝本 5 个用户')
+  // 模糊筛选（登录账号）
+  const byName = call('get', '/system/user/list', { pageNum: '1', pageSize: '10', userName: 'coach' })
+  assertEq(byName.rows.length, 2, 'userName 模糊命中 2 个 coach')
+  // 状态等值筛选
+  const disabled = call('get', '/system/user/list', { pageNum: '1', pageSize: '10', status: '1' })
+  assertEq(disabled.rows.length, 1, '停用账号 1 个')
+  assertEq(disabled.rows[0].userName, 'coach_wang', '停用示例账号正确')
+  // 部门筛选含子部门：选 APMS 总部(200) 命中全部
+  const byDept = call('get', '/system/user/list', { pageNum: '1', pageSize: '10', deptId: '200' })
+  assertEq(byDept.total, 5, '总部部门含全部子部门账号')
+  // 部门树契约：id/label/children，三级结构 总部→梯队→小组
+  const tree = call('get', '/system/user/deptTree')
+  expect200(tree)
+  const root = tree.data[0]
+  assertEq(root.label, 'APMS 总部', '部门树根节点')
+  assertEq(root.children.length, 2, '根下 2 支梯队')
+  const u18 = root.children.find(n => n.label === 'U18 梯队')
+  const u16 = root.children.find(n => n.label === 'U16 梯队')
+  assertEq(u18.children.map(n => n.label).join(','), '速度专项组,康复组', 'U18 挂 2 个小组')
+  assertEq(u16.children.map(n => n.label).join(','), '力量组', 'U16 挂 1 个小组')
+  // 新增弹窗选项（无参 getUser，URL 末尾斜杠）
+  const opts = call('get', '/system/user/')
+  expect200(opts); assert(opts.roles.length >= 4 && opts.posts.length === 3, '角色/岗位选项')
+  // 详情回显：data + roleIds + postIds
+  const detail = call('get', '/system/user/101')
+  expect200(detail)
+  assertEq(detail.data.userName, 'coach_li', '详情账号')
+  assertEq(detail.roleIds[0], 201, '角色 id 回显')
+  assert(Array.isArray(detail.postIds) && detail.postIds.length === 1, '岗位 id 回显')
+  // 重复账号拦截
+  const dup = call('post', '/system/user', {}, { userName: 'super', nickName: '重复', roleIds: [201] })
+  assertEq(dup.code, 601, '重复登录账号拦截')
+  // 正常新增（专岗账号：短信登录，无密码）
+  const before = db().users.length
+  const add = call('post', '/system/user', {}, {
+    userName: 'coach_zhao', nickName: '赵教练', deptId: 201,
+    loginPhonenumber: '13900000900', phonenumber: '13900000900',
+    sex: '0', status: '0', roleIds: [201], postIds: [10]
+  })
+  expect200(add, '新增用户成功')
+  assertEq(db().users.length, before + 1, '用户表 +1')
+  const created = db().users.find(u => u.userName === 'coach_zhao')
+  assert(created.userId > 1000, '新用户使用正数样本外 id')
+  assertEq(created.roles[0].roleName, '教练', '新用户角色显示对象已组装')
+  assertEq(created.dept.deptName, 'U18 梯队', '新用户部门显示对象已组装')
+  // 修改用户
+  const upd = call('put', '/system/user', {}, { ...created, nickName: '赵教练（改）', status: '0' })
+  expect200(upd)
+  assertEq(db().users.find(u => u.userId === created.userId).nickName, '赵教练（改）', '修改落库')
+  // 受保护账号：停用 super 必须被拒
+  const blockStatus = call('put', '/system/user/changeStatus', {}, { userId: 100, status: '1' })
+  assertEq(blockStatus.code, 601, 'super 停用拦截')
+  // 普通账号停用成功
+  expect200(call('put', '/system/user/changeStatus', {}, { userId: 104, status: '0' }), '普通账号启停用')
+  // 重置密码（演示仅回成功）
+  expect200(call('put', '/system/user/resetPwd', {}, { userId: 101, password: 'Demo@123456' }), '重置密码')
+  // 受保护账号：删除 super 整批拒绝且数据不动
+  const delBlock = call('delete', '/system/user/100')
+  assertEq(delBlock.code, 601, 'super 删除拦截')
+  assert(db().users.some(u => u.userId === 100), 'super 仍存在')
+  // 普通账号可删（含新账号）
+  expect200(call('delete', '/system/user/' + created.userId), '普通账号删除')
+  assert(!db().users.some(u => u.userId === created.userId), '目标账号已移除')
+})
+
+test('H19', '组织架构：dept/list 响应副本隔离，重复建树不污染内存库（部门不累加）', async () => {
+  reset()
+  // 复刻 utils/ruoyi.js handleTree 的原地建树：节点上直接写 children
+  const buildTree = (rows) => {
+    const map = {}
+    rows.forEach(d => { map[d.deptId] = d; if (!d.children) d.children = [] })
+    rows.forEach(d => { if (map[d.parentId]) map[d.parentId].children.push(d) })
+  }
+  // 第一次进入组织架构页：拉取并建树（三级：总部 200 → 梯队 201/202 → 小组）
+  const r1 = call('get', '/system/dept/list')
+  expect200(r1)
+  buildTree(r1.data)
+  assertEq(r1.data.find(d => d.deptId === 200).children.length, 2, '响应副本可正常建树（根下 2 支梯队）')
+  assertEq(r1.data.find(d => d.deptId === 201).children.length, 2, 'U18 下挂 2 个小组')
+  // 内存库必须保持扁平蓝本，不被响应侧的原地建树污染
+  assert(db().depts.every(x => x.children.length === 0), '内存库 children 保持空数组')
+  // 切走再切回：再次拉取仍是干净的 6 条扁平数据（修复前此处会累加到 11/16…）
+  const r2 = call('get', '/system/dept/list')
+  expect200(r2)
+  assertEq(r2.data.length, 6, '重复拉取条数稳定为 6')
+  assert(r2.data.every(x => x.children.length === 0), '新响应 children 仍为空')
+  assert(r1.data[0] !== r2.data[0], '两次响应对象相互隔离')
+})
+
+test('H20', '组织架构：详情/排除子树/筛选/增改删排序/三重删除拦截/副本隔离', async () => {
+  reset()
+  // 详情回显 + 副本隔离（弹窗 v-model 不得直改内存库）
+  const detail = call('get', '/system/dept/200')
+  expect200(detail)
+  assertEq(detail.data.deptName, 'APMS 总部', '详情回显')
+  detail.data.deptName = '被前端改了'
+  assertEq(db().depts.find(d => d.deptId === 200).deptName, 'APMS 总部', '详情副本不污染内存库')
+  assertEq(call('get', '/system/dept/999999').code, 601, '不存在部门返回 601')
+
+  // 排除节点：剔除自身及整棵子树。201 子树含 201/203/204，剩 200/202/205 共 3 条；
+  // 202 子树含 202/205，剩 4 条；根 200 连同整棵树剔除后为空
+  const exLeaf = call('get', '/system/dept/list/exclude/201')
+  expect200(exLeaf)
+  assertEq(exLeaf.data.length, 3, '排除 U18 子树后剩 3 条')
+  assert(!exLeaf.data.some(d => [201, 203, 204].includes(d.deptId)), '被排除子树节点均不在结果中')
+  assertEq(call('get', '/system/dept/list/exclude/202').data.length, 4, '排除 U16 子树后剩 4 条')
+  assertEq(call('get', '/system/dept/list/exclude/200').data.length, 0, '排除根节点整棵子树为空')
+
+  // 列表筛选：名称模糊 / 状态等值
+  assertEq(call('get', '/system/dept/list', { deptName: 'U18' }).data.length, 1, '名称模糊命中 1 条')
+  assertEq(call('get', '/system/dept/list', { status: '1' }).data.length, 0, '蓝本无停用部门')
+
+  // 新增校验：顶级/建机构/层级错配仍 601；演示库 APMS 总部(200,类型10)是受管子树顶端，其下建队伍放行
+  assertEq(call('post', '/system/dept', {}, { deptName: 'X', parentId: 0, deptType: '20' }).code, 601, '禁止顶级部门')
+  const underHq = call('post', '/system/dept', {}, { deptName: '临时梯队', parentId: 200, deptType: '20', orderNum: 9, status: '0' })
+  expect200(underHq, 'APMS 总部下允许新增队伍')
+  const hqChild = db().depts.find(d => d.deptName === '临时梯队')
+  assertEq(hqChild.ancestors, '0,200', '新队伍 ancestors 物化祖先链')
+  assertEq(hqChild.parentName, 'APMS 总部', '新队伍 parentName 回填')
+  expect200(call('delete', '/system/dept/' + hqChild.deptId), '临时队伍清理（无引用可删）')
+  assertEq(call('post', '/system/dept', {}, { deptName: 'X', parentId: 201, deptType: '10' }).code, 601, '非 admin 不能建机构')
+  assertEq(call('post', '/system/dept', {}, { deptName: 'X', parentId: 203, deptType: '20' }).code, 601, '队伍不能挂小组下')
+
+  // 正常新增：U18 梯队(201, 类型20) 下建训练小组(30)
+  const before = db().depts.length
+  const add = call('post', '/system/dept', {}, {
+    deptName: '弹跳专项组', parentId: 201, deptType: '30', orderNum: 9,
+    leader: '测试教练', phone: '13800001234', email: 't@apms.demo', status: '0'
+  })
+  expect200(add, '新增小组成功')
+  assertEq(db().depts.length, before + 1, '部门表 +1')
+  const created = db().depts.find(d => d.deptName === '弹跳专项组')
+  assert(created.deptId > 900000, '新部门使用样本外 id')
+  assertEq(created.ancestors, '0,200,201', 'ancestors 物化祖先链')
+  assertEq(created.parentName, 'U18 梯队', 'parentName 回填')
+  // 同级重名拦截（同 parentId 口径）
+  assertEq(call('post', '/system/dept', {}, { deptName: '弹跳专项组', parentId: 201, deptType: '30' }).code, 601, '同级重名拦截')
+
+  // 修改：重命名 + 移动到 U16 梯队(202)，ancestors 联动重算
+  const upd = call('put', '/system/dept', {}, { ...created, deptName: '弹跳专项组（改）', parentId: 202 })
+  expect200(upd, '修改并移动部门成功')
+  const moved = db().depts.find(d => d.deptId === created.deptId)
+  assertEq(moved.deptName, '弹跳专项组（改）', '重命名落库')
+  assertEq(moved.ancestors, '0,200,202', '移动后 ancestors 重算')
+  // 上级不能是自己
+  assertEq(call('put', '/system/dept', {}, { ...moved, parentId: moved.deptId }).code, 601, '自引用上级拦截')
+  // 停用含正常子部门的节点（200 下全是正常子部门）；不传 deptType 走兼容分支
+  assertEq(
+    call('put', '/system/dept', {}, { deptId: 200, parentId: 0, deptName: 'APMS 总部', status: '1' }).code,
+    601,
+    '停用有正常子部门的节点拦截'
+  )
+
+  // 保存排序：逗号串按下标配对落库
+  expect200(call('put', '/system/dept/updateSort', {}, { deptIds: '203,204', orderNums: '99,98' }), '排序保存')
+  assertEq(db().depts.find(d => d.deptId === 203).orderNum, 99, '排序落库 203')
+  assertEq(db().depts.find(d => d.deptId === 204).orderNum, 98, '排序落库 204')
+
+  // 删除三重引用校验（顺序对齐后端：下级 → 用户 → 运动员/在组成员）
+  assertEq(call('delete', '/system/dept/200').code, 601, '总部有下级部门拒绝删除')
+  assertEq(call('delete', '/system/dept/201').code, 601, 'U18 有下级小组拒绝删除')
+  assertEq(call('delete', '/system/dept/203').code, 601, '速度专项组有用户拒绝删除')
+  assertEq(call('delete', '/system/dept/205').code, 601, '力量组有在组成员拒绝删除')
+  // 新建部门无任何引用，可删且数量还原
+  expect200(call('delete', '/system/dept/' + moved.deptId), '无引用部门删除成功')
+  assert(!db().depts.some(d => d.deptId === moved.deptId), '目标部门已移除')
+  assertEq(db().depts.length, before, '删除后数量还原为蓝本 6 条')
 })
 
 /* ------------------------------ 汇总（串行执行） ------------------------------ */

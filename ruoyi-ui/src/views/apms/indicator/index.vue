@@ -93,7 +93,7 @@
                 </thead>
                 <tbody>
                   <tr v-for="row in indicatorList" :key="row.id"
-                      class="rk-row"
+                      class="rk-row rk-row-clickable"
                       :class="{ 'is-selected': currentIndicator && currentIndicator.id === row.id }"
                       @click="handleRowClick(row)">
                     <td class="col-check" @click.stop>
@@ -101,7 +101,7 @@
                              @change="toggleRow(row)"/>
                     </td>
                     <td class="rk-mono ind-code">{{ row.code }}</td>
-                    <td>{{ row.name }}</td>
+                    <td><span class="rk-row-link">{{ row.name }}</span></td>
                     <td class="text-center">
                       <span class="rk-soft-chip" :class="categoryChipClass(row.category)">{{ row.category || '—' }}</span>
                     </td>
@@ -116,6 +116,7 @@
                                  @change="handleStatusChange(row)"/>
                     </td>
                     <td class="text-center col-ops">
+                      <button type="button" class="rk-link rk-row-detail" @click.stop="openDetail(row)">详情</button>
                       <button type="button" class="rk-link" @click.stop="handleEdit(row)"
                               v-hasPermi="['apms:indicator:edit']">编辑</button>
                       <button type="button" class="rk-link is-danger" @click.stop="handleDelete(row)"
@@ -421,10 +422,12 @@ import {
 } from '@/api/apms/indicator'
 import { Plus, Delete, RefreshLeft, ArrowLeft, ArrowRight, Close } from '@element-plus/icons-vue'
 import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
+import { useTouchViewport } from '@/utils/touchViewport'
 
 const { proxy } = getCurrentInstance()
 const { drawerPanelStyle } = useDrawerOffset()
 const { drawerSize } = useDrawerSize('760px')
+const { isTouchViewport } = useTouchViewport()
 
 const PAGE_SIZE = 10
 
@@ -541,10 +544,14 @@ const currentIndicator = ref(null)
 const detail = reactive({ refs: [] })
 const detailLoading = ref(false)
 
-function handleRowClick(row) {
+function openDetail(row) {
   currentIndicator.value = row
   detailDrawerVisible.value = true
   loadDetail(row.id)
+}
+function handleRowClick(row) {
+  if (isTouchViewport.value) return
+  openDetail(row)
 }
 
 function loadDetail(id) {
@@ -861,7 +868,7 @@ loadStats()
 .col-status { width: 62px; }
 .col-ops { width: 96px; }
 .rk-empty-cell { padding: 36px 0; }
-.ind-table tbody tr { cursor: pointer; }
+/* 行光标统一由 roster-kit 的 .rk-row-clickable 控制（桌面 pointer / H5 default） */
 .ind-code { font-size: 12px; font-weight: 600; color: $rk-brand-600; }
 
 :deep(.rk-link.is-danger) { color: $rk-risk; }

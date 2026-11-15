@@ -75,7 +75,7 @@
                 </thead>
                 <tbody>
                   <tr v-for="row in taskList" :key="row.id"
-                      class="rk-row"
+                      class="rk-row rk-row-clickable"
                       :class="{ 'is-selected': currentTask && currentTask.id === row.id }"
                       @click="handleRowClick(row)">
                     <td class="col-check" @click.stop>
@@ -83,11 +83,11 @@
                              @change="toggleRow(row)"/>
                     </td>
                     <td>
-                      <div class="tt-task-name" title="点击查看任务详情并配置测试项/队员">{{ row.taskName }}</div>
+                      <div class="tt-task-name rk-row-link" title="点击查看任务详情并配置测试项/队员">{{ row.taskName }}</div>
                       <div class="tt-task-id rk-mono">#{{ row.id }} · 主测 {{ row.testerName || '—' }}</div>
                       <div v-if="(row.memberTotal || 0) === 0" class="tt-unconfigured">
                         ⚠ 尚未配置测试项/队员，无法录入与评分
-                        <el-button class="rk-btn rk-btn-sm rk-btn-primary tt-config-cta" @click.stop="handleRowClick(row)">
+                        <el-button class="rk-btn rk-btn-sm rk-btn-primary tt-config-cta" @click.stop="openDetail(row)">
                           立即配置
                         </el-button>
                       </div>
@@ -104,7 +104,7 @@
                         <div class="rk-progress"><div class="rk-progress-bar" :class="progressTone(row.progressPercent)" :style="{ width: (row.progressPercent || 0) + '%' }"></div></div>
                         <span class="tt-progress-num rk-mono">{{ row.progressPercent || 0 }}%</span>
                       </div>
-                      <button type="button" class="rk-link tt-edit-link" @click.stop="handleRowClick(row)">配置测试项/队员</button>
+                      <button type="button" class="rk-link tt-edit-link" @click.stop="openDetail(row)">配置测试项/队员</button>
                       <button type="button" class="rk-link tt-edit-link" @click.stop="handleEdit(row)" v-hasPermi="['apms:testTask:edit']">编辑</button>
                     </td>
                   </tr>
@@ -587,11 +587,13 @@ import ResultEntryDialog from '@/components/ResultEntryDialog/index.vue'
 import ResultGridEntryDialog from '@/components/ResultGridEntryDialog/index.vue'
 import ImportPreviewDialog from '@/components/ImportPreviewDialog/index.vue'
 import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
+import { useTouchViewport } from '@/utils/touchViewport'
 
 const { proxy } = getCurrentInstance()
 const router = useRouter()
 const { drawerPanelStyle } = useDrawerOffset()
 const { drawerSize } = useDrawerSize('780px')
+const { isTouchViewport } = useTouchViewport()
 
 const PAGE_SIZE = 10
 
@@ -691,11 +693,17 @@ const detail = reactive({ items: [], members: [] })
 const detailLoading = ref(false)
 const activeTab = ref('items')
 
-function handleRowClick(row) {
+// 实际打开详情的无守卫方法，供显式按钮（含 H5 详情/配置入口）调用
+function openDetail(row) {
   currentTask.value = row
   activeTab.value = 'items'
   detailDrawerVisible.value = true
   loadDetail(row.id)
+}
+// 整行点击：H5 防误触直接返回；桌面端正常打开
+function handleRowClick(row) {
+  if (isTouchViewport.value) return
+  openDetail(row)
 }
 function loadDetail(id) {
   detailLoading.value = true
@@ -1011,26 +1019,16 @@ loadStats()
 .tt-select-status { width: 130px; }
 .rk-empty-cell { padding: 36px 0; }
 
-/* 左表 */
-.tt-table tbody tr { cursor: pointer; }
+/* 左表：行光标统一由 roster-kit 的 .rk-row-clickable 控制（桌面 pointer / H5 default） */
 .col-dept { width: 96px; }
 .col-date { width: 118px; }
 .col-status { width: 84px; }
 .col-progress { width: 150px; }
-/* 任务名做成链接观感：整行可点（tr 已绑 handleRowClick），这里只提供可点击的视觉暗示 */
+/* 任务名的链接观感（颜色/下划线）统一由全局 .rk-row-link 提供，此处只管单行省略布局 */
 .tt-task-name {
-  font-size: 13px; font-weight: 600;
-  color: $rk-brand-600;
+  font-size: 13px;
   max-width: 240px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  text-decoration: underline;
-  text-decoration-color: rgba(37, 99, 235, .35);
-  text-underline-offset: 3px;
-  transition: text-decoration-color .15s, color .15s;
-}
-.tt-table tbody tr:hover .tt-task-name {
-  color: $rk-brand-700;
-  text-decoration-color: $rk-brand-700;
 }
 .tt-task-id { font-size: 11px; color: $rk-text-3; margin-top: 2px; }
 .tt-dept { font-size: 12px; color: $rk-text-2; }

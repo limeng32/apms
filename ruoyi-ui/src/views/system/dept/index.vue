@@ -47,7 +47,7 @@
         :data="deptList"
         row-key="deptId"
         :default-expand-all="isExpandAll"
-        :indent="0"
+        :indent="24"
         :tree-props="{ children: 'children', hasChildren: 'hasChildren' }"
         class="dm-tree-table"
       >
@@ -262,7 +262,15 @@ const totalDepts = computed(() => {
   return n
 })
 
-/* 上级部门可选项：super 维护口径（独立组织架构页 / 角色页内嵌）去掉根公司这一层，
+/* APMS 受管部门类型集合；平台根公司（真实库「康耐特科技」）dept_type 为空，不在此列。
+   边界一律按 deptType 判定，不能用 parentId===0——演示库裁剪了根公司层，
+   APMS 总部本身 parentId=0，但它是受管子树顶端，必须整体保留并允许在其下新增。 */
+const APMS_DEPT_TYPES = ['10', '20', '30', '40', '50']
+function isPlatformRootDept(row) {
+  return !row || !APMS_DEPT_TYPES.includes(String(row.deptType))
+}
+
+/* 上级部门可选项：super 维护口径（独立组织架构页 / 角色页内嵌）去掉平台根公司这一层，
    以根节点的全部直接子节点作为可选树根（APMS 总部及平级单位，
    其各自 children 子树完整保留）。
    注意 deptOptions 是树不是平铺列表，不能直接 filter 顶层数组，
@@ -270,7 +278,9 @@ const totalDepts = computed(() => {
 function pickAllowedRoots(tree) {
   const out = []
   ;(tree || []).forEach(node => {
-    if (node.parentId === 0 || node.parentId == null) {
+    // 仅平台根公司（deptType 为空）整层裁掉、展开其子节点；
+    // APMS 机构(10)及以下属于受管子树，整体保留（演示库 APMS 总部就在树顶）
+    if (isPlatformRootDept(node)) {
       if (Array.isArray(node.children) && node.children.length) out.push(...node.children)
     } else {
       out.push(node)
@@ -389,10 +399,11 @@ function resetQuery() {
 
 /** 新增按钮操作 */
 function handleAdd(row) {
-  // super 口径不允许把部门挂到根公司下（与 APMS 总部平级）：
-  // 行内入口若来自根行则拦截；顶部按钮放开，弹窗的上级选项已排除根公司，
-  // 并默认选中 APMS 总部
-  if (trimRootCompany.value && row != null && row.parentId === 0) {
+  // super 口径不允许把部门挂到平台根公司下（与 APMS 总部平级）：
+  // 行内入口若来自根公司行（deptType 为空）则拦截；顶部按钮放开，弹窗的上级选项已排除根公司，
+  // 并默认选中 APMS 总部。边界按 deptType 判定而非 parentId——演示库 APMS 总部 parentId=0，
+  // 但 deptType=10 属受管子树，在其下新增队伍必须放行。
+  if (trimRootCompany.value && row != null && isPlatformRootDept(row)) {
     proxy.$modal.msgWarning('仅支持在 APMS 总部及其下级部门下新增')
     return
   }
@@ -564,26 +575,24 @@ getList()
     color: $rk-text-3;
     &:hover { color: $rk-brand-600; }
   }
-  :deep(.el-table__indent) {
-    display: inline-flex;
-  }
-  /* 树层级缩进：el-table 会给行打 el-table__row--level-N，
-     直接按层级类给首列 cell 加左 padding（基础 14px + 每层 24px），
-     展开箭头/占位符随内容一起缩进。:indent 已置 0，避免双重缩进。
-     部门层级浅，预置 4 级足够 */
-  @for $i from 1 through 4 {
-    :deep(tr.el-table__row--level-#{$i}) td.el-table__cell:first-child .cell {
-      padding-left: #{14 + $i * 24}px;
-    }
-  }
+  /* 树层级缩进用 el-table 原生 :indent="24"：EP 以「内联样式」给行内缩进占位符
+     写 padding-left（见 element-plus table config.mjs treeCellPrefix）。
+     注意不可给 .el-table__indent 改 display，也不可让插槽根节点变成块级盒子——
+     EP 的 .cell 内是 [行内前缀(缩进/箭头), 插槽内容] 同级行内流，块级元素会
+     另起一行贴 .cell 左缘，缩进再正确也推不动它（本页历史上「子部门无缩进」
+     的真正根因）。保持 EP 默认行内契约即可，桌面与安卓内核行为一致。 */
 }
 
-/* 部门名称单元 */
+/* 部门名称单元：必须保持 inline-level（inline-flex）。
+   EP 树表把缩进占位符/展开箭头作为行内前缀放在 .cell 内，与本插槽同级；
+   若用 display:flex（块级）会另起一行并贴 .cell 左缘，树缩进视觉失效。 */
 .dm-dept-cell {
-  display: flex;
+  display: inline-flex;
+  vertical-align: middle;
   align-items: center;
   gap: 10px;
   min-width: 0;
+  max-width: 100%;
 }
 .dm-avatar {
   display: inline-flex;

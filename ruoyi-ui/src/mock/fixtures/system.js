@@ -15,6 +15,10 @@ export const getInfoBody = {
     userId: -1,
     userName: 'super',
     nickName: '体验账号（super）',
+    // 与真实库一致：super 归属 APMS 总部（patch-0.0.4 建号即挂 dept_id=200，
+    // mock users 蓝本 userId=100 同样 deptId=200）。用户管理页非 admin 账号会按
+    // 本部门裁剪左侧部门树（cropTreeToOwnDept），缺省会被裁成空树。
+    deptId: 200,
     avatar: '',                    // 前端已移除头像展示与设置，字段保留仅为对齐后端 getInfo 结构
     sex: '0',
     status: '0'
@@ -118,7 +122,9 @@ export const apmsRouters = [
     meta: { icon: 'settings', link: null, noCache: false, title: '系统' },
     children: [
       { name: 'Role-acl', path: 'role-acl', hidden: false, component: 'system/role/index', meta: { icon: 'shield-check', link: null, noCache: false, title: '角色权限管理' } },
-      { name: 'Org', path: 'org', hidden: false, component: 'system/dept/index', meta: { icon: 'tree', link: null, noCache: false, title: '组织架构' } }
+      { name: 'Org', path: 'org', hidden: false, component: 'system/dept/index', meta: { icon: 'tree', link: null, noCache: false, title: '组织架构' } },
+      // 对齐真实库 patch-0.0.9（菜单 2453，order_num=3）：super 的「系统 → 用户管理」
+      { name: 'User', path: 'user', hidden: false, component: 'system/user/index', meta: { icon: 'user', link: null, noCache: false, title: '用户管理' } }
     ]
   }
 ]
@@ -151,11 +157,16 @@ export const dictMap = {
     dict('apms_athlete_status', 2, '离队', '1', 'info'),
     dict('apms_athlete_status', 3, '退役', '2', 'danger')
   ],
+  // 必须与真实 sys_dict_data（patch-0.0.2 字典种子，dev 库实证）逐字一致：
+  // 10=机构 20=队伍 30=训练小组 40=科研小组 50=恢复小组。
+  // 早期版本曾写成 总部/梯队/专项组/康复组 且缺 40，导致演示页类型标签与正式环境不一致；
+  // 业务数据里的 deptTypeName、athlete.js typeNameMap 本就按真实 label 维护，以此为准。
   apms_dept_type: [
-    dict('apms_dept_type', 1, '总部', '10', 'primary'),
-    dict('apms_dept_type', 2, '梯队', '20', 'success'),
-    dict('apms_dept_type', 3, '专项组', '30', 'info'),
-    dict('apms_dept_type', 4, '康复组', '50', 'warning')
+    dict('apms_dept_type', 1, '机构', '10', 'info'),
+    dict('apms_dept_type', 2, '队伍', '20', 'success'),
+    dict('apms_dept_type', 3, '训练小组', '30', 'primary'),
+    dict('apms_dept_type', 4, '科研小组', '40', 'warning'),
+    dict('apms_dept_type', 5, '恢复小组', '50', 'danger')
   ],
   sys_user_sex: [
     dict('sys_user_sex', 1, '男', '0', 'primary', true),
@@ -193,14 +204,20 @@ export const notices = [
 ]
 
 /* 部门/队伍（花名册筛选与归属使用；蓝本取自真实 /system/dept/list 的 APMS 子树）。
-   与真实接口一致返回扁平列表（children 均为空数组），树由前端 handleTree 构建。 */
+   与真实接口一致返回扁平列表（children 均为空数组），树由前端 handleTree 构建。
+   三级结构严格对齐部门类型层级 机构(10)→队伍(20)→小组(30/40/50)：
+   APMS 总部(200) → U18/U16 梯队(201/202) → 速度/康复/力量小组(203/204/205)。
+   ancestors 遵循 RuoYi 标准约定：祖级列表「不含自身」（见 sql/ry_20260417.sql 与
+   patch-0.0.4：dept 200 挂 100 下时 ancestors='0,100'）。本演示库裁剪掉平台根
+   公司层，200 作为根 parentId=0 → ancestors='0'；其后端新增公式为
+   parent.ancestors + ',' + parentId，handler 必须与此约定保持一致。 */
 export const depts = [
-  { deptId: 200, parentId: 0, ancestors: '0,200', deptName: 'APMS 总部', deptType: '10', orderNum: 10, leader: '张领队', phone: '13800000200', email: 'hq@apms.demo', status: '0', parentName: null, children: [] },
-  { deptId: 201, parentId: 200, ancestors: '0,200,201', deptName: 'U18 梯队', deptType: '20', orderNum: 1, leader: '李指导', phone: '13800000201', email: 'u18@apms.demo', status: '0', parentName: 'APMS 总部', children: [] },
-  { deptId: 202, parentId: 200, ancestors: '0,200,202', deptName: 'U16 梯队', deptType: '20', orderNum: 2, leader: '王指导', phone: '13800000202', email: 'u16@apms.demo', status: '0', parentName: 'APMS 总部', children: [] },
-  { deptId: 203, parentId: 200, ancestors: '0,200,203', deptName: '速度专项组', deptType: '30', orderNum: 3, leader: '陈教练', phone: '13800000203', email: 'speed@apms.demo', status: '0', parentName: 'APMS 总部', children: [] },
-  { deptId: 204, parentId: 200, ancestors: '0,200,204', deptName: '康复组', deptType: '50', orderNum: 4, leader: '刘康复师', phone: '13800000204', email: 'rehab@apms.demo', status: '0', parentName: 'APMS 总部', children: [] },
-  { deptId: 205, parentId: 200, ancestors: '0,200,205', deptName: '力量组', deptType: '30', orderNum: 5, leader: '赵体能师', phone: '13800008205', email: 'strength@apms.demo', status: '0', parentName: 'APMS 总部', children: [] }
+  { deptId: 200, parentId: 0, ancestors: '0', deptName: 'APMS 总部', deptType: '10', orderNum: 10, leader: '张领队', phone: '13800000200', email: 'hq@apms.demo', status: '0', parentName: null, children: [] },
+  { deptId: 201, parentId: 200, ancestors: '0,200', deptName: 'U18 梯队', deptType: '20', orderNum: 1, leader: '李指导', phone: '13800000201', email: 'u18@apms.demo', status: '0', parentName: 'APMS 总部', children: [] },
+  { deptId: 202, parentId: 200, ancestors: '0,200', deptName: 'U16 梯队', deptType: '20', orderNum: 2, leader: '王指导', phone: '13800000202', email: 'u16@apms.demo', status: '0', parentName: 'APMS 总部', children: [] },
+  { deptId: 203, parentId: 201, ancestors: '0,200,201', deptName: '速度专项组', deptType: '30', orderNum: 3, leader: '陈教练', phone: '13800000203', email: 'speed@apms.demo', status: '0', parentName: 'U18 梯队', children: [] },
+  { deptId: 204, parentId: 201, ancestors: '0,200,201', deptName: '康复组', deptType: '50', orderNum: 4, leader: '刘康复师', phone: '13800000204', email: 'rehab@apms.demo', status: '0', parentName: 'U18 梯队', children: [] },
+  { deptId: 205, parentId: 202, ancestors: '0,200,202', deptName: '力量组', deptType: '30', orderNum: 5, leader: '赵体能师', phone: '13800008205', email: 'strength@apms.demo', status: '0', parentName: 'U16 梯队', children: [] }
 ]
 
 /* 角色列表（系统 → 角色权限管理页 GET /system/role/list 使用）。
@@ -231,5 +248,69 @@ export const roles = [
     dataScope: '1', menuCheckStrictly: true, deptCheckStrictly: true,
     status: '0', delFlag: '0', remark: '医疗保障岗', portalMode: '1', homePath: '/healthcare/medical-care',
     createBy: 'admin', createTime: '2026-09-23 14:00:00'
+  }
+]
+
+/* 岗位列表（用户新增/编辑弹窗的 posts 选项；GET /system/user 与 /system/user/:id 返回）。 */
+export const posts = [
+  { postId: 10, postCode: 'head_coach', postName: '主教练', postSort: 1, status: '0', remark: '队伍训练负责人' },
+  { postId: 11, postCode: 'strength_coach', postName: '体能教练', postSort: 2, status: '0', remark: '体能与测试执行' },
+  { postId: 12, postCode: 'medic', postName: '队医', postSort: 3, status: '0', remark: '医疗康复保障' }
+]
+
+/* 用户列表（系统 → 用户管理；对齐真实库 sys_user 列表行结构）。
+   - userId=100 的 super 为受保护账号（页面 isProtectedUser 禁选/禁改），与真实库一致；
+   - 其余为三个 portal_* 专岗账号，部门/角色取自 depts/roles 蓝本；
+   - 演示态可增删改，刷新随 resetDb 还原。 */
+export const users = [
+  {
+    userId: 100, deptId: 200, userName: 'super', nickName: '业务管理员',
+    userType: 'sys_user', email: 'super@apms.demo', phonenumber: '13800000001',
+    sex: '0', avatar: '', status: '0', delFlag: '0',
+    loginIp: '10.0.0.21', loginDate: '2026-10-15 09:12:33', remark: '客户侧超级账号',
+    createTime: '2026-10-06 16:05:00',
+    dept: { deptId: 200, deptName: 'APMS 总部' },
+    roles: [{ roleId: 200, roleName: '超级用户' }],
+    roleIds: [200], postIds: [10]
+  },
+  {
+    userId: 101, deptId: 201, userName: 'coach_li', nickName: '李教练',
+    userType: 'sys_user', email: 'coach.li@apms.demo', phonenumber: '13800000101',
+    sex: '0', avatar: '', status: '0', delFlag: '0',
+    loginIp: '10.0.0.31', loginDate: '2026-10-14 17:40:10', remark: 'U18 主教练',
+    createTime: '2026-09-23 14:10:00',
+    dept: { deptId: 201, deptName: 'U18 梯队' },
+    roles: [{ roleId: 201, roleName: '教练' }],
+    roleIds: [201], postIds: [10]
+  },
+  {
+    userId: 102, deptId: 203, userName: 'tester_chen', nickName: '陈测量',
+    userType: 'sys_user', email: 'tester.chen@apms.demo', phonenumber: '13800000102',
+    sex: '1', avatar: '', status: '0', delFlag: '0',
+    loginIp: '10.0.0.32', loginDate: '2026-10-15 08:55:41', remark: '速度专项组测量员',
+    createTime: '2026-09-23 14:20:00',
+    dept: { deptId: 203, deptName: '速度专项组' },
+    roles: [{ roleId: 202, roleName: '测量员' }],
+    roleIds: [202], postIds: [11]
+  },
+  {
+    userId: 103, deptId: 204, userName: 'medic_liu', nickName: '刘队医',
+    userType: 'sys_user', email: 'medic.liu@apms.demo', phonenumber: '13800000103',
+    sex: '0', avatar: '', status: '0', delFlag: '0',
+    loginIp: '10.0.0.33', loginDate: '2026-10-13 11:02:18', remark: '康复组队医',
+    createTime: '2026-09-23 14:30:00',
+    dept: { deptId: 204, deptName: '康复组' },
+    roles: [{ roleId: 203, roleName: '队医' }],
+    roleIds: [203], postIds: [12]
+  },
+  {
+    userId: 104, deptId: 202, userName: 'coach_wang', nickName: '王教练',
+    userType: 'sys_user', email: 'coach.wang@apms.demo', phonenumber: '13800000104',
+    sex: '1', avatar: '', status: '1', delFlag: '0',
+    loginIp: '', loginDate: null, remark: 'U16 教练（账号停用示例）',
+    createTime: '2026-09-25 10:00:00',
+    dept: { deptId: 202, deptName: 'U16 梯队' },
+    roles: [{ roleId: 201, roleName: '教练' }],
+    roleIds: [201], postIds: [10]
   }
 ]

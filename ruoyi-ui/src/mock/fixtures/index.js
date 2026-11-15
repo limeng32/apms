@@ -12,6 +12,8 @@ export const tables = {
   notices: system.notices,
   depts: system.depts,
   roles: system.roles,
+  posts: system.posts,
+  users: system.users,
   // 业务表（13 模块）
   athletes: business.athletes,
   athleteGroups: business.athleteGroups,

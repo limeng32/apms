@@ -35,6 +35,14 @@
             </div>
           </div>
           <AssistantMessage v-for="m in store.messages" :key="m.id" :message="m" @action="onAction" />
+          <!-- 对话开始后仍可一键选择默认问题：紧凑横条置于消息末尾，随滚动区一起浏览 -->
+          <div v-if="store.messages.length" class="as-suggest-bar">
+            <div class="as-suggest-label">推荐问题</div>
+            <div class="as-suggest">
+              <button v-for="s in store.suggestions" :key="s" type="button" class="as-chip"
+                      :disabled="store.loading" @click="sendSuggestion(s)">{{ s }}</button>
+            </div>
+          </div>
         </main>
 
         <footer class="as-foot">
@@ -229,6 +237,21 @@ function onMaskClick() {
 .as-chip:hover {
   border-color: var(--el-color-primary);
   color: var(--el-color-primary);
+}
+.as-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* 对话中的推荐问题横条：顶部分隔 + 小标签，与空态大卡片区分但不抢视觉 */
+.as-suggest-bar {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px dashed #e2e8f0;
+}
+.as-suggest-label {
+  font-size: 11.5px;
+  color: #94a3b8;
+  margin-bottom: 8px;
 }
 .as-foot {
   padding: 12px 16px 14px;

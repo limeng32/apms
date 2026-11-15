@@ -83,7 +83,7 @@
                 </thead>
                 <tbody>
                   <tr v-for="row in modelList" :key="row.id"
-                      class="rk-row"
+                      class="rk-row rk-row-clickable"
                       :class="{ 'is-selected': currentModel && currentModel.id === row.id }"
                       @click="handleRowClick(row)">
                     <td class="col-check" @click.stop>
@@ -91,7 +91,7 @@
                              @change="toggleRow(row)"/>
                     </td>
                     <td class="rk-mono tm-code">{{ row.code }}</td>
-                    <td>{{ row.name }}</td>
+                    <td><span class="rk-row-link">{{ row.name }}</span></td>
                     <td class="text-center">
                       <span class="rk-soft-chip" :class="categoryChipClass(row.category)">{{ row.category || '—' }}</span>
                     </td>
@@ -104,6 +104,7 @@
                                  @change="handleStatusChange(row)"/>
                     </td>
                     <td class="text-center col-ops">
+                      <button type="button" class="rk-link rk-row-detail" @click.stop="openDetail(row)">详情</button>
                       <button type="button" class="rk-link" @click.stop="handleEdit(row)"
                               v-hasPermi="['apms:testModel:edit']">编辑</button>
                       <button type="button" class="rk-link is-danger" @click.stop="handleDelete(row)"
@@ -386,10 +387,12 @@ import {
 } from '@/api/apms/testModel'
 import { Plus, Delete, RefreshLeft, ArrowLeft, ArrowRight, Close } from '@element-plus/icons-vue'
 import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
+import { useTouchViewport } from '@/utils/touchViewport'
 
 const { proxy } = getCurrentInstance()
 const { drawerPanelStyle } = useDrawerOffset()
 const { drawerSize } = useDrawerSize('820px')
+const { isTouchViewport } = useTouchViewport()
 
 const PAGE_SIZE = 10
 
@@ -502,10 +505,14 @@ const detail = reactive({ fields: [] })
 const detailLoading = ref(false)
 const requiredCount = computed(() => detail.fields.filter(f => f.isRequired === '1').length)
 
-function handleRowClick(row) {
+function openDetail(row) {
   currentModel.value = row
   detailDrawerVisible.value = true
   loadDetail(row.id)
+}
+function handleRowClick(row) {
+  if (isTouchViewport.value) return
+  openDetail(row)
 }
 
 function loadDetail(id) {
@@ -625,6 +632,14 @@ function dataTypeChipClass(t) { return ({ decimal: 'tm-type-decimal', number: 't
 getList()
 loadStats()
 loadAlgorithms()
+
+// 供合并页（comboDispatch）在切回本 tab 时刷新：其他 tab 新建组合体系后数据可能已变化
+defineExpose({
+  refresh() {
+    getList()
+    loadStats()
+  }
+})
 </script>
 
 <style lang="scss" scoped>
@@ -642,7 +657,7 @@ loadAlgorithms()
 .col-status { width: 62px; }
 .col-ops { width: 96px; }
 .rk-empty-cell { padding: 36px 0; }
-.tm-table tbody tr { cursor: pointer; }
+/* 行光标统一由 roster-kit 的 .rk-row-clickable 控制（桌面 pointer / H5 default） */
 .tm-code { font-size: 12px; font-weight: 600; color: $rk-brand-600; }
 
 :deep(.rk-link.is-danger) { color: $rk-risk; }

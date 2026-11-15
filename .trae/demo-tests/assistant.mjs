@@ -37,6 +37,61 @@ await test('demoCapabilities 返回 8 条业务路径', () => {
   assert.ok(caps.paths.includes('/analytics/report-center'))
 })
 
+await test('默认提问包含内部数据样例「运动员张志远的训练情况」', () => {
+  const caps = demo.demoCapabilities()
+  assert.ok(caps.suggestions.includes('运动员张志远的训练情况'))
+  assert.equal(caps.suggestions.length, 5)
+  // 已从默认问题移除的两条导航问法：不再出现在 chip，但手输意图仍需可答（能力未删）
+  assert.ok(!caps.suggestions.includes('PHV 在哪里计算'))
+  assert.ok(!caps.suggestions.includes('RTP 状态怎么修改'))
+})
+
+await test('数据查询问法返回张志远档案数据，零网络，只导航花名册无高亮', async () => {
+  for (const message of ['运动员张志远的训练情况', '张志远']) {
+    fetchCalls = 0
+    const events = []
+    await demo.demoChatStream({ message }, {
+      onEvent: (event, data) => events.push([event, data])
+    })
+    assert.equal(fetchCalls, 0, `${message} 不得触发网络`)
+    const delta = events.find(([e]) => e === 'delta')[1]
+    // 关键数据必须与 mock/fixtures/business.js 保持一致，防止文案与样本漂移
+    assert.ok(delta.text.includes('张志远'), `${message} 回答应含姓名`)
+    assert.ok(delta.text.includes('U18 梯队'), `${message} 回答应含队伍`)
+    assert.ok(delta.text.includes('58.0'), `${message} 回答应含纵跳成绩`)
+    assert.ok(delta.text.includes('RTP 状态为绿灯'), `${message} 回答应含 RTP 状态`)
+    const action = events.find(([e]) => e === 'action')[1]
+    assert.equal(action.path, '/athletes/roster')
+    assert.equal(action.highlightKey, undefined, '行内档案无默认锚点，不得带 highlightKey')
+    assert.equal(events[events.length - 1][0], 'done')
+  }
+})
+
+await test('已下架的默认问法手输仍可应答（只移除 chip，不删意图能力）', async () => {
+  for (const [message, path] of [
+    ['PHV 在哪里计算', '/athletes/growth'],
+    ['RTP 状态怎么修改', '/healthcare/alert-center']
+  ]) {
+    const events = []
+    await demo.demoChatStream({ message }, {
+      onEvent: (event, data) => events.push([event, data])
+    })
+    const delta = events.find(([e]) => e === 'delta')
+    const action = events.find(([e]) => e === 'action')[1]
+    assert.ok(delta, `${message} 应仍有回答`)
+    assert.equal(action.path, path, `${message} 导航能力应保留`)
+  }
+})
+
+await test('数据查询意图不与操作类意图互相误命中', async () => {
+  const events = []
+  await demo.demoChatStream({ message: '怎么新增运动员' }, {
+    onEvent: (event, data) => events.push([event, data])
+  })
+  const action = events.find(([e]) => e === 'action')[1]
+  assert.equal(action.highlightKey, 'athlete-add', '新增运动员意图不受新正则影响')
+})
+
 await test('Demo 聊天零网络，并下发 meta/delta/done', async () => {
   fetchCalls = 0
   const events = []

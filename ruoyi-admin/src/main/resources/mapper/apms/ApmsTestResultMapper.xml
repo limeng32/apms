@@ -160,4 +160,8 @@
     <delete id="deleteByTaskId">
         DELETE FROM apms_test_result WHERE task_id=#{taskId}
     </delete>
+
+    <select id="countByModelId" parameterType="Long" resultType="int">
+        SELECT COUNT(*) FROM apms_test_result WHERE model_id = #{modelId}
+    </select>
 </mapper>

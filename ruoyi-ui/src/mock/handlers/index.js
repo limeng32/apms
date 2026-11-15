@@ -7,6 +7,8 @@
  * - 新增业务模块时把对应 handlers 展开追加到下方数组即可。
  */
 import { frameworkHandlers } from './framework'
+import { userHandlers } from './user'
+import { deptHandlers } from './dept'
 import { dashboardHandlers } from './dashboard'
 import { athleteHandlers, athleteGroupHandlers } from './athlete'
 import { indicatorHandlers } from './indicator'
@@ -28,6 +30,8 @@ import { aiMockHandlers } from '@ai'
 
 export const handlers = [
   ...frameworkHandlers,
+  ...userHandlers,
+  ...deptHandlers,
   ...dashboardHandlers,
   ...athleteHandlers,
   ...athleteGroupHandlers,

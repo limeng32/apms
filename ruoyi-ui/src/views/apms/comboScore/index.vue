@@ -158,14 +158,21 @@
 
         <el-form label-width="100px">
           <el-form-item label="组合模型" required>
-            <el-select v-model="calcForm.comboModelId" filterable placeholder="选一个组合模型"
+            <el-select v-model="calcForm.comboModelId" filterable placeholder="选一个启用中的评分方案"
                        style="width:100%" @change="onModelChange">
-              <el-option v-for="m in modelOpts" :key="m.id"
-                         :label="`#${m.id} ${m.modelId} · ${m.normalizationMethod}`"
-                         :value="m.id"/>
+              <el-option v-for="m in enabledModels" :key="m.id"
+                         :label="`${m.versionLabel || ('方案#' + m.id)}（${m.normalizationMethod}）`"
+                         :value="m.id">
+                <span>{{ m.versionLabel || ('方案#' + m.id) }}</span>
+                <span v-if="m.isDefault === '1'" style="float:right;color:#b45309;font-size:12px">★ 默认</span>
+              </el-option>
             </el-select>
             <div class="sub-hint" v-if="currentModel">
-              归一化方法: <b>{{ currentModel.normalizationMethod }}</b> · 公式: {{ currentModel.formula }}
+              体系 <b class="rk-mono">{{ currentModel.testModelCode }}</b> ·
+              归一化: <b>{{ currentModel.normalizationMethod }}</b> · 公式: {{ currentModel.formula }}
+            </div>
+            <div class="sub-hint" v-if="!enabledModels.length">
+              暂无启用中的评分方案，请先到「组合模型库」新建或启用方案
             </div>
           </el-form-item>
           <el-form-item label="测试任务" required>
@@ -272,9 +279,11 @@ const filters = reactive({ keyword: '' })
 const sortDir = ref('')  // '' | 'asc' | 'desc'
 
 const avatarColor = (row) => ageAvatarColor(row.athleteAge)
+// 计算下拉只列启用方案；停用方案仍保留在 modelOpts 全量中供历史行反查名称
+const enabledModels = computed(() => modelOpts.value.filter(m => m.status !== '1'))
 function modelLabel(row) {
   const m = modelOpts.value.find(x => x.id === row.comboModelId)
-  if (m) return `模型#${m.modelId} · ${m.normalizationMethod || 'z_score'}`
+  if (m) return m.versionLabel || `模型#${m.modelId} · ${m.normalizationMethod || 'z_score'}`
   return 'Model #' + row.comboModelId
 }
 function scoreClass(v) {
@@ -362,8 +371,12 @@ function resetTaskCheck() {
   Object.assign(taskCheck, { loaded: false, indicatorCount: 0, memberCount: 0, selectedCount: 0 })
 }
 function showCalcDialog() {
-  calcForm.comboModelId = null; calcForm.taskId = null
+  calcForm.taskId = null
   currentModel.value = null; previewItems.value = []; resetTaskCheck()
+  // 自动预选启用中的默认方案；无默认标记时回退第一个启用方案
+  const def = enabledModels.value.find(m => m.isDefault === '1') || enabledModels.value[0] || null
+  calcForm.comboModelId = def ? def.id : null
+  if (def) currentModel.value = def
   showCalc.value = true
 }
 function onModelChange(id) {

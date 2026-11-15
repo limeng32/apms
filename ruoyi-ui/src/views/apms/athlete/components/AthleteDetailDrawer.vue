@@ -7,7 +7,7 @@
     class="ad-drawer-wrap"
     :style="drawerPanelStyle"
   >
-    <div class="ad-drawer">
+    <div class="ad-drawer" v-drawer-swipe="handleSwipeClose">
       <!-- 抽屉头 -->
       <div class="ad-drawer-head">
         <div class="ad-drawer-title">
@@ -36,6 +36,8 @@ import { Close } from '@element-plus/icons-vue'
 import AthleteDetailPanel from './AthleteDetailPanel.vue'
 import useUserStore from '@/store/modules/user'
 import useSettingsStore from '@/store/modules/settings'
+import { useDrawerHistory } from '@/utils/useDrawerHistory'
+import { vDrawerSwipe } from '@/utils/drawerSwipe'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -47,6 +49,14 @@ const open = computed({
   get: () => props.modelValue,
   set: (v) => emit('update:modelValue', v)
 })
+
+// H5：抽屉打开期间，系统返回手势（左沿滑动/Android 返回键）优先关闭抽屉而非路由后退
+useDrawerHistory(open)
+
+// H5：面板内向右跟手滑动关闭；visible 变 false 后 useDrawerHistory 自动回收 history 标记位
+function handleSwipeClose() {
+  open.value = false
+}
 
 // 顶栏是 fixed 浮层（navbar 50px；标准模式另有 tagsView 34px；Portal 专岗无 tagsView），
 // 抽屉默认 top:0 会被顶栏盖住头部，按当前布局下移到顶栏之下。

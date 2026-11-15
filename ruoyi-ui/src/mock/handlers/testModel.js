@@ -72,6 +72,21 @@ export const testModelHandlers = [
   route('delete', '/apms/test-model/:ids', (ctx) => {
     const ids = splitIds(ctx.params.ids)
     const db = getDb()
+    // 引用完整性校验（与后端 ApmsTestModelServiceImpl 对齐）：任一模型被引用即整批拒绝
+    for (const id of ids) {
+      const refs = []
+      const comboCnt = db.comboModels.filter(m => Number(m.modelId) === Number(id)).length
+      if (comboCnt) refs.push(comboCnt + ' 个组合评分方案')
+      const itemCnt = db.taskItems.filter(i => Number(i.modelId) === Number(id)).length
+      if (itemCnt) refs.push(itemCnt + ' 个测试任务测试项')
+      const resultCnt = db.testResults.filter(r => Number(r.modelId) === Number(id)).length
+      if (resultCnt) refs.push(resultCnt + ' 条历史测试成绩')
+      if (refs.length) {
+        const m = db.testModels.find(r => Number(r.id) === Number(id))
+        const label = m ? `${m.code}（${m.name}）` : String(id)
+        return { code: 601, msg: `测试模型「${label}」正被 ${refs.join('、')} 引用，请先移除引用后再删除` }
+      }
+    }
     db.testModels = db.testModels.filter(r => !ids.includes(Number(r.id)))
     db.testFields = db.testFields.filter(f => !ids.includes(Number(f.modelId)))
     return ok('删除成功')

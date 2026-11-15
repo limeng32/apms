@@ -15,15 +15,22 @@ export const DEMO_PATHS = [
 ]
 
 export const DEMO_SUGGESTIONS = [
+  // 数据查询类样例置顶：与下方「操作导航类」问法不同，这条直接消费 APMS 内部业务数据
+  '运动员张志远的训练情况',
   '怎么新增运动员',
-  'PHV 在哪里计算',
   '怎么导入测试成绩',
   '组合评分怎么算',
-  'RTP 状态怎么修改',
   '报告在哪里下载'
 ]
 
 const ANSWERS = {
+  // 数据均取自 mock/fixtures/business.js：athletes(1001)、athleteGroups、taskMembers、testResults
+  ATHLETE_PROFILE: '张志远 · U18 梯队 10 号中场，17 岁，身高 175.2cm、体重 65.3kg，目前在队；\n'
+    + 'RTP 状态为绿灯，可正常参训，现编入速度专项组。\n'
+    + '近期测试（冬季体能测试 · U18，2024-12-12）：\n'
+    + '· 纵跳高度 58.0cm，评级 Good\n'
+    + '· RSA 10×20m Sdec 5.8%，评级 Good（该指标越低越好）\n'
+    + '测试任务进度：3 项已完成，1 项待执行。完整履历可在花名册档案中查看。',
   ATHLETE_CREATE: '1. 进入「花名册」，点击右上角「新建运动员档案」。\n'
     + '2. 填写姓名、性别、出生日期、主队伍等信息。\n'
     + '3. 新建运动员不会自动生成 RTP 状态。',
@@ -40,11 +47,13 @@ const ANSWERS = {
     + '2. 选择类型并填写对象，生成后可下载。',
   REPORT_DOWNLOAD: '1. 进入「报告中心」，在左侧选中一条报告。\n'
     + '2. 右侧详情点击「下载 PDF 报告」。',
-  FALLBACK: '我可以帮你定位系统页面与操作流程。试试问：怎么新增运动员、怎么导入成绩、报告在哪下载。'
+  FALLBACK: '我可以帮你查询演示数据，也能定位系统页面与操作流程。试试问：运动员张志远的训练情况、怎么新增运动员、怎么导入成绩、报告在哪下载。'
 }
 
 function matchIntent(question) {
   const q = String(question || '').toLowerCase()
+  // 数据查询类：以 mock 中真实存在的队员姓名做强锚定，避免与下方操作类关键词互相误命中
+  if (/张志远/.test(q)) return 'ATHLETE_PROFILE'
   if (/新增运动员|新建运动员|建档|添加运动员/.test(q)) return 'ATHLETE_CREATE'
   if (/phv|生长发育|成熟度|成年身高/.test(q)) return 'PHV_HOW'
   if (/导入成绩|成绩导入|批量导入|体测导入|导入体测|导入测试|测试成绩|体测|csv|excel|xlsx|导入/.test(q)) return 'IMPORT_RESULT'
@@ -67,6 +76,8 @@ function actionFor(intent) {
     }
   }
   const map = {
+    // 数据查询类只导航到花名册（行内档案无默认可见锚点，按严格一致原则不带 highlightKey）
+    ATHLETE_PROFILE: ['/athletes/roster', '打开花名册查看张志远档案'],
     PHV_HOW: ['/athletes/growth', '打开青训发育监控'],
     IMPORT_RESULT: ['/testings/dispatch', '打开指标库与任务下发'],
     COMBO_SCORE: ['/testings/combo-dispatch', '打开组合测试调度'],

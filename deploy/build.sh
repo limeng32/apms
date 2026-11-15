@@ -21,6 +21,11 @@
 #   bash build.sh --edition trial
 #   bash build.sh --only-build --edition trial
 #
+#   # standard/ai 正式支线默认自动构建并分发 trial（UAT/生产同此行为）；
+#   # 应急热修不需要演示站时显式跳过：
+#   bash build.sh --skip-trial
+#   bash build.sh --only-build --edition ai --skip-trial
+#
 # 这个脚本做的事：
 #   (1) Maven clean package -DskipTests（注入 apms.version）
 #   (2) Vue vite build
@@ -77,6 +82,8 @@ EDITION="standard"
 # 细粒度构建开关（供 deploy-uat.sh 智能构建透传：纯切线别时只重建前端，不重打后端 jar）
 SKIP_MAVEN=0
 SKIP_FRONTEND=0
+# 同域演示站 trial 默认随正式支线自动构建/分发；置 1 显式跳过（应急热修）
+SKIP_TRIAL=0
 DEPLOY_SKIP_ARGS=""    # 透传给远程 deploy.sh 的额外参数
 while [[ ${#} -gt 0 ]]; do
     case "${1}" in
@@ -85,6 +92,7 @@ while [[ ${#} -gt 0 ]]; do
         --only-build) ONLY_BUILD=1; shift ;;
         --skip-maven) SKIP_MAVEN=1; shift ;;
         --skip-frontend) SKIP_FRONTEND=1; shift ;;
+        --skip-trial) SKIP_TRIAL=1; shift ;;
         --skip-patch) DEPLOY_SKIP_ARGS="${DEPLOY_SKIP_ARGS} --skip-patch"; shift ;;
         --skip-cache) DEPLOY_SKIP_ARGS="${DEPLOY_SKIP_ARGS} --skip-cache"; shift ;;
         *) err "未知参数: ${1}" ;;
@@ -116,10 +124,12 @@ echo "  APMS Build → ${VERSION} (edition=${EDITION})"
 echo "=========================================="
 echo ""
 
-# ===== Trial 独立支线：前端-only，不打 jar、不走 deploy.sh、不碰正式 dist 与后端 =====
-if [ "${EDITION}" = "trial" ]; then
-    TRIAL_DIR="${PROJECT_ROOT}/ruoyi-ui/dist-trial"
-    log "Trial 支线：构建同域演示站（固定 AI 全量 + 演示锁定 + base=/trial/）"
+# ===== Trial 构建（手工 --edition trial 支线与 standard/ai 正式支线共用）=====
+# 固定 AI 全量 + 演示锁定 + base=/trial/，输出 dist-trial；不允许隐式跳过：
+# node_modules 缺失、vite 失败、三件套自检不符一律 err 终止。
+TRIAL_DIR="${PROJECT_ROOT}/ruoyi-ui/dist-trial"
+build_trial_bundle() {
+    log "Trial：构建同域演示站（固定 AI 全量 + 演示锁定 + base=/trial/）"
 
     # T1. Vite trial 构建（失败即终止，无隐式跳过）
     cd "${PROJECT_ROOT}/ruoyi-ui"
@@ -128,12 +138,18 @@ if [ "${EDITION}" = "trial" ]; then
     cd "${PROJECT_ROOT}"
 
     # T2. 产物三件套自检：双标记 + 子路径 base（任一不符即终止，杜绝错包上线）
-    TRIAL_EDITION=$(tr -d '[:space:]' < "${TRIAL_DIR}/edition.txt" 2>/dev/null || echo "")
-    [ "${TRIAL_EDITION}" = "ai" ] || err "dist-trial/edition.txt='${TRIAL_EDITION}' 必须为 ai，拒绝继续"
-    TRIAL_MARKER=$(tr -d '[:space:]' < "${TRIAL_DIR}/trial.txt" 2>/dev/null || echo "")
-    [ "${TRIAL_MARKER}" = "trial" ] || err "dist-trial/trial.txt='${TRIAL_MARKER}' 必须为 trial，拒绝继续"
+    local trial_edition trial_marker
+    trial_edition=$(tr -d '[:space:]' < "${TRIAL_DIR}/edition.txt" 2>/dev/null || echo "")
+    [ "${trial_edition}" = "ai" ] || err "dist-trial/edition.txt='${trial_edition}' 必须为 ai，拒绝继续"
+    trial_marker=$(tr -d '[:space:]' < "${TRIAL_DIR}/trial.txt" 2>/dev/null || echo "")
+    [ "${trial_marker}" = "trial" ] || err "dist-trial/trial.txt='${trial_marker}' 必须为 trial，拒绝继续"
     grep -q 'src="/trial/' "${TRIAL_DIR}/index.html" || err "dist-trial/index.html 资源未以 /trial/ 为 base，子路径部署会 404"
     log "  trial 自检通过: edition.txt=ai, trial.txt=trial, base=/trial/"
+}
+
+# ===== Trial 独立支线：前端-only，不打 jar、不走 deploy.sh、不碰正式 dist 与后端 =====
+if [ "${EDITION}" = "trial" ]; then
+    build_trial_bundle
 
     if [ "${ONLY_BUILD}" -eq 1 ]; then
         log "✅ Trial build 完成 (--only-build)，产物位置：${TRIAL_DIR}/"
@@ -186,22 +202,27 @@ if [ "${SKIP_FRONTEND}" -eq 1 ]; then
     log "Step 2: 跳过前端构建 (--skip-frontend)，保留现有 dist"
     [ -d "${DIST_DIR}/static/js" ] || err "--skip-frontend 但 ${DIST_DIR}/static/js 不存在，无可复用的前端产物，请去掉该参数完整构建"
     # 产物形态一致性闸（与 deploy-uat.sh 的强制重建检查对称，构建系统不重构）：
-    # 同一 Edition 下生产（烘焙 Trial URL）与 UAT（VITE_TRIAL_URL='' 空串覆盖，无该 URL）是两种不同产物，
-    # 时间戳/edition.txt 无法区分，复用错配会让环境间一键体验跳错入口。
-    # 调用场景识别：deploy-uat.sh 以 VITE_TRIAL_URL='' 进程环境调本脚本；生产直连不设该变量。
-    if [ "${VITE_TRIAL_URL+x}" = "x" ] && [ -z "${VITE_TRIAL_URL}" ]; then
-        # UAT 上下文：复用的 dist 不得含生产 Trial URL（deploy-uat 已先做强制重建，此处为最后一道闸）
-        if grep -rl "${PROD_TRIAL_URL_MARKER}" "${DIST_DIR}/static/js" >/dev/null 2>&1; then
-            err "UAT 构建试图复用含生产 Trial URL 的 dist（疑似生产产物）；请去掉 --skip-frontend 完整重建"
-        fi
-        log "  UAT 产物形态校验通过：dist 不含生产 Trial URL"
-    else
-        # 生产上下文：复用的 dist 必须已烘焙生产 Trial URL，否则疑似 UAT 产物或早于该特性的旧包
-        if ! grep -rl "${PROD_TRIAL_URL_MARKER}" "${DIST_DIR}/static/js" >/dev/null 2>&1; then
-            err "生产构建复用的 dist 未烘焙生产 VITE_TRIAL_URL（疑似 UAT/旧产物）；请去掉 --skip-frontend 完整构建后再发版"
-        fi
-        log "  生产产物形态校验通过：dist 已烘焙 Trial URL"
-    fi
+    # 同一 Edition 下生产（烘焙 aoti 生产 Trial URL）与 UAT（VITE_TRIAL_URL='/trial/'
+    # 同域相对路径，无生产域名）是两种不同产物，时间戳/edition.txt 无法区分，
+    # 复用错配会让环境间一键体验跳错入口。
+    # 调用场景识别：deploy-uat.sh 以 VITE_TRIAL_URL='/trial/'（早期为空串）进程环境调本脚本；
+    # 生产直连不设该变量。凡不含生产域名标记的一律按 UAT 上下文裁决。
+    case "${VITE_TRIAL_URL:-}" in
+        *"${PROD_TRIAL_URL_MARKER}"*)
+            # 生产上下文：复用的 dist 必须已烘焙生产 Trial URL，否则疑似 UAT 产物或早于该特性的旧包
+            if ! grep -rl "${PROD_TRIAL_URL_MARKER}" "${DIST_DIR}/static/js" >/dev/null 2>&1; then
+                err "生产构建复用的 dist 未烘焙生产 VITE_TRIAL_URL（疑似 UAT/旧产物）；请去掉 --skip-frontend 完整构建后再发版"
+            fi
+            log "  生产产物形态校验通过：dist 已烘焙 Trial URL"
+            ;;
+        *)
+            # UAT 上下文：复用的 dist 不得含生产 Trial URL（deploy-uat 已先做强制重建，此处为最后一道闸）
+            if grep -rl "${PROD_TRIAL_URL_MARKER}" "${DIST_DIR}/static/js" >/dev/null 2>&1; then
+                err "UAT 构建试图复用含生产 Trial URL 的 dist（疑似生产产物）；请去掉 --skip-frontend 完整重建"
+            fi
+            log "  UAT 产物形态校验通过：dist 不含生产 Trial URL"
+            ;;
+    esac
 else
     log "Step 2: Vue 前端构建 (--mode ${EDITION})..."
     cd "${PROJECT_ROOT}/ruoyi-ui"
@@ -223,10 +244,20 @@ else
     fi
 fi
 
+# ===== Step 2.5: 同域演示站 trial（正式支线默认自动；与 Edition 无关，固定 AI 全量）=====
+# trial 与正式 dist 物理隔离、零真实请求，构建失败按 fail-closed 终止整条发布，
+# 应急热修可用 --skip-trial 显式跳过（目标环境 trial 保留旧版本）。
+if [ "${SKIP_TRIAL}" -eq 0 ]; then
+    build_trial_bundle
+else
+    warn "已指定 --skip-trial：本次不构建/不分发同域演示站，目标环境 trial 保留现有版本"
+fi
+
 if [ "${ONLY_BUILD}" -eq 1 ]; then
     log "✅ Build 完成 (--only-build)，产物位置："
     echo "  ${JAR_FILE}"
     echo "  ${PROJECT_ROOT}/ruoyi-ui/dist/"
+    [ "${SKIP_TRIAL}" -eq 0 ] && echo "  ${TRIAL_DIR}/"
     exit 0
 fi
 
@@ -262,6 +293,26 @@ if [ -d "${PROJECT_ROOT}/ruoyi-ui/dist" ]; then
         scp -r "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" \
             "${PROJECT_ROOT}/ruoyi-ui/dist/"* \
             "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/upload/dist/"
+    fi
+fi
+
+# 3b-2. 上传同域演示站 dist-trial（与正式 dist 物理隔离，直传 nginx alias 目录，
+# 不经 upload/dist 与远端 deploy.sh；--delete 只清理 trial-dist，绝不触碰正式 dist）。
+# 走到这里的都是完整发布（--only-build 已在 Step 2.5 后退出）。
+if [ "${SKIP_TRIAL}" -eq 0 ]; then
+    [ -d "${TRIAL_DIR}" ] || err "trial 产物目录缺失：${TRIAL_DIR}（Step 2.5 构建应已生成）"
+    REMOTE_TRIAL_DIR="${REMOTE_DIR}/frontend/trial-dist"
+    log "Trial 分发：${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_TRIAL_DIR}/"
+    ssh "${SSH_OPTS[@]+"${SSH_OPTS[@]}"}" "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p '${REMOTE_TRIAL_DIR}'"
+    RSYNC_SSH="ssh"
+    [ "${KNOWN_HOSTS_FILE:-}" = "/dev/null" ] && \
+        RSYNC_SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+    if rsync -avz --delete -e "${RSYNC_SSH}" \
+        "${TRIAL_DIR}/" \
+        "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_TRIAL_DIR}/"; then
+        log "  trial 产物 rsync 完成"
+    else
+        err "trial rsync 失败，终止（正式发布一并中止；正式 dist 已传 upload 但远端尚未切流，重跑本脚本即可）"
     fi
 fi
 

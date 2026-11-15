@@ -17,6 +17,7 @@
         <result column="athlete_gender"     property="athleteGender"/>
         <result column="athlete_age"        property="athleteAge"/>
         <result column="combo_model_name"   property="comboModelName"/>
+        <result column="combo_version_label" property="comboVersionLabel"/>
     </resultMap>
 
     <sql id="selectVo">
@@ -27,7 +28,8 @@
             a.gender AS athlete_gender,
             CASE WHEN a.birthday IS NULL THEN NULL
                  ELSE TIMESTAMPDIFF(YEAR, a.birthday, CURDATE()) END AS athlete_age,
-            cm.formula AS combo_model_name
+            cm.formula AS combo_model_name,
+            cm.version_label AS combo_version_label
         FROM apms_combo_score s
         LEFT JOIN apms_athlete a ON s.athlete_id = a.athlete_id
         LEFT JOIN sys_dept d     ON a.primary_team_id = d.dept_id
@@ -49,6 +51,10 @@
         WHERE s.athlete_id = #{athleteId} AND s.combo_model_id = #{comboModelId}
           AND s.trigger_result_id = #{triggerResultId}
         LIMIT 1
+    </select>
+
+    <select id="countByComboModelId" parameterType="Long" resultType="int">
+        SELECT COUNT(*) FROM apms_combo_score WHERE combo_model_id = #{comboModelId}
     </select>
 
     <select id="selectById" parameterType="Long" resultMap="ApmsComboScoreResult">

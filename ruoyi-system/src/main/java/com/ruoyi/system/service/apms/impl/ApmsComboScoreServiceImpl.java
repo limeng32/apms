@@ -36,6 +36,11 @@ public class ApmsComboScoreServiceImpl implements IApmsComboScoreService {
     public BatchResult batchCalculate(Long comboModelId, Long taskId) {
         ApmsComboModel model = modelMapper.selectById(comboModelId);
         if (model == null) throw new ServiceException("组合模型不存在: id=" + comboModelId);
+        // 停用方案禁止参与计算（前端下拉已过滤，此处堵住直调 API 的绕过路径）
+        if ("1".equals(model.getStatus())) {
+            throw new ServiceException("评分方案「" + model.getVersionLabel()
+                    + "」已停用，请选择启用中的方案");
+        }
         List<ApmsComboComponent> components = componentMapper.selectByComboModelId(comboModelId);
         if (components.isEmpty()) throw new ServiceException("组合模型无 component");
 

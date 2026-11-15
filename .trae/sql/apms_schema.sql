@@ -16,38 +16,41 @@ ALTER TABLE sys_dept ADD COLUMN dept_type varchar(2) DEFAULT NULL COMMENT 'APMS�
 -- ------------------------------------------------------------
 
 -- 部门类型
+-- 固定 id 必须与 patches/patch-0.0.2 的规范区段（dict_id=100、dict_code 100-104）
+-- 完全一致：早期版本用自增 id 播种，与补丁固定区段不重叠，建库脚本重放后残留行
+-- 无法被补丁清理，导致字典选项翻倍（patch-1.0-261119201437 专门修复该事故）。
 INSERT IGNORE INTO sys_dict_type (
-    dict_name, dict_type, status, create_by, create_time, remark
+    dict_id, dict_name, dict_type, status, create_by, create_time, remark
 ) VALUES (
-    '部门类型', 'apms_dept_type', '0', 'admin', sysdate(), 'APMS 组织层级'
+    100, '部门类型', 'apms_dept_type', '0', 'admin', sysdate(), 'APMS 组织层级'
 );
 
 INSERT IGNORE INTO sys_dict_data (
-    dict_sort, dict_label, dict_value, dict_type, css_class, list_class, is_default, status, create_by, create_time, remark
+    dict_code, dict_sort, dict_label, dict_value, dict_type, css_class, list_class, is_default, status, create_by, create_time, remark
 ) VALUES
-(1, '机构',     '10', 'apms_dept_type', '', 'info',    'Y', '0', 'admin', sysdate(), NULL),
-(2, '队伍',     '20', 'apms_dept_type', '', 'success', 'N', '0', 'admin', sysdate(), NULL),
-(3, '训练小组', '30', 'apms_dept_type', '', 'primary', 'N', '0', 'admin', sysdate(), NULL),
-(4, '科研小组', '40', 'apms_dept_type', '', 'warning', 'N', '0', 'admin', sysdate(), NULL),
-(5, '恢复小组', '50', 'apms_dept_type', '', 'danger',  'N', '0', 'admin', sysdate(), NULL);
+(100, 1, '机构',     '10', 'apms_dept_type', '', 'info',    'Y', '0', 'admin', sysdate(), NULL),
+(101, 2, '队伍',     '20', 'apms_dept_type', '', 'success', 'N', '0', 'admin', sysdate(), NULL),
+(102, 3, '训练小组', '30', 'apms_dept_type', '', 'primary', 'N', '0', 'admin', sysdate(), NULL),
+(103, 4, '科研小组', '40', 'apms_dept_type', '', 'warning', 'N', '0', 'admin', sysdate(), NULL),
+(104, 5, '恢复小组', '50', 'apms_dept_type', '', 'danger',  'N', '0', 'admin', sysdate(), NULL);
 
--- 医疗记录类型
+-- 医疗记录类型（固定 id 对齐 patch-0.0.2：dict_id=103、dict_code 110-116）
 INSERT IGNORE INTO sys_dict_type (
-    dict_name, dict_type, status, create_by, create_time, remark
+    dict_id, dict_name, dict_type, status, create_by, create_time, remark
 ) VALUES (
-    '医疗记录类型', 'apms_medical_type', '0', 'admin', sysdate(), 'APMS 医疗附件分类'
+    103, '医疗记录类型', 'apms_medical_type', '0', 'admin', sysdate(), 'APMS 医疗附件分类'
 );
 
 INSERT IGNORE INTO sys_dict_data (
-    dict_sort, dict_label, dict_value, dict_type, css_class, list_class, is_default, status, create_by, create_time, remark
+    dict_code, dict_sort, dict_label, dict_value, dict_type, css_class, list_class, is_default, status, create_by, create_time, remark
 ) VALUES
-(1, 'MRI检查',  'MRI',  'apms_medical_type', '', 'danger',  'N', '0', 'admin', sysdate(), NULL),
-(2, 'CT检查',   'CT',   'apms_medical_type', '', 'warning', 'N', '0', 'admin', sysdate(), NULL),
-(3, '超声检查', 'US',   'apms_medical_type', '', 'info',    'N', '0', 'admin', sysdate(), NULL),
-(4, 'X光检查',  'XRAY', 'apms_medical_type', '', 'info',    'N', '0', 'admin', sysdate(), NULL),
-(5, '血液检验', 'LAB',  'apms_medical_type', '', 'primary', 'N', '0', 'admin', sysdate(), NULL),
-(6, '康复评估', 'REHAB','apms_medical_type', '', 'success', 'N', '0', 'admin', sysdate(), NULL),
-(7, '其他',     'OTHER','apms_medical_type', '', '',         'N', '0', 'admin', sysdate(), NULL);
+(110, 1, 'MRI检查',  'MRI',  'apms_medical_type', '', 'danger',  'N', '0', 'admin', sysdate(), NULL),
+(111, 2, 'CT检查',   'CT',   'apms_medical_type', '', 'warning', 'N', '0', 'admin', sysdate(), NULL),
+(112, 3, '超声检查', 'US',   'apms_medical_type', '', 'info',    'N', '0', 'admin', sysdate(), NULL),
+(113, 4, 'X光检查',  'XRAY', 'apms_medical_type', '', 'info',    'N', '0', 'admin', sysdate(), NULL),
+(114, 5, '血液检验', 'LAB',  'apms_medical_type', '', 'primary', 'N', '0', 'admin', sysdate(), NULL),
+(115, 6, '康复评估', 'REHAB','apms_medical_type', '', 'success', 'N', '0', 'admin', sysdate(), NULL),
+(116, 7, '其他',     'OTHER','apms_medical_type', '', '',         'N', '0', 'admin', sysdate(), NULL);
 
 
 -- ============================================================

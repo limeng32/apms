@@ -3,11 +3,14 @@
 # APMS UAT 环境部署脚本（本机执行）
 # ------------------------------------------------------------
 # 用法：
-#   bash deploy-uat.sh [--build] [--skip-patch] [--skip-cache] [--version X.Y.Z-TIMESTAMP]
+#   bash deploy-uat.sh [--build] [--skip-patch] [--skip-cache] [--skip-trial] [--version X.Y.Z-TIMESTAMP]
 #                      [--edition standard|ai]
 #
 # 产品线 EDITION 取值优先级：命令行 --edition > .uat/env.conf 的 EDITION > 缺省 standard。
 # 智能构建会以对应线别执行 build.sh --only-build --edition <线>。
+#
+# 同域演示站 trial：默认随每次部署自动构建并同步到 .uat/frontend/trial-dist（nginx /trial/），
+# --skip-trial 可显式跳过（应急热修，trial 保留现场旧版本）。
 #
 # 默认智能构建：产物缺失或源码比产物新时，自动执行 build.sh --only-build；
 # --build 强制重新构建。start/stop/restart 子命令不触发构建。
@@ -43,6 +46,7 @@ else
 fi
 SKIP_PATCH=0
 SKIP_CACHE=0
+SKIP_TRIAL=0
 FORCE_BUILD=0
 TARGET_VERSION=""
 CLI_EDITION=""    # 命令行 --edition（解析早于 env.conf source；最终值在 source 后裁定）
@@ -51,6 +55,7 @@ while [[ ${#} -gt 0 ]]; do
         --build)      FORCE_BUILD=1; shift ;;
         --skip-patch) SKIP_PATCH=1; shift ;;
         --skip-cache) SKIP_CACHE=1; shift ;;
+        --skip-trial) SKIP_TRIAL=1; shift ;;
         --version) TARGET_VERSION="${2}"; shift 2 ;;
         --edition) CLI_EDITION="${2}"; shift 2 ;;
         --help|-h)   sed -n '2,30p' "${0}"; exit 0 ;;
@@ -582,27 +587,33 @@ fi
 
 # UAT 产物形态校验（配置维度，时间戳/线别判定覆盖不到）：
 # 本机可能先跑过生产 build.sh，dist 已烘焙生产 Trial URL；随后 UAT 部署若 edition 未变、
-# 源码未动，上面的新鲜度判定会误判「无需重建」，VITE_TRIAL_URL='' 覆盖便没有机会参与构建，
-# UAT 的「一键体验」会错误跳生产 Trial。命中生产 URL 即强制重建，让下方空串覆盖真正生效。
+# 源码未动，上面的新鲜度判定会误判「无需重建」，VITE_TRIAL_URL='/trial/' 覆盖便没有机会参与构建，
+# UAT 的「一键体验」会错误跳生产 Trial。命中生产 URL 即强制重建，让同域覆盖真正生效。
 if [ "${FRONTEND_NEED_BUILD}" -eq 0 ] && [ -d "${PROJECT_ROOT}/ruoyi-ui/dist/static/js" ]; then
     # 标记字符串与 build.sh 的 PROD_TRIAL_URL_MARKER、.env.*/VITE_TRIAL_URL 同源，改动需三处同步
     if grep -rl "aoti.apms.top/trial" "${PROJECT_ROOT}/ruoyi-ui/dist/static/js" >/dev/null 2>&1; then
         FRONTEND_NEED_BUILD=1
-        log "检测到 dist 烘焙了生产 Trial URL（疑似复用生产构建产物），UAT 强制重建前端以注入 VITE_TRIAL_URL=''"
+        log "检测到 dist 烘焙了生产 Trial URL（疑似复用生产构建产物），UAT 强制重建前端以注入 VITE_TRIAL_URL='/trial/'"
     fi
 fi
 
 if [ "${BACKEND_NEED_BUILD}" -eq 0 ] && [ "${FRONTEND_NEED_BUILD}" -eq 0 ]; then
     log "前后端产物均为最新 (edition=${EDITION})，跳过构建（后端单 jar 不因切线重建）"
+    # 此分支不调用 build.sh，trial 需独立保证一次新鲜构建（trial 无「沿用旧包」语义）
+    if [ "${SKIP_TRIAL}" -eq 0 ]; then
+        log "正式产物最新，单独构建 trial 同域演示站..."
+        bash "${_SCRIPT_DIR}/build.sh" --only-build --edition trial
+    fi
 else
     _BUILD_ARGS=(--only-build --edition "${EDITION}")
     [ "${BACKEND_NEED_BUILD}" -eq 0 ]  && _BUILD_ARGS+=(--skip-maven)
     [ "${FRONTEND_NEED_BUILD}" -eq 0 ] && _BUILD_ARGS+=(--skip-frontend)
+    [ "${SKIP_TRIAL}" -eq 1 ] && _BUILD_ARGS+=(--skip-trial)
     log "智能构建 → 后端:$([ "${BACKEND_NEED_BUILD}" -eq 1 ] && echo 重建 || echo 复用) 前端:$([ "${FRONTEND_NEED_BUILD}" -eq 1 ] && echo "重建(${EDITION})" || echo 复用)"
-    # UAT 保留原地口令演示：空串覆盖 .env.standard/.env.ai 提交的生产 VITE_TRIAL_URL。
-    # Vite 对已存在的进程环境 VITE_* 变量优先级高于 .env 文件，空串经 hasTrialUrl() 长度判定为 false；
-    # 生产发版走 build.sh 直连不经本脚本，env 文件中的生产 URL 正常烘焙。
-    VITE_TRIAL_URL='' bash "${_SCRIPT_DIR}/build.sh" "${_BUILD_ARGS[@]}"
+    # UAT 一键体验对齐生产：注入同域相对路径 /trial/，口令校验后跳本机演示站（nginx /trial/ location）。
+    # Vite 对已存在的进程环境 VITE_* 变量优先级高于 .env 文件；
+    # 生产发版走 build.sh 直连不经本脚本，env 文件中的生产绝对 URL 正常烘焙。
+    VITE_TRIAL_URL='/trial/' bash "${_SCRIPT_DIR}/build.sh" "${_BUILD_ARGS[@]}"
 fi
 
 # ===== 版本号推导（优先从 mvn target 读，避免 upload 里是旧 jar）=====
@@ -849,6 +860,16 @@ if [ "${PREFLIGHT_FRONT_SOURCE}" = "upload" ]; then
     log "  前端: $(find "${FRONTIR}/dist" -type f | wc -l | tr -d ' ') files（edition=${PREFLIGHT_DIST_EDITION}）"
 fi
 
+# 同域演示站 trial 落盘：与正式 dist 并列、物理隔离，nginx /trial/ alias 指向本目录。
+# trial 为纯前端 mock 应用、无后端/数据依赖，不进 dist 备份回滚链（回滚正式站不影响其可用性）。
+if [ "${SKIP_TRIAL}" -eq 0 ]; then
+    _VITE_TRIAL="${PROJECT_ROOT}/ruoyi-ui/dist-trial"
+    [ -f "${_VITE_TRIAL}/trial.txt" ] || err "dist-trial 缺失或未通过构建自检（trial.txt 不存在），拒绝部署 trial"
+    rm -rf "${FRONTIR}/trial-dist"
+    cp -a "${_VITE_TRIAL}" "${FRONTIR}/trial-dist"
+    log "  trial: $(find "${FRONTIR}/trial-dist" -type f | wc -l | tr -d ' ') files → ${FRONTIR}/trial-dist（入口 /trial/）"
+fi
+
 # ===== Step 5: Redis 选择性清缓存（版本驱动）=====
 # 版本变更时删除 dict/config 等旧缓存，但保留 login_tokens:* 登录态（发版不踢在线用户）
 if [ "${SKIP_CACHE}" -eq 1 ]; then
@@ -959,6 +980,9 @@ info "  ✅ UAT 部署完成 → ${TARGET_VERSION}"
 info "=========================================="
 echo ""
 info "  入口:    http://${PUBLIC_HOST}/"
+if [ "${SKIP_TRIAL}" -eq 0 ]; then
+info "  演示站:  http://${PUBLIC_HOST}/trial/（同域 trial，8888 口令）"
+fi
 info "  API:     http://localhost:${APP_PORT}/apms/version"
 info "  Health:  http://localhost:${MGMT_PORT}/health"
 info "  Profile: ${PROFILE}"

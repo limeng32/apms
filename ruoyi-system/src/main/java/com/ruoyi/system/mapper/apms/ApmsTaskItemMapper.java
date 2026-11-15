@@ -11,4 +11,7 @@ public interface ApmsTaskItemMapper {
     public int update(ApmsTaskItem item);
     public int deleteById(Long id);
     public int deleteByTaskId(Long taskId);
+
+    /** 统计某测试模型被多少个 MODEL 型任务测试项引用（删除前引用校验） */
+    public int countByModelId(Long modelId);
 }

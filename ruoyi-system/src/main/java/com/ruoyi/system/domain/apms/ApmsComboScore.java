@@ -28,6 +28,8 @@ public class ApmsComboScore {
     /** 运动员当前周岁年龄（关联查询，按生日实时计算，用于头像配色） */
     private Integer athleteAge;
     private String comboModelName;
+    /** 关联组合模型的方案业务名称（JOIN 查询，非持久化） */
+    private String comboVersionLabel;
 
     /** DataScope 注入（非持久化） */
     private Map<String, Object> params = new HashMap<>();
@@ -60,4 +62,6 @@ public class ApmsComboScore {
     public void setAthleteAge(Integer athleteAge) { this.athleteAge = athleteAge; }
     public String getComboModelName() { return comboModelName; }
     public void setComboModelName(String comboModelName) { this.comboModelName = comboModelName; }
+    public String getComboVersionLabel() { return comboVersionLabel; }
+    public void setComboVersionLabel(String comboVersionLabel) { this.comboVersionLabel = comboVersionLabel; }
 }

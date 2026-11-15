@@ -46,7 +46,8 @@
                       <input type="checkbox" class="rk-check" :checked="allChecked" @change="toggleAll"/>
                     </th>
                     <th class="text-center col-id">ID</th>
-                    <th class="col-model">关联测试模型</th>
+                    <th class="col-model">评分方案 / 关联体系</th>
+                    <th class="text-center col-status">状态</th>
                     <th class="text-center col-norm">归一化</th>
                     <th class="col-algo">算法版本</th>
                     <th class="text-center col-ops">操作</th>
@@ -54,7 +55,7 @@
                 </thead>
                 <tbody>
                   <tr v-for="row in comboList" :key="row.id"
-                      class="rk-row"
+                      class="rk-row rk-row-clickable"
                       :class="{ 'is-selected': currentCombo && currentCombo.id === row.id }"
                       @click="handleRowClick(row)">
                     <td class="col-check" @click.stop>
@@ -64,9 +65,19 @@
                     <td class="text-center rk-mono">{{ row.id }}</td>
                     <td>
                       <div class="cm-model">
-                        <span class="cm-model-code rk-mono">{{ row.testModelCode }}</span>
-                        <span class="cm-model-name">{{ row.testModelName }}</span>
+                        <span class="cm-model-label rk-row-link">
+                          {{ row.versionLabel || '未命名方案' }}
+                          <span v-if="row.isDefault === '1'" class="cm-default-star" title="该体系默认方案">★ 默认</span>
+                        </span>
+                        <span class="cm-model-name">
+                          <span class="rk-mono">{{ row.testModelCode }}</span> · {{ row.testModelName }}
+                        </span>
                       </div>
+                    </td>
+                    <td class="text-center">
+                      <span class="rk-soft-chip" :class="row.status === '1' ? 'cm-status-off' : 'cm-status-on'">
+                        {{ row.status === '1' ? '停用' : '启用' }}
+                      </span>
                     </td>
                     <td class="text-center">
                       <span class="rk-soft-chip" :class="normChipClass(row.normalizationMethod)">
@@ -75,17 +86,23 @@
                     </td>
                     <td class="rk-mono cm-algo">{{ row.algoVersion || '—' }}</td>
                     <td class="text-center col-ops">
+                      <button type="button" class="rk-link rk-row-detail" @click.stop="openDetail(row)">详情</button>
                       <button type="button" class="rk-link" @click.stop="handleEdit(row)"
                               v-hasPermi="['apms:comboModel:edit']">编辑</button>
+                      <button type="button" class="rk-link" @click.stop="handleSetDefault(row)"
+                              v-if="row.isDefault !== '1'"
+                              v-hasPermi="['apms:comboModel:edit']">设为默认</button>
+                      <button type="button" class="rk-link" @click.stop="handleToggleStatus(row)"
+                              v-hasPermi="['apms:comboModel:edit']">{{ row.status === '1' ? '启用' : '停用' }}</button>
                       <button type="button" class="rk-link is-danger" @click.stop="handleDelete(row)"
                               v-hasPermi="['apms:comboModel:remove']">删除</button>
                     </td>
                   </tr>
                   <tr v-if="!loading && comboList.length === 0">
-                    <td colspan="6" class="rk-empty-cell">
+                    <td colspan="7" class="rk-empty-cell">
                       <div class="rk-empty">
                         <p class="rk-empty-title">暂无组合模型</p>
-                        <p class="rk-empty-desc">点击右上角「新增组合模型」关联 is_combo 测试模型</p>
+                        <p class="rk-empty-desc">点击右上角「新增组合模型」，可关联已有组合体系或直接新建</p>
                       </div>
                     </td>
                   </tr>
@@ -232,16 +249,55 @@
         </div>
       </el-drawer>
 
-      <!-- ========== 组合模型 新增/编辑 Dialog（原逻辑保留） ========== -->
+      <!-- ========== 组合模型 新增/编辑 Dialog（单弹窗分段：关联已有 / 新建组合体系，无二级弹窗） ========== -->
       <el-dialog :title="dialogTitle" v-model="showComboDialog" width="500px">
         <el-form ref="comboFormRef" :model="comboForm" :rules="comboRules" label-width="100px">
           <el-row :gutter="12">
-            <el-col :span="24">
+            <!-- 体系来源仅新增时可选；编辑时固定关联已有 -->
+            <el-col :span="24" v-if="!comboForm.id">
+              <el-form-item label="体系来源">
+                <el-radio-group v-model="comboForm.createMode" @change="handleCreateModeChange">
+                  <el-radio value="existing">关联已有组合体系</el-radio>
+                  <el-radio value="new">新建组合体系</el-radio>
+                </el-radio-group>
+              </el-form-item>
+            </el-col>
+            <!-- 模式一：关联已有 is_combo=1 的测试模型 -->
+            <el-col :span="24" v-if="comboForm.id || comboForm.createMode === 'existing'">
               <el-form-item label="关联测试模型" prop="modelId">
                 <el-select v-model="comboForm.modelId" filterable placeholder="选择 is_combo=1 的测试模型" style="width:100%">
                   <el-option v-for="m in comboEligibleModels" :key="m.id"
-                    :label="m.code + ' — ' + m.name" :value="m.id"/>
+                    :label="carrierLabel(m)" :value="m.id">
+                    <span>{{ m.code }} — {{ m.name }}</span>
+                    <span v-if="!carrierWithCombo.has(m.id)" class="cm-carrier-empty">暂无评分方案</span>
+                  </el-option>
                 </el-select>
+              </el-form-item>
+            </el-col>
+            <!-- 模式二：同事务新建组合类测试模型载体，不开二级弹窗 -->
+            <template v-else>
+              <el-col :span="24">
+                <el-form-item label="体系编码" prop="newModelCode">
+                  <el-input v-model="comboForm.newModelCode" placeholder="如 SPEED_COMPOSITE，保存后不可与现有模型编码重复"/>
+                </el-form-item>
+              </el-col>
+              <el-col :span="24">
+                <el-form-item label="体系名称" prop="newModelName">
+                  <el-input v-model="comboForm.newModelName" placeholder="如 速度专项综合评价"/>
+                </el-form-item>
+              </el-col>
+            </template>
+            <!-- 评分方案自身的业务名称与默认标记 -->
+            <el-col :span="24">
+              <el-form-item label="方案名称" prop="versionLabel">
+                <el-input v-model="comboForm.versionLabel" maxlength="100" show-word-limit
+                          placeholder="如 2026 春季权重 v2，用于区分同体系下的多套评分方案"/>
+              </el-form-item>
+            </el-col>
+            <el-col :span="24">
+              <el-form-item label="设为默认">
+                <el-switch v-model="comboForm.isDefault" active-value="1" inactive-value="0"/>
+                <span class="cm-form-hint">同体系下仅一个默认方案，评分时自动预选</span>
               </el-form-item>
             </el-col>
             <el-col :span="12">
@@ -330,10 +386,12 @@ import { listIndicator } from '@/api/apms/indicator'
 import { listTestModel } from '@/api/apms/testModel'
 import { Plus, Delete, ArrowLeft, ArrowRight, Close } from '@element-plus/icons-vue'
 import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
+import { useTouchViewport } from '@/utils/touchViewport'
 
 const { proxy } = getCurrentInstance()
 const { drawerPanelStyle } = useDrawerOffset()
 const { drawerSize } = useDrawerSize('760px')
+const { isTouchViewport } = useTouchViewport()
 
 const PAGE_SIZE = 10
 
@@ -385,7 +443,7 @@ function toggleAll() {
 }
 
 // ========= KPI 统计（list 行 components 为 null，需 getById 汇总） =========
-const stats = reactive({ total: 0, comps: 0, balanced: 0 })
+const stats = reactive({ total: 0, comps: 0, balanced: 0, enabled: 0 })
 let statsSeq = 0
 function loadStats() {
   const seq = ++statsSeq
@@ -393,6 +451,7 @@ function loadStats() {
     if (seq !== statsSeq) return null
     const rows = r.rows || []
     stats.total = r.total || rows.length
+    stats.enabled = rows.filter(m => m.status !== '1').length
     return Promise.all(rows.map(m => getComboModel(m.id).then(res => res.data).catch(() => null)))
   }).then(details => {
     if (seq !== statsSeq || !details) return
@@ -405,7 +464,8 @@ function loadStats() {
   })
 }
 const kpiCards = computed(() => [
-  { label: '组合模型', value: stats.total, unit: '个', accent: '#2563EB', chip: '组合评分口径', chipTone: 'tone-info' },
+  { label: '组合模型', value: stats.total, unit: '个', accent: '#2563EB',
+    chip: `启用中 ${stats.enabled}/${stats.total}`, chipTone: 'tone-info' },
   { label: '组成项合计', value: stats.comps, unit: '项', accent: '#06B6D4', chip: '跨指标加权', chipTone: '' },
   { label: '权重平衡', value: stats.balanced, unit: '个', accent: '#16A34A',
     chip: stats.balanced === stats.total && stats.total > 0 ? '全部平衡' : `${stats.total - stats.balanced} 个待调整`,
@@ -419,10 +479,14 @@ const currentCombo = ref(null)
 const detail = reactive({ components: [] })
 const detailLoading = ref(false)
 
-function handleRowClick(row) {
+function openDetail(row) {
   currentCombo.value = row
   detailDrawerVisible.value = true
   loadDetail(row.id)
+}
+function handleRowClick(row) {
+  if (isTouchViewport.value) return
+  openDetail(row)
 }
 function loadDetail(id) {
   detailLoading.value = true
@@ -451,11 +515,17 @@ function cancelCompEdit(row) {
 // ========= 辅助下拉数据 =========
 const comboEligibleModels = ref([])  // is_combo=1 的 test_model
 const indicatorOptions = ref([])
+// 已存在评分方案的载体 modelId 集合：用于下拉标注「空壳载体」（is_combo=1 但尚无 combo_model）
+const carrierWithCombo = ref(new Set())
 
 function loadAuxData() {
   // 加载 is_combo=1 的测试模型供 combo 选择
   listTestModel({ pageNum: 1, pageSize: 100 }).then(res => {
     comboEligibleModels.value = (res.rows || []).filter(m => m.isCombo === '1')
+  })
+  // 全量拉组合方案，汇总哪些载体下已建方案（与 KPI 统计同口径，pageSize 500）
+  listComboModel({ pageNum: 1, pageSize: 500 }).then(res => {
+    carrierWithCombo.value = new Set((res.rows || []).map(x => x.modelId))
   })
   // 加载指标供 component 选择
   listIndicator({ pageNum: 1, pageSize: 100 }).then(res => {
@@ -463,36 +533,117 @@ function loadAuxData() {
   })
 }
 
+// 下拉选项文案：空壳载体追加提示，避免用户选了载体却发现里面没有任何评分方案
+function carrierLabel(m) {
+  const base = m.code + ' — ' + m.name
+  return carrierWithCombo.value.has(m.id) ? base : base + '（暂无评分方案）'
+}
+
 // ========= Combo Dialog =========
 const showComboDialog = ref(false)
 const comboFormRef = ref(null)
 const dialogTitle = ref('')
-const comboForm = reactive({ id: null, modelId: null, normalizationMethod: 'z_score', formula: '', refVersion: '', algoVersion: '' })
-const comboRules = {
-  modelId: [{ required: true, message: '请选择关联的测试模型', trigger: 'change' }]
+const comboForm = reactive({
+  id: null,
+  createMode: 'existing', // existing=关联已有组合体系；new=同事务新建组合体系（仅新增）
+  modelId: null,
+  newModelCode: '',
+  newModelName: '',
+  versionLabel: '',
+  status: '0',
+  isDefault: '0',
+  normalizationMethod: 'z_score',
+  formula: '',
+  refVersion: '',
+  algoVersion: ''
+})
+// 校验规则随模式动态切换：existing 校验 modelId，new 校验编码/名称；方案名称两种模式都必填
+const comboRules = computed(() => {
+  const rules = {
+    normalizationMethod: [{ required: true, message: '请选择归一化方法', trigger: 'change' }],
+    versionLabel: [{ required: true, message: '请输入方案名称', trigger: 'blur' }]
+  }
+  if (comboForm.id || comboForm.createMode === 'existing') {
+    rules.modelId = [{ required: true, message: '请选择关联的测试模型', trigger: 'change' }]
+  } else {
+    rules.newModelCode = [{ required: true, message: '请输入体系编码', trigger: 'blur' }]
+    rules.newModelName = [{ required: true, message: '请输入体系名称', trigger: 'blur' }]
+  }
+  return rules
+})
+
+// 切换体系来源时清理另一侧数据，避免把两套标识同时提交
+function handleCreateModeChange(mode) {
+  if (mode === 'existing') {
+    comboForm.newModelCode = ''
+    comboForm.newModelName = ''
+  } else {
+    comboForm.modelId = null
+  }
+  proxy.$refs.comboFormRef?.clearValidate?.()
 }
 
 function handleAdd() {
   dialogTitle.value = '新增组合模型'
-  Object.assign(comboForm, { id: null, modelId: null, normalizationMethod: 'z_score', formula: '', refVersion: '', algoVersion: '' })
+  Object.assign(comboForm, {
+    id: null, createMode: 'existing', modelId: null, newModelCode: '', newModelName: '',
+    versionLabel: '', status: '0', isDefault: '0',
+    normalizationMethod: 'z_score', formula: '', refVersion: '', algoVersion: ''
+  })
   loadAuxData()
   showComboDialog.value = true
 }
 function handleEdit(row) {
   dialogTitle.value = '编辑组合模型'
-  Object.assign(comboForm, row)
+  // 编辑固定走关联已有模式，显式补齐新建字段避免 radio 无选中
+  Object.assign(comboForm, row, {
+    createMode: 'existing', newModelCode: '', newModelName: '',
+    status: row.status || '0', isDefault: row.isDefault || '0'
+  })
   loadAuxData()
   showComboDialog.value = true
+}
+
+// 行操作：设为默认（带齐行持久化字段，后端事务内清同体系其他默认）
+function handleSetDefault(row) {
+  proxy.$modal.confirm(`确认将「${row.versionLabel || row.id}」设为该体系的默认方案？`, '设为默认').then(() =>
+    updateComboModel({ ...row, isDefault: '1' })
+  ).then(() => {
+    proxy.$modal.msgSuccess('已设为默认方案')
+    getList(); loadStats()
+  }).catch(() => {})
+}
+
+// 行操作：停用/启用；默认方案停用会被后端拒绝，错误信息由全局拦截器透出
+function handleToggleStatus(row) {
+  const next = row.status === '1' ? '0' : '1'
+  const action = next === '1' ? '停用' : '启用'
+  proxy.$modal.confirm(`确认${action}方案「${row.versionLabel || row.id}」？`, action).then(() =>
+    updateComboModel({ ...row, status: next })
+  ).then(() => {
+    proxy.$modal.msgSuccess(`已${action}`)
+    getList(); loadStats()
+  }).catch(() => {})
 }
 function submitCombo() {
   proxy.$refs.comboFormRef.validate(valid => {
     if (!valid) return
-    const req = comboForm.id ? updateComboModel(comboForm) : addComboModel(comboForm)
+    // 按模式组装请求体：新建模式只传 newModelCode/newModelName，关联模式只传 modelId
+    const payload = { ...comboForm }
+    delete payload.createMode
+    if (!comboForm.id && comboForm.createMode === 'new') {
+      delete payload.modelId
+    } else {
+      delete payload.newModelCode
+      delete payload.newModelName
+    }
+    const req = comboForm.id ? updateComboModel(payload) : addComboModel(payload)
     req.then(() => {
       proxy.$modal.msgSuccess('保存成功')
       showComboDialog.value = false
       getList()
       loadStats()
+      loadAuxData()
       if (currentCombo.value?.id === comboForm.id) loadDetail(currentCombo.value.id)
     })
   })
@@ -558,6 +709,14 @@ function normChipClass(n) { return ({ z_score: 'cm-norm-z', percentile: 'cm-norm
 
 getList()
 loadStats()
+
+// 供合并页（comboDispatch）在切回本 tab 时刷新
+defineExpose({
+  refresh() {
+    getList()
+    loadStats()
+  }
+})
 </script>
 
 <style lang="scss" scoped>
@@ -566,15 +725,31 @@ loadStats()
 /* 左表 */
 .col-check { width: 40px; text-align: center; }
 .col-id { width: 52px; }
+.col-status { width: 72px; }
 .col-norm { width: 92px; }
-.col-ops { width: 96px; }
+.col-ops { width: 190px; }
 .rk-empty-cell { padding: 36px 0; }
-.cm-table tbody tr { cursor: pointer; }
-.cm-model { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.cm-model-code { font-size: 12px; font-weight: 600; color: $rk-brand-600; }
+/* 行光标统一由 roster-kit 的 .rk-row-clickable 控制（桌面 pointer / H5 default） */
+.cm-model { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cm-model-label {
+  font-size: 13px; font-weight: 600; color: $rk-text-1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: flex; align-items: center; gap: 6px;
+}
+.cm-default-star {
+  flex: none; font-size: 11px; font-weight: 600;
+  color: #b45309; background: #fef3c7; border-radius: 6px; padding: 1px 6px;
+}
 .cm-model-name {
   font-size: 12px; color: $rk-text-3;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+:deep(.rk-soft-chip.cm-status-on) { background: #e8f7ee; color: $rk-ok; }
+:deep(.rk-soft-chip.cm-status-off) { background: #f1f5f9; color: $rk-text-3; }
+.cm-form-hint { margin-left: 10px; font-size: 12px; color: $rk-text-3; }
+.cm-carrier-empty {
+  float: right; font-size: 12px; color: #b45309;
+  background: #fef3c7; border-radius: 6px; padding: 1px 7px;
 }
 .cm-algo { font-size: 12px; color: $rk-text-2; }
 
