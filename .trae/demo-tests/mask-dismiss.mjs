@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { pathToFileURL } from 'node:url'
 
 const HELPER = pathToFileURL(
-  '/Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/ai/plugins/rpa/useMaskDismiss.js'
+  '/Users/limeng/Local/Documents/trae_projects/apms/ruoyi-ui/src/ai/plugins/rpa/useMaskDismiss.js'
 ).href
 const { clickIsInsidePanel, createDismissState, PANEL_SELECTOR } = await import(HELPER)
 

@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import { pathToFileURL } from 'node:url'
 
-const UI = '/Users/limeng/Documents/trae_projects/apms/ruoyi-ui'
+const UI = '/Users/limeng/Local/Documents/trae_projects/apms/ruoyi-ui'
 const SRC = `${UI}/src/ai/plugins/rpa`
 const demo = await import(pathToFileURL(`${SRC}/assistantDemo.js`).href)
 const { parseSse } = await import(pathToFileURL(`${SRC}/assistantSse.js`).href)

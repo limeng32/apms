@@ -10,7 +10,7 @@
 import { pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 
-const UI_ROOT = '/Users/limeng/Documents/trae_projects/apms/ruoyi-ui'
+const UI_ROOT = '/Users/limeng/Local/Documents/trae_projects/apms/ruoyi-ui'
 const UI_SRC = `${UI_ROOT}/src`
 const SRC_PREFIX = pathToFileURL(`${UI_SRC}/`).href
 

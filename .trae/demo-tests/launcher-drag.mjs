@@ -12,7 +12,7 @@ import assert from 'node:assert/strict'
 import { pathToFileURL } from 'node:url'
 
 const HELPER = pathToFileURL(
-  '/Users/limeng/Documents/trae_projects/apms/ruoyi-ui/src/ai/plugins/rpa/useLauncherDrag.js'
+  '/Users/limeng/Local/Documents/trae_projects/apms/ruoyi-ui/src/ai/plugins/rpa/useLauncherDrag.js'
 ).href
 const {
   DRAG_THRESHOLD,
