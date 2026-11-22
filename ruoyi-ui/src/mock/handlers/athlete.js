@@ -41,7 +41,15 @@ function currentGroupsOf(athleteId) {
 }
 function decorate(row) {
   if (!row) return row
-  return { ...row, age: effectiveAge(row), currentGroups: currentGroupsOf(row.athleteId) || null }
+  const decorated = { ...row, age: effectiveAge(row), currentGroups: currentGroupsOf(row.athleteId) || null }
+  // 与后端 mapper 同口径：ld.dept_name AS last_team_name（last_team_id JOIN sys_dept 实时解析）
+  if (decorated.lastTeamId != null) {
+    decorated.lastTeamName = deptName(decorated.lastTeamId) ?? decorated.lastTeamName ?? null
+  } else if (String(decorated.status) !== '0' && decorated.primaryTeamId != null) {
+    // 兜底：未快照 lastTeamId 的历史离队行，用主属队伍解析，避免前端落到「未知队伍」
+    decorated.lastTeamName = deptName(decorated.primaryTeamId) ?? decorated.lastTeamName ?? null
+  }
+  return decorated
 }
 
 // 与后端列表同口径：年龄段 13~18 = age+1 收敛（纯数字，展示层再拼「岁」）
@@ -282,6 +290,11 @@ export const athleteHandlers = [
     const ids = splitIds(ctx.params.athleteIds)
     getDb().athletes.forEach(a => {
       if (ids.includes(Number(a.athleteId))) {
+        // 与后端 leaveTeamByAthleteId 同口径：
+        // last_team_id = COALESCE(last_team_id, primary_team_id) 快照原队伍，primary_team_id 置空
+        a.lastTeamId = a.lastTeamId ?? a.primaryTeamId ?? null
+        a.primaryTeamId = null
+        a.teamName = null
         a.status = '1' // 逻辑删除：离队
         stampUpdate(a)
       }

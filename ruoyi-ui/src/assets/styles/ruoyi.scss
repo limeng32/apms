@@ -150,6 +150,18 @@
   .el-dialog:not(.is-fullscreen) .el-dialog__header { padding-right: 40px; }
   .el-dialog:not(.is-fullscreen) .el-dialog__body { padding: 12px 16px 0; }
 
+  /* 弹窗内多列表单窄屏全部单列堆叠：el-col 默认 flex:0 0 50% 会把标签压折行、
+     步进器挤出右边缘（事故：新增体态测量「体重(kg)」断行、+/- 被裁切）。
+     双类选择器特异性高于 EP 单类，无需 !important */
+  .el-dialog:not(.is-fullscreen) .el-col {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+  /* 表单标签保持一行，禁止折行 */
+  .el-dialog:not(.is-fullscreen) .el-form-item__label { white-space: nowrap; }
+  /* el-input-number 默认固定 150px，窄屏铺满表单项剩余空间 */
+  .el-dialog:not(.is-fullscreen) .el-input-number { width: 100%; }
+
   /* 触摸目标：主按钮 ≥44px，小按钮由 24/28px 提升到 36px */
   .el-button { min-height: 44px; font-size: 14px; }
   .el-button--small { min-height: 36px; }

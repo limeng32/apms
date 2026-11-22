@@ -158,4 +158,24 @@ function go(p) {
   border-radius: 11px;
   .el-icon { font-size: 14px; }
 }
+
+/* H5（≤768px，与 touchViewport/roster-kit 断点一致）：
+   信息文案与页码按钮均不收缩（natural 宽），整行单行横向滑动，末页不再被裁切；
+   露出 4px 细滚动条作为可滑提示，触摸动量滚动保证跟手 */
+@media (max-width: 768px) {
+  .rk-pager2 {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+    padding: 10px 12px;
+    &::-webkit-scrollbar { height: 4px; }
+    &::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+    &::-webkit-scrollbar-track { background: transparent; }
+  }
+  .rk-pager2-info,
+  .rk-pager2-btns { flex: none; }
+  .rk-pg2 { min-width: 40px; height: 40px; }
+}
 </style>

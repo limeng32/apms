@@ -153,7 +153,7 @@
                   @change="toggleRow(row)"
                 />
               </td>
-              <td>
+              <td class="col-user" @click.stop="openDetail(row)">
                 <div class="rp-user">
                   <span class="rp-avatar" :style="{ background: groupColor(row) }">{{ row.name.charAt(0) }}</span>
                   <div class="rp-user-meta">
@@ -835,8 +835,9 @@ function submitRejoin() {
 /* ===== 详情（整行点击）：右侧抽屉，不切换 location ===== */
 const detailOpen = ref(false)
 const detailAthleteId = ref(null)
-// H5 整行点击易误触（滚动/勾选擦碰即开抽屉）：窄屏仅行内「查看」按钮可开详情。
-// 与 medical 等页同模式：openDetail 无守卫供按钮调用，handleRowClick 加视口守卫供整行调用。
+// H5 整行点击易误触（滚动/勾选擦碰即开抽屉）：窄屏整行不响应，仅两个显式入口可开详情——
+// 首列「头像+姓名」单元格（col-user，@click.stop 直连 openDetail）与行内「查看」按钮。
+// 与 medical 等页同模式：openDetail 无守卫供按钮/首列调用，handleRowClick 加视口守卫供整行调用。
 const { isTouchViewport } = useTouchViewport()
 function openDetail(row) {
   detailAthleteId.value = row.athleteId
@@ -1094,6 +1095,7 @@ $risk: #dc2626;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex: none;
   height: 28px;
   padding: 0 10px;
   font-size: 12px;
@@ -1104,6 +1106,7 @@ $risk: #dc2626;
   cursor: pointer;
   transition: all .15s;
   user-select: none;
+  white-space: nowrap;
   &:active { transform: scale(.95); }
 }
 .rp-chip-group {
@@ -1477,11 +1480,28 @@ $rp-empty-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg
   .rp-actions { flex-wrap: nowrap; }
   .rp-link { white-space: nowrap; }
 
-  /* 窄屏整行不可点（仅「查看」按钮开详情抽屉）：去手型与 hover 暗示，
+  /* 筛选胶囊组：窄屏占满整行后内部单行横滑，胶囊保持一行（配合 .rp-chip 的 nowrap/flex:none，
+     杜绝「13岁」「全部」被压成竖排），滚动条隐藏不占布局 */
+  .rpf-group {
+    width: 100%;
+    max-width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+    &::-webkit-scrollbar { display: none; }
+  }
+  .rpf-label { flex: none; }
+
+  /* 窄屏整行不可点（首列「头像+姓名」与「查看」按钮可开详情抽屉）：去手型与 hover 暗示，
      斑马纹/红黄状态行的静态底色与左侧色条保持不变 */
   .rp-row { cursor: default; }
   .rp-row:hover { background: #fff; }
   .rp-row.is-zebra:hover { background: #fafbfd; }
+  /* 首列主内容是抽屉的显式触摸入口：手型 + 按压反馈；其余列仍不可点，横滑/勾选不误触 */
+  .col-user { cursor: pointer; }
+  .col-user:active .rp-user { opacity: .65; }
 }
 
 /* 赛季晋升弹窗 */

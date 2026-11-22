@@ -83,7 +83,36 @@ description: APMS 花名册风列表页 H5（≤768px）分页横滑、详情抽
 3. 标签 `.rpf-label` 同样 `flex: none`，防止被挤。
 4. 禁止靠缩字号/拆两行迁就宽度；用户名、编号等表格文本在 H5 媒体查询内统一 `white-space: nowrap`，交给表格横滑容器。
 
-## 5. 验证流程（轻量优先，禁止无头浏览器）
+## 5. 弹窗表单（el-dialog）H5 适配
+
+事故形态：固定 `width="520px"` 的弹窗在 375px 视口超宽，两列 `el-col :span="12"` 把标签压折行（「体重(kg)」断成两段）、el-input-number 步进器被右边缘裁切。
+
+### 5.1 动手前两条铁律（本仓真实返工教训）
+
+1. **先沿用户点击路径确认真实组件**：同一标题的弹窗可能存在于多个组件（「新增体态测量」同时存在于 `bodyMeasure/index.vue` 页面级弹窗与 `athlete/components/AthleteDetailPanel.vue` 抽屉内弹窗）。用户从抽屉进入时命中的是后者，改页面级文件完全无效。用标题文本全局 grep 出全部 el-dialog，再按截图背景/入口路径锁定。
+2. **先查全局样式再写组件补丁**：`src/assets/styles/ruoyi.scss` 的 `@media (max-width:768px)` 已有弹窗宽度规则（`.el-dialog:not(.is-fullscreen) { width: calc(100vw - 24px) !important }`）。宽度问题通常已解决，真实缺口是内部布局；在全局块扩展一次即覆盖全部 11+ 个同构弹窗，禁止在各 SFC 里加自定义类各修一遍（双轨规则必然漂移）。
+
+### 5.2 全局收口三规则（已落地 ruoyi.scss，新增弹窗自动受益）
+
+```scss
+@media (max-width: 768px) {
+  .el-dialog:not(.is-fullscreen) .el-col { flex: 0 0 100%; max-width: 100%; }  // 多列表单单列堆叠
+  .el-dialog:not(.is-fullscreen) .el-form-item__label { white-space: nowrap; } // 标签不折行
+  .el-dialog:not(.is-fullscreen) .el-input-number { width: 100%; }             // 步进器满宽
+}
+```
+
+- 双类选择器特异性 (0,3,0) 高于 EP 单类 (0,1,0)，无需 !important；`:not(.is-fullscreen)` 排除全屏弹窗。
+- EP 在 use-dialog 把 `--el-dialog-width` 写进内联 style，宽度只能靠已有的 `width !important` 覆盖，普通变量声明打不过内联。
+- el-dialog teleport 到 body，组件 scoped 样式打不中；全局 ruoyi.scss 经 main.js 引入，是这类适配的唯一正确落点。
+- 全部规则限定 ≤768px，桌面端多列布局原样保留。
+
+### 5.3 验证注意
+
+- 改 scss 后已存在的 iframe/页面可能持有旧 CSS（HMR 不总是替换 iframe 内样式），实测必须硬刷新或重建 iframe（src 加时间戳），否则会误判规则未生效。
+- 验收量化值（375px 视口实测基线）：el-col computed flex=`0 0 100%`；label white-space=`nowrap`；el-input-number 宽度 ≈197px（不再是被压的 46px）；dialog offsetWidth ≈351px。
+
+## 6. 验证流程（轻量优先，禁止无头浏览器）
 
 1. Vite 编译探针：`curl -s -o /tmp/vc.txt -w "%{http_code}" "http://localhost:5173/<文件路径>?t=$(date +%s)"`，需 200 且无 `Transform failed/Internal server error/Pre-transform error`。
 2. GetDiagnostics 目标文件 0 错误。
