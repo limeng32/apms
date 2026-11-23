@@ -12,6 +12,26 @@ function touchViewportActive() {
 }
 
 /**
+ * 从触摸目标向上找「沿 dx 方向仍可横向滚动」的容器（如 .rk-table-scroll）。
+ * 只认 overflow-x:auto/scroll 且确实溢出的元素；overflow:hidden 的祖先（如 drawer body）排除。
+ * 返回非 null 表示本次手势应交给该容器原生滚动，抽屉滑动关闭不得接管。
+ * 滚到边缘后同方向不再命中，继续拖才会进入关闭手势（与 iOS scroll-view 边缘接管体验一致）。
+ */
+function findHorizontalScroller(root, target, dx) {
+  let node = target
+  while (node && root.contains(node)) {
+    const overflowX = window.getComputedStyle(node).overflowX
+    if ((overflowX === 'auto' || overflowX === 'scroll') && node.scrollWidth > node.clientWidth + 1) {
+      const canScrollRight = node.scrollLeft > 1                                  // 右侧有内容，向右拖可回滚
+      const canScrollLeft = node.scrollLeft + node.clientWidth < node.scrollWidth - 1 // 左侧有内容，向左拖可前进
+      if ((dx > 0 && canScrollRight) || (dx < 0 && canScrollLeft)) return node
+    }
+    node = node.parentElement
+  }
+  return null
+}
+
+/**
  * 抽屉跟手右滑关闭指令（仅触摸视口 ≤768px 生效，面向右侧滑入的 RTL el-drawer）。
  *
  * 系统边缘返回手势网页无法禁用（见 useDrawerHistory 注释），本指令提供 App 式的
@@ -40,6 +60,7 @@ export const vDrawerSwipe = {
 
     let startX = 0
     let startY = 0
+    let startTarget = null
     let dx = 0
     let decided = false
     let horizontal = false
@@ -62,6 +83,7 @@ export const vDrawerSwipe = {
       const t = e.touches[0]
       startX = t.clientX
       startY = t.clientY
+      startTarget = e.target
       dx = 0
       decided = false
       horizontal = false
@@ -89,6 +111,16 @@ export const vDrawerSwipe = {
         }
       }
       if (!horizontal) return
+
+      // 横向手势起点落在可横滚容器（表格横滑区等）且该方向还没到边缘：
+      // 不 preventDefault、不拖面板，交还容器原生横向滚动；
+      // 到边缘后 findHorizontalScroller 返回 null，后续拖动才接管为关闭手势
+      if (findHorizontalScroller(panel, startTarget, dx)) {
+        tracking = false
+        panel.style.transition = ''
+        panel.style.userSelect = ''
+        return
+      }
 
       e.preventDefault()
       // RTL 抽屉只允许向右拖（关闭方向），左拖产生阻尼为 0

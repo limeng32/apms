@@ -1,10 +1,10 @@
 <template>
-  <el-drawer v-model="visible" size="720px" append-to-body>
+  <el-drawer v-model="visible" :size="drawerSize" append-to-body class="amd-drawer-wrap">
     <template #header>
       <span class="amd-title">体态测量历史 · {{ athleteName || '' }}</span>
       <GenderBadge :gender="records[0]?.athleteGender" :size="16" class="amd-title-gender"/>
     </template>
-    <div v-loading="loading" class="amd-body">
+    <div v-loading="loading" class="amd-body" v-drawer-swipe="handleSwipeClose">
       <!-- 最新值卡带 -->
       <div class="amd-latest" v-if="records.length">
         <div class="amd-latest-card" v-for="c in latestCards" :key="c.label">
@@ -21,7 +21,7 @@
       </div>
 
       <!-- 历史记录表 -->
-      <div class="rk-card">
+      <div class="rk-card amd-record-card">
         <div class="amd-section-title">
           全部测量记录
           <span class="amd-count">{{ records.length }}</span>
@@ -60,16 +60,31 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import BodyTrendChart from '@/components/BodyTrendChart/index.vue'
 import GenderBadge from '@/components/GenderBadge/index.vue'
 import { listByAthlete } from '@/api/apms/bodyMeasure'
+import { useDrawerHistory } from '@/utils/useDrawerHistory'
+import { vDrawerSwipe } from '@/utils/drawerSwipe'
 
 const visible = ref(false)
 const loading = ref(false)
 const records = ref([])
 const athleteId = ref(null)
 const athleteName = ref('')
+
+// H5：系统返回手势（左沿滑动/返回键）优先关闭抽屉而非路由后退
+useDrawerHistory(visible)
+function handleSwipeClose() {
+  visible.value = false
+}
+
+// 窄屏全宽，桌面 720px（与 AthleteDetailDrawer 同模式）
+const viewportWidth = ref(window.innerWidth)
+function onResize() { viewportWidth.value = window.innerWidth }
+onMounted(() => window.addEventListener('resize', onResize))
+onBeforeUnmount(() => window.removeEventListener('resize', onResize))
+const drawerSize = computed(() => (viewportWidth.value <= 800 ? '100%' : '720px'))
 
 const SOURCE_META = {
   manual: { tone: 'tone-gray', label: '手动' },
@@ -134,7 +149,39 @@ defineExpose({ open, reload })
 .amd-latest-value i { font-style: normal; font-size: 11px; font-weight: 400; color: #94a3b8; margin-left: 2px; }
 .amd-latest-date { font-size: 10px; color: #cbd5e1; }
 .amd-chart-card { padding: 12px; }
+/* 记录卡与趋势卡同构：同样的内边距，标题/表格不再贴边 */
+.amd-record-card { padding: 12px; }
 .amd-section-title { font-weight: 600; font-size: 13px; color: #334155; margin-bottom: 8px; }
 .amd-count { display: inline-block; margin-left: 6px; background: #eff6ff; color: #2563eb; border-radius: 10px; padding: 0 8px; font-size: 11px; }
 .amd-table { font-size: 12px; }
+
+/* 横向滚动单一承载链路：
+   el-drawer__body（EP 默认 overflow:auto）只负责纵向；横向收敛到 .rk-table-scroll。
+   flex 列内卡片必须 min-width:0 才会收缩，否则宽表把卡片撑开、横滚漂移到 drawer 层，
+   iOS 上横向手势被纵向滚动吞掉（用户感知"不能横滑"） */
+.amd-body { min-width: 0; }
+.amd-body > .rk-card { min-width: 0; }
+.amd-record-card .rk-table-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+/* 7 列保留合理最小宽，窄屏真实溢出由表格容器横滑承担，列不被压缩 */
+.amd-table { min-width: 560px; }
+
+/* H5（≤768px）：5 列最新值卡带改 2 列，避免每列压到 50px 数字折行；
+   抽屉已全宽，内容区左右保留与卡片一致的留白 */
+@media (max-width: 768px) {
+  .amd-body { padding: 0 12px 20px; gap: 12px; }
+  .amd-latest { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .amd-latest-value { font-size: 18px; }
+  .amd-chart-card,
+  .amd-record-card { padding: 10px; }
+}
+</style>
+
+<!-- 全局样式：el-drawer 经 teleport 挂到 body，scoped/:deep 无法可靠命中其内部元素；
+     用自定义类 amd-drawer-wrap 限定，仅让 drawer body 承担纵向滚动，
+     横向收敛到 .rk-table-scroll，避免双横向滚动源抢手势 -->
+<style lang="scss">
+.amd-drawer-wrap .el-drawer__body { overflow-x: hidden; }
 </style>

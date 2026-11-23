@@ -42,6 +42,31 @@ description: APMS 花名册风列表页 H5（≤768px）分页横滑、详情抽
 - el-drawer 经 teleport 挂 body，scoped 样式打不到其内部：面板定位用内联 style（top/height 偏移顶栏 50/84px），内部覆写写非 scoped 的第二个 `<style>` 块。
 - `destroy-on-close` 保证每次打开重新拉详情。
 
+### 2.4 抽屉内嵌宽表：横向滚动单一承载链路（真实事故）
+
+抽屉内放 7 列表格时，横滚可能漂移到 `.el-drawer__body`（EP 默认 overflow:auto），iOS 上横向手势被其纵向滚动吞掉，用户感知"表格不能横滑"。修复必须成链，缺一不可（参考 AthleteMeasureDrawer）：
+
+1. flex 收缩链：`.amd-body { min-width:0 }` 及其直接卡片 `.amd-body > .rk-card { min-width:0 }`——flex 子项默认 min-width:auto 不收缩，宽表会把卡片一路撑到 drawer body，横滚源外移。
+2. 表格给真实最小宽（如 `min-width:560px`）让它在窄屏确定性溢出；列宽不压缩、不截断。
+3. 横滚只允许发生在紧贴表格的 `.rk-table-scroll`：`overflow-x:auto; -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain`。
+4. drawer body 横向关闭、纵向保留：给 el-drawer 加自定义类（如 amd-drawer-wrap），在**非 scoped 第二 style 块**写 `.amd-drawer-wrap .el-drawer__body { overflow-x:hidden }`。scoped 的 `:deep()` 对 teleport 出去的 EP 内部元素不可靠，实测不生效。
+5. 验收量化：drawer body scrollWidth==clientWidth（无横溢）；table-scroll scrollWidth>clientWidth 且 scrollLeft 可设可读；documentElement 横溢为 0。**注意：scrollLeft API 可设可读只证明 CSS 层可滚，证明不了触摸可滚——必须再过 §2.5 的手势层检查。**
+6. 同抽屉内多个卡片要视觉对齐时，padding 必须落在各卡片自身（同值同构），不能只靠外层容器 padding——否则无 padding 的卡片标题贴边。
+
+### 2.5 CSS 可滚 ≠ 触摸可滚：滑动关闭指令的手势冲突（真实事故，排查两轮才定位）
+
+现象：§2.4 全部量化项 PASS（scrollWidth>clientWidth、scrollLeft 可写），真机上表格仍然滑不动。根因在事件层不在样式层：`v-drawer-swipe`（utils/drawerSwipe.js）挂在整个 drawer 面板，一旦识别横向意向就 `e.preventDefault()` 拖面板，把表格区的原生横滚手势吞掉了。**任何"全屏手势指令 + 内部可横滚区"的组合都有此坑。**
+
+修复模式（已落地于 drawerSwipe 的 `findHorizontalScroller`）：
+1. touchstart 记录 `startTarget`；touchmove 判定为横向后，先从 target 向上找满足 `overflow-x:auto/scroll` 且 `scrollWidth>clientWidth+1` 的祖先。
+2. 按方向做边缘判定：dx<0 要求 `scrollLeft+clientWidth < scrollWidth-1`（还能向左前进）；dx>0 要求 `scrollLeft>1`（还能向右回滚）。命中则**不 preventDefault、不拖面板**，本次手势 tracking 置 false 全程交还原生滚动。
+3. 到边缘后查找返回 null，同一方向继续拖才接管为关闭手势（iOS scroll-view 边缘接管体验）；新手势在 touchstart 重新评估，状态不串。
+4. overflow:hidden 的祖先（drawer body）天然被排除，不会误判。
+
+验证方法（合成 TouchEvent，注意 matchMedia 门控）：
+- 桌面视口下 `touchViewportActive()` 为 false，真实 dispatch 不进指令逻辑；可直接对 `findHorizontalScroller` + 决策分支做函数级验证，三分支必测：非边缘横滑=放行（defaultPrevented=false、无 transform）、到边缘=接管（preventDefault=true）、非滚动区右滑=关闭手势无回归（translateX 正值）。
+- 教训：滚动类问题分两层排查，先 CSS 链路（overflow/min-width/滚动源唯一），再事件链路（passive 监听、preventDefault、手势指令/touch-action）。只验一层会反复返工。
+
 ## 3. 分页窄屏模式（RkPager 共享组件）
 
 组件：`src/components/RkPager/index.vue`，被 athlete/bodyMeasure/comboScore/phv/rtp 等 7 处共用，**修复只改组件本身，不要各页补丁**。
@@ -82,6 +107,8 @@ description: APMS 花名册风列表页 H5（≤768px）分页横滑、详情抽
 2. 同组胶囊在 ≤768px 占整行并内部横滑：父组 `width:100%; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none`，`::-webkit-scrollbar { display:none }`（筛选组允许隐藏滚动条，与分页不同——筛选组有边缘半截胶囊暗示可滑；分页必须显式滚动条）。
 3. 标签 `.rpf-label` 同样 `flex: none`，防止被挤。
 4. 禁止靠缩字号/拆两行迁就宽度；用户名、编号等表格文本在 H5 媒体查询内统一 `white-space: nowrap`，交给表格横滑容器。
+5. 通用类缺口在全局补，不要各页打补丁：`.rk-person-main/.rk-person-sub`（队员姓名/队伍）与 `.rk-table .rk-mono`（日期/数字列）曾整体缺 nowrap，导致姓名逐字竖排、`2026-09-12` 断两行——已在 roster-kit.scss 的 768 断点统一收口，bodyMeasure/phv/medical 等全部 rk-table 页面自动受益。新增表格页直接用这些类，不要自行再加 nowrap。
+6. 滚动条唯一事实源是 `layout/components/AppMain.vue` 的非 scoped 全局 `::-webkit-scrollbar`（6px，thumb #c0c0c0）。组件内禁止另写 webkit scrollbar 尺寸（scoped 双轨会特异性打架且 @use 链路未必编译进目标页）；Firefox 补 `scrollbar-width: thin; scrollbar-color: #c0c0c0 transparent` 即可。iOS Safari 静止时隐藏滚动条是平台行为，CSS 不可强制常显，靠边缘裁切内容 + 滚动时浮现提供暗示。
 
 ## 5. 弹窗表单（el-dialog）H5 适配
 
@@ -111,6 +138,16 @@ description: APMS 花名册风列表页 H5（≤768px）分页横滑、详情抽
 
 - 改 scss 后已存在的 iframe/页面可能持有旧 CSS（HMR 不总是替换 iframe 内样式），实测必须硬刷新或重建 iframe（src 加时间戳），否则会误判规则未生效。
 - 验收量化值（375px 视口实测基线）：el-col computed flex=`0 0 100%`；label white-space=`nowrap`；el-input-number 宽度 ≈197px（不再是被压的 46px）；dialog offsetWidth ≈351px。
+
+### 5.4 复杂弹窗内部（非标准表单）的窄屏模式
+
+全局三规则只管 el-col/label/input-number；公式推导、详情类弹窗的自定义网格/表格要在组件内补 768 媒体查询（参考 `phv/index.vue` 的 mf-* 规则）：
+
+- N 列等宽网格（如 5 列输入参数 `grid-template-columns: repeat(5,1fr)`）：窄屏统一降 2 列 `repeat(2, minmax(0,1fr))`，数字卡不再被压到 50px 折行。
+- 弹窗内数据表：`display:block; overflow-x:auto; white-space:nowrap`——table 转 block 可横滑且不破坏表布局，长公式/代入表达式不压缩列。
+- `<pre>` 公式块：保留 `white-space:pre-wrap` 换行能力，加 `overflow-x:auto` 兜底，字号可降到 11.5px。
+- 左右对挤的结论行（`justify-content:space-between`）：改 `flex-direction:column; align-items:flex-start`。
+- auto-fill 卡片网格 `minmax(300px,1fr)` 在 ~291px 内容宽下必然溢出：窄屏改 `minmax(0,1fr)` 单列（参考 MeasureCyclePanel 的 mc-grid）。
 
 ## 6. 验证流程（轻量优先，禁止无头浏览器）
 

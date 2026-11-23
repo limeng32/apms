@@ -291,4 +291,15 @@ defineExpose({ open, reload })
 .re-muted { color: #94a3b8; font-size: 11px; margin-left: 6px; }
 .cd-gender { vertical-align: middle; margin: 0 3px; }
 :deep(.el-input-number .el-input__inner) { text-align: center; }
+
+/* H5（≤768px）：880px 弹窗宽度由 ruoyi.scss 全局收口，此处处理内部工具条堆叠；
+   名单/批量录入表均在 rk-table-scroll 内横滑，不压缩列宽 */
+@media (max-width: 768px) {
+  .cd-toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
+  .cd-batch-bar { flex-wrap: wrap; gap: 8px; }
+  .cd-batch-hint { flex-basis: 100%; }
+  .cd-progress { width: 100%; }
+  .cd-progress-bar { flex: 1; width: auto; min-width: 120px; }
+  .cd-scroll { max-height: 56vh; }
+}
 </style>

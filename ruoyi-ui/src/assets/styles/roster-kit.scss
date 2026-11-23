@@ -910,6 +910,18 @@ $rk-empty-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg
   }
   /* 原生筛选控件 ≥40px；16px 字号避免 iOS 聚焦自动放大 */
   .rk-input, .rk-select { min-height: 40px; font-size: 16px; }
+
+  /* 表格横滑容器内文本一律不折行：队员姓名/队伍逐字竖排、日期 2026-09-12 断行
+     都是窄列宽 + 无 nowrap 所致；表格整体在 .rk-table-scroll 内横滑，不压缩列。
+     滚动条可见性由 AppMain.vue 全局 ::-webkit-scrollbar（6px）统一承担，
+     此处只补 Firefox 的 scrollbar-width，不另造 webkit 双轨 */
+  .rk-person-main,
+  .rk-person-sub { white-space: nowrap; }
+  .rk-table .rk-mono { white-space: nowrap; }
+  .rk-table-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #c0c0c0 transparent;
+  }
 }
 
 /* ============================================================

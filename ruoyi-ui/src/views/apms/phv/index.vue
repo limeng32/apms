@@ -750,6 +750,29 @@ loadList()
 .mf-note { font-size: 12px; color: #94a3b8; line-height: 1.7; }
 .mf-old-saved { color: #b45309; }
 
+/* ===== H5（≤768px）：公式推导弹窗内部适配（宽度由 ruoyi.scss 全局规则收口，
+   这里处理 5 列输入网格/公式表/结果行的窄屏堆叠；两弹窗共用 mf-* 类，一次覆盖） ===== */
+@media (max-width: 768px) {
+  /* 输入参数网格：5 列/3 列统一改 2 列，数字不再被压到折行 */
+  .mf-inputs { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .mf-input b { font-size: 15px; }
+  /* 公式文本：等宽字体保留对齐，缩小字号防横向溢出（pre-wrap 已允许换行） */
+  .mf-formula { font-size: 11.5px; padding: 10px 12px; overflow-x: auto; }
+  /* 推导表：长代入表达式不压缩列，表格自身横向滑动（table 转 block 不破坏表布局） */
+  .mf-table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+  }
+  /* 结论行：说明文字与结果值上下堆叠，不再左右对挤 */
+  .mf-result-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+}
+
 /* ===== 嵌入模式：供合并页堆叠（隐藏页头、归零满铺外壳） ===== */
 .app-container.is-embedded {
   padding: 0;

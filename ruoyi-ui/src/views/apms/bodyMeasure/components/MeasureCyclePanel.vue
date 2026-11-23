@@ -218,4 +218,15 @@ defineExpose({ load })
 .mc-actions .rk-link { padding: 0; }
 .mc-actions .is-danger { color: #dc2626; }
 .mc-empty { grid-column: 1/-1; padding: 50px; text-align: center; color: #94a3b8; font-size: 13px; }
+
+/* H5（≤768px）：单列卡片；300px minmax 在 ~291px 内容宽下会撑破容器。
+   工具栏换行堆叠，操作链接横向排布收窄间距 */
+@media (max-width: 768px) {
+  .mc-toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
+  .mc-filter { flex-wrap: wrap; }
+  .mc-filter .rk-input,
+  .mc-filter .rk-select { flex: 1 1 120px; min-width: 0; }
+  .mc-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .mc-actions { gap: 10px; flex-wrap: wrap; }
+}
 </style>
