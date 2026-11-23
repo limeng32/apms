@@ -101,7 +101,7 @@
                              @change="toggleRow(row)"/>
                     </td>
                     <td class="rk-mono ind-code">{{ row.code }}</td>
-                    <td><span class="rk-row-link">{{ row.name }}</span></td>
+                    <td class="col-user" @click.stop="openDetail(row)"><span class="rk-row-link">{{ row.name }}</span></td>
                     <td class="text-center">
                       <span class="rk-soft-chip" :class="categoryChipClass(row.category)">{{ row.category || '—' }}</span>
                     </td>
@@ -159,7 +159,7 @@
       <!-- ===== 参考范围 & 三级判定 抽屉（点击左表行打开） ===== -->
       <el-drawer v-model="detailDrawerVisible" :size="drawerSize" :with-header="false"
                  destroy-on-close class="ind-drawer-wrap" :style="drawerPanelStyle">
-        <div class="ind-drawer" v-if="currentIndicator">
+        <div class="ind-drawer" v-if="currentIndicator" v-drawer-swipe="handleSwipeClose">
           <div class="ind-drawer-head">
             <div class="ind-drawer-id">
               <div class="ind-drawer-title">参考范围 &amp; 三级判定</div>
@@ -302,7 +302,7 @@
       </el-drawer>
 
       <!-- ========== 指标 新增/编辑 Dialog（原逻辑保留） ========== -->
-      <el-dialog :title="dialogTitle" v-model="showIndicatorDialog" width="520px">
+      <el-dialog :title="dialogTitle" v-model="showIndicatorDialog" width="520px" append-to-body>
         <el-form ref="indicatorFormRef" :model="indicatorForm" :rules="indicatorRules" label-width="100px">
           <el-row :gutter="12">
             <el-col :span="12">
@@ -368,7 +368,7 @@
       </el-dialog>
 
       <!-- ========== 参考范围 Dialog（原逻辑保留） ========== -->
-      <el-dialog :title="showRefDialog?.id ? '编辑参考范围' : '新增参考范围'" v-model="showRefDialogVisible" width="480px">
+      <el-dialog :title="showRefDialog?.id ? '编辑参考范围' : '新增参考范围'" v-model="showRefDialogVisible" width="480px" append-to-body>
         <el-form :model="refForm" label-width="100px">
           <el-row :gutter="12">
             <el-col :span="12">
@@ -423,13 +423,16 @@ import {
 import { Plus, Delete, RefreshLeft, ArrowLeft, ArrowRight, Close } from '@element-plus/icons-vue'
 import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
 import { useTouchViewport } from '@/utils/touchViewport'
+import { useDrawerHistory } from '@/utils/useDrawerHistory'
+import { vDrawerSwipe } from '@/utils/drawerSwipe'
 
 const { proxy } = getCurrentInstance()
 const { drawerPanelStyle } = useDrawerOffset()
 const { drawerSize } = useDrawerSize('760px')
 const { isTouchViewport } = useTouchViewport()
 
-const PAGE_SIZE = 10
+// 合并页「指标库与任务下发」H5 优先：每页 4 项，窄屏一屏可见整页内容与分页条
+const PAGE_SIZE = 4
 
 // ============ 查询参数 ============
 const loading = ref(false)
@@ -540,6 +543,12 @@ function handleStatusChange(row) {
 
 // ============ 主面板交互（右侧抽屉） ============
 const detailDrawerVisible = ref(false)
+// H5：系统返回手势（左沿滑动/Android 返回键）先关抽屉不跳路由
+useDrawerHistory(detailDrawerVisible)
+// H5：面板内向右跟手滑动关闭；visible 变 false 后 useDrawerHistory 自动回收 history 标记位
+function handleSwipeClose() {
+  detailDrawerVisible.value = false
+}
 const currentIndicator = ref(null)
 const detail = reactive({ refs: [] })
 const detailLoading = ref(false)
@@ -1021,5 +1030,7 @@ loadStats()
 <style lang="scss">
 .el-drawer.ind-drawer-wrap .el-drawer__body {
   padding: 0;
+  /* 横向滚动只允许发生在抽屉内 .rk-table-scroll，drawer body 仅承担纵向滚动 */
+  overflow-x: hidden;
 }
 </style>

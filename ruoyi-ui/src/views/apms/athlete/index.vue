@@ -1499,9 +1499,7 @@ $rp-empty-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg
   .rp-row { cursor: default; }
   .rp-row:hover { background: #fff; }
   .rp-row.is-zebra:hover { background: #fafbfd; }
-  /* 首列主内容是抽屉的显式触摸入口：手型 + 按压反馈；其余列仍不可点，横滑/勾选不误触 */
-  .col-user { cursor: pointer; }
-  .col-user:active .rp-user { opacity: .65; }
+  /* 首列主内容的手型 + 按压反馈由 roster-kit.scss 768 断点 .col-user 统一承担 */
 }
 
 /* 赛季晋升弹窗 */

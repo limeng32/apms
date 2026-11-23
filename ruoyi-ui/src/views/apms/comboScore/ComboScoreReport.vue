@@ -2,7 +2,7 @@
   <!-- ========= 组合分报告弹窗（可打印；列表页与运动员详情共用） ========= -->
   <el-dialog :title="null" :model-value="modelValue"
              @update:model-value="v => emit('update:modelValue', v)"
-             width="880px" class="report-dialog" :show-close="true">
+             width="880px" append-to-body class="report-dialog" :show-close="true">
     <div v-if="snapshotData" class="combo-report" id="comboReport">
       <!-- 报告头部 -->
       <div class="report-header">

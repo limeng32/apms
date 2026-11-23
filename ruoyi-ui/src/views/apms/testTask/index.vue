@@ -82,7 +82,7 @@
                       <input type="checkbox" class="rk-check" :checked="ids.includes(row.id)"
                              @change="toggleRow(row)"/>
                     </td>
-                    <td>
+                    <td class="col-user" @click.stop="openDetail(row)">
                       <div class="tt-task-name rk-row-link" title="点击查看任务详情并配置测试项/队员">{{ row.taskName }}</div>
                       <div class="tt-task-id rk-mono">#{{ row.id }} · 主测 {{ row.testerName || '—' }}</div>
                       <div v-if="(row.memberTotal || 0) === 0" class="tt-unconfigured">
@@ -152,7 +152,7 @@
       <!-- ===== 任务详情抽屉（点击左表行打开） ===== -->
       <el-drawer v-model="detailDrawerVisible" :size="drawerSize" :with-header="false"
                  destroy-on-close class="tt-drawer-wrap" :style="drawerPanelStyle">
-        <div class="tt-drawer" v-if="currentTask">
+        <div class="tt-drawer" v-if="currentTask" v-drawer-swipe="handleSwipeClose">
           <div class="tt-drawer-head">
             <div class="tt-drawer-id">
               <div class="tt-drawer-title">任务详情</div>
@@ -194,7 +194,7 @@
                     <div class="tt-guide-name">添加测试项<span class="tt-guide-count rk-mono">{{ detail.items.length }} 项</span></div>
                     <div class="tt-guide-desc">从指标库 / 测试模型库选择</div>
                   </div>
-                  <button v-if="itemsReady" type="button" class="rk-link" @click="activeTab = 'items'">管理</button>
+                  <button v-if="itemsReady" type="button" class="rk-link" @click="manageSection('items')">管理</button>
                   <el-button v-else class="rk-btn rk-btn-sm rk-btn-primary" @click="guideAddItems">添加</el-button>
                 </div>
                 <div class="tt-guide-step" :class="membersReady ? 'is-done' : 'is-todo'">
@@ -203,7 +203,7 @@
                     <div class="tt-guide-name">登记参测队员<span class="tt-guide-count rk-mono">{{ detail.members.length }} 人</span></div>
                     <div class="tt-guide-desc">可按目标队伍批量勾选</div>
                   </div>
-                  <button v-if="membersReady" type="button" class="rk-link" @click="activeTab = 'members'">管理</button>
+                  <button v-if="membersReady" type="button" class="rk-link" @click="manageSection('members')">管理</button>
                   <el-button v-else class="rk-btn rk-btn-sm rk-btn-primary" @click="guideEnroll">批量登记</el-button>
                 </div>
                 <div class="tt-guide-step" :class="guideReady ? 'is-done' : 'is-lock'">
@@ -245,7 +245,7 @@
               </div>
 
               <!-- 原生 Tabs -->
-              <div class="rk-tabs tt-tabs">
+              <div ref="tabsRef" class="rk-tabs tt-tabs">
                 <button type="button" class="rk-tab" :class="{ 'is-active': activeTab === 'items' }" @click="activeTab = 'items'">
                   测试项 <span class="tt-tab-count rk-mono">{{ detail.items.length }}</span>
                 </button>
@@ -395,7 +395,7 @@
       </el-drawer>
 
       <!-- ========== 任务 新增/编辑 Dialog（原逻辑保留） ========== -->
-      <el-dialog :title="dialogTitle" v-model="showTaskDialog" width="520px">
+      <el-dialog :title="dialogTitle" v-model="showTaskDialog" width="520px" append-to-body>
         <el-form ref="taskFormRef" :model="taskForm" :rules="taskRules" label-width="100px">
           <el-row :gutter="12">
             <el-col :span="24">
@@ -446,7 +446,7 @@
       </el-dialog>
 
       <!-- ========== 成员状态快速变更 ========== -->
-      <el-dialog title="更新参测状态" v-model="showStatusDialog" width="360px">
+      <el-dialog title="更新参测状态" v-model="showStatusDialog" width="360px" append-to-body>
         <el-form label-width="90px">
           <el-form-item label="运动员">
             <span>{{ currentMember?.athleteName }}</span>
@@ -467,7 +467,7 @@
       </el-dialog>
 
       <!-- ========== 添加/编辑 测试项 ========== -->
-      <el-dialog :title="itemForm.id ? '编辑测试项' : '添加测试项'" v-model="showItemDialog" width="480px">
+      <el-dialog :title="itemForm.id ? '编辑测试项' : '添加测试项'" v-model="showItemDialog" width="480px" append-to-body>
         <el-form :model="itemForm" label-width="100px">
           <el-form-item label="类型">
             <el-radio-group v-model="itemForm.itemType">
@@ -515,7 +515,7 @@
       </el-dialog>
 
       <!-- ========== 单个登记 ========== -->
-      <el-dialog title="登记参测队员" v-model="showEnrollDialog" width="400px">
+      <el-dialog title="登记参测队员" v-model="showEnrollDialog" width="400px" append-to-body>
         <el-form label-width="90px">
           <el-form-item label="运动员">
             <el-select v-model="enrollAthleteId" filterable placeholder="搜索队员" style="width:100%">
@@ -533,7 +533,7 @@
       </el-dialog>
 
       <!-- ========== 批量登记 ========== -->
-      <el-dialog title="批量登记参测队员" v-model="showBatchEnrollDialog" width="520px">
+      <el-dialog title="批量登记参测队员" v-model="showBatchEnrollDialog" width="520px" append-to-body>
         <el-alert v-if="currentTask?.targetDeptId" :closable="false" type="info" show-icon
           :title="'只显示目标队伍 ' + currentTask.targetDeptId + ' 的队员（其他队伍也可手动选）'"
           style="margin-bottom:12px"/>
@@ -588,6 +588,8 @@ import ResultGridEntryDialog from '@/components/ResultGridEntryDialog/index.vue'
 import ImportPreviewDialog from '@/components/ImportPreviewDialog/index.vue'
 import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
 import { useTouchViewport } from '@/utils/touchViewport'
+import { useDrawerHistory } from '@/utils/useDrawerHistory'
+import { vDrawerSwipe } from '@/utils/drawerSwipe'
 
 const { proxy } = getCurrentInstance()
 const router = useRouter()
@@ -595,7 +597,8 @@ const { drawerPanelStyle } = useDrawerOffset()
 const { drawerSize } = useDrawerSize('780px')
 const { isTouchViewport } = useTouchViewport()
 
-const PAGE_SIZE = 10
+// 合并页「指标库与任务下发」H5 优先：每页 4 项，窄屏一屏可见整页内容与分页条
+const PAGE_SIZE = 4
 
 // ========= 查询 =========
 const loading = ref(false)
@@ -688,10 +691,18 @@ const kpiCards = computed(() => [
 
 // ========= 主从（右侧抽屉） =========
 const detailDrawerVisible = ref(false)
+// H5：系统返回手势（左沿滑动/Android 返回键）先关抽屉不跳路由
+const { suppressNextClose } = useDrawerHistory(detailDrawerVisible)
+// H5：面板内向右跟手滑动关闭；visible 变 false 后 useDrawerHistory 自动回收 history 标记位
+function handleSwipeClose() {
+  detailDrawerVisible.value = false
+}
 const currentTask = ref(null)
 const detail = reactive({ items: [], members: [] })
 const detailLoading = ref(false)
 const activeTab = ref('items')
+// 抽屉内 Tabs 锚点：引导区「管理」切 tab 后需滚动到此处，否则长抽屉里用户看不到任何变化
+const tabsRef = ref(null)
 
 // 实际打开详情的无守卫方法，供显式按钮（含 H5 详情/配置入口）调用
 function openDetail(row) {
@@ -726,8 +737,20 @@ function guideEnroll() {
   activeTab.value = 'members'
   openBatchEnrollDialog()
 }
+// 引导区「管理」：切 tab 同时把标签栏滚入抽屉可视区。
+// 抽屉内容高约 1270px、可视区仅 ~530px，tabs 在引导区下方 ~200px，
+// 只切 activeTab 不滚动时用户视觉零反馈，会被误认为按钮失效
+function manageSection(key) {
+  activeTab.value = key
+  nextTick(() => {
+    tabsRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
 function goResultEntry() {
   if (!guideReady.value) return
+  // 关抽屉会触发 useDrawerHistory 的 history.back()，与紧随的 router.push 竞争会把导航弹回；
+  // 抑制本次 back，由 router.push 接管历史栈
+  suppressNextClose()
   detailDrawerVisible.value = false
   router.push('/testings/dispatch?tab=result')
 }
@@ -1075,6 +1098,8 @@ loadStats()
 }
 @media (max-width: 768px) {
   .tt-drawer-body { padding: 14px 14px 24px; }
+  /* 抽屉内成员表姓名列窄宽下逐字竖排（事故：刘子轩→刘/子/轩），表格整体在 rk-table-scroll 内横滑 */
+  .tt-mname { white-space: nowrap; }
 }
 .tt-detail-banner {
   padding: 14px 16px 13px;
@@ -1205,6 +1230,7 @@ loadStats()
 }
 .tt-dir {
   font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+  white-space: nowrap;
   &.higher { background: #e8f7ee; color: $rk-ok; }
   &.lower { background: #fef3e0; color: $rk-warn; }
 }
@@ -1246,6 +1272,8 @@ loadStats()
 /* el-drawer 面板 teleport 到 body，scoped 选择器无法可靠命中其内部 */
 .el-drawer.tt-drawer-wrap .el-drawer__body {
   padding: 0;
+  /* 横向滚动只允许发生在抽屉内 .rk-table-scroll，drawer body 仅承担纵向滚动 */
+  overflow-x: hidden;
 }
 
 /* ===== 嵌入模式：供合并页堆叠（隐藏页头、归零满铺外壳） =====

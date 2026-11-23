@@ -256,7 +256,7 @@
       <!-- ========== 新增/编辑 Dialog（损伤/手术时右侧常驻人体图点选） ========== -->
       <el-dialog :title="dialogTitle" v-model="showDialog"
                  :width="isInjuryType ? '920px' : '580px'"
-                 class="md-form-dialog">
+                 append-to-body class="md-form-dialog">
         <div class="md-form-layout">
           <div class="md-form-main">
         <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">

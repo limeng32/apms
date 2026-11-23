@@ -376,7 +376,7 @@ $rk-brand-gradient: linear-gradient(90deg, #2563eb, #06b6d4);
   color: $rk-text-3;
 }
 
-/* 软 chip（部门/岗位等短文本） */
+/* 软 chip（部门/岗位等短文本）：nowrap 兜底，窄列下「仅参考」「越小越好」不得逐字竖排 */
 .rk-soft-chip {
   display: inline-flex;
   align-items: center;
@@ -386,6 +386,7 @@ $rk-brand-gradient: linear-gradient(90deg, #2563eb, #06b6d4);
   color: $rk-text-2;
   background: $rk-canvas;
   border-radius: 8px;
+  white-space: nowrap;
 }
 
 .rk-num {
@@ -922,6 +923,24 @@ $rk-empty-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg
     scrollbar-width: thin;
     scrollbar-color: #c0c0c0 transparent;
   }
+
+  /* 手写分页条（.rk-pager，区别于 RkPager 组件的 .rk-pager2）：窄屏单行横滑，
+     信息与按钮组 flex:none 保持自然宽不压缩，末页按钮永远可达；
+     滚动条走 AppMain.vue 全局 6px 体系，此处只补 Firefox，不造 webkit 双轨 */
+  .rk-pager {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: #c0c0c0 transparent;
+  }
+  .rk-pager-info { flex: none; white-space: nowrap; }
+  .rk-pager-btns { flex: none; }
+
+  /* 首列主内容显式触摸入口：H5 整行点击被 handleRowClick 视口守卫屏蔽，
+     首列（col-user）与行内「详情」按钮并列承担打开抽屉的职责 */
+  .col-user { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .col-user:active { opacity: .65; }
 }
 
 /* ============================================================

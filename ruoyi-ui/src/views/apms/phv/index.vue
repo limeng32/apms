@@ -124,7 +124,7 @@
       </div>
 
       <!-- ========= PHV 计算弹窗 ========= -->
-      <el-dialog title="PHV 成熟度计算" v-model="showCalc" width="600px">
+      <el-dialog title="PHV 成熟度计算" v-model="showCalc" width="600px" append-to-body>
         <el-alert type="info" show-icon :closable="false" class="calc-tip">
           PHV（Peak Height Velocity）用 Mirwald 公式，输入身高、坐高、体重、年龄、父母身高，预测：成熟度偏移、PHV 年龄、成年身高。
         </el-alert>

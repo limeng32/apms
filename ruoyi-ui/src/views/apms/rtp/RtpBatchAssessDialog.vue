@@ -1,6 +1,7 @@
 <template>
   <el-dialog title="批量 RTP 评估" :model-value="modelValue" width="880px"
              :close-on-click-modal="false" :close-on-press-escape="!submitting"
+             append-to-body
              @update:model-value="v => !submitting && emit('update:modelValue', v)"
              @open="onOpen" @closed="onClosed">
 

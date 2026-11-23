@@ -29,6 +29,12 @@ export function useDrawerHistory(visible, options = {}) {
   const { isTouchViewport } = useTouchViewport()
   // 本实例是否已压入标记位（同时承担「popstate 是否归我管」的判定）
   const pushed = ref(false)
+  // 下一次关闭由外部导航接管（如关抽屉后立即 router.push 到同级 Tab）：
+  // 抑制本模块的 history.back()，否则 back 会把外部刚 push 的历史条目弹回，导航失效
+  let suppressClose = false
+  function suppressNextClose() {
+    suppressClose = true
+  }
 
   function active() {
     return !touchOnly || isTouchViewport.value
@@ -59,6 +65,7 @@ export function useDrawerHistory(visible, options = {}) {
     (open) => {
       if (!active()) return
       if (open) {
+        suppressClose = false
         if (!pushed.value) {
           // 合并而非替换：保留 vue-router 的 current/position/scroll 等 state 键，
           // URL 保持不变，仅压栈；apmsDrawer 为本模块命名空间标记
@@ -68,6 +75,11 @@ export function useDrawerHistory(visible, options = {}) {
       } else if (pushed.value) {
         // 非系统返回路径关闭：先复位再 back，回流 popstate 即 no-op，杜绝重复关闭/循环
         pushed.value = false
+        if (suppressClose) {
+          // 外部（如 router.push 同级 Tab）接管历史栈，本模块不 back，标记位随外部导航自然出栈
+          suppressClose = false
+          return
+        }
         history.back()
       }
     }
@@ -77,7 +89,8 @@ export function useDrawerHistory(visible, options = {}) {
   onBeforeUnmount(() => {
     window.removeEventListener('popstate', onPopState)
     pushed.value = false
+    suppressClose = false
   })
 
-  return { pushed }
+  return { pushed, suppressNextClose }
 }

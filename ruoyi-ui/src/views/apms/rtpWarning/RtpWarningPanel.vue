@@ -243,7 +243,7 @@
 
     <!-- ========== 采纳并更新 RTP 弹窗（单次 HTTP，无 green） ========== -->
     <el-dialog :title="'采纳建议并更新 RTP · ' + (current?.athleteName || '')"
-               v-model="acceptDialog" width="520px">
+               v-model="acceptDialog" width="520px" append-to-body>
       <el-form :model="acceptForm" label-width="100px">
         <el-form-item label="写入状态">
           <span class="rw-accept-target" :class="acceptForm.status === 'r' ? 'txt-red' : 'txt-amber'">

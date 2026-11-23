@@ -182,7 +182,7 @@
     </div>
 
     <!-- ========== 编辑弹窗 ========== -->
-    <el-dialog :title="editMode === 'new' ? '新增 RTP 评估' : '更新 RTP 状态'" v-model="showEdit" width="520px">
+    <el-dialog :title="editMode === 'new' ? '新增 RTP 评估' : '更新 RTP 状态'" v-model="showEdit" width="520px" append-to-body>
       <el-form :model="editForm" label-width="100px">
         <el-form-item label="队员">
           <span class="edit-athlete">{{ currentAthlete?.athleteName || '—' }} (ID: {{ editForm.athleteId }})</span>

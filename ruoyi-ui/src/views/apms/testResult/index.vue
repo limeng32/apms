@@ -120,7 +120,7 @@
                              :checked="!!selectedIds[row.id]"
                              @change="toggleSelectRow(row)"/>
                     </td>
-                    <td>
+                    <td class="col-user" @click.stop="openDetail(row)">
                       <div class="tr-athlete">
                         <span class="tr-name rk-row-link">{{ row.athleteName }}</span>
                         <GenderBadge :gender="row.athleteGender" :size="15"/>
@@ -182,7 +182,7 @@
       <!-- ===== 结果详情抽屉（点击左表行打开） ===== -->
       <el-drawer v-model="detailDrawerVisible" :size="drawerSize" :with-header="false"
                  destroy-on-close class="tr-drawer-wrap" :style="drawerPanelStyle">
-        <div class="tr-drawer" v-if="current">
+        <div class="tr-drawer" v-if="current" v-drawer-swipe="handleSwipeClose">
           <div class="tr-drawer-head">
             <div class="tr-drawer-id">
               <div class="tr-drawer-title">结果详情</div>
@@ -367,13 +367,16 @@ import { checkPermi } from '@/utils/permission'
 import { EditPen, Grid, Connection, RefreshLeft, ArrowLeft, ArrowRight, Close, Upload, Delete } from '@element-plus/icons-vue'
 import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
 import { useTouchViewport } from '@/utils/touchViewport'
+import { useDrawerHistory } from '@/utils/useDrawerHistory'
+import { vDrawerSwipe } from '@/utils/drawerSwipe'
 
 const { proxy } = getCurrentInstance()
 const { drawerPanelStyle } = useDrawerOffset()
 const { drawerSize } = useDrawerSize('720px')
 const { isTouchViewport } = useTouchViewport()
 
-const PAGE_SIZE = 10
+// 合并页「指标库与任务下发」H5 优先：每页 4 项，窄屏一屏可见整页内容与分页条
+const PAGE_SIZE = 4
 
 // ========= 手动录入 / 网格批量 / 设备推送 =========
 const entryDialogRef = ref(null)
@@ -519,6 +522,12 @@ listAthlete({ pageNum: 1, pageSize: 300 }).then(r => { athleteOptions.value = r.
 
 // ========= 主从（右侧抽屉） =========
 const detailDrawerVisible = ref(false)
+// H5：系统返回手势（左沿滑动/Android 返回键）先关抽屉不跳路由
+useDrawerHistory(detailDrawerVisible)
+// H5：面板内向右跟手滑动关闭；visible 变 false 后 useDrawerHistory 自动回收 history 标记位
+function handleSwipeClose() {
+  detailDrawerVisible.value = false
+}
 const current = ref(null)
 const attempts = ref([])
 const detailLoading = ref(false)
@@ -706,6 +715,8 @@ loadStats()
 }
 @media (max-width: 768px) {
   .tr-drawer-body { padding: 14px 14px 24px; }
+  /* 运动员姓名窄列逐字竖排（事故：张志远→张/志/远），表格整体在 rk-table-scroll 内横滑 */
+  .tr-name { white-space: nowrap; }
 }
 .tr-detail-banner {
   display: flex; align-items: center; gap: 14px;
@@ -818,5 +829,7 @@ loadStats()
 <style lang="scss">
 .el-drawer.tr-drawer-wrap .el-drawer__body {
   padding: 0;
+  /* 横向滚动只允许发生在抽屉内 .rk-table-scroll，drawer body 仅承担纵向滚动 */
+  overflow-x: hidden;
 }
 </style>
