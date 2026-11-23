@@ -148,7 +148,7 @@
       </div>
 
       <!-- ========= 批量计算弹窗（原逻辑保留） ========= -->
-      <el-dialog title="🧮 批量组合模型评分" v-model="showCalc" width="620px">
+      <el-dialog title="🧮 批量组合模型评分" v-model="showCalc" width="620px" append-to-body>
         <el-alert type="info" show-icon :closable="false" class="calc-tip">
           选择一个组合模型和一次测试任务，系统拉取该任务下所有「已选中」成绩，逐人计算加权组合分。
           缺失/仅参考指标自动跳过，<b>剩余指标权重自动归一化为 1</b>，分数不会被压低。<br/>

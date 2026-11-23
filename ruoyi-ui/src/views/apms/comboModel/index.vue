@@ -250,7 +250,7 @@
       </el-drawer>
 
       <!-- ========== 组合模型 新增/编辑 Dialog（单弹窗分段：关联已有 / 新建组合体系，无二级弹窗） ========== -->
-      <el-dialog :title="dialogTitle" v-model="showComboDialog" width="500px">
+      <el-dialog :title="dialogTitle" v-model="showComboDialog" width="500px" append-to-body>
         <el-form ref="comboFormRef" :model="comboForm" :rules="comboRules" label-width="100px">
           <el-row :gutter="12">
             <!-- 体系来源仅新增时可选；编辑时固定关联已有 -->
@@ -333,7 +333,7 @@
       </el-dialog>
 
       <!-- ========== 组成项 新增 Dialog（原逻辑保留） ========== -->
-      <el-dialog title="新增组成项" v-model="showCompDialogVisible" width="440px">
+      <el-dialog title="新增组成项" v-model="showCompDialogVisible" width="440px" append-to-body>
         <el-form :model="compForm" label-width="90px">
           <el-row :gutter="12">
             <el-col :span="24">

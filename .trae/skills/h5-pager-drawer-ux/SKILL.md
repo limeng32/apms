@@ -67,6 +67,48 @@ description: APMS 花名册风列表页 H5（≤768px）分页横滑、详情抽
 - 桌面视口下 `touchViewportActive()` 为 false，真实 dispatch 不进指令逻辑；可直接对 `findHorizontalScroller` + 决策分支做函数级验证，三分支必测：非边缘横滑=放行（defaultPrevented=false、无 transform）、到边缘=接管（preventDefault=true）、非滚动区右滑=关闭手势无回归（translateX 正值）。
 - 教训：滚动类问题分两层排查，先 CSS 链路（overflow/min-width/滚动源唯一），再事件链路（passive 监听、preventDefault、手势指令/touch-action）。只验一层会反复返工。
 
+### 2.6 存量抽屉 H5 补课清单（dispatch 三抽屉实战）
+
+老抽屉往往已有 useDrawerOffset/useDrawerSize/自定义 wrap 类/非 scoped body 块，但缺 history 与滑动。按单抽屉 4 步补齐，三抽屉同构可批量：
+
+1. script：`import { useDrawerHistory } from '@/utils/useDrawerHistory'`、`import { vDrawerSwipe } from '@/utils/drawerSwipe'`；在 visible ref 定义后立即 `useDrawerHistory(detailDrawerVisible)`，并加 `function handleSwipeClose(){ detailDrawerVisible.value = false }`。
+2. template：抽屉根 div（.xx-drawer）加 `v-drawer-swipe="handleSwipeClose"`；指令内部自行 closest('.el-drawer')，挂根 div 即可。
+3. 非 scoped 块的 `.el-drawer.xx-wrap .el-drawer__body { padding:0 }` 追加 `overflow-x: hidden`（抽屉内只要有 rk-table-scroll 就必须加，承接 §2.4 第 4 条）。
+4. 列表首列主内容 td 加 `class="col-user" @click.stop="openDetail(row)"`；col-user 的 cursor/按压反馈已在 roster-kit 768 断点全局收口，**不要在页面 scoped 再写一遍**（athlete 旧双轨已删）。
+
+验证两个坑：
+- useDrawerHistory 默认 touchOnly，**桌面视口测 history 永远不 +1 是正确行为**；必须在 ≤768 的 iframe 内测。
+- 同一页面会话里连续「开 A 抽屉→关→开 B 抽屉」时，关闭走的 `history.back()` 是异步的，未 settle 前 B 的 pushState 可能被挂起导航吞掉，表现为 B 的 history 不 +1。**每个抽屉用独立全新 iframe（URL 带 ?tab= 直切）隔离测**，不要串在一个会话里下结论。
+- 滑动指令在 ≤768 iframe 内可用合成 TouchEvent 端到端验：右滑后 el-drawer 面板内联 transform 出现 translateX 正值即挂载生效（会真的触发吸附关闭，属预期）。
+
+### 2.7 长抽屉内「状态切换型」按钮必须配滚动定位（真实事故，两次误诊才定位）
+
+事故：任务详情抽屉引导区两个「管理」按钮真机"点不动"。排查走过弯路：先怀疑 v-drawer-swipe 吞 click（加了控件放行，属有效防御但非主诉），实测程序化 .click() 后 tab 的 is-active 已切换——**绑定从未坏过**。真相是抽屉内容高 ~1270px、可视区仅 ~530px，按钮只改 `activeTab`（v-show 面板在按钮下方 ~200px），点击后 scrollTop 不变，用户视觉零反馈，遂判定"失效"。
+
+规则：抽屉/长页面里任何只切换下方区域状态的按钮（tab 切换、折叠展开、锚点跳转），处理函数必须 `nextTick(() => targetRef.value?.scrollIntoView({ behavior:'smooth', block:'start' }))`，让目标区域进入当前滚动容器可视区。
+
+- 目标锚点加 `ref`；滚动容器是抽屉内容体（如 .tt-drawer-body，overflow-y:auto），scrollIntoView 只滚最近可滚动祖先，EP modal 锁滚保证背景页不被带动（实测 documentElement.scrollTop 保持 0）。
+- 验证不能只看 class/状态变化，必须量化：点击后滚动容器 scrollTop 显著增大、目标 rect 进入容器可视区间、外层各容器 scrollTop 全为 0。
+- 排查口诀：用户说"点不动"先做三分法——① elementFromPoint 查遮挡；② 程序化 .click() 查绑定与状态；③ 若状态变了，查目标区域是否在视口外、scrollTop 是否变化。跳过③会在事件层反复空转。
+
+### 2.8 关抽屉后立即 router.push：history 竞争与 suppressNextClose（真实事故）
+
+事故：任务抽屉引导区「去测试结果」点击后 URL 不变、Tab 不切。根因：`useDrawerHistory` 在 visible→false 时执行 `history.back()` 回收 marker，而处理函数紧接着 `router.push(同级 ?tab=xxx)`——push 先入栈、back 随 watcher 异步执行把它弹回，导航被撤销。
+
+修复（composable 已支持）：`const { suppressNextClose } = useDrawerHistory(visible)`；导航前先 `suppressNextClose()`，再关 visible、再 router.push。suppress 是一次性的（下次 open 自动复位），普通 X 关闭/遮罩关闭/系统返回的 back 路径完全不变。
+
+### 2.9 el-dialog 漏 append-to-body：iOS 真机顶部裁切（桌面永远复现不了）
+
+事故：抽屉内打开的 el-dialog 在真机顶部被 navbar 下沿裁切、标题只剩半截，桌面 Chrome 与 375px iframe 内全部几何正常（margin/rect/祖先 transform 全绿），极难定位。
+
+机理（EP 2.13 源码级）：dialog2.mjs 中 `ElTeleport` 的 `disabled = appendTo !== 'body' ? false : !appendToBody`。**不写 append-to-body 时 Teleport 禁用，overlay 留在组件原 DOM 位置**（本仓是 `.app-main`，overflow:auto+position:relative 的滚动容器）。iOS WKWebView 对滚动容器内 `position:fixed` 有包含块偏移老 bug，overlay 参照系错位到容器内容区顶部；桌面 Chrome 已修复该行为，故本地无法复现。
+
+规则：
+- 本仓**所有 el-dialog/el-drawer 一律显式写 append-to-body**，code review 见 dialog 先查这个属性；grep 验证修复后 `overlay.parentElement === document.body`。
+- 排查 iOS-only 的 fixed/弹窗定位异常，先查 DOM 挂载点而不是算几何：桌面测量全正常本身就是信号。
+- 弹窗内还有弹窗时（抽屉→dialog）更要加，否则嵌套在滚动容器深处偏移更严重。
+- 修复要全量排查不要只修报错页：一次事故后用 `grep -rn "<el-dialog" src/views/apms` 列出全部弹窗逐行核对（多行标签的属性可能在第二/三行），本仓曾一次补齐 14 处（indicator/phv/comboModel/comboScore/testModel/bodyMeasure/medical/report/rtp/rtpWarning），零业务逻辑改动。system/monitor 等框架页与 tool/build 里 `:modal-append-to-body="false"` 的刻意用法不在收口范围。
+
 ## 3. 分页窄屏模式（RkPager 共享组件）
 
 组件：`src/components/RkPager/index.vue`，被 athlete/bodyMeasure/comboScore/phv/rtp 等 7 处共用，**修复只改组件本身，不要各页补丁**。
@@ -99,6 +141,22 @@ description: APMS 花名册风列表页 H5（≤768px）分页横滑、详情抽
 
 不能只看截图，读实际尺寸：子项 `scrollWidth > clientWidth` 即溢出；修复后该容器可横滑且页面级无横滚。
 
+### 3.3 手写分页条 .rk-pager（非 RkPager 组件）的全局收口
+
+indicator/testTask/testResult/comboModel/medical/report/testModel 及 system/user、system/role 共 9 处用的是页面内手写 `.rk-pager > .rk-pager-info + .rk-pager-btns`（注意类名无 `2` 后缀，与 RkPager 组件的 `.rk-pager2` 是两套）。这些页面全部 @use roster-kit，故规则只在 roster-kit.scss 的 768 断点写一次，禁止逐页补丁：
+
+```scss
+@media (max-width: 768px) {
+  .rk-pager { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin; scrollbar-color: #c0c0c0 transparent; }
+  .rk-pager-info { flex: none; white-space: nowrap; }
+  .rk-pager-btns { flex: none; }
+}
+```
+
+- 验收读 computed：`flex: none` 的序列化值是 **"0 0 auto"**（不是关键字 none），别误判为未生效；桌面视口下同元素是 "0 1 auto"（媒体查询未命中），可用来区分规则是否生效。
+- 改每页条数只改该页 `const PAGE_SIZE`（dispatch 三页已从 10 改 4）；先全局 grep 组件是否只被一个路由 embedded 使用，确认无独立路由后才可直接改常量。
+
 ## 4. 窄屏文字竖排/折行：通用修复公式
 
 事故形态：胶囊「13岁」竖成「13/岁」、「全部」竖成「全/部」。根因都是 flex 子项可收缩 + 无 nowrap。
@@ -108,6 +166,9 @@ description: APMS 花名册风列表页 H5（≤768px）分页横滑、详情抽
 3. 标签 `.rpf-label` 同样 `flex: none`，防止被挤。
 4. 禁止靠缩字号/拆两行迁就宽度；用户名、编号等表格文本在 H5 媒体查询内统一 `white-space: nowrap`，交给表格横滑容器。
 5. 通用类缺口在全局补，不要各页打补丁：`.rk-person-main/.rk-person-sub`（队员姓名/队伍）与 `.rk-table .rk-mono`（日期/数字列）曾整体缺 nowrap，导致姓名逐字竖排、`2026-09-12` 断两行——已在 roster-kit.scss 的 768 断点统一收口，bodyMeasure/phv/medical 等全部 rk-table 页面自动受益。新增表格页直接用这些类，不要自行再加 nowrap。
+   - `.rk-soft-chip`（方向/分类徽章，如「仅参考」「越小越好」）的 nowrap 直接加在基础类而非媒体查询：徽章在任何宽度下折行都是缺陷，桌面宽列本就不折行故零影响，窄列直接修复。
+   - 漏网类排查：全局收口只覆盖 rk-person-*/rk-mono，页面自定义姓名类（testTask 的 `.tt-mname`、testResult 的 `.tr-name`）不会自动受益，需在各页 768 块单独 `white-space:nowrap`。新写人名单元格优先复用 rk-person-main，自建类必须自查 nowrap。
+   - 药丸/胶囊类（border-radius:999px 的状态 pill，如 testTask `.tt-dir` 方向药丸「↓越小越好」）同 rk-soft-chip 原则：nowrap 直接写基础类，任何宽度折行都是缺陷。
 6. 滚动条唯一事实源是 `layout/components/AppMain.vue` 的非 scoped 全局 `::-webkit-scrollbar`（6px，thumb #c0c0c0）。组件内禁止另写 webkit scrollbar 尺寸（scoped 双轨会特异性打架且 @use 链路未必编译进目标页）；Firefox 补 `scrollbar-width: thin; scrollbar-color: #c0c0c0 transparent` 即可。iOS Safari 静止时隐藏滚动条是平台行为，CSS 不可强制常显，靠边缘裁切内容 + 滚动时浮现提供暗示。
 
 ## 5. 弹窗表单（el-dialog）H5 适配

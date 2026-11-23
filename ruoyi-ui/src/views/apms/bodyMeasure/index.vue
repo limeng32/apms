@@ -168,7 +168,7 @@
       <CycleDetailDialog ref="cycleDetailRef" @saved="loadCycleNames"/>
 
       <!-- ========= 新增/编辑弹窗 ========= -->
-      <el-dialog :title="editForm.id ? '编辑体态测量' : '新增体态测量'" v-model="showEdit" width="520px">
+      <el-dialog :title="editForm.id ? '编辑体态测量' : '新增体态测量'" v-model="showEdit" width="520px" append-to-body>
         <el-form :model="editForm" label-width="100px">
           <el-form-item label="队员" required>
             <el-select v-model="editForm.athleteId" placeholder="选择队员" filterable style="width:100%">

@@ -226,7 +226,7 @@
       </el-drawer>
 
       <!-- ========== 生成 Dialog（原逻辑保留） ========== -->
-      <el-dialog title="生成新报告" v-model="showGenDialog" width="520px">
+      <el-dialog title="生成新报告" v-model="showGenDialog" width="520px" append-to-body>
         <el-form :model="genForm" :rules="genRules" ref="genFormRef" label-width="100px">
           <el-form-item label="报告类型" prop="reportType">
             <el-radio-group v-model="genForm.reportType">

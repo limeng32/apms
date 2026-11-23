@@ -250,7 +250,7 @@
       </el-drawer>
 
       <!-- ========== 模型 新增/编辑 Dialog（原逻辑保留） ========== -->
-      <el-dialog :title="dialogTitle" v-model="showModelDialog" width="560px">
+      <el-dialog :title="dialogTitle" v-model="showModelDialog" width="560px" append-to-body>
         <el-form ref="modelFormRef" :model="modelForm" :rules="modelRules" label-width="100px">
           <el-row :gutter="12">
             <el-col :span="12">
@@ -318,7 +318,7 @@
       </el-dialog>
 
       <!-- ========== 字段 新增/编辑 Dialog（原逻辑保留） ========== -->
-      <el-dialog :title="showFieldDialog?.id ? '编辑字段定义' : '新增字段定义'" v-model="showFieldDialogVisible" width="460px">
+      <el-dialog :title="showFieldDialog?.id ? '编辑字段定义' : '新增字段定义'" v-model="showFieldDialogVisible" width="460px" append-to-body>
         <el-form :model="fieldForm" label-width="90px">
           <el-row :gutter="12">
             <el-col :span="12">

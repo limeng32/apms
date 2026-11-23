@@ -23,8 +23,12 @@
         <div class="rg-pick-col">
           <div class="rg-pick-head">
             <b>{{ pickTaskId ? '任务参测队员（全部纳入）' : '① 选择队员' }}</b>
-            <span class="rg-pick-count">
-              {{ pickTaskId ? `共 ${displayAthletes.length} 人` : `已选 ${pickedAthletes.length} 人` }}
+            <span class="rg-pick-head-right">
+              <button v-if="isNarrow && !pickTaskId" type="button" class="rg-pl-all"
+                      @click="toggleAllAthletes">{{ isAthleteAllPicked ? '清空' : '全选' }}</button>
+              <span class="rg-pick-count">
+                {{ pickTaskId ? `共 ${displayAthletes.length} 人` : `已选 ${pickedAthletes.length} 人` }}
+              </span>
             </span>
           </div>
           <div v-if="!pickTaskId" class="rg-pick-filter">
@@ -34,7 +38,8 @@
             </select>
             <input v-model="pickKeyword" class="rg-inp" placeholder="姓名筛选"/>
           </div>
-          <el-table ref="athleteTableRef" :data="displayAthletes" row-key="athleteId"
+          <!-- 桌面：el-table 保留原交互 -->
+          <el-table v-if="!isNarrow" ref="athleteTableRef" :data="displayAthletes" row-key="athleteId"
                     height="340" size="small" @selection-change="onAthleteSelection">
             <el-table-column v-if="!pickTaskId" type="selection" width="42" reserve-selection/>
             <el-table-column label="队员" min-width="120">
@@ -45,17 +50,39 @@
             </el-table-column>
             <el-table-column prop="primaryTeamName" label="队伍" min-width="110"/>
           </el-table>
+          <!-- 窄屏：全宽清单行，消除 el-table 表内横滚与表头裁切 -->
+          <div v-else class="rg-pick-list">
+            <div v-for="row in displayAthletes" :key="row.athleteId"
+                 class="rg-pl-row" :class="{ 'is-on': !pickTaskId && isAthletePicked(row) }"
+                 @click="toggleAthlete(row)">
+              <span v-if="!pickTaskId" class="rg-pl-check" :class="{ 'is-on': isAthletePicked(row) }"></span>
+              <span v-else class="rg-pl-lock">已纳入</span>
+              <span class="rg-pl-main">
+                <span class="rg-pl-name">
+                  <span class="rg-aname">{{ row.name }}</span>
+                  <GenderBadge :gender="row.gender" :size="13"/>
+                </span>
+                <span v-if="row.primaryTeamName" class="rg-pl-sub">{{ row.primaryTeamName }}</span>
+              </span>
+            </div>
+            <div v-if="!displayAthletes.length" class="rg-pl-empty">暂无符合条件的队员</div>
+          </div>
         </div>
         <div class="rg-pick-col">
           <div class="rg-pick-head">
             <b>{{ pickTaskId ? '任务测试项（指标 + 模型，全部纳入）' : '② 选择指标' }}</b>
-            <span class="rg-pick-count">
-              {{ pickTaskId
-                ? `共 ${displayIndicators.length} 项（指标 ${taskLock.indicators.length} · 模型 ${(taskLock.models || []).length}）`
-                : `已选 ${pickedIndicators.length} 项` }}
+            <span class="rg-pick-head-right">
+              <button v-if="isNarrow && !pickTaskId" type="button" class="rg-pl-all"
+                      @click="toggleAllIndicators">{{ isIndicatorAllPicked ? '清空' : '全选' }}</button>
+              <span class="rg-pick-count">
+                {{ pickTaskId
+                  ? `共 ${displayIndicators.length} 项（指标 ${taskLock.indicators.length} · 模型 ${(taskLock.models || []).length}）`
+                  : `已选 ${pickedIndicators.length} 项` }}
+              </span>
             </span>
           </div>
-          <el-table ref="indicatorTableRef" :data="displayIndicators" row-key="id"
+          <!-- 桌面：el-table 保留原交互 -->
+          <el-table v-if="!isNarrow" ref="indicatorTableRef" :data="displayIndicators" row-key="id"
                     height="340" size="small" @selection-change="onIndicatorSelection">
             <el-table-column v-if="!pickTaskId" type="selection" width="42"/>
             <el-table-column :label="pickTaskId ? '测试项' : '指标'" min-width="150">
@@ -79,6 +106,32 @@
               </template>
             </el-table-column>
           </el-table>
+          <!-- 窄屏：全宽清单行，单位/方向移到行尾，不再被横滚裁切 -->
+          <div v-else class="rg-pick-list">
+            <div v-for="row in displayIndicators" :key="row.id"
+                 class="rg-pl-row" :class="{ 'is-on': !pickTaskId && isIndicatorPicked(row) }"
+                 @click="toggleIndicator(row)">
+              <span v-if="!pickTaskId" class="rg-pl-check" :class="{ 'is-on': isIndicatorPicked(row) }"></span>
+              <span v-else class="rg-pl-lock">已纳入</span>
+              <span class="rg-pl-main">
+                <div class="rg-ind-name">{{ row.name }}</div>
+                <div class="rg-ind-sub">
+                  <span class="rg-code">{{ row.code }}</span>
+                  <span v-if="row.category" class="rg-cat" :class="{ 'is-model': row.kind === 'model' }">{{ row.category }}</span>
+                </div>
+              </span>
+              <span class="rg-pl-right">
+                <template v-if="row.kind === 'model'">
+                  <span class="rg-dir">模型</span>
+                </template>
+                <template v-else>
+                  <span class="rg-unit">{{ row.unit || '—' }}</span>
+                  <span class="rg-dir">{{ dirShort(row.evaluationDirection) }}</span>
+                </template>
+              </span>
+            </div>
+            <div v-if="!displayIndicators.length" class="rg-pl-empty">暂无符合条件的指标</div>
+          </div>
         </div>
       </div>
     </div>
@@ -127,7 +180,9 @@
           ? '任务模型没有可网格录入的数值型采集字段（可能全为文本/派生项），请用队员行的「录成绩」逐个填写。'
           : '该任务还没有直接指标测试项，请先在「测试项」Tab 添加指标。' }}
       </div>
-      <div v-else ref="gridScrollRef" class="rg-table-scroll" v-loading="bestLoading || modelLoading">
+      <template v-else>
+      <!-- 桌面：完整二维矩阵，首列 sticky + 容器横滚 -->
+      <div v-if="!isNarrow" ref="gridScrollRef" class="rg-table-scroll" v-loading="bestLoading || modelLoading">
         <table class="rg-table">
           <thead>
             <!-- 模型维度：按模型分组双行表头 -->
@@ -182,6 +237,64 @@
           </tbody>
         </table>
       </div>
+      <!-- 窄屏：按测项分页——每屏 1 个测项 + 全队纵向录入，chip/箭头/横滑三种换列方式。
+           数据仍写 row.values[activeCol.key]，草稿槽、校验、提交 payload 与桌面完全共用 -->
+      <div v-else class="rg-mobile-grid" v-loading="bestLoading || modelLoading">
+        <div class="rg-colnav">
+          <button type="button" class="rg-colstep" :disabled="activeColIndex === 0"
+                  aria-label="上一个测项" @click="prevCol">‹</button>
+          <span class="rg-colpos">第 {{ activeColIndex + 1 }} / {{ columns.length }} 项</span>
+          <button type="button" class="rg-colstep" :disabled="activeColIndex >= columns.length - 1"
+                  aria-label="下一个测项" @click="nextCol">›</button>
+        </div>
+        <div ref="colbarRef" class="rg-colbar">
+          <template v-for="(g, gi) in mobileColGroups" :key="gi">
+            <span v-if="g.groupName" class="rg-colgroup">{{ g.groupName }}</span>
+            <button v-for="c in g.cols" :key="c.key" type="button"
+                    class="rg-colchip"
+                    :class="{
+                      'is-active': activeCol && c.key === activeCol.key,
+                      'is-hard': colLevelState(c) === 'hard',
+                      'is-warn': colLevelState(c) === 'warn'
+                    }"
+                    @click="gotoCol(columns.indexOf(c))">
+              <span class="rg-colchip-name">{{ c.name }}</span>
+              <span class="rg-colchip-meta">
+                <i v-if="colLevelState(c)" class="rg-coldot"
+                   :class="{ 'is-hard': colLevelState(c) === 'hard' }"></i>
+                {{ colFilledCount(c) }}/{{ gridRows.length }}
+              </span>
+            </button>
+          </template>
+        </div>
+        <div v-if="activeCol" class="rg-mhead">
+          <div class="rg-mhead-name">{{ activeCol.name }}</div>
+          <div class="rg-th-sub">
+            <span class="rg-code">{{ activeCol.code }}</span>
+            <span class="rg-unit">{{ activeCol.unit || '—' }}</span>
+            <span v-if="gridMode === 'INDICATOR'" class="rg-dir">{{ dirShort(activeCol.direction) }}</span>
+            <span v-else class="rg-cat is-model">{{ activeCol.modelName }}</span>
+          </div>
+        </div>
+        <div ref="mobileGridRef" class="rg-mlist"
+             @touchstart.passive="onGridTouchStart" @touchend="onGridTouchEnd">
+          <div v-for="row in gridRows" :key="row.athleteId" class="rg-mrow">
+            <div class="rg-mname">
+              <span class="rg-aname">{{ row.athleteName || '未命名' }}</span>
+              <GenderBadge :gender="row.athleteGender" :size="13"/>
+              <div v-if="row.athleteTeam" class="rg-team">{{ row.athleteTeam }}</div>
+            </div>
+            <input
+              class="rg-cell rg-mcell"
+              :class="cellClass(row, activeCol)"
+              v-model="row.values[activeCol.key]"
+              inputmode="decimal"
+              :placeholder="gridMode === 'INDICATOR' ? bestText(row.athleteId, activeCol.indicatorId) : ''"
+            />
+          </div>
+        </div>
+      </div>
+      </template>
       <p v-if="hardCount" class="rg-hard-tip">有 {{ hardCount }} 个成绩不是数字或超出允许范围（红框），请修正后再提交</p>
     </div>
 
@@ -289,6 +402,79 @@ const bestLoading = ref(false)
 const athleteTableRef = ref(null)
 const indicatorTableRef = ref(null)
 const gridScrollRef = ref(null)
+
+// ============ 窄屏（≤768px）形态分支：清单行选择 + 按测项分页录入 ============
+// 断点与 h5-pager-drawer-ux 规范统一；桌面端模板完全不走这套分支，原有表格零影响
+const viewportWidth = ref(window.innerWidth)
+function onViewportResize() { viewportWidth.value = window.innerWidth }
+onMounted(() => window.addEventListener('resize', onViewportResize))
+onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
+const isNarrow = computed(() => viewportWidth.value <= 768)
+
+// 窄屏录入：当前停留的测项列（分页矩阵一次只呈现一列）
+const activeColIndex = ref(0)
+const colbarRef = ref(null)
+const mobileGridRef = ref(null)
+const activeCol = computed(() => {
+  const cols = columns.value
+  if (!cols.length) return null
+  return cols[Math.min(activeColIndex.value, cols.length - 1)]
+})
+// chip 条结构：模型维度按模型分组，指标维度合成单个无名组，模板只认一种结构
+const mobileColGroups = computed(() => {
+  if (gridMode.value === 'MODEL') {
+    return modelColumnGroups.value.map(g => ({ groupName: g.modelName, cols: g.cols }))
+  }
+  return [{ groupName: '', cols: columns.value }]
+})
+// 某测项列已填人数（chip 上的 3/6 进度）
+function colFilledCount(col) {
+  return gridRows.value.reduce((n, r) =>
+    n + (String(r.values[col.key] ?? '').trim() !== '' ? 1 : 0), 0)
+}
+// 列级状态点：分页态看不到全表，用红/橙点提示该列存在硬错/告警，帮助定位问题测项
+function colLevelState(col) {
+  let warn = false
+  for (const r of gridRows.value) {
+    const lv = cellLevel(r, col)
+    if (lv === 'invalid' || isHard(lv)) return 'hard'
+    if (isWarn(lv)) warn = true
+  }
+  return warn ? 'warn' : ''
+}
+function gotoCol(i) {
+  const n = columns.value.length
+  if (!n) return
+  activeColIndex.value = Math.max(0, Math.min(i, n - 1))
+}
+function prevCol() { gotoCol(activeColIndex.value - 1) }
+function nextCol() { gotoCol(activeColIndex.value + 1) }
+// 翻页后：活动 chip 滚到可视区中央、队员列表回顶（测站轮转通常从第一名队员重填）
+watch(activeColIndex, () => {
+  nextTick(() => {
+    colbarRef.value?.querySelector('.rg-colchip.is-active')
+      ?.scrollIntoView({ inline: 'center', behavior: 'smooth' })
+    if (mobileGridRef.value) mobileGridRef.value.scrollTop = 0
+  })
+})
+// 列集合整体更换（切维度/换任务/异步模型列到达）：分页归零，避免停在不存在的列上
+watch(columns, () => { activeColIndex.value = 0 })
+// 触摸横滑翻页：仅水平位移占主导时触发，纵向滚动交给原生，互不抢占
+let touchStartX = 0
+let touchStartY = 0
+function onGridTouchStart(e) {
+  const t = e.touches[0]
+  touchStartX = t.clientX
+  touchStartY = t.clientY
+}
+function onGridTouchEnd(e) {
+  const t = e.changedTouches[0]
+  const dx = t.clientX - touchStartX
+  const dy = t.clientY - touchStartY
+  if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+    dx < 0 ? nextCol() : prevCol()
+  }
+}
 // 表格列从无到有（新任务/维度异步加载完成）时，把横向滚动归位：
 // el-dialog 默认不销毁内容，滚动容器会保留上次任务/维度的 scrollLeft，
 // 新表格打开时左侧队员列看起来就是"被滚走"的一片空白
@@ -345,6 +531,41 @@ const displayIndicators = computed(() => {
 // 仅自由态显示勾选列；任务态全员/全项固定纳入，无勾选交互
 function onAthleteSelection(rows) { pickedAthletes.value = rows }
 function onIndicatorSelection(rows) { pickedIndicators.value = rows }
+
+// 窄屏清单行的勾选维护（桌面 el-table 仍走 selection-change；两套写入同一个 picked 数组，
+// 下一步 canBuildGrid/buildFreeGrid 无需感知来源）
+const isAthleteAllPicked = computed(() => {
+  const rows = displayAthletes.value
+  return rows.length > 0 && pickedAthletes.value.length === rows.length
+})
+function isAthletePicked(row) {
+  return pickedAthletes.value.some(a => a.athleteId === row.athleteId)
+}
+function toggleAthlete(row) {
+  if (pickTaskId.value) return // 任务态锁定，行点击不响应
+  const idx = pickedAthletes.value.findIndex(a => a.athleteId === row.athleteId)
+  if (idx >= 0) pickedAthletes.value.splice(idx, 1)
+  else pickedAthletes.value.push(row)
+}
+function toggleAllAthletes() {
+  pickedAthletes.value = isAthleteAllPicked.value ? [] : displayAthletes.value.slice()
+}
+const isIndicatorAllPicked = computed(() => {
+  const rows = displayIndicators.value
+  return rows.length > 0 && pickedIndicators.value.length === rows.length
+})
+function isIndicatorPicked(row) {
+  return pickedIndicators.value.some(i => i.id === row.id)
+}
+function toggleIndicator(row) {
+  if (pickTaskId.value) return
+  const idx = pickedIndicators.value.findIndex(i => i.id === row.id)
+  if (idx >= 0) pickedIndicators.value.splice(idx, 1)
+  else pickedIndicators.value.push(row)
+}
+function toggleAllIndicators() {
+  pickedIndicators.value = isIndicatorAllPicked.value ? [] : displayIndicators.value.slice()
+}
 
 // 切换任务：即时拉取任务详情，重绘两张表并全选；清空则恢复全量自由勾选
 let pickSeq = 0
@@ -953,6 +1174,7 @@ defineExpose({ openForTask, openFree })
 .rg-pick-task-hint { font-size: 12px; color: $rk-text-3; }
 .rg-pick-col { border: 1px solid $rk-line; border-radius: 12px; padding: 10px; }
 .rg-pick-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 13px; color: $rk-text-1; }
+.rg-pick-head-right { display: flex; align-items: center; gap: 6px; }
 .rg-pick-count { font-size: 12px; color: $rk-brand-600; font-weight: 500; }
 .rg-pick-filter { display: flex; gap: 8px; margin-bottom: 8px; }
 .rg-sel { height: 32px; border: 1px solid $rk-line; border-radius: 8px; padding: 0 8px; font-size: 13px; min-width: 110px; }
@@ -1074,6 +1296,119 @@ defineExpose({ openForTask, openFree })
 @media (max-width: 768px) {
   .rg-pick-grid { grid-template-columns: 1fr; }
   .rg-tool-stat { margin-left: 0; width: 100%; }
+
+  /* 关联任务条纵排：el-select 内联固定 340px，在 375px 内容区（约 297px）溢出，
+     把弹窗 body 撑出横向滚动（图1 步骤整体可横晃的根因）。inline width 需 !important 覆盖 */
+  .rg-pick-task { flex-direction: column; align-items: stretch; gap: 8px; }
+  .rg-pick-task :deep(.el-select) { width: 100% !important; }
+  /* 工具条固定宽控件兜底：max-width 可直接压过 inline width，极端窄视口不再撑破 */
+  .rg-grid-tool .el-date-editor,
+  .rg-grid-tool .el-input { max-width: 100%; }
+
+  /* ===== 窄屏选择清单行（替代 el-table，全宽无表内横滚） ===== */
+  .rg-pick-list {
+    max-height: 320px; overflow-y: auto; overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid $rk-line; border-radius: 10px; background: #fff;
+  }
+  .rg-pl-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; min-height: 46px;
+    border-bottom: 1px solid #eef1f6; cursor: pointer;
+    &:last-child { border-bottom: 0; }
+    &.is-on { background: #f5f8ff; }
+  }
+  /* 自定义圆形勾选：原生 checkbox 在可点击行内会触发双次切换，纯视觉态由行点击驱动 */
+  .rg-pl-check {
+    flex: none; width: 20px; height: 20px; border-radius: 50%;
+    border: 1.5px solid #c3cad6; background: #fff; position: relative;
+    &.is-on { background: $rk-brand-600; border-color: $rk-brand-600; }
+    &.is-on::after {
+      content: ''; position: absolute; left: 6px; top: 2px;
+      width: 5px; height: 9px;
+      border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+    }
+  }
+  .rg-pl-lock {
+    flex: none; font-size: 11px; color: $rk-brand-600;
+    background: #eef2ff; border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+  }
+  .rg-pl-main { flex: 1; min-width: 0; }
+  .rg-pl-name { display: flex; align-items: center; gap: 4px; }
+  .rg-pl-sub { display: block; margin-top: 2px; font-size: 11px; color: $rk-text-3; }
+  .rg-pl-right { flex: none; display: flex; align-items: baseline; gap: 4px; white-space: nowrap; }
+  .rg-pl-all {
+    border: 0; background: none; padding: 4px 6px; min-height: auto;
+    font-size: 12px; line-height: 1.4; color: $rk-brand-600;
+  }
+  .rg-pl-empty { padding: 24px 12px; text-align: center; font-size: 13px; color: $rk-text-3; }
+
+  /* ===== 窄屏按测项分页录入 ===== */
+  .rg-mobile-grid {
+    position: relative;
+    border: 1px solid $rk-line; border-radius: 12px; background: #fff; overflow: hidden;
+  }
+  .rg-colnav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 10px; background: #f7f9fc; border-bottom: 1px solid #eef1f6;
+  }
+  .rg-colpos { font-size: 12px; color: $rk-text-2; font-family: var(--app-font-mono); }
+  .rg-colstep {
+    width: 36px; height: 36px; padding: 0; min-height: auto;
+    border-radius: 50%; border: 1px solid $rk-line; background: #fff;
+    font-size: 18px; line-height: 1; color: $rk-brand-600;
+    &:disabled { color: #b6bdc9; background: #f4f6fa; }
+  }
+  /* chip 条是窄屏唯一横向滚动承载，外层与队员列表均不设 overflow-x */
+  .rg-colbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; overflow-x: auto; overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    border-bottom: 1px solid #eef1f6;
+  }
+  .rg-colgroup {
+    flex: none; font-size: 11px; color: #6d28d9; background: #ede9fe;
+    border-radius: 6px; padding: 3px 7px; white-space: nowrap;
+  }
+  .rg-colchip {
+    flex: none; max-width: 150px; min-height: auto;
+    border: 1px solid $rk-line; background: #fff; border-radius: 10px;
+    padding: 6px 10px; text-align: left;
+    &.is-active { border-color: $rk-brand-600; background: #eef2ff; }
+    &.is-hard { border-color: rgba($rk-risk, .55); }
+    &.is-warn { border-color: rgba($rk-warn, .65); }
+  }
+  .rg-colchip-name {
+    display: block; max-width: 120px; font-size: 12px; font-weight: 600; color: $rk-text-1;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .rg-colchip-meta {
+    display: flex; align-items: center; gap: 4px; margin-top: 2px;
+    font-size: 10.5px; color: $rk-text-3; font-family: var(--app-font-mono);
+  }
+  .rg-coldot {
+    width: 7px; height: 7px; border-radius: 50%; background: $rk-warn;
+    &.is-hard { background: $rk-risk; }
+  }
+  .rg-mhead { padding: 10px 12px 4px; }
+  .rg-mhead-name { font-size: 14px; font-weight: 700; color: $rk-text-1; }
+  .rg-mlist {
+    max-height: 48vh; overflow-y: auto; overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+  .rg-mrow {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; min-height: 58px; border-bottom: 1px solid #eef1f6;
+    &:last-child { border-bottom: 0; }
+  }
+  .rg-mname { flex: 0 0 104px; width: 104px; min-width: 0; }
+  .rg-mname .rg-aname {
+    display: inline-block; max-width: 80px; vertical-align: middle;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .rg-mname .rg-team { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* 输入框近满宽、触摸目标 40px；16px 字号避免 iOS 聚焦时自动放大页面 */
+  .rg-mcell { flex: 1; width: auto; min-width: 0; height: 40px; font-size: 16px; }
 }
 </style>
 
@@ -1092,6 +1427,9 @@ defineExpose({ openForTask, openFree })
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* 横向收口：滚动只允许发生在内部清单/ chip 条等自带容器，
+     body 不允许被固定宽控件（如内联 340px 的 select）撑出整窗横晃 */
+  overflow-x: hidden;
 }
 .rg-dialog .el-dialog__footer { flex: none; }
 </style>
