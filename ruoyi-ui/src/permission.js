@@ -23,6 +23,16 @@ const isWhiteList = (path) => {
 }
 
 router.beforeEach(async (to, from) => {
+  // 同 URL 导航提前放行：useDrawerHistory 回收抽屉 history 标记位时（点 X/遮罩/右滑手势
+  // 最终都走 history.back() → popstate），vue-router 对 popstate 无条件派发完整守卫链，
+  // 即使 to/from 的 fullPath 完全相同也会 NProgress.start()，H5 下表现为顶部蓝条闪一次、
+  // 体感像页面重新渲染。当前页面加载时已通过下面全部鉴权闸门，同 URL 导航无任何路由层面
+  // 变化，直接放行且不启动进度条。
+  // from.matched 非空用于排除应用首次导航（START_LOCATION.fullPath 恰为 '/'，
+  // 否则会误跳过根路径 → /index → 数据驾驶舱的重定向链）。
+  if (from.matched && from.matched.length > 0 && to.fullPath === from.fullPath) {
+    return true
+  }
   NProgress.start()
   // 品牌展示域（www.apms.top / 裸域 apms.top）：
   // 落地页占据根路径 /（地址栏保持裸域，不出现 /showcase）；
