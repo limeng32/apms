@@ -383,8 +383,7 @@ const { drawerPanelStyle } = useDrawerOffset()
 const { drawerSize } = useDrawerSize('720px')
 const { isTouchViewport } = useTouchViewport()
 
-// 合并页（指标库与任务下发）每页 10 项；独立页面保持窄屏紧凑的 4 项
-const PAGE_SIZE = props.embedded ? 10 : 4
+const PAGE_SIZE = 10
 
 // ========= 手动录入 / 网格批量 / 设备推送 =========
 const entryDialogRef = ref(null)
