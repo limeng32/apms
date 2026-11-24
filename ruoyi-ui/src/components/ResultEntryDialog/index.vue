@@ -408,16 +408,20 @@ async function hydrateEdit(d) {
     modelForms.value = modelForms.value.filter(mf => mf.modelId === d.modelId)
     const mf = modelForms.value[0]
     if (mf) {
-      const storedKeys = new Set(inputVals.map(v => v.fieldKey))
-      const storedFields = mf.inputFields.filter(f => storedKeys.has(f.fieldKey))
-      // 只呈现本条记录已存的字段（避免摊出一堆空的必填项逼用户补录）；
-      // 极端情况下无匹配（历史脏数据）才回退展示全部字段
-      if (storedFields.length) mf.inputFields = storedFields
+      // 展示该模型全部人工采集字段（含本条记录未存/为 null 的字段），给出补录机会：
+      // 已存字段回填值并标 touched（原地修改语义）；未存字段留空，待用户填写。
+      // 提交时 PUT 按 fieldKey 合并——新填字段追加、留空的非必填字段不产生值；
+      // 留空的必填字段会被 submit 的必填校验拦截，引导补齐
       mf.inputFields.forEach(f => {
         const cur = inputVals.find(v => v.fieldKey === f.fieldKey)
-        f.value = cur ? (cur.numericValue ?? cur.textValue ?? '') : ''
-        // 编辑模型：字段整体待提交，标记 touched
-        f.touched = true
+        if (cur) {
+          f.value = cur.numericValue ?? cur.textValue ?? ''
+          f.touched = true
+        } else {
+          f.value = ''
+          f.touched = false
+          f.echo = false
+        }
       })
     }
   }

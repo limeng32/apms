@@ -758,6 +758,9 @@ async function buildTaskGrid(task) {
 }
 
 // ========= 模型维度：一次铺开任务下全部模型的数值字段 =========
+// 网格只承载数值采集：text 型字段（如 YOYO 的「规程版本」protocol_version）有意排除——
+// 网格提交契约 Cell.value 为 BigDecimal、只写 numericValue，文本无承载通道；
+// 这类描述性元数据由 ResultEntryDialog 手动录入/编辑（走 textValue）承接。
 const NUMERIC_TYPES = ['decimal', 'number']
 // 分组表头：[{ modelId, modelName, cols:[列...] }]
 const modelColumnGroups = computed(() => {
