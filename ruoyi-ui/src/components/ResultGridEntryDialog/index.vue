@@ -1,7 +1,8 @@
 <template>
   <el-dialog :title="dialogTitle" v-model="visible" width="920px" append-to-body
              class="rg-dialog" :close-on-click-modal="false" @closed="reset">
-
+   <!-- H5 右滑关闭：指令挂默认插槽单根包裹层，close 走组件自身 visible -->
+   <div class="dialog-swipe-host" v-dialog-swipe="close">
     <!-- ============ 散录模式：选任务（可选）+ 选队员 + 选指标 ============ -->
     <div v-if="mode === 'free' && !pickedReady && !submitted" class="rg-pick" v-loading="pickLoading">
       <div class="rg-pick-task">
@@ -280,7 +281,9 @@
             <span v-else class="rg-cat is-model">{{ activeCol.modelName }}</span>
           </div>
         </div>
-        <div ref="mobileGridRef" class="rg-mlist"
+        <!-- dialog-swipe-ignore：本列表自带横滑翻页语义（overflow-x:hidden 无法被横滚探测识别），
+             豁免全局弹窗右滑关闭，避免翻页手势把整个弹窗拖走 -->
+        <div ref="mobileGridRef" class="rg-mlist dialog-swipe-ignore"
              @touchstart.passive="onGridTouchStart" @touchend="onGridTouchEnd">
           <div v-for="row in gridRows" :key="row.athleteId" class="rg-mrow">
             <div class="rg-mname">
@@ -313,6 +316,7 @@
       </ul>
       <p class="rg-rep-hint">新录入的成绩默认成为当前结果（同项目取最新一次，可在测试结果台账手动改选）；同项目再次提交会记为新的尝试（attempt），错误尝试可在台账删除。</p>
     </div>
+   </div><!-- /.dialog-swipe-host -->
 
     <template #footer>
       <template v-if="!submitted">
@@ -341,6 +345,7 @@
 
 <script setup name="ResultGridEntryDialog">
 import GenderBadge from '@/components/GenderBadge/index.vue'
+import { vDialogSwipe } from '@/utils/dialogSwipe'
 import { listIndicator } from '@/api/apms/indicator'
 import { listAthlete } from '@/api/apms/athlete'
 import { listByTaskMember, batchGridAdd } from '@/api/apms/testResult'

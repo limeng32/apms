@@ -7,7 +7,7 @@ const SLIDE_MS = 220
 // 与 touchViewport.js / roster-kit.scss 保持同一手机断点
 const TOUCH_QUERY = '(max-width: 768px)'
 
-function touchViewportActive() {
+export function touchViewportActive() {
   return typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia(TOUCH_QUERY).matches
 }
 
@@ -17,7 +17,7 @@ function touchViewportActive() {
  * 返回非 null 表示本次手势应交给该容器原生滚动，抽屉滑动关闭不得接管。
  * 滚到边缘后同方向不再命中，继续拖才会进入关闭手势（与 iOS scroll-view 边缘接管体验一致）。
  */
-function findHorizontalScroller(root, target, dx) {
+export function findHorizontalScroller(root, target, dx) {
   let node = target
   while (node && root.contains(node)) {
     const overflowX = window.getComputedStyle(node).overflowX

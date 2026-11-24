@@ -1,5 +1,7 @@
 <template>
   <el-dialog :title="dialogTitle" v-model="visible" width="780px" append-to-body @close="reset">
+   <!-- H5 右滑关闭：指令挂默认插槽单根包裹层；嵌套设备弹窗 teleport 到 body 后各自隔离 -->
+   <div class="dialog-swipe-host" v-dialog-swipe="() => (visible = false)">
     <el-alert v-if="isDemoMode()" type="warning" :closable="false" show-icon style="margin-bottom:12px"
               title="演示模式：录入的成绩只保存在当前标签页，刷新页面或退出演示后会还原为样本数据，不会写入真实系统。"/>
     <el-form :model="form" label-width="84px" @submit.prevent>
@@ -184,6 +186,7 @@
       <el-alert v-else type="info" :closable="false" show-icon
         title="只填本次已测项目即可；新录入默认成为当前结果并参与 REP 评价，模型原始数据保存后自动产出派生结果。"/>
     </el-form>
+   </div><!-- /.dialog-swipe-host：具名插槽 #footer 必须是 el-dialog 直接子节点，不能包进 div -->
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
       <el-button type="primary" :loading="saving" @click="submit">
@@ -191,8 +194,9 @@
       </el-button>
     </template>
 
-    <!-- 设备采集假门禁：任何密钥都返回失效 -->
+    <!-- 设备采集假门禁：任何密钥都返回失效（嵌套弹窗：独立右滑关闭，不影响外层） -->
     <el-dialog title="设备采集 · 密钥校验" v-model="device.visible" width="440px" append-to-body>
+      <div class="dialog-swipe-host" v-dialog-swipe="() => (device.visible = false)">
       <el-alert v-if="device.error" type="error" :closable="false" show-icon style="margin-bottom:12px"
                 :title="device.error"/>
       <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px"
@@ -201,6 +205,7 @@
                 @keyup.enter="submitDevice">
         <template #prepend><el-icon><Key /></el-icon></template>
       </el-input>
+      </div>
       <template #footer>
         <el-button @click="device.visible = false">关闭</el-button>
         <el-button type="primary" :loading="device.loading" @click="submitDevice">校验并采集</el-button>
@@ -211,6 +216,7 @@
 
 <script setup>
 import { Connection, Key } from '@element-plus/icons-vue'
+import { vDialogSwipe } from '@/utils/dialogSwipe'
 import { listTestTask, listTaskItem } from '@/api/apms/testTask'
 import { listAthlete } from '@/api/apms/athlete'
 import { listIndicator } from '@/api/apms/indicator'
