@@ -1,11 +1,11 @@
 ---
 name: h5-pager-drawer-ux
-description: APMS 花名册风列表页 H5（≤768px）分页横滑、详情抽屉触发与返回手势、窄屏文字防折行的统一交互规范与修复流程。用户反馈手机端分页被裁切无滚动条、抽屉打不开/误触、胶囊文字竖排、列表横滚异常时使用。不用于桌面双栏宽度问题（用 rk-split-width-fix）或后端接口问题。
+description: APMS 花名册风页面 H5（≤768px）分页横滑、详情抽屉触发与返回手势、模态框右滑关闭、弹窗宽表窄屏重构、关闭弹层蓝条假刷新、窄屏文字防折行的统一交互规范与修复流程。用户反馈手机端分页裁切、抽屉或弹窗打不开/误触/闪烁、胶囊竖排、列表横滚异常时使用。不用于桌面双栏宽度问题（用 rk-split-width-fix）或后端接口问题。
 ---
 
-# H5 分页 + 抽屉用户体验规范
+# H5 分页 + 抽屉 + 模态框用户体验规范
 
-纯前端修复，红线：不动后端/API/路由/菜单；桌面端（>768px）既有行为不允许被媒体查询改动。
+纯前端修复，红线：不动后端/API/菜单结构（前端路由守卫 permission.js 允许加导航短路）；桌面端（>768px）既有行为不允许被媒体查询改动。
 
 ## 1. 断点与视口事实（全项目唯一口径）
 
@@ -109,6 +109,30 @@ description: APMS 花名册风列表页 H5（≤768px）分页横滑、详情抽
 - 弹窗内还有弹窗时（抽屉→dialog）更要加，否则嵌套在滚动容器深处偏移更严重。
 - 修复要全量排查不要只修报错页：一次事故后用 `grep -rn "<el-dialog" src/views/apms` 列出全部弹窗逐行核对（多行标签的属性可能在第二/三行），本仓曾一次补齐 14 处（indicator/phv/comboModel/comboScore/testModel/bodyMeasure/medical/report/rtp/rtpWarning），零业务逻辑改动。system/monitor 等框架页与 tool/build 里 `:modal-append-to-body="false"` 的刻意用法不在收口范围。
 
+### 2.10 关抽屉顶部蓝条闪一次：同 URL popstate 触发完整路由守卫（真实事故）
+
+事故：H5 下无论 X、遮罩还是右滑手势关抽屉，页面顶部都有蓝色进度条飞快闪一次，用户体感"页面重新渲染了一次"，但滚动位置不变、无网络请求、无整页 reload。点 X 和手势表现一致，说明问题在两条路径的公共链路，不在手势代码。
+
+机理（vue-router 4 源码级）：
+1. useDrawerHistory 开抽屉时 pushState 压入**同 URL** marker；关闭时 visible→false 的 watch 执行 `history.back()` 回收，浏览器派发 popstate。
+2. vue-router 的 `popStateHandler`（dist/vue-router.mjs）对**每个** popstate 无条件 `listeners.forEach` 派发完整导航，不判断 URL 是否变化。
+3. `permission.js` 的 `router.beforeEach` 首行 `NProgress.start()` → 蓝条亮起，全套鉴权守卫空跑一遍 → `afterEach` 里 `NProgress.done()`。同 URL 时 router-view 的 `:key="route.path"` 不变、组件不重挂载，所以只有蓝条和守卫空转，位置不动。
+
+修复（permission.js beforeEach 最前面短路）：
+
+```js
+// from.matched 非空排除首次导航：START_LOCATION.fullPath 恰为 '/'，
+// 不排除会误跳过根路径 → /index → 驾驶舱的重定向链
+if (from.matched && from.matched.length > 0 && to.fullPath === from.fullPath) {
+  return true   // 不 NProgress.start()，不重跑鉴权
+}
+```
+
+- afterEach 的 `NProgress.done()` 在未 start 时是 no-op（nprogress 源码 `!this.status` 直接 return），不会凭空亮条，无需特判。
+- 正常路由跳转 path/query/hash 任一变化则 fullPath 不同，短路不命中，蓝条行为不变。
+- 排查口诀：用户说"闪一下/像刷新了"但位置不变，先查全局唯一进度条来源（本仓 NProgress 只在 permission.js 启停），再查 vue-router 守卫链；不要先怀疑组件重挂载或手势指令。
+- 任何"同 URL history 标记位"方案（抽屉/弹层/全屏接管返回）都有此副作用，新写同类 composable 时本短路自动覆盖，无需各组件补丁。
+
 ## 3. 分页窄屏模式（RkPager 共享组件）
 
 组件：`src/components/RkPager/index.vue`，被 athlete/bodyMeasure/comboScore/phv/rtp 等 7 处共用，**修复只改组件本身，不要各页补丁**。
@@ -209,6 +233,63 @@ indicator/testTask/testResult/comboModel/medical/report/testModel 及 system/use
 - `<pre>` 公式块：保留 `white-space:pre-wrap` 换行能力，加 `overflow-x:auto` 兜底，字号可降到 11.5px。
 - 左右对挤的结论行（`justify-content:space-between`）：改 `flex-direction:column; align-items:flex-start`。
 - auto-fill 卡片网格 `minmax(300px,1fr)` 在 ~291px 内容宽下必然溢出：窄屏改 `minmax(0,1fr)` 单列（参考 MeasureCyclePanel 的 mc-grid）。
+
+### 5.5 录入型宽表弹窗的 H5 重构（网格/手动录入实战）
+
+§5.4 的 table 转 block 横滚只适合**只读短表**；列数随指标/模型字段动态增长的**录入网格**在窄屏整窗横晃、输入格够不着，必须换交互形态而不是继续压列宽。参考实现 `components/ResultGridEntryDialog`（网格录入）与 `components/ResultEntryDialog`（单人手动录入），桌面模板原样保留，≤768px 走独立分支。
+
+三种替代形态（按场景选）：
+
+1. **选人/选指标类 el-table → 全宽清单行**：每行 = 圆形勾选 + 名称/code/分类药丸 + 行尾单位方向状态；头部放「全选/清空」。勾选仍写原数据数组，下一步/提交逻辑无感知。
+2. **多人×多指标录入网格 → 按测项分页**：每屏只呈现 1 个测项 + 全队纵向列表；三种换列方式（顶部 chip 横滑条带 `已填/总数` 进度与状态点、‹ › 箭头、列表区横滑手势），翻页后 chip 居中、列表回顶。模型维度按模型分组，双行 sticky 表头问题随之消失。
+3. **单人录入的指标宽表 → 卡片流**：每指标一张卡，卡内纵向「名称/code/分类 → 单位·方向·当前值胶囊 → 满宽输入框」，无横向滚动。
+
+配套规则：
+
+- 输入框触摸规格统一：高 40px、字号 16px（低于 16px iOS 聚焦会自动放大页面）、数值框 `inputmode="decimal"`。
+- 表单标签置顶纵排：el-form-item 窄屏改 block 布局，inline 的 `label-width` 只能 `!important` 覆盖；模型双列字段网格降单列满宽。
+- **单一横滚承载（与 §2.4 抽屉同构）**：弹窗 body 加 `overflow-x:hidden`，横滚只允许发生在清单、chip 条等自带容器；窄屏唯一横滚元素是 chip 条，列表只纵滚。
+- 固定宽控件撑破弹窗事故：el-select 内联 `width:340px` 在 375px 视口超宽 40+px，把整个 body 撑出横滚（表现为弹窗整窗能横晃）。修法：768 断点条带纵排 + select `width:100% !important`，body `overflow-x:hidden` 兜底——以后再漏一个固定宽控件也不会撑晃整窗。
+- 历史值带出 UX：已有成绩自动回填时用淡蓝底（`.is-echo`）与用户新输入区分，并配 touched 双态——带出值不修改不进提交体（防止把历史成绩重复入库为新 attempt）；模型多字段记录任一字段被改时按整模型非空字段快照提交，避免新记录丢字段。统计行明示「已带出 N 格，修改后才作为新尝试提交」。
+
+### 5.6 模态框右滑关闭指令 vDialogSwipe（两起真实事故沉淀）
+
+指令在 `src/utils/dialogSwipe.js`，与 `vDrawerSwipe` 同构并复用 `touchViewportActive/findHorizontalScroller` 内核（阈值、边缘判定、输入控件放行完全一致）。本仓 68 个 el-dialog 分散在 40+ 文件，**不要做 document 全局委托**，以下事故已证明该路线不可行。
+
+事故一：委托方案导致「再次打开弹窗消失」。
+
+- 委托在 `.el-dialog` 上写内联 transform 跟手，而 EP 自身开关动画也用 transform 作用同一元素；内联样式清理靠两层 setTimeout，el-dialog 默认不销毁 DOM，快速重开时残留的 `translateX(100vw)` 压过进场动画，弹窗停在屏外。
+- 模拟点击 `.el-dialog__headerbtn`/派发 Escape 是旁路通道，与组件 v-model 链路脱节；组件卸载后游离定时器仍操作旧节点，嵌套弹窗时序更乱。
+- 正解是指令模式：与组件同生命周期，`unmounted` 必然移除监听并清理内联样式，touchstart 再防御性清一次；关闭直接调 binding 传入的组件关闭函数（组件自己的 v-model=false），不模拟 DOM 事件。
+
+挂载方式（照抄四个公共弹窗：网格/手动/导入预览/设备接入）：
+
+```vue
+<el-dialog v-model="visible" append-to-body>
+  <div class="dialog-swipe-host" v-dialog-swipe="() => (visible = false)">
+    <!-- 默认插槽内容；host 是无样式单根包裹层 -->
+  </div>
+  <template #footer>...</template>   <!-- 具名插槽必须是 el-dialog 直接子节点 -->
+</el-dialog>
+```
+
+- **#footer 包进 host div 会编译失败**（SFC 500：具名插槽找不到组件宿主），宿主 div 只包默认插槽内容。
+- 嵌套弹窗（如手动录入里的设备采集子弹窗，teleport 到 body）各自挂指令，`closest('.el-dialog')` 天然只解析最近面板，右滑子弹窗不会带动外层。
+- 关闭函数有额外收尾时传组件方法（如导入预览传 `handleClose` 保留 step3 成功回调），不要只传裸赋值。
+
+事故二：手势关闭「闪一下」而点 X 不闪。
+
+- EP 离场是 CSS **@keyframes**（`dialog-fade-out`/`modal-fade-out`，作用在 `.el-overlay` 与 `.el-overlay-dialog`），其 0% 关键帧 `opacity:1; transform:translateZ(0)` 优先级高于普通内联样式。手势先把弹窗内联到 `translateX(100vw)`，close 瞬间关键帧把它从屏外拉回原位再播淡出 = 闪烁；点 X 无内联样式所以不闪。
+- 修复三阶段时序：①手势自己的 transition 跟手滑出（220ms）；②close 前一帧对 `.el-overlay`/`.el-overlay-dialog` 设 `animation:none !important` 再切 v-model，元素保持滑出终态；③等过 EP 离场窗口（300ms+余量，常量 EP_LEAVE_MS=380）overlay 已 `display:none` 后再清全部内联样式，切换不可见。
+- `clearInline` 必须连 `animation` 残留一起清，否则压制带到下次打开，弹窗无淡入直接出现；定时器保存句柄，清理/卸载时可取消。
+- el-drawer 的 vDrawerSwipe 同构存在相同隐患（EP drawer 离场也是 keyframes），仅因滑出方向与离场方向接近、跳变不明显而未被反馈；修法可直接复用同一套压制。
+
+豁免面 `.dialog-swipe-ignore`：
+
+- `findHorizontalScroller` 只认 `overflow-x:auto/scroll` 的容器；`overflow-x:hidden` 但自带横滑语义的自定义面（网格录入的测项翻页列表 `.rg-mlist`）识别不了，横滑翻页会被误接管为关闭手势。
+- 这类容器显式打 `class="dialog-swipe-ignore"`，指令 touchstart 命中即整体放行；新增同类横滑组件照此打标，不要改手势内核。
+- 输入控件（input/textarea/select/[contenteditable]/.el-input/.el-textarea/.el-select）默认放行，内部横拖是选文本/移光标。
+- 适用范围：只挂高频公共弹窗，业务 CRUD 弹窗按需按上述模板补；el-drawer 仍用 vDrawerSwipe，`.el-dialog`/`.el-drawer` 类名互斥，两套手势不叠加。
 
 ## 6. 验证流程（轻量优先，禁止无头浏览器）
 
