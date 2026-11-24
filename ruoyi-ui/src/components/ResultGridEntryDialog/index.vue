@@ -164,11 +164,14 @@
           <el-input v-model="sessionKey" placeholder="如 S1（可选）" style="width:140px"/>
         </label>
         <span class="rg-tool-stat">
-          已填 <b class="rg-mono">{{ filledCells }}</b> 格 · 涉及 <b class="rg-mono">{{ personsWithData }}</b> 人
+          本次已填 <b class="rg-mono">{{ touchedCells }}</b> 格 · 涉及 <b class="rg-mono">{{ touchedPersons }}</b> 人
           <template v-if="modelItemsCount > 0">
-            （指标 {{ indFilledCells }} · 模型 {{ modelFilledCells }}，切换页签不清空，可一次提交）
+            （指标 {{ indTouchedCells }} · 模型 {{ modelTouchedCells }}，切换页签不清空，可一次提交）
           </template>
-          · 留空自动跳过 · 同项再次提交记为新尝试（attempt，系统自动选最佳）
+          <template v-if="echoCells">
+            · 已带出 <b class="rg-mono">{{ echoCells }}</b> 格已有成绩（原样保留，修改后才作为新尝试提交）
+          </template>
+          · 留空自动跳过
         </span>
       </div>
 
@@ -182,7 +185,7 @@
       </div>
       <template v-else>
       <!-- 桌面：完整二维矩阵，首列 sticky + 容器横滚 -->
-      <div v-if="!isNarrow" ref="gridScrollRef" class="rg-table-scroll" v-loading="bestLoading || modelLoading">
+      <div v-if="!isNarrow" ref="gridScrollRef" class="rg-table-scroll" v-loading="echoLoading || modelLoading">
         <table class="rg-table">
           <thead>
             <!-- 模型维度：按模型分组双行表头 -->
@@ -227,10 +230,11 @@
               <td v-for="c in columns" :key="c.key">
                 <input
                   class="rg-cell"
-                  :class="cellClass(row, c)"
+                  :class="[cellClass(row, c), { 'is-echo': isEchoCell(row, c) }]"
                   v-model="row.values[c.key]"
                   inputmode="decimal"
-                  :placeholder="gridMode === 'INDICATOR' ? bestText(row.athleteId, c.indicatorId) : ''"
+                  :title="isEchoCell(row, c) ? '已有成绩，修改后将作为新尝试提交' : ''"
+                  @input="markTouched(row, c)"
                 />
               </td>
             </tr>
@@ -239,7 +243,7 @@
       </div>
       <!-- 窄屏：按测项分页——每屏 1 个测项 + 全队纵向录入，chip/箭头/横滑三种换列方式。
            数据仍写 row.values[activeCol.key]，草稿槽、校验、提交 payload 与桌面完全共用 -->
-      <div v-else class="rg-mobile-grid" v-loading="bestLoading || modelLoading">
+      <div v-else class="rg-mobile-grid" v-loading="echoLoading || modelLoading">
         <div class="rg-colnav">
           <button type="button" class="rg-colstep" :disabled="activeColIndex === 0"
                   aria-label="上一个测项" @click="prevCol">‹</button>
@@ -286,10 +290,11 @@
             </div>
             <input
               class="rg-cell rg-mcell"
-              :class="cellClass(row, activeCol)"
+              :class="[cellClass(row, activeCol), { 'is-echo': isEchoCell(row, activeCol) }]"
               v-model="row.values[activeCol.key]"
               inputmode="decimal"
-              :placeholder="gridMode === 'INDICATOR' ? bestText(row.athleteId, activeCol.indicatorId) : ''"
+              :title="isEchoCell(row, activeCol) ? '已有成绩，修改后将作为新尝试提交' : ''"
+              @input="markTouched(row, activeCol)"
             />
           </div>
         </div>
@@ -306,7 +311,7 @@
       <ul v-if="commitResult.failedDetails?.length" class="rg-fail-list">
         <li v-for="(d, i) in commitResult.failedDetails" :key="i">{{ d }}</li>
       </ul>
-      <p class="rg-rep-hint">成绩已自动参与最佳试次判定；同项目再次提交会记为新的尝试（attempt），可在测试结果台账中删除错误尝试。</p>
+      <p class="rg-rep-hint">新录入的成绩默认成为当前结果（同项目取最新一次，可在测试结果台账手动改选）；同项目再次提交会记为新的尝试（attempt），错误尝试可在台账删除。</p>
     </div>
 
     <template #footer>
@@ -323,7 +328,7 @@
             {{ mode === 'free' ? '上一步' : '取消' }}
           </el-button>
           <el-button type="primary" :loading="saving"
-                     :disabled="(!indicatorColumns.length && !modelColumns.length) || !personsWithData || hardCount > 0"
+                     :disabled="(!indicatorColumns.length && !modelColumns.length) || !touchedCells || hardCount > 0"
                      @click="submit">提交成绩</el-button>
         </template>
       </template>
@@ -376,7 +381,12 @@ function makeGridRow(m) {
     athleteTeam: m.athleteTeam ?? m.primaryTeamName ?? '',
     values: indValues,
     indValues,
-    modelValues: {}
+    modelValues: {},
+    // 本次弹窗用户实际编辑过的列 key 集合。带出的已有成绩不在其中——
+    // 只有 touched 格子才进提交体，避免历史成绩被重复记为新 attempt
+    touched: {},
+    // 模型维度已有成绩缓存（模型列异步加载，先按 modelId:fieldId / modelId::fieldKey 存原始值）
+    modelEcho: {}
   }
 }
 
@@ -395,8 +405,7 @@ const modelColumns = ref([])           // 全部模型数值字段列（扁平�
 const modelLoading = ref(false)
 const measureDate = ref(today())
 const sessionKey = ref('')
-const bestMap = ref({})                // `${athleteId}:${indicatorId}` → 最佳值
-const bestLoading = ref(false)
+const echoLoading = ref(false)         // 已有成绩带出请求进行中（网格 v-loading）
 
 // 散录选人/选指标
 const athleteTableRef = ref(null)
@@ -436,6 +445,8 @@ function colFilledCount(col) {
 function colLevelState(col) {
   let warn = false
   for (const r of gridRows.value) {
+    // 状态点只反映本次新输入的问题，不带出历史成绩的区间分级
+    if (!r.touched[col.key]) continue
     const lv = cellLevel(r, col)
     if (lv === 'invalid' || isHard(lv)) return 'hard'
     if (isWarn(lv)) warn = true
@@ -731,9 +742,11 @@ async function buildTaskGrid(task) {
   // 任务无直接指标时直接落在模型维度，values 指针也要切到模型草稿槽
   if (gridMode.value === 'MODEL') gridRows.value.forEach(r => { r.values = r.modelValues })
   pickedReady.value = true
-  loadBestValues()
-  // 预加载模型字段，切到「模型测试」时即时呈现（不阻塞指标录入）
-  if (rawModelItems.length) loadAllModelColumns()
+  // 已有成绩带出与模型字段预加载并发：两者都完成后再补一次模型 hydrate，
+  // 消除「模型列先到、echo 后到」或反之的竞态（两个函数内部也各自防御性 hydrate）
+  const echoTask = loadExistingValues()
+  const modelTask = rawModelItems.length ? loadAllModelColumns() : null
+  Promise.all([echoTask, modelTask].filter(Boolean)).then(hydrateModelEcho).catch(() => {})
   // 重新建表（如连续打开不同任务）时滚动容器是复用的，强制归零，
   // 否则沿用上一个任务残留的横纵滚动位置
   nextTick(() => {
@@ -791,6 +804,8 @@ async function loadAllModelColumns() {
     // 否则用户还在「直接指标」维度时预加载返回，模型字段会窜进指标的单行表头，
     // 表现为分组行消失、队员列错位等整表错乱。
     if (gridMode.value === 'MODEL') columns.value = cols
+    // 列到达即尝试灌入已有模型成绩（echo 未就绪时 no-op，由 loadExistingValues 收尾补灌）
+    hydrateModelEcho()
   } finally {
     modelLoading.value = false
   }
@@ -806,7 +821,7 @@ function switchDimension(dim) {
   })
   if (dim === 'INDICATOR') {
     columns.value = indicatorColumns.value
-    loadBestValues()
+    // 已有成绩在建表时一次性带出并驻留 indValues，切页签只换指针，无需重新请求
   } else {
     columns.value = modelColumns.value
     // 尚未加载过（如刚进任务弹窗）则拉取全部模型字段
@@ -929,34 +944,71 @@ function buildFreeGrid() {
     primaryTeamName: a.primaryTeamName || ''
   }))
   pickedReady.value = true
-  loadBestValues()
+  // 散录不绑定任务，无「该队员在该任务下的已有成绩」可带出，网格从空白开始
 }
 
-// ========= 现最佳参照（每人一次请求，并行；失败静默） =========
-async function loadBestValues() {
-  bestMap.value = {}
-  if (!gridRows.value.length || !columns.value.length) return
-  bestLoading.value = true
-  const tasks = gridRows.value.map(async row => {
-    try {
-      const list = mode.value === 'task' && taskCtx.id
-        ? (await listByTaskMember(taskCtx.id, row.athleteId)).data || []
-        : []
-      // 散录无统一接口按指标查，且网格关注任务现场，散录不展示最佳参照
+// ========= 已有成绩带出（只要存在任务上下文即可：任务抽屉入口 / 散录里选关联任务 都生效） =========
+// 取每条结果当前选中的代表记录（isSelected=1，新口径=最新一次）直接灌进对应格子，用户打开即见历史成绩。
+// 关键语义：带出值不写 touched——未修改就不进提交体，不会把历史成绩重复记为新 attempt；
+// 用户一旦输入（markTouched），该格才按新尝试提交。
+// 注意：判据是 taskCtx.id 而非 mode==='task'——散录弹窗选了关联任务后同样走 buildTaskGrid，
+// taskCtx.id 有值但 mode 仍是 'free'，按 mode 闸门会把这条路径的带出误杀。
+// 纯散录（不选任务）taskCtx.id=null，by-task-member 无任务可查，网格从空白开始。
+async function loadExistingValues() {
+  if (!gridRows.value.length) return
+  if (!taskCtx.id) return
+  echoLoading.value = true
+  try {
+    const tasks = gridRows.value.map(async row => {
+      let list = []
+      try {
+        list = (await listByTaskMember(taskCtx.id, row.athleteId)).data || []
+      } catch { /* 带出失败不阻塞录入，格子留空即可 */ return }
       for (const r of list) {
-        if (r.isSelected !== '1' || r.itemType !== 'INDICATOR' || r.indicatorId == null) continue
-        const main = (r.values || []).find(v => v.fieldKey === 'result') || (r.values || [])[0]
-        const v = main ? (main.numericValue ?? main.textValue) : null
-        if (v != null) bestMap.value[`${row.athleteId}:${r.indicatorId}`] = v
+        if (r.isSelected !== '1') continue
+        if (r.itemType === 'INDICATOR' && r.indicatorId != null) {
+          const main = (r.values || []).find(v => v.fieldKey === 'result') || (r.values || [])[0]
+          const v = main ? (main.numericValue ?? main.textValue) : null
+          if (v == null) continue
+          const key = `I:${r.indicatorId}`
+          // 异步返回可能晚于用户输入：已触碰或已填的格子绝不覆盖
+          if (!row.touched[key] && String(row.indValues[key] ?? '').trim() === '') {
+            row.indValues[key] = String(v)
+          }
+        } else if (r.itemType === 'MODEL' && r.modelId != null) {
+          for (const v of (r.values || [])) {
+            if (v.isDerived === '1' || v.numericValue == null) continue
+            // 双键缓存：fieldId 与网格列 key 精确对应，fieldKey 作为旧数据缺 fieldId 时的兜底
+            if (v.fieldId != null) row.modelEcho[`${r.modelId}:${v.fieldId}`] = v.numericValue
+            if (v.fieldKey) row.modelEcho[`${r.modelId}::${v.fieldKey}`] = v.numericValue
+          }
+        }
       }
-    } catch { /* 参照缺失不影响录入 */ }
-  })
-  await Promise.all(tasks)
-  bestLoading.value = false
+    })
+    await Promise.all(tasks)
+    hydrateModelEcho()
+  } finally {
+    echoLoading.value = false
+  }
 }
-function bestText(athleteId, indicatorId) {
-  const v = bestMap.value[`${athleteId}:${indicatorId}`]
-  return v == null ? '' : `最佳 ${v}`
+// 模型列异步到达后，把缓存的模型成绩灌进 modelValues。
+// 与 loadExistingValues 并发、先后顺序不确定，两条路径各自收尾时都调一次，
+// 任一方未就绪则本次 no-op，另一方完成后再灌，保证不丢不覆盖。
+function hydrateModelEcho() {
+  if (!modelColumns.value.length) return
+  gridRows.value.forEach(row => {
+    modelColumns.value.forEach(c => {
+      if (row.touched[c.key] || String(row.modelValues[c.key] ?? '').trim() !== '') return
+      const v = row.modelEcho[`${c.modelId}:${c.fieldId}`]
+        ?? (c.fieldKey ? row.modelEcho[`${c.modelId}::${c.fieldKey}`] : null)
+      if (v != null) row.modelValues[c.key] = String(v)
+    })
+  })
+}
+function markTouched(row, col) { row.touched[col.key] = true }
+// 带出值视觉态：有值且用户未触碰。输入即 reactive 消失
+function isEchoCell(row, col) {
+  return String(row.values[col.key] ?? '').trim() !== '' && !row.touched[col.key]
 }
 
 // ========= 实时校验 =========
@@ -986,19 +1038,26 @@ function cellHint(row, col, vals = row.values) {
   if (isWarn(level)) return warnMessage(range, vals[col.key])
   return ''
 }
-/** 某队员在指定列集合+草稿槽里已填的格数 */
-function filledCountIn(cols, vals) {
-  return cols.filter(c => String(vals[c.key] ?? '').trim() !== '').length
+/** 某队员在指定列集合里本次实际编辑过的格数（带出的已有成绩不计） */
+function touchedCountIn(cols, row) {
+  return cols.filter(c => row.touched[c.key]).length
 }
-// 统计覆盖两个维度：停留在任意页签都能看到全部已填，且混合任务一次提交的就是两槽合计
-const indFilledCells = computed(() => gridRows.value.reduce((s, r) =>
-  s + filledCountIn(indicatorColumns.value, r.indValues), 0))
-const modelFilledCells = computed(() => gridRows.value.reduce((s, r) =>
-  s + filledCountIn(modelColumns.value, r.modelValues), 0))
-const filledCells = computed(() => indFilledCells.value + modelFilledCells.value)
-const personsWithData = computed(() => gridRows.value.filter(r =>
-  filledCountIn(indicatorColumns.value, r.indValues)
-  + filledCountIn(modelColumns.value, r.modelValues) > 0).length)
+/** 某队员在指定列集合+草稿槽里「带出且未改」的格数 */
+function echoCountIn(cols, vals, row) {
+  return cols.filter(c => !row.touched[c.key] && String(vals[c.key] ?? '').trim() !== '').length
+}
+// 本次录入统计覆盖两个维度：停留在任意页签都能看到全部新填，混合任务一次提交两槽合计
+const indTouchedCells = computed(() => gridRows.value.reduce((s, r) =>
+  s + touchedCountIn(indicatorColumns.value, r), 0))
+const modelTouchedCells = computed(() => gridRows.value.reduce((s, r) =>
+  s + touchedCountIn(modelColumns.value, r), 0))
+const touchedCells = computed(() => indTouchedCells.value + modelTouchedCells.value)
+const touchedPersons = computed(() => gridRows.value.filter(r =>
+  touchedCountIn(indicatorColumns.value, r) + touchedCountIn(modelColumns.value, r) > 0).length)
+// 带出的已有成绩总量（统计行提示用，让用户知道多少格是历史数据）
+const echoCells = computed(() => gridRows.value.reduce((s, r) =>
+  s + echoCountIn(indicatorColumns.value, r.indValues, r)
+  + echoCountIn(modelColumns.value, r.modelValues, r), 0))
 
 /** 指定草稿值下的单元格等级（problemCells 跨维度扫描用，模板仍用 cellLevel 读当前槽） */
 function levelOf(vals, col) {
@@ -1013,14 +1072,17 @@ function levelOf(vals, col) {
 }
 const problemCells = computed(() => {
   const out = []
+  // 只校验本次编辑过的格子：带出的历史成绩即使不在当前区间字典内，也不能拦截新数据提交
   // 指标槽：范围字典分级
   gridRows.value.forEach(r => indicatorColumns.value.forEach(c => {
+    if (!r.touched[c.key]) return
     const level = levelOf(r.indValues, c)
     if (level === 'invalid' || isHard(level)) out.push({ row: r, col: c, kind: 'hard', vals: r.indValues })
     else if (isWarn(level)) out.push({ row: r, col: c, kind: 'warn', vals: r.indValues })
   }))
   // 模型槽：只查非数字（红框硬错），无合理区间概念
   gridRows.value.forEach(r => modelColumns.value.forEach(c => {
+    if (!r.touched[c.key]) return
     if (levelOf(r.modelValues, c) === 'invalid') {
       out.push({ row: r, col: c, kind: 'hard', vals: r.modelValues })
     }
@@ -1051,6 +1113,13 @@ const resultTitle = computed(() => {
  * 指标批 itemType=INDICATOR、每指标一 cell；模型批 itemType=MODEL、
  * 每 cell 带 modelId/fieldId/fieldKey，后端按模型分组合并为一条 result。
  * 只返回有数据的批次——混合任务一次弹窗可同时产生两批。
+ *
+ * 两维度 touched 语义不同：
+ * - 指标：一个指标一条独立 result，未触碰的格子绝不提交（防止历史成绩重复记 attempt）；
+ * - 模型：一个模型一条 result、内含多字段。若只提交改过的字段，新 attempt 会是残片，
+ *   丢掉该记录原有字段。因此按「本次触碰过的模型」分组，组内所有非空字段整体提交——
+ *   改过的用新值、未改的用带出原值，新记录是完整快照；用户主动清空的字段（touched 但空）
+ *   仍按空跳过，等同显式删除该字段值。未触碰的模型整体不产生新 attempt。
  */
 function buildPayloads() {
   const common = {
@@ -1058,38 +1127,54 @@ function buildPayloads() {
     measureDate: measureDate.value,
     sessionKey: sessionKey.value || null
   }
-  const build = (isModel, cols, valsOf) => {
+  // 指标：逐格 touched 闸门
+  const buildIndicator = () => {
     const rows = []
     gridRows.value.forEach(r => {
       const cells = []
-      cols.forEach(c => {
-        const raw = String(valsOf(r)[c.key] ?? '').trim()
+      indicatorColumns.value.forEach(c => {
+        if (!r.touched[c.key]) return
+        const raw = String(r.indValues[c.key] ?? '').trim()
         if (raw === '') return
-        if (isModel) {
-          cells.push({ modelId: c.modelId, fieldId: c.fieldId, fieldKey: c.fieldKey, value: Number(raw) })
-        } else {
-          cells.push({ indicatorId: c.indicatorId, value: Number(raw) })
-        }
+        cells.push({ indicatorId: c.indicatorId, value: Number(raw) })
       })
       if (cells.length) rows.push({ athleteId: r.athleteId, cells })
     })
-    if (!rows.length) return null
-    return { ...common, itemType: isModel ? 'MODEL' : 'INDICATOR', rows }
+    return rows.length ? { ...common, itemType: 'INDICATOR', rows } : null
   }
-  return [
-    build(false, indicatorColumns.value, r => r.indValues),
-    build(true, modelColumns.value, r => r.modelValues)
-  ].filter(Boolean)
+  // 模型：先圈定 touched 模型，再整体快照该模型的非空字段
+  const buildModel = () => {
+    const rows = []
+    gridRows.value.forEach(r => {
+      const touchedModelIds = new Set(
+        modelColumns.value.filter(c => r.touched[c.key]).map(c => c.modelId)
+      )
+      if (!touchedModelIds.size) return
+      const cells = []
+      modelColumns.value.forEach(c => {
+        if (!touchedModelIds.has(c.modelId)) return
+        const raw = String(r.modelValues[c.key] ?? '').trim()
+        if (raw === '') return
+        cells.push({ modelId: c.modelId, fieldId: c.fieldId, fieldKey: c.fieldKey, value: Number(raw) })
+      })
+      if (cells.length) rows.push({ athleteId: r.athleteId, cells })
+    })
+    return rows.length ? { ...common, itemType: 'MODEL', rows } : null
+  }
+  return [buildIndicator(), buildModel()].filter(Boolean)
 }
 
 async function submit() {
   if (!measureDate.value) return proxy.$modal.msgWarning('请选择测试日期')
-  if (!personsWithData.value) return proxy.$modal.msgWarning('请至少填写一个成绩')
+  if (!touchedPersons.value) return proxy.$modal.msgWarning('请至少填写一个成绩（带出的已有成绩未修改不会重复提交）')
   if (hardCount.value) return proxy.$modal.msgError('存在非数字或超出允许范围的成绩，请修正红框单元格')
 
   const payloads = buildPayloads()
   if (!payloads.length) return proxy.$modal.msgWarning('请至少填写一个成绩')
   const personCount = new Set(payloads.flatMap(p => p.rows.map(r => r.athleteId))).size
+  // 实际入库字段数：模型部分字段修改时会同快照补带同模型其他字段，可能大于 touchedCells
+  const payloadCellCount = payloads.reduce(
+    (s, p) => s + p.rows.reduce((n, r) => n + r.cells.length, 0), 0)
   const warns = warnCells.value
 
   // 仅在存在「超出合理区间」的告警值时二次确认；正常数据点击即提交，避免多余弹窗打断现场录入
@@ -1097,8 +1182,8 @@ async function submit() {
     const lines = warns.slice(0, 8).map(x => `· ${x.row.athleteName} ${x.col.name}：${cellHint(x.row, x.col, x.vals)}`)
     const confirmText = `以下 ${warns.length} 个成绩超出合理区间：\n${lines.join('\n')}`
       + `${warns.length > 8 ? `\n…等 ${warns.length} 项` : ''}\n\n`
-      + `将为 ${personCount} 名队员提交 ${filledCells.value} 项成绩（${measureDate.value}）。\n`
-      + '同项目再次提交记为新尝试（attempt），系统自动选最佳；留空项目不产生记录。是否继续？'
+      + `将为 ${personCount} 名队员提交 ${payloadCellCount} 项成绩（${measureDate.value}）。\n`
+      + '同项目再次提交记为新尝试（attempt），默认取最新一次为当前结果；留空项目不产生记录。是否继续？'
     try {
       await proxy.$modal.confirm(confirmText, '异常值确认')
     } catch { return } // 用户主动取消
@@ -1137,7 +1222,7 @@ function close() { visible.value = false }
 function reset() {
   columns.value = []
   gridRows.value = []
-  bestMap.value = {}
+  echoLoading.value = false
   sessionKey.value = ''
   submitted.value = false
   pickedReady.value = false
@@ -1282,6 +1367,8 @@ defineExpose({ openForTask, openFree })
   &:focus { outline: none; border-color: $rk-brand-500; background: #fff; }
   &.is-hard { border-color: $rk-risk; background: #fef2f2; }
   &.is-warn { border-color: $rk-warn; background: #fffaf0; }
+  /* 带出的已有成绩：淡蓝底与新录入区分；用户一输入（touched）该类即移除 */
+  &.is-echo { border-color: #b9cdf5; background: #eef4ff; color: $rk-text-2; }
 }
 .rg-hard-tip { margin: 8px 2px 0; font-size: 12px; color: $rk-risk; }
 

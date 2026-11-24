@@ -65,12 +65,13 @@
            编辑模式按被编辑记录类型显示。 -->
       <el-form-item v-if="showIndicatorSection" label="直接指标">
         <div class="re-item-box" v-loading="loading">
-          <table v-if="rows.length" class="re-table">
+          <!-- 桌面：四列表格 -->
+          <table v-if="rows.length && !isNarrow" class="re-table">
             <thead>
               <tr>
                 <th class="col-name">项目</th>
                 <th class="text-center col-unit">单位 · 方向</th>
-                <th class="text-center col-best">现最佳</th>
+                <th class="text-center col-best">当前结果</th>
                 <th class="col-input">本次成绩</th>
               </tr>
             </thead>
@@ -95,7 +96,8 @@
                 <td>
                   <el-input v-model="r.input" placeholder="数值" clearable
                             class="re-input"
-                            :class="{ 're-input-abnormal': indHint(r) }">
+                            :class="{ 're-input-abnormal': indHint(r), 're-input-echo': r.echo }"
+                            @input="markRowTouched(r)">
                     <template v-if="r.indicatorUnit" #append><span class="re-input-unit">{{ r.indicatorUnit }}</span></template>
                   </el-input>
                   <p v-if="indHint(r)" class="re-range-hint">{{ indHint(r) }}</p>
@@ -103,6 +105,33 @@
               </tr>
             </tbody>
           </table>
+          <!-- 窄屏：参照网格录入的卡片流——每指标一卡、大输入框、无横滚；
+               带出的当前结果直接预填（淡蓝底），修改即转为本次新录入 -->
+          <div v-else-if="rows.length" class="re-card-list">
+            <div v-for="r in rows" :key="r._key" class="re-ind-card">
+              <div class="re-ind-head">
+                <div class="re-item-title">{{ r.indicatorName || r.indicatorCode }}</div>
+                <div class="re-item-sub">
+                  <span v-if="r.indicatorCode" class="re-code">{{ r.indicatorCode }}</span>
+                  <span v-if="r.indicatorCategory" class="re-cat">{{ r.indicatorCategory }}</span>
+                </div>
+              </div>
+              <div class="re-ind-meta">
+                <span v-if="r.indicatorUnit" class="re-unit">{{ r.indicatorUnit }}</span>
+                <span v-if="r.indicatorDirection" class="re-dir">{{ dirLabel(r.indicatorDirection) }}</span>
+                <span v-if="bestMap[r._key] != null && bestMap[r._key] !== ''" class="re-best-inline">
+                  当前 {{ bestMap[r._key] }}<i v-if="r.indicatorUnit">{{ r.indicatorUnit }}</i>
+                </span>
+              </div>
+              <el-input v-model="r.input" placeholder="录入本次成绩" clearable
+                        class="re-input re-ind-input"
+                        :class="{ 're-input-abnormal': indHint(r), 're-input-echo': r.echo }"
+                        @input="markRowTouched(r)">
+                <template v-if="r.indicatorUnit" #append><span class="re-input-unit">{{ r.indicatorUnit }}</span></template>
+              </el-input>
+              <p v-if="indHint(r)" class="re-range-hint">{{ indHint(r) }}</p>
+            </div>
+          </div>
           <div v-else class="re-empty">
             <p class="re-empty-title">暂无可录入的直接指标</p>
           </div>
@@ -128,7 +157,9 @@
                 <span v-if="f.isRequired === '1' && mode !== 'edit'" class="re-req">*</span>{{ f.fieldName }}
                 <span class="re-field-key">{{ f.fieldKey }}</span>
               </label>
-              <el-input v-model="f.value" :placeholder="dataTypeText(f.dataType)" clearable size="small">
+              <el-input v-model="f.value" :placeholder="dataTypeText(f.dataType)" clearable size="small"
+                        :class="{ 're-input-echo': f.echo }"
+                        @input="markFieldTouched(f)">
                 <template v-if="f.unit" #append><span class="re-input-unit">{{ f.unit }}</span></template>
               </el-input>
             </div>
@@ -148,10 +179,10 @@
 
       <el-alert v-if="mode === 'edit'" type="warning" :closable="false" show-icon
         :title="editItemType === 'MODEL'
-          ? '正在原地修改该条模型成绩（不新增尝试）：保存后派生字段、最佳试次与任务进度自动重算；清空的字段会被删除。'
-          : '正在原地修改该条成绩（不新增尝试）：保存后 REP 评价、最佳试次与任务进度自动重算。'"/>
+          ? '正在原地修改该条模型成绩（不新增尝试）：保存后派生字段、当前结果与任务进度自动重算；清空的字段会被删除。'
+          : '正在原地修改该条成绩（不新增尝试）：保存后 REP 评价、当前结果与任务进度自动重算。'"/>
       <el-alert v-else type="info" :closable="false" show-icon
-        title="只填本次已测项目即可；指标自动参与最佳试次判定与 REP 评价，模型原始数据保存后自动产出派生结果。"/>
+        title="只填本次已测项目即可；新录入默认成为当前结果并参与 REP 评价，模型原始数据保存后自动产出派生结果。"/>
     </el-form>
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
@@ -223,6 +254,12 @@ function indIsWarn(r) {
 const visible = ref(false)
 const saving = ref(false)
 const loading = ref(false)
+// 窄屏（≤768px）指标录入改卡片流，桌面保持四列表格；断点与 h5 规范统一
+const viewportWidth = ref(window.innerWidth)
+function onViewportResize() { viewportWidth.value = window.innerWidth }
+onMounted(() => window.addEventListener('resize', onViewportResize))
+onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
+const isNarrow = computed(() => viewportWidth.value <= 768)
 const mode = ref('free') // free | task | edit
 const ctx = reactive({ taskId: null, taskName: '', athleteId: null, athleteName: '' })
 // 编辑模式：被修改的记录 id 与原始记录（提交时保留 taskItemId/isSelected/dataSource）
@@ -362,6 +399,8 @@ async function hydrateEdit(d) {
     if (r) {
       const main = inputVals.find(v => v.fieldKey === 'result') || inputVals[0]
       r.input = main ? (main.numericValue ?? main.textValue ?? '') : ''
+      // 编辑是原地修改：预填值即待提交值，直接视为 touched，不受 echo 闸门影响
+      r.touched = true
     }
   } else if (itemType === 'MODEL') {
     // 编辑模型：只保留该模型卡片，指标行全部移除
@@ -377,6 +416,8 @@ async function hydrateEdit(d) {
       mf.inputFields.forEach(f => {
         const cur = inputVals.find(v => v.fieldKey === f.fieldKey)
         f.value = cur ? (cur.numericValue ?? cur.textValue ?? '') : ''
+        // 编辑模型：字段整体待提交，标记 touched
+        f.touched = true
       })
     }
   }
@@ -478,7 +519,7 @@ async function buildModelForm(model, { taskItemId }) {
   if (model.isCombo === '1') return null
   const res = await listField(model.modelId || model.id)
   const fields = (res.data || []).slice().sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
-  const decorate = f => ({ ...f, value: '' })
+  const decorate = f => ({ ...f, value: '', touched: false, echo: false })
   return {
     _uid: taskItemId != null ? `ti:${taskItemId}` : `free:${model.modelId || model.id}`,
     taskItemId: taskItemId ?? null,
@@ -500,20 +541,50 @@ async function ensureUnitMap() {
 }
 
 function tagRow(it) {
-  return { ...it, itemType: 'INDICATOR', _key: `I:${it.indicatorId}`, input: '' }
+  // touched：本次弹窗用户实际编辑过；echo：值来自已有当前结果的带出（未编辑）。
+  // 未 touched 的带出值不进提交体，避免手动录入把历史成绩重复记成新记录
+  return { ...it, itemType: 'INDICATOR', _key: `I:${it.indicatorId}`, input: '', touched: false, echo: false }
 }
 
-/** 载入该队员在该任务下的已选最佳成绩（仅任务模式展示指标） */
+/**
+ * 载入该队员在该任务下的当前结果（isSelected=1，新口径=最新一次）并带出到录入域。
+ * 指标：bestMap 供表格「当前结果」列展示，同时把值预填进输入框（echo 态）；
+ * 模型：按 modelId+fieldId/fieldKey 回填到对应模型卡片字段（echo 态）。
+ * echo 值不写 touched——用户不改就不进提交体，不会把历史成绩重复记成新记录。
+ * 注意：切换运动员会重跑本函数，先重置全部带出态，防止上一个队员的值残留。
+ */
 async function loadExisting() {
   bestMap.value = {}
+  rows.value.forEach(r => { r.input = ''; r.touched = false; r.echo = false })
+  modelForms.value.forEach(mf => mf.inputFields.forEach(f => {
+    f.value = ''; f.touched = false; f.echo = false
+  }))
   if (!form.taskId || !form.athleteId) return
   const list = await listByTaskMember(form.taskId, form.athleteId)
   for (const r of (list.data || [])) {
-    if (r.isSelected !== '1' || r.itemType !== 'INDICATOR') continue
-    const v = primaryValue(r)
-    if (v != null) bestMap.value[`I:${r.indicatorId}`] = v
+    if (r.isSelected !== '1') continue
+    if (r.itemType === 'INDICATOR' && r.indicatorId != null) {
+      const v = primaryValue(r)
+      if (v == null) continue
+      bestMap.value[`I:${r.indicatorId}`] = v
+      const row = rows.value.find(x => x.indicatorId === r.indicatorId)
+      // 异步返回晚于用户输入时不覆盖（row 已 touched）
+      if (row && !row.touched) { row.input = String(v); row.echo = true }
+    } else if (r.itemType === 'MODEL' && r.modelId != null) {
+      const mf = modelForms.value.find(x => x.modelId === r.modelId)
+      if (!mf) continue
+      for (const v of (r.values || [])) {
+        if (v.isDerived === '1' || v.numericValue == null) continue
+        const f = mf.inputFields.find(x =>
+          (v.fieldId != null && x.id === v.fieldId) || (v.fieldKey && x.fieldKey === v.fieldKey))
+        if (f && !f.touched) { f.value = String(v.numericValue); f.echo = true }
+      }
+    }
   }
 }
+// 输入事件：一旦用户键入即脱离 echo 态，该格获得提交资格
+function markRowTouched(r) { r.touched = true; r.echo = false }
+function markFieldTouched(f) { f.touched = true; f.echo = false }
 
 function primaryValue(result) {
   const vals = result.values || []
@@ -526,21 +597,28 @@ async function submit() {
   if (!form.measureDate) return proxy.$modal.msgWarning('请选择测试日期')
 
   const isEdit = mode.value === 'edit'
-  const filledIndicators = rows.value.filter(r => r.input !== '' && r.input != null && String(r.input).trim() !== '')
+  const hasValue = (v) => v !== '' && v != null && String(v).trim() !== ''
+  // 指标：编辑模式取唯一行（hydrateEdit 已标 touched）；新增模式只认本次 touched 的行，
+  // 带出的已有成绩未编辑不重复提交
+  const filledIndicators = isEdit
+    ? rows.value.filter(r => hasValue(r.input))
+    : rows.value.filter(r => r.touched && hasValue(r.input))
   // 编辑指标时该字段必须有值（原地修改不能清空成空记录）
   if (isEdit && filledIndicators.length === 0 && rows.value.length > 0) {
     const r = rows.value[0]
     return proxy.$modal.msgWarning(`请填写「${r.indicatorName || r.indicatorCode}」的成绩，或改用删除移除该条记录`)
   }
-  // 每个模型只取有值的字段；新增模式对所有必填项校验；
-  // 编辑模式字段集=该记录已存字段，其中必填项不允许清空（但允许保留原值不改）
+  // 模型：
+  // - 编辑模式：字段集=该记录已存字段（全部 touched），必填项不允许清空；
+  // - 新增模式：未触碰的模型整体跳过（不校验不提交）；触碰过的模型校验必填，
+  //   并按全字段非空快照提交（echo 原值+新值），避免新记录只剩改动字段的残片
   const modelPayloads = []
   for (const mf of modelForms.value) {
-    const filledFields = mf.inputFields.filter(f => f.value !== '' && f.value != null && String(f.value).trim() !== '')
-    const missing = mf.inputFields.find(f => f.isRequired === '1'
-      && (f.value === '' || f.value == null || String(f.value).trim() === ''))
+    if (!isEdit && !mf.inputFields.some(f => f.touched)) continue
+    const filledFields = mf.inputFields.filter(f => hasValue(f.value))
+    const missing = mf.inputFields.find(f => f.isRequired === '1' && !hasValue(f.value))
     if (missing) {
-      return proxy.$modal.msgWarning(mode.value === 'edit'
+      return proxy.$modal.msgWarning(isEdit
         ? `「${missing.fieldName}」为必填项，编辑时不能清空；如确需移除该数据请删除整条成绩`
         : `模型「${mf.modelName}」的「${missing.fieldName}」为必填项`)
     }
@@ -729,6 +807,11 @@ defineExpose({ openForTask, openFree, openEdit })
   box-shadow: 0 0 0 1px #dc2626 inset;
   background: #fef2f2;
 }
+/* 带出的已有成绩：淡蓝底与新录入区分；用户一输入（touched）该类即移除 */
+.re-input-echo :deep(.el-input__wrapper) {
+  box-shadow: 0 0 0 1px #b9cdf5 inset;
+  background: #eef4ff;
+}
 .re-range-hint {
   margin: 3px 0 0;
   font-size: 12px;
@@ -771,4 +854,52 @@ $re-empty-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg
 .re-derived-title { color: #94a3b8; margin-right: 6px; }
 .re-derived-chip { display: inline-block; background: #f5f3ff; border-radius: 10px; padding: 1px 9px; margin: 0 6px 4px 0; }
 .re-derived-chip i { font-style: normal; color: #a78bfa; margin-left: 2px; }
+
+/* ===== 窄屏（≤768px）：参照网格录入弹窗的收口方式——标签置顶纵排、
+   宽表只在自带容器内横滚、字段网格单列，杜绝内容撑破弹窗右缘 ===== */
+@media (max-width: 768px) {
+  /* el-form 固定 label-width=84px 在窄屏把内容区压到溢出：标签改为整行置顶 */
+  :deep(.el-form-item) { display: block; }
+  :deep(.el-form-item__label) {
+    width: auto !important;
+    height: auto;
+    display: flex;
+    justify-content: flex-start;
+    text-align: left;
+    padding: 0 0 6px;
+    line-height: 1.5;
+  }
+  :deep(.el-form-item__content) {
+    margin-left: 0 !important;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  /* 窄屏指标改卡片流（表格分支不渲染），容器无需横滚，纵向滚动即可 */
+  .re-item-box { overflow: visible; max-height: none; }
+  .re-card-list { display: flex; flex-direction: column; gap: 10px; }
+  .re-ind-card {
+    border: 1px solid #e5e9f0; border-radius: 10px;
+    padding: 12px; background: #fff;
+  }
+  .re-ind-head { margin-bottom: 6px; }
+  .re-ind-meta {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    margin-bottom: 8px; font-size: 12px; color: #94a3b8;
+  }
+  .re-dir { color: #64748b; }
+  .re-best-inline {
+    margin-left: auto; font-family: ui-monospace, Menlo, monospace;
+    color: #2563eb; background: #eef4ff; border-radius: 999px;
+    padding: 1px 9px; white-space: nowrap;
+    i { font-style: normal; margin-left: 2px; color: #64748b; }
+  }
+  /* 大输入框：40px 触摸目标、16px 字号防 iOS 聚焦缩放，与网格录入弹窗同规格 */
+  .re-ind-input :deep(.el-input__wrapper) { min-height: 40px; }
+  .re-ind-input :deep(.el-input__inner) { font-size: 16px; height: 40px; }
+  /* 模型字段两列改单列，输入框满宽；卡片头允许换行，设备采集钮不挤压名称 */
+  .re-field-grid { grid-template-columns: minmax(0, 1fr); }
+  .re-model-card { min-width: 0; padding: 10px; }
+  .re-model-head { flex-wrap: wrap; row-gap: 6px; }
+  .re-model-name { min-width: 0; }
+}
 </style>

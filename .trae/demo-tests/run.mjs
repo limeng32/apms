@@ -718,14 +718,14 @@ test('H5', '测试任务：详情聚合 items/members/统计，报名/批量/移
   assert(!db().taskMembers.some(m => m.taskId === 4 && m.athleteId === first.athleteId), '成员已移除')
 })
 
-test('H6', '测试结果：列表默认只看最佳，自动选最佳遵守方向，手动指定，按任务清空', async () => {
+test('H6', '测试结果：列表默认只看当前结果，自动选择取最新一次（不看方向），手动指定，按任务清空', async () => {
   reset()
   const list = call('get', '/apms/test-result/list', { pageNum: '1', pageSize: '50', taskId: '1' })
   expect200(list)
   assert(list.rows.every(r => String(r.isSelected) === '1'), '默认 isSelected=1')
   const all = call('get', '/apms/test-result/list', { pageNum: '1', pageSize: '50', taskId: '1', isSelected: '' })
   assert(all.total >= list.total, '显式不限选中时条数更多')
-  // LOWER_BETTER 组（30 米冲刺）：自动选择必须取最小尝试
+  // LOWER_BETTER 组（30 米冲刺）：新口径下自动选择与方向无关，必须取最新一次有效测量
   const sprintGroup = (() => {
     for (const r0 of db().testResults) {
       if (r0.indicatorDirection !== 'LOWER_BETTER') continue
@@ -741,15 +741,29 @@ test('H6', '测试结果：列表默认只看最佳，自动选最佳遵守方�
     const athleteId = sprintGroup[0].athleteId
     sprintGroup.forEach(r => { r.isSelected = '0' })
     expect200(call('post', '/apms/test-result/auto-select', { taskItemId, athleteId }))
-    const vals = sprintGroup.map(r => ({ id: r.id, v: Number(r.values?.[0]?.numericValue) }))
-    const want = vals.reduce((a, b) => (b.v < a.v ? b : a)).id
-    assertEq(db().testResults.find(r => r.id === want).isSelected, '1', 'LOWER_BETTER 选最小')
-    const other = vals.find(x => x.id !== want)
+    // 期望规则与 mock/后端一致：measureDate 倒序 → createTime 倒序 → 同日 id 大为新
+    const want = sprintGroup
+      .filter(r => String(r.isValid) !== '0')
+      .sort((a, b) => {
+        const da = String(a.measureDate ?? ''), db2 = String(b.measureDate ?? '')
+        if (da !== db2) return da < db2 ? 1 : -1
+        const ta = String(a.createTime ?? ''), tb = String(b.createTime ?? '')
+        if (ta || tb) { if (ta !== tb) return ta < tb ? 1 : -1 }
+        return b.id - a.id
+      })[0].id
+    assertEq(db().testResults.find(r => r.id === want).isSelected, '1', '自动选择取最新一次（与 LOWER_BETTER 方向无关）')
+    const other = sprintGroup.find(r => r.id !== want)
     expect200(call('post', `/apms/test-result/select-attempt/${other.id}`))
-    assertEq(db().testResults.find(r => r.id === other.id).isSelected, '1', '手动选尝试')
+    assertEq(db().testResults.find(r => r.id === other.id).isSelected, '1', '手动「使用此结果」可覆盖')
   }
   const btm = call('get', '/apms/test-result/by-task-member', { taskId: '1', athleteId: '1001' })
   expect200(btm); assert(Array.isArray(btm.data) && btm.data.length >= 1)
+  // 网格成绩带出契约（ResultGridEntryDialog.loadExistingValues 依赖）：
+  // 选中行必须带 itemType/indicatorId，主值可经 values.result.numericValue 取到
+  const selected = btm.data.find(r => r.isSelected === '1' && r.itemType === 'INDICATOR')
+  assert(selected, '存在 isSelected=1 的 INDICATOR 行供网格带出')
+  const mainVal = selected.values?.find(v => v.fieldKey === 'result') ?? selected.values?.[0]
+  assert(mainVal && mainVal.numericValue != null, '带出主值取 values.result.numericValue')
   const before = db().testResults.filter(r => r.taskId === 1).length
   expect200(call('delete', '/apms/test-result/task/1'))
   assertEq(db().testResults.filter(r => r.taskId === 1).length, 0)
@@ -839,7 +853,7 @@ test('H6d', '散录指定最佳：无 taskItemId 时只影响同队员同指标�
   if (sentinel) assertEq(sentinel.isSelected, '1', '任务内行不受散录选择影响')
 })
 
-test('H6e', '散录归一：模型无方向→最新一次当选（不看数值大小）；指标有方向→按方向取优；attemptNo 递增', async () => {
+test('H6e', '散录归一：指标/模型统一最新一次当选（不看数值大小与评价方向）；attemptNo 递增', async () => {
   reset()
   const mk = (o) => call('post', '/apms/test-result', {}, {
     result: {
@@ -854,16 +868,17 @@ test('H6e', '散录归一：模型无方向→最新一次当选（不看数值�
   // 模型 YOYO（无方向）：先 1000m@10-01，再 900m@10-03 → 数值更小但日期更新，应当选
   mk({ itemType: 'MODEL', modelId: 1, date: '2026-10-01', sessionKey: 'MA', v: 1000 })
   mk({ itemType: 'MODEL', modelId: 1, date: '2026-10-03', sessionKey: 'MB', v: 900 })
-  // 指标 VJUMP（HIGHER_BETTER，id=4）：55 再 57 → 57 当选
-  mk({ itemType: 'INDICATOR', indicatorId: 4, date: '2026-10-01', sessionKey: 'VA', v: 55 })
-  mk({ itemType: 'INDICATOR', indicatorId: 4, date: '2026-10-03', sessionKey: 'VB', v: 57 })
+  // 指标 VJUMP（HIGHER_BETTER，id=4）：先 57 再 55——新口径下后录入的 55 仍当选，
+  // 与「越高越好」方向相反，以此证明方向择优已废弃、最新一次统一当选
+  mk({ itemType: 'INDICATOR', indicatorId: 4, date: '2026-10-01', sessionKey: 'VA', v: 57 })
+  mk({ itemType: 'INDICATOR', indicatorId: 4, date: '2026-10-03', sessionKey: 'VB', v: 55 })
 
   const modelRows = db().testResults.filter(r => r.sessionKey === 'MA' || r.sessionKey === 'MB')
   const indRows = db().testResults.filter(r => r.sessionKey === 'VA' || r.sessionKey === 'VB')
   assertEq(modelRows.find(r => r.sessionKey === 'MA').isSelected, '0', '旧模型记录转备选')
   assertEq(modelRows.find(r => r.sessionKey === 'MB').isSelected, '1', '最新模型记录当选（与数值大小无关）')
-  assertEq(indRows.find(r => r.sessionKey === 'VA').isSelected, '0', '低指标值转备选')
-  assertEq(indRows.find(r => r.sessionKey === 'VB').isSelected, '1', '高指标值按方向当选')
+  assertEq(indRows.find(r => r.sessionKey === 'VA').isSelected, '0', '先录入的高值转备选')
+  assertEq(indRows.find(r => r.sessionKey === 'VB').isSelected, '1', '指标也按最新一次当选（与方向/数值无关）')
   assertEq(modelRows.find(r => r.sessionKey === 'MB').attemptNo, 2, '模型尝试序号递增')
   assertEq(indRows.find(r => r.sessionKey === 'VB').attemptNo, 2, '指标尝试序号递增')
   // by-free-group：只返回同队员同模型的散录行，不串指标
@@ -897,9 +912,9 @@ test('H6f', '结构化采集配置：算法注册表可枚举；RSA 绑定算法
   assertEq(push.code, 401, '设备模型推送永远拒绝')
 })
 
-test('H6g', '修改成绩：EditBody{result:{id,...},values} 原地改值，保留元数据并重算最佳试次', async () => {
+test('H6g', '修改成绩：EditBody{result:{id,...},values} 原地改值，保留元数据并按最新口径重算当前结果', async () => {
   reset()
-  // 同队员同指标两条散录：55（先）与 57（后，VJUMP 越高越好→57 为最佳）
+  // 同队员同指标两条散录：55（先）与 57（后，最新一次当选）
   const mk = (v, date, sk) => call('post', '/apms/test-result', {}, {
     result: {
       taskId: null, taskItemId: null, athleteId: 1001,
@@ -913,7 +928,7 @@ test('H6g', '修改成绩：EditBody{result:{id,...},values} 原地改值，保�
   mk(57, '2026-10-03', 'EB')
   const target = db().testResults.find(r => r.sessionKey === 'EB')
   const oldValId = target.values[0].valueId
-  assertEq(target.isSelected, '1', '前置：57 为最佳')
+  assertEq(target.isSelected, '1', '前置：后录入的 EB 为当前结果')
 
   // 契约与前端 ResultEntryDialog 一致：包装体 result.id 在 result 内
   const upd = call('put', '/apms/test-result', {}, {
@@ -932,9 +947,9 @@ test('H6g', '修改成绩：EditBody{result:{id,...},values} 原地改值，保�
   assertEq(after.values[0].fieldLabel, '结果', '保留 fieldLabel 元数据')
   assertEq(after.measureDate, '2026-10-04', '业务字段可改')
   assertEq(after.indicatorCode, 'VJUMP', '冗余编码不被包装体破坏')
-  // 重算：改成 50 后，55 那条重新当选最佳
-  assertEq(after.isSelected, '0', '原最佳失去代表')
-  assertEq(db().testResults.find(r => r.sessionKey === 'EA').isSelected, '1', '55 重新当选最佳')
+  // 重算（新口径）：编辑后该行日期 10-04 仍是组内最新，继续当选；数值大小不再影响选择
+  assertEq(after.isSelected, '1', '被编辑的最新一行保持当前结果')
+  assertEq(db().testResults.find(r => r.sessionKey === 'EA').isSelected, '0', '旧记录维持备选，不按数值回退')
   // 不存在的 id
   const miss = call('put', '/apms/test-result', {}, { result: { id: 999999 }, values: [] })
   assertEq(miss.code, 601, '未知 id 仍 601')
@@ -1001,6 +1016,37 @@ test('H6h', '网格录入模型批：cells 按 modelId 合并为一条 MODEL res
   expect200(free); assertEq(free.data.committed, 1)
   const freeRow = db().testResults.find(r => r.athleteId === 1001 && r.itemType === 'MODEL' && r.taskItemId == null)
   assert(freeRow, '散录模型行 taskItemId=null')
+
+  // 回归（模型部分字段更新丢数据 bug）：写入层不做跨 attempt 字段合并，完整快照是前端契约。
+  // 1) 复现残片机理：只提交 time 单字段，新 attempt 确实只剩 time——证明修复必须在前端组包
+  const partial = call('post', '/apms/test-result/batch-grid', {}, {
+    taskId: 3, itemType: 'MODEL', measureDate: '2026-10-15',
+    rows: [{ athleteId: 1001, cells: [{ modelId: 3, fieldId: 20, fieldKey: 'time', value: 10.2 }] }]
+  })
+  expect200(partial)
+  const partialRow = db().testResults.find(r =>
+    r.athleteId === 1001 && r.itemType === 'MODEL' && r.taskItemId === 9 && r.measureDate === '2026-10-15')
+  assert(partialRow, '残片尝试已落库')
+  assertEq(partialRow.values.length, 1, '单字段提交只存单字段（trial_count 不会被自动补回）')
+  // 2) 修复后前端契约：改 time 时把同模型未改的 trial_count 原值随快照一并提交
+  const snap = call('post', '/apms/test-result/batch-grid', {}, {
+    taskId: 3, itemType: 'MODEL', measureDate: '2026-10-16',
+    rows: [{
+      athleteId: 1001,
+      cells: [
+        { modelId: 3, fieldId: 20, fieldKey: 'time', value: 10.5 },
+        { modelId: 3, fieldId: 21, fieldKey: 'trial_count', value: 2 }
+      ]
+    }]
+  })
+  expect200(snap)
+  const snapRow = db().testResults.find(r =>
+    r.athleteId === 1001 && r.itemType === 'MODEL' && r.taskItemId === 9 && r.measureDate === '2026-10-16')
+  assert(snapRow, '快照尝试已落库')
+  assertEq(snapRow.values.length, 2, '完整快照：新 attempt 两字段齐全，不丢原有数据')
+  const snapVals = Object.fromEntries(snapRow.values.map(v => [v.fieldKey, v.numericValue]))
+  assertEq(snapVals.time, 10.5, '修改字段为新值')
+  assertEq(snapVals.trial_count, 2, '未改字段随快照保留原值')
 
   // 指标批回归：任务 3 的 VJUMP（taskItem id=8）仍正常
   const ind = call('post', '/apms/test-result/batch-grid', {}, {

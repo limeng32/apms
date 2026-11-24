@@ -30,7 +30,7 @@ import com.ruoyi.system.service.apms.batchimport.TaskScopeQuery;
  * 核心职责：
  * 1) 多态互斥校验 (validateType) — indicator_id / model_id 二选一
  * 2) REP 计算 (computeRep) — value → ref_level → rep_no(1-4)
- * 3) autoSelectBest — 同组 attempt 根据 direction 自动选最佳
+ * 3) autoSelectBest — 同组 attempt 自动选最新一次有效测量为当前使用结果（可手动改选）
  * 4) fillAggregate — 查询时补全 values + reps
  */
 @Service
@@ -505,7 +505,7 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
                 buildQuery(taskItemId, athleteId));
         if (group.size() < 2) return 0; // 单条保持已选中
 
-        // 有评价方向（指标）→ 按方向取最优；无方向（模型）→ 最新有效测量自动当选
+        // 指标/模型统一口径：最新一次有效测量自动当选（方法名保留历史命名，语义已非"选最佳"）
         ApmsTestResult target = pickRepresentative(group);
         if (target == null) return 0;
         resultMapper.clearSelectedForGroup(taskItemId, athleteId);
@@ -533,30 +533,15 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
     }
 
     /**
-     * 在同组尝试中选「代表记录」。这与「有没有评价方向」是两件事：
-     * <ul>
-     *   <li>组内记录有方向（指标）：按方向比主数值，取最优；</li>
-     *   <li>组内无方向（模型，系统不知道多少算好）：不做优劣判断，
-     *       取最新一次有效测量（measure_date 最大，同日取 id 最大）自动当选，
-     *       教练仍可在测试结果页手动改选任意一次。</li>
-     * </ul>
+     * 在同组尝试中选「代表记录」（当前使用结果）。
+     *
+     * <p>口径变更（原 best-of-N 方向择优已废弃）：无论指标还是模型，统一取最新一次有效测量
+     * （measure_date 最大，同日取 id 最大）自动当选；教练可在测试结果页用「使用此结果」
+     * 手动改选任意一次，手动选择在下一条新 attempt 录入前持续有效。
+     * 指标的评价方向仍用于 REP 评价与录入区间提示，不再参与代表记录选择。
      */
     private ApmsTestResult pickRepresentative(List<ApmsTestResult> group) {
-        String direction = resolveDirection(group.get(0));
-        if (direction == null) {
-            return pickLatestValid(group);
-        }
-        ApmsTestResult best = null;
-        BigDecimal bestVal = null;
-        for (ApmsTestResult r : group) {
-            BigDecimal v = extractMainValue(r.getId());
-            if (v == null) continue;
-            boolean better = (bestVal == null)
-                    || ("HIGHER_BETTER".equals(direction) && v.compareTo(bestVal) > 0)
-                    || ("LOWER_BETTER".equals(direction) && v.compareTo(bestVal) < 0);
-            if (better) { best = r; bestVal = v; }
-        }
-        return best;
+        return pickLatestValid(group);
     }
 
     /** 最新一次有效测量；measure_date 相同取 id 最大（最后录入） */
@@ -782,33 +767,6 @@ public class ApmsTestResultServiceImpl implements IApmsTestResultService {
         if (hasInd && hasMdl) {
             throw new ServiceException("indicator_id 与 model_id 互斥，不能同时填写");
         }
-    }
-
-    /** 从 LEFT JOIN 结果里取 direction，或直接从 result.indicatorDirection 取 */
-    private String resolveDirection(ApmsTestResult sample) {
-        if (sample.getIndicatorDirection() != null) return sample.getIndicatorDirection();
-        return null;
-    }
-
-    /** 取某个 result 的主数值（用于 best-of-N 比较） */
-    private BigDecimal extractMainValue(Long resultId) {
-        List<ApmsTestResultValue> vals = valueMapper.selectByResultId(resultId);
-        // 优先取非派生、field_key='result' 的值；否则取第一个有 numeric 的
-        for (ApmsTestResultValue v : vals) {
-            if ("result".equals(v.getFieldKey()) && v.getNumericValue() != null) {
-                return v.getNumericValue();
-            }
-        }
-        for (ApmsTestResultValue v : vals) {
-            if ("0".equals(v.getIsDerived()) && v.getNumericValue() != null) {
-                return v.getNumericValue();
-            }
-        }
-        // 如果全是派生值
-        for (ApmsTestResultValue v : vals) {
-            if (v.getNumericValue() != null) return v.getNumericValue();
-        }
-        return null;
     }
 
     /** REP 计算 — 查 ref_level 匹配区间 */

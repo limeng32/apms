@@ -7,7 +7,7 @@
         <div>
           <h1 class="rk-title">测试结果</h1>
           <p class="rk-subtitle">
-            {{ stats.total }} 条结果 · {{ stats.athletes }} 名队员 · {{ stats.selected }} 条已选最佳 · 尝试记录与 REP 评价
+            {{ stats.total }} 条结果 · {{ stats.athletes }} 名队员 · {{ stats.selected }} 条当前结果 · 尝试记录与 REP 评价
           </p>
         </div>
         <div class="rk-header-actions">
@@ -46,7 +46,7 @@
         <button type="button" class="rk-link" @click="clearSelection">取消选择</button>
       </div>
 
-      <!-- ===== 筛选（原生控件；默认只看已选最佳） ===== -->
+      <!-- ===== 筛选（原生控件；默认只看当前结果=每组最新一次，可手动改选） ===== -->
       <div class="rk-filter">
         <label class="rk-group">
           <span class="rk-label">关联任务</span>
@@ -107,6 +107,7 @@
                     <th class="col-item">项目</th>
                     <th class="text-center col-attempt">尝试</th>
                     <th class="text-center col-date">日期</th>
+                    <th class="col-result">结果</th>
                     <th class="text-center col-detail">详情</th>
                   </tr>
                 </thead>
@@ -142,12 +143,20 @@
                       <span v-else class="tr-attempt is-alt">#{{ row.attemptNo }}</span>
                     </td>
                     <td class="text-center rk-mono">{{ formatDate(row.measureDate) }}</td>
+                    <td class="col-result">
+                      <template v-if="rowResultParts(row).length">
+                        <span v-for="(p, i) in rowResultParts(row)" :key="i" class="tr-result-part rk-mono">
+                          {{ p.value }}<i>{{ p.unit }}</i><span v-if="i < rowResultParts(row).length - 1" class="tr-value-sep">/</span>
+                        </span>
+                      </template>
+                      <span v-else class="rk-dash">—</span>
+                    </td>
                     <td class="text-center col-detail">
                       <button type="button" class="rk-link rk-row-detail" @click.stop="openDetail(row)">详情</button>
                     </td>
                   </tr>
                   <tr v-if="!loading && resultList.length === 0">
-                    <td :colspan="hasRemovePerm ? 7 : 6" class="rk-empty-cell">
+                    <td :colspan="hasRemovePerm ? 8 : 7" class="rk-empty-cell">
                       <div class="rk-empty">
                         <p class="rk-empty-title">暂无结果</p>
                         <p class="rk-empty-desc">调整筛选条件，或先通过 CSV 导入成绩</p>
@@ -230,7 +239,7 @@
                 <div class="tr-section-title">
                   同项目尝试记录
                   <span class="tr-section-count rk-mono">{{ attempts.length }}</span>
-                  <span class="tr-section-hint">{{ current.indicatorDirection ? '方向：' + dirLabel(current.indicatorDirection) : '无评价方向：默认最新一次当选' }}</span>
+                  <span class="tr-section-hint">默认最新一次当选，可手动改选</span>
                 </div>
                 <div class="rk-table-scroll tr-attempt-scroll">
                   <table class="rk-table tr-attempt-table">
@@ -266,7 +275,7 @@
                         <td class="text-center">
                           <button v-if="a.isSelected !== '1'" type="button" class="rk-link"
                                   :disabled="selectingId != null"
-                                  @click="handleSelectAttempt(a)">选为最佳</button>
+                                  @click="handleSelectAttempt(a)">使用此结果</button>
                           <button type="button" class="rk-link"
                                   v-hasPermi="['apms:testResult:edit']"
                                   @click.stop="handleEditAttempt(a)">编辑</button>
@@ -279,8 +288,7 @@
                   </table>
                 </div>
                 <div v-if="attempts.length > 1" class="tr-tip">
-                  <template v-if="current.indicatorDirection">自动选最佳按方向（{{ dirLabel(current.indicatorDirection) }}）判定；手动「选为最佳」可覆盖。</template>
-                  <template v-else>该项目无评价方向，系统默认把最新一次测量选为当前结果；手动「选为最佳」可覆盖。</template>
+                  系统默认把最新一次测量作为当前结果（指标与模型同口径）；手动点「使用此结果」可改选任意一轮，下一次新录入前持续有效。
                 </div>
               </template>
 
@@ -353,7 +361,7 @@
 <script setup name="ApmsTestResult">
 
 // 嵌入模式：由合并页（dispatch/growth/comboDispatch）堆叠使用
-defineProps({ embedded: { type: Boolean, default: false } })
+const props = defineProps({ embedded: { type: Boolean, default: false } })
 import { listTestResult, getTestResult, listByTaskMember, listFreeGroup, selectAttempt,
          delTestResult, delTestResultBatch } from '@/api/apms/testResult'
 import { listTestTask } from '@/api/apms/testTask'
@@ -375,8 +383,8 @@ const { drawerPanelStyle } = useDrawerOffset()
 const { drawerSize } = useDrawerSize('720px')
 const { isTouchViewport } = useTouchViewport()
 
-// 合并页「指标库与任务下发」H5 优先：每页 4 项，窄屏一屏可见整页内容与分页条
-const PAGE_SIZE = 4
+// 合并页（指标库与任务下发）每页 10 项；独立页面保持窄屏紧凑的 4 项
+const PAGE_SIZE = props.embedded ? 10 : 4
 
 // ========= 手动录入 / 网格批量 / 设备推送 =========
 const entryDialogRef = ref(null)
@@ -416,7 +424,7 @@ function handleBatchDelete() {
   const ids = Object.keys(selectedIds).filter(k => selectedIds[k]).map(Number)
   if (!ids.length) return
   proxy.$modal.confirm(
-    `确认删除选中的 ${ids.length} 条成绩？删除后相关项目的最佳试次、REP 评价与任务进度会自动重算，且不可恢复。`,
+    `确认删除选中的 ${ids.length} 条成绩？删除后相关项目的当前结果、REP 评价与任务进度会自动重算，且不可恢复。`,
     '批量删除成绩', { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' }
   ).then(() => {
     batchDeleting.value = true
@@ -430,7 +438,7 @@ function handleBatchDelete() {
   }).catch(() => {}).finally(() => { batchDeleting.value = false })
 }
 
-// ========= 查询（服务端分页，默认只看已选最佳） =========
+// ========= 查询（服务端分页，默认只看当前结果=每组最新一次） =========
 const loading = ref(false)
 const resultList = ref([])
 const total = ref(0)
@@ -447,6 +455,18 @@ function typeChipText(t) {
   if (t === 'INDICATOR') return '指标'
   if (t === 'MODEL') return '模型'
   return '未知'
+}
+
+// 「结果」列：指标取主值（fieldKey=result 优先，否则首个非派生）；模型拼接全部非派生实测字段。
+// 与详情抽屉尝试表同口径，派生字段不进列表
+function rowResultParts(row) {
+  const vals = (row.values || []).filter(v => v.isDerived !== '1')
+  if (!vals.length) return []
+  if (row.itemType === 'INDICATOR') {
+    const main = vals.find(v => v.fieldKey === 'result') || vals[0]
+    return [{ value: main.numericValue ?? main.textValue, unit: main.unit }]
+  }
+  return vals.map(v => ({ value: v.numericValue ?? v.textValue, unit: v.unit }))
 }
 
 function getList() {
@@ -510,7 +530,7 @@ function loadStats() {
 const kpiCards = computed(() => [
   { label: '测试结果总数', value: stats.total, unit: '条', accent: '#2563EB', chip: '按 DataScope 隔离', chipTone: 'tone-info' },
   { label: '涉及队员', value: stats.athletes, unit: '人', accent: '#06B6D4', chip: '人均 ' + (stats.athletes ? (stats.total / stats.athletes).toFixed(1) : '0') + ' 条结果', chipTone: '' },
-  { label: '已选最佳', value: stats.selected, unit: '条', accent: '#16A34A', chip: stats.total ? '占比 ' + Math.round(stats.selected / stats.total * 100) + '%' : '—', chipTone: 'tone-ok' },
+  { label: '当前结果', value: stats.selected, unit: '条', accent: '#16A34A', chip: stats.total ? '占比 ' + Math.round(stats.selected / stats.total * 100) + '%' : '—', chipTone: 'tone-ok' },
   { label: '关联任务', value: stats.tasks, unit: '个', accent: '#8B5CF6', chip: '每任务含多次尝试', chipTone: '' }
 ])
 
@@ -531,7 +551,7 @@ function handleSwipeClose() {
 const current = ref(null)
 const attempts = ref([])
 const detailLoading = ref(false)
-const selectingId = ref(null)  // 手动选为最佳的锁
+const selectingId = ref(null)  // 手动「使用此结果」的请求锁
 
 function openDetail(row) {
   current.value = row
@@ -564,14 +584,14 @@ function loadDetail(id) {
   }).catch(() => { detailLoading.value = false })
 }
 
-// ========= 手动选最佳 =========
+// ========= 手动指定当前结果（原「选为最佳」） =========
 function handleSelectAttempt(row) {
   if (selectingId.value != null) return
-  proxy.$modal.confirm(`确认将 attempt #${row.attemptNo} 选为最佳？原来的选中项会被覆盖。`, '选为最佳').then(() => {
+  proxy.$modal.confirm(`确认使用第 ${row.attemptNo} 次结果作为当前结果？原来的当前结果会被替换。`, '使用此结果').then(() => {
     selectingId.value = row.id
     return selectAttempt(row.id)
   }).then(() => {
-    proxy.$modal.msgSuccess(`已将 attempt #${row.attemptNo} 选为最佳`)
+    proxy.$modal.msgSuccess(`已使用第 ${row.attemptNo} 次结果`)
     selectingId.value = null
     // 刷新：左侧列表（选中项变了）+ 统计 + 右侧详情
     getList()
@@ -595,16 +615,16 @@ function handleEntrySaved(payload) {
 }
 
 // ========= 删除成绩（单条/批量） =========
-// 删除 attempt 后后端自动重算最佳试次与任务进度；删的是当前详情记录时，抽屉自动跳到新最佳或关闭
+// 删除 attempt 后后端自动重选当前结果（最新一次）与任务进度；删的是当前详情记录时，抽屉自动跳到新当前结果或关闭
 function handleDeleteAttempt(row) {
   proxy.$modal.confirm(
-    `确认删除该条成绩（attempt #${row.attemptNo}）？删除后同项目最佳试次、REP 评价与任务进度会自动重算，且不可恢复。`,
+    `确认删除该条成绩（attempt #${row.attemptNo}）？删除后同项目当前结果、REP 评价与任务进度会自动重算，且不可恢复。`,
     '删除成绩', { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' }
   ).then(() => delTestResult(row.id)).then(() => {
     proxy.$modal.msgSuccess('已删除')
     getList()
     loadStats()
-    // 当前详情记录被删：优先跳到同组新的已选最佳，没有则关闭抽屉
+    // 当前详情记录被删：优先跳到同组新的当前结果，没有则关闭抽屉
     if (current.value && current.value.id === row.id) {
       const remaining = attempts.value.filter(a => a.id !== row.id)
       const next = remaining.find(a => a.isSelected === '1') || remaining[0]
@@ -659,7 +679,14 @@ loadStats()
 .col-type { width: 68px; }
 .col-attempt { width: 64px; }
 .col-date { width: 112px; }
+.col-result { min-width: 120px; }
 .col-detail { width: 72px; }
+/* 结果列：模型多字段时允许换行，数值加粗、单位弱化，分隔符与详情尝试表同口径 */
+.tr-result-part {
+  display: inline-block; font-size: 13px; font-weight: 700; color: $rk-text-1;
+  white-space: nowrap; margin-right: 2px;
+  i { font-style: normal; font-size: 11px; font-weight: 500; color: $rk-text-3; margin-left: 2px; }
+}
 .rk-empty-cell { padding: 36px 0; }
 
 .tr-athlete { display: flex; align-items: center; gap: 6px; }

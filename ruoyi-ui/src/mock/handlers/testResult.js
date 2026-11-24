@@ -1,17 +1,10 @@
 /**
- * 演示模式 · 测试结果 handler（尝试/最佳选择/按任务清理）
+ * 演示模式 · 测试结果 handler（尝试/当前结果选择/按任务清理）
  */
 import {
   getDb, route, ok, detail, pageRows, listData,
   nextId, stampCreate, stampUpdate
 } from '../handle'
-
-function primaryValue(row) {
-  const vals = Array.isArray(row.values) ? row.values : []
-  const pick = vals.find(v => v.isDerived === '0' && v.fieldKey === 'result') || vals[0]
-  const n = Number(pick?.numericValue)
-  return Number.isFinite(n) ? n : null
-}
 
 /** 同组判定（与后端一致）：任务内按 taskItem+队员；散录按 队员+指标/模型 且 taskItemId 为空 */
 function sameGroup(r, ref) {
@@ -24,31 +17,25 @@ function sameGroup(r, ref) {
 
 /**
  * 同组归一代表记录（与后端 pickRepresentative 一致）：
- * 有方向按方向取极值；无方向（模型）取最新有效测量（日期大、同日 id 大为新）。
- * 返回应被选中的行，并就地更新 isSelected。
+ * 指标/模型统一取最新有效测量，不再按评价方向择优。
+ * 排序：measureDate 倒序 → 同日 createTime 倒序（运行时新建行带真实时间戳）→
+ * createTime 缺失（蓝本数据）按 id 倒序，与后端「同日 id 最大为新」一致。
+ * 注意不能用「id 更小为新」：nextId 为负递减只在运行时成立，蓝本是正数 id，会判反。
  */
 function normalizeGroupSelection(all, ref) {
   const group = all.filter(r => sameGroup(r, ref))
   if (!group.length) return null
-  const direction = group.find(g => g.indicatorDirection)?.indicatorDirection
-  let chosen
-  if (direction) {
-    const scored = group
-      .filter(r => String(r.isValid) !== '0')
-      .map(r => ({ r, v: primaryValue(r) }))
-      .filter(x => x.v !== null)
-    if (!scored.length) return null
-    scored.sort((a, b) => direction === 'LOWER_BETTER' ? a.v - b.v : b.v - a.v)
-    chosen = scored[0].r
-  } else {
-    chosen = group
-      .filter(r => String(r.isValid) !== '0')
-      .sort((a, b) => {
-        const da = String(a.measureDate ?? ''), db2 = String(b.measureDate ?? '')
-        if (da !== db2) return da < db2 ? 1 : -1
-        return a.id < b.id ? 1 : -1 // id 更小=更晚插入（nextId 为负且递减）
-      })[0]
-  }
+  const chosen = group
+    .filter(r => String(r.isValid) !== '0')
+    .sort((a, b) => {
+      const da = String(a.measureDate ?? ''), db2 = String(b.measureDate ?? '')
+      if (da !== db2) return da < db2 ? 1 : -1
+      const ta = String(a.createTime ?? ''), tb = String(b.createTime ?? '')
+      if (ta || tb) {
+        if (ta !== tb) return ta < tb ? 1 : -1
+      }
+      return b.id - a.id // 同日同时（或无时间戳）：id 大为新
+    })[0]
   if (chosen) group.forEach(r => { r.isSelected = String(r.id) === String(chosen.id) ? '1' : '0' })
   return chosen || null
 }
@@ -69,20 +56,16 @@ export const testResultHandlers = [
     return listData(rows)
   }),
 
-  // 自动选最佳：同任务项+同队员的全部尝试里按方向取极值
+  // 自动选当前结果：同任务项+同队员的全部尝试里取最新一次有效测量（与后端同口径）
   route('post', '/apms/test-result/auto-select', (ctx) => {
     const { taskItemId, athleteId } = ctx.query
     const db = getDb()
     const group = db.testResults.filter(r =>
       String(r.taskItemId) === String(taskItemId) && String(r.athleteId) === String(athleteId))
     if (!group.length) return { code: 601, msg: '没有可选择的尝试' }
-    const direction = group[0].indicatorDirection === 'LOWER_BETTER' ? 'LOWER_BETTER' : 'HIGHER_BETTER'
-    const scored = group.map(r => ({ r, v: primaryValue(r) })).filter(x => x.v !== null)
-    if (!scored.length) return { code: 601, msg: '尝试缺少可比较的数值' }
-    scored.sort((a, b) => direction === 'HIGHER_BETTER' ? b.v - a.v : a.v - b.v)
-    const bestId = scored[0].r.id
-    group.forEach(r => { r.isSelected = String(r.id) === String(bestId) ? '1' : '0' })
-    return ok('已自动选择最佳尝试')
+    const chosen = normalizeGroupSelection(db.testResults, group[0])
+    if (!chosen) return { code: 601, msg: '没有有效的尝试' }
+    return ok('已自动选择最新一次结果')
   }),
 
   route('post', '/apms/test-result/select-attempt/:resultId', (ctx) => {
@@ -101,7 +84,7 @@ export const testResultHandlers = [
         r.isSelected = String(r.id) === String(target.id) ? '1' : '0'
       }
     })
-    return ok('已选为最佳')
+    return ok('已使用该结果')
   }),
 
   route('delete', '/apms/test-result/task/:taskId', (ctx) => {
@@ -376,7 +359,7 @@ export const testResultHandlers = [
       })
     }
     stampUpdate(row)
-    // 数值变了，同组最佳试次（代表记录）按方向/最新重新归一
+    // 数值变了，同组代表记录（当前结果）按最新一次重新归一
     normalizeGroupSelection(getDb().testResults, row)
     return ok('修改成功')
   }),

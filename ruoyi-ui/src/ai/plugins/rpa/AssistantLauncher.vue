@@ -213,7 +213,9 @@ watch([() => userStore.id, () => userStore.token], () => {
 @media (max-width: 768px) {
   .as-launcher-drag {
     right: 14px;
-    bottom: 14px;
+    /* 上移避让演示提示条（≤640px 近全宽、关闭 X 在右侧第一行，底部 12px+行高约 40px）：
+       bottom 14 会与 X 完全重合；72px 使气泡整体落在提示条上方，拖拽边界按实时 rect 重算不受影响 */
+    bottom: 72px;
     width: 44px;
     height: 44px;
   }

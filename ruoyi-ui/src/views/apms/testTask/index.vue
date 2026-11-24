@@ -573,7 +573,7 @@
 <script setup name="ApmsTestTask">
 
 // 嵌入模式：由合并页（dispatch/growth/comboDispatch）堆叠使用
-defineProps({ embedded: { type: Boolean, default: false } })
+const props = defineProps({ embedded: { type: Boolean, default: false } })
 import { listTestTask, getTestTask, addTestTask, updateTestTask, delTestTask,
          updateMemberStatus, listTaskItem, addTaskItem, updateTaskItem, delTaskItem,
          listTaskMember, enrollMember, batchEnroll, removeMember } from '@/api/apms/testTask'
@@ -597,8 +597,8 @@ const { drawerPanelStyle } = useDrawerOffset()
 const { drawerSize } = useDrawerSize('780px')
 const { isTouchViewport } = useTouchViewport()
 
-// 合并页「指标库与任务下发」H5 优先：每页 4 项，窄屏一屏可见整页内容与分页条
-const PAGE_SIZE = 4
+// 合并页（指标库与任务下发）每页 10 项；独立页面保持窄屏紧凑的 4 项
+const PAGE_SIZE = props.embedded ? 10 : 4
 
 // ========= 查询 =========
 const loading = ref(false)
