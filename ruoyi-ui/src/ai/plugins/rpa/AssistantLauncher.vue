@@ -2,16 +2,17 @@
   <!-- wrapper 统一承载 pointer 与 click：setPointerCapture 会把鼠标兼容 click 重定向到 capture
        元素（本 div），若 @click 挂在内层 button，web 端点击将收不到；触摸端 click 按 hit-test
        落 button 再冒泡到本 div，因此 click 挂 wrapper 可同时兼容鼠标/触摸/键盘（button 激活冒泡）。 -->
-  <!-- 面板展开后隐藏气泡（遮罩已接管全屏，再留气泡只会视觉重叠/干扰点击）；
-       关闭面板后 store.open 回 false，气泡自动恢复显示。is-panel-open 的 z-index 提升随之移除。 -->
+  <!-- 面板展开时气泡常驻不卸载：z-index 2100 低于 .as-mask 的 2200，全屏遮罩自然盖住气泡并
+       接管点击（hit-test 不会穿透），关闭面板后气泡无需重新挂载立即可用。
+       展开期间气泡在视觉遮罩下不可交互，故移出 Tab 序列并对辅助树隐藏。 -->
   <div
-    v-if="!store.open"
     ref="dragRef"
     class="as-launcher-drag"
     :class="{ 'is-dragging': dragging }"
     :style="dragStyle"
     role="button"
-    tabindex="0"
+    :tabindex="store.open ? -1 : 0"
+    :aria-hidden="store.open"
     title="APMS 助手（Alt+A）"
     aria-label="打开 APMS 助手"
     @pointerdown="onPointerDown"
@@ -166,6 +167,8 @@ watch([() => userStore.id, () => userStore.token], () => {
   position: fixed;
   right: 24px;
   bottom: 24px;
+  /* 层级约定：2100 必须低于 AssistantPanel .as-mask 的 2200，
+     面板展开时气泡留在原位但被全屏遮罩盖住，不卸载 DOM */
   z-index: 2100;
   width: 48px;
   height: 48px;
@@ -206,9 +209,6 @@ watch([() => userStore.id, () => userStore.token], () => {
 .as-launcher:hover {
   transform: translateY(-2px);
   box-shadow: 0 10px 28px rgba(37, 99, 235, 0.36);
-}
-.as-launcher.is-open {
-  opacity: 0.85;
 }
 @media (max-width: 768px) {
   .as-launcher-drag {
