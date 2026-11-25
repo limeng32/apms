@@ -6,7 +6,10 @@
          target 成为脱离文档的节点，closest 返回 null 会误判为点了外部而关闭面板。
          aside @click.stop 再做一道物理阻断，双保险。 -->
     <div v-if="store.open" class="as-mask" @pointerdown="onMaskPointerDown" @click="onMaskClick">
-      <aside class="as-panel" role="dialog" aria-label="APMS 助手" @click.stop>
+      <!-- swipe-panel：自定义 teleport 浮层复用 vDialogSwipe 右滑关闭（仅 ≤768px 触摸视口生效）；
+           关闭走 store.closePanel，与头部 X/遮罩点击同通道；纵滚与 textarea 输入由指令内核放行 -->
+      <aside class="as-panel swipe-panel" role="dialog" aria-label="APMS 助手"
+             @click.stop v-dialog-swipe="() => store.closePanel()">
         <header class="as-head">
           <div class="as-head-main">
             <span class="as-logo">AI</span>
@@ -68,6 +71,7 @@ import { Close, Delete } from '@element-plus/icons-vue'
 import useAssistantStore from './assistantStore'
 import AssistantMessage from './AssistantMessage.vue'
 import { createDismissState } from './useMaskDismiss'
+import { vDialogSwipe } from '@/utils/dialogSwipe'
 
 const store = useAssistantStore()
 const draft = ref('')

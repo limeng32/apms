@@ -33,6 +33,10 @@ import { useDict } from '@/utils/dict'
 import { getConfigKey } from "@/api/system/config"
 import { parseTime, resetForm, addDateRange, handleTree, selectDictLabel, selectDictLabels, cookieName } from '@/utils/ruoyi'
 
+// ElDialog 全局增强包装（H5 右滑关闭）：必须在 app.use(ElementPlus) 之后覆盖注册，
+// 所有 <el-dialog> 解析到包装版；内部直接 import 真 ElDialog 模块，无递归
+import SwipeDialog from '@/components/SwipeDialog/index.vue'
+
 // 分页组件
 import Pagination from '@/components/Pagination'
 // 自定义表格工具组件
@@ -89,5 +93,9 @@ app.use(ElementPlus, {
 // 个别弹窗确需 ESC 关闭时，可在组件上显式 :close-on-press-escape="true" 覆盖。
 // Drawer 复用 dialogProps 描述符对象，改 Dialog 默认值即同时覆盖 el-dialog 与 el-drawer。
 ElDialog.props.closeOnPressEscape.default = false
+
+// 覆盖全局 ElDialog 解析：包装版透传全部 props/事件/插槽，仅给默认插槽注入右滑关闭指令，
+// 业务 SFC 中的 <el-dialog> 无需任何改动即获得 H5 手势（桌面端指令内部门控，零影响）
+app.component('ElDialog', SwipeDialog)
 
 app.mount('#app')

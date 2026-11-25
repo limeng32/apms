@@ -2,8 +2,6 @@
   <el-dialog :model-value="visible" :title="title"
              :width="dialogWidth" :fullscreen="isFullscreen" :top="isFullscreen ? '0' : '4vh'"
              append-to-body class="ip-dialog" :close-on-click-modal="false" @close="handleClose">
-   <!-- H5 右滑关闭：close 走 handleClose（含 step3 成功回调） -->
-   <div class="dialog-swipe-host" v-dialog-swipe="handleClose">
     <!-- ===== 步骤 1：下载模板 + 选择文件 ===== -->
     <div v-if="step === 1">
       <!-- 关联任务：成绩导入可在散录/任务间选择；任务抽屉入口为锁定态；体态导入不显示 -->
@@ -142,7 +140,6 @@
         <ul><li v-for="(d, i) in result.failedDetails.slice(0, 50)" :key="'f'+i">{{ d }}</li></ul>
       </div>
     </div>
-   </div><!-- /.dialog-swipe-host -->
 
     <template #footer>
       <template v-if="step === 1">
@@ -168,7 +165,6 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { Download, UploadFilled } from '@element-plus/icons-vue'
-import { vDialogSwipe } from '@/utils/dialogSwipe'
 import { previewImport, commitImport } from '@/api/apms/batchImport'
 import { listTestTask } from '@/api/apms/testTask'
 

@@ -1,7 +1,5 @@
 <template>
   <el-dialog title="测试设备接入" v-model="visible" width="760px" append-to-body @close="reset">
-   <!-- H5 右滑关闭：指令挂默认插槽单根包裹层 -->
-   <div class="dialog-swipe-host" v-dialog-swipe="() => (visible = false)">
     <!-- 注册新设备 -->
     <div class="dv-register">
       <el-input v-model="reg.deviceCode" placeholder="设备编码（必填，如 GATE-01）" style="width:190px"/>
@@ -54,7 +52,6 @@
       </div>
     </div>
     <div v-else class="dv-empty">选择上方一台设备，查看推送密钥与对接示例</div>
-   </div><!-- /.dialog-swipe-host -->
 
     <template #footer>
       <el-button @click="visible = false">关闭</el-button>
@@ -64,7 +61,6 @@
 
 <script setup>
 import { listAthlete } from '@/api/apms/athlete'
-import { vDialogSwipe } from '@/utils/dialogSwipe'
 import { listDevices, registerDevice, pushDeviceData } from '@/api/apms/testResult'
 
 const { proxy } = getCurrentInstance()

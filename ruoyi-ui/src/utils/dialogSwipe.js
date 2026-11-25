@@ -10,10 +10,15 @@
  * 指令与组件同生命周期：unmounted 必然移除监听并清理内联样式，touchstart 再防御性清一次，
  * 关闭直接调组件 v-model，不走模拟点击，嵌套弹窗（teleport 到 body）各自挂载天然隔离。
  *
- * 用法（挂在 el-dialog 默认插槽的单根包裹元素上，close 传组件自己的关闭函数）：
+ * 常规用法：无需手动挂载——SwipeDialog 全局包装（components/SwipeDialog，main.js 覆盖
+ * 注册 ElDialog）已给所有 el-dialog 的默认插槽注入本指令，关闭走 ElDialog.handleClose()。
+ * 仅全局包装不适用的特殊场景才手动挂载：
  *   <el-dialog v-model="visible">
  *     <div v-dialog-swipe="() => (visible = false)"> ...弹窗内容... </div>
  *   </el-dialog>
+ * 非 el-dialog 的自定义 teleport 浮层（bottom sheet/侧栏等）：根节点加 class
+ * swipe-panel 后直接挂指令，binding 传该浮层自己的关闭函数：
+ *   <aside class="swipe-panel" v-dialog-swipe="() => store.closePanel()"> ... </aside>
  *
  * 豁免：自带横滑语义的容器加 class .dialog-swipe-ignore（如网格录入的测项翻页列表，
  * 其 overflow-x:hidden 无法被 findHorizontalScroller 识别）；输入控件内的触摸默认放行。
@@ -32,8 +37,18 @@ const IGNORE_SELECTOR = '.dialog-swipe-ignore'
 
 export const vDialogSwipe = {
   mounted(el, binding) {
-    const panel = el.closest('.el-dialog')
+    // 面板解析两类：
+    // 1) .el-dialog —— SwipeDialog 全局包装与手动挂载的 EP 弹窗；
+    // 2) .swipe-panel —— 非 el-dialog 的自定义 teleport 浮层约定（如 RPA 助手 bottom sheet），
+    //    在浮层根节点加该 class 即可复用整套手势内核，无需另写手势代码。
+    const panel = el.closest('.el-dialog') || el.closest('.swipe-panel')
     if (!panel) return
+    // 幂等：全局 SwipeDialog 包装与历史手动挂载可能在同一 panel 上各挂一次，
+    // 先挂载的实例接管，后者直接放弃，避免双实例同时写内联 transform 互相打架
+    if (panel.__dialogSwipeBound) return
+    panel.__dialogSwipeBound = true
+    // 自定义浮层没有 .el-overlay/.el-overlay-dialog，以下两者为 null，
+    // 遮罩淡出与 EP 关键帧压制逻辑自动跳过（各调用点均有 null 保护）
     const overlay = panel.closest('.el-overlay')
     // EP 离场关键帧实际作用在 .el-overlay 与 .el-overlay-dialog 上（dialog-fade/modal-fade）
     const overlayDialog = panel.closest('.el-overlay-dialog')
@@ -174,6 +189,8 @@ export const vDialogSwipe = {
   },
   unmounted(el) {
     if (el && typeof el._dialogSwipeCleanup === 'function') {
+      const panel = el.closest('.el-dialog')
+      if (panel) delete panel.__dialogSwipeBound
       el._dialogSwipeCleanup()
       delete el._dialogSwipeCleanup
     }

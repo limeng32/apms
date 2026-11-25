@@ -252,17 +252,25 @@ indicator/testTask/testResult/comboModel/medical/report/testModel 及 system/use
 - 固定宽控件撑破弹窗事故：el-select 内联 `width:340px` 在 375px 视口超宽 40+px，把整个 body 撑出横滚（表现为弹窗整窗能横晃）。修法：768 断点条带纵排 + select `width:100% !important`，body `overflow-x:hidden` 兜底——以后再漏一个固定宽控件也不会撑晃整窗。
 - 历史值带出 UX：已有成绩自动回填时用淡蓝底（`.is-echo`）与用户新输入区分，并配 touched 双态——带出值不修改不进提交体（防止把历史成绩重复入库为新 attempt）；模型多字段记录任一字段被改时按整模型非空字段快照提交，避免新记录丢字段。统计行明示「已带出 N 格，修改后才作为新尝试提交」。
 
-### 5.6 模态框右滑关闭指令 vDialogSwipe（两起真实事故沉淀）
+### 5.6 模态框右滑关闭：vDialogSwipe 指令 + SwipeDialog 全局包装（三起真实事故沉淀）
 
-指令在 `src/utils/dialogSwipe.js`，与 `vDrawerSwipe` 同构并复用 `touchViewportActive/findHorizontalScroller` 内核（阈值、边缘判定、输入控件放行完全一致）。本仓 68 个 el-dialog 分散在 40+ 文件，**不要做 document 全局委托**，以下事故已证明该路线不可行。
+指令在 `src/utils/dialogSwipe.js`，与 `vDrawerSwipe` 同构并复用 `touchViewportActive/findHorizontalScroller` 内核（阈值、边缘判定、输入控件放行完全一致）。本仓 69 个 el-dialog 分散在 49 个 SFC，**不要做 document 全局委托**，以下事故已证明该路线不可行。
 
 事故一：委托方案导致「再次打开弹窗消失」。
 
 - 委托在 `.el-dialog` 上写内联 transform 跟手，而 EP 自身开关动画也用 transform 作用同一元素；内联样式清理靠两层 setTimeout，el-dialog 默认不销毁 DOM，快速重开时残留的 `translateX(100vw)` 压过进场动画，弹窗停在屏外。
 - 模拟点击 `.el-dialog__headerbtn`/派发 Escape 是旁路通道，与组件 v-model 链路脱节；组件卸载后游离定时器仍操作旧节点，嵌套弹窗时序更乱。
-- 正解是指令模式：与组件同生命周期，`unmounted` 必然移除监听并清理内联样式，touchstart 再防御性清一次；关闭直接调 binding 传入的组件关闭函数（组件自己的 v-model=false），不模拟 DOM 事件。
+- 正解是指令模式：与组件同生命周期，`unmounted` 必然移除监听并清理内联样式，touchstart 再防御性清一次；不模拟 DOM 事件。
 
-挂载方式（照抄四个公共弹窗：网格/手动/导入预览/设备接入）：
+首选落地方案：SwipeDialog 全局包装（已落地，新弹窗零改动自动受益）。
+
+- `src/components/SwipeDialog/index.vue` 包装真 ElDialog（内部 `import { ElDialog }` 直接引用模块，不走全局解析故无递归），main.js 在 `app.use(ElementPlus)` **之后** `app.component('ElDialog', SwipeDialog)` 覆盖注册，所有 `<el-dialog>` 解析到包装版；ElMessageBox/ElDrawer 内部引用模块对象，不受影响。
+- 包装只做两件事：默认插槽外包无样式 `.dialog-swipe-host` div 挂指令；`inheritAttrs:false` + `v-bind="$attrs"` 全量透传 props/事件，footer/header/title 具名插槽原样透传且 header 作用域参数 `{ close,titleId,titleClass }` 用 `v-bind="slotProps"` 整体带出。
+- **关闭通道必须调 ElDialog expose 的 `handleClose()`（ref 调用），不要自己 emit update:modelValue**：仓内存在 `:model-value` 单向绑定 + `@close` 自管 visible 的弹窗（ImportPreviewDialog/ComboScoreReport 等），它们不监听 update:modelValue，裸 emit 关闭无效；handleClose 与点 X 同路径（beforeClose 拦截 → close 事件 → update:modelValue），两种绑定模式都通，beforeClose 自定义拦截也保留。
+- 指令幂等：panel 上打 `__dialogSwipeBound` 标记，包装层与任何历史手动挂载共存时先挂载者接管，unmounted 清标记。
+- 前置排查（包装前已全量 grep 确认）：无 `.el-dialog > .xxx` 直接子选择器（多包一层 div 不会断 scoped 样式，插槽元素仍带使用方 data-v）；无 el-dialog 老 `:visible` 写法（命中的都是自定义组件 props）；无 ref 直接调 el-dialog 实例的用法。
+
+备选：个别 SFC 手动挂指令（全局包装不适用时才用）。
 
 ```vue
 <el-dialog v-model="visible" append-to-body>
@@ -274,8 +282,7 @@ indicator/testTask/testResult/comboModel/medical/report/testModel 及 system/use
 ```
 
 - **#footer 包进 host div 会编译失败**（SFC 500：具名插槽找不到组件宿主），宿主 div 只包默认插槽内容。
-- 嵌套弹窗（如手动录入里的设备采集子弹窗，teleport 到 body）各自挂指令，`closest('.el-dialog')` 天然只解析最近面板，右滑子弹窗不会带动外层。
-- 关闭函数有额外收尾时传组件方法（如导入预览传 `handleClose` 保留 step3 成功回调），不要只传裸赋值。
+- 嵌套弹窗（如手动录入里的设备采集子弹窗，teleport 到 body）经全局包装各自独立，`closest('.el-dialog')` 天然只解析最近面板，右滑子弹窗不会带动外层。
 
 事故二：手势关闭「闪一下」而点 X 不闪。
 
@@ -284,12 +291,20 @@ indicator/testTask/testResult/comboModel/medical/report/testModel 及 system/use
 - `clearInline` 必须连 `animation` 残留一起清，否则压制带到下次打开，弹窗无淡入直接出现；定时器保存句柄，清理/卸载时可取消。
 - el-drawer 的 vDrawerSwipe 同构存在相同隐患（EP drawer 离场也是 keyframes），仅因滑出方向与离场方向接近、跳变不明显而未被反馈；修法可直接复用同一套压制。
 
+自定义 teleport 浮层（非 el-dialog）的接入：`.swipe-panel` 约定。
+
+- 全局包装只接管 el-dialog；项目里还有自定义浮层（RPA 助手 `ai/plugins/rpa/AssistantPanel.vue`：teleport 到 body 的 bottom sheet，H5 下 85vh 底部上滑、桌面右侧 420px 栏），它们不经过组件解析，包装覆盖不到。
+- 接入零新逻辑：浮层根节点加 `class="swipe-panel"` 并挂 `v-dialog-swipe="() => 浮层自己的关闭函数()"`。指令面板解析为 `closest('.el-dialog') || closest('.swipe-panel')`，手势内核（门控/阈值/输入控件放行/横滚放行/幂等/吸附时序）原样复用。
+- 自定义浮层没有 `.el-overlay`，overlay/overlayDialog 解析为 null，遮罩淡出与 EP 关键帧压制自动跳过（各调用点有 null 保护）；v-if 卸载型浮层在吸附滑出（220ms）后整体移除，元素已在屏外，无突变。
+- 与既有遮罩裁决共存：RPA 面板的 useMaskDismiss 在 pointerdown 记录手势起源于面板内，touchend 合成的 click 被判为内部点击不误关；纵向消息列表靠指令的横向意向判定（|dx|>|dy|×1.2）正常滚动，textarea 靠输入控件放行正常编辑。
+- 新写自定义浮层照此打标，不要复制手势代码，也不要把业务类名写进指令。
+
 豁免面 `.dialog-swipe-ignore`：
 
 - `findHorizontalScroller` 只认 `overflow-x:auto/scroll` 的容器；`overflow-x:hidden` 但自带横滑语义的自定义面（网格录入的测项翻页列表 `.rg-mlist`）识别不了，横滑翻页会被误接管为关闭手势。
 - 这类容器显式打 `class="dialog-swipe-ignore"`，指令 touchstart 命中即整体放行；新增同类横滑组件照此打标，不要改手势内核。
 - 输入控件（input/textarea/select/[contenteditable]/.el-input/.el-textarea/.el-select）默认放行，内部横拖是选文本/移光标。
-- 适用范围：只挂高频公共弹窗，业务 CRUD 弹窗按需按上述模板补；el-drawer 仍用 vDrawerSwipe，`.el-dialog`/`.el-drawer` 类名互斥，两套手势不叠加。
+- 适用范围：SwipeDialog 已全局接管全部 el-dialog（含 system/monitor/tool 框架页与业务 CRUD 弹窗），新写弹窗无需任何手势代码；el-drawer 仍用 vDrawerSwipe，`.el-dialog`/`.el-drawer` 类名互斥，两套手势不叠加。
 
 ## 6. 验证流程（轻量优先，禁止无头浏览器）
 
