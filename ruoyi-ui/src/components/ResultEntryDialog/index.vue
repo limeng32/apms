@@ -147,9 +147,6 @@
               <span class="re-model-name">{{ mf.modelName }}</span>
               <span class="re-model-code">{{ mf.modelCode }}</span>
             </div>
-            <el-button link type="primary" size="small" @click="openDevice(mf)">
-              <el-icon style="margin-right:2px"><Connection /></el-icon>设备采集
-            </el-button>
           </div>
           <div class="re-field-grid">
             <div v-for="f in mf.inputFields" :key="f.fieldId" class="re-field">
