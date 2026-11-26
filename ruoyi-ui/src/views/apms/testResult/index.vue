@@ -144,8 +144,8 @@
                       </div>
                     </td>
                     <td class="text-center">
-                      <span v-if="row.isSelected === '1'" class="tr-attempt is-star">★{{ row.attemptNo }}</span>
-                      <span v-else class="tr-attempt is-alt">#{{ row.attemptNo }}</span>
+                      <span v-if="row.isSelected === '1'" class="tr-attempt is-star">★{{ row.attemptNo }}/{{ row.attemptTotal || 1 }}</span>
+                      <span v-else class="tr-attempt is-alt">#{{ row.attemptNo }}/{{ row.attemptTotal || 1 }}</span>
                     </td>
                     <td class="text-center rk-mono">{{ formatDate(row.measureDate) }}</td>
                     <td class="col-result">
@@ -260,8 +260,8 @@
                     <tbody>
                       <tr v-for="a in attempts" :key="a.id">
                         <td class="text-center">
-                          <span v-if="a.isSelected === '1'" class="tr-attempt is-star">★{{ a.attemptNo }}</span>
-                          <span v-else class="tr-attempt is-alt">#{{ a.attemptNo }}</span>
+                          <span v-if="a.isSelected === '1'" class="tr-attempt is-star">★{{ a.attemptNo }}/{{ a.attemptTotal || attempts.length }}</span>
+                          <span v-else class="tr-attempt is-alt">#{{ a.attemptNo }}/{{ a.attemptTotal || attempts.length }}</span>
                         </td>
                         <td class="text-center rk-mono">{{ formatDate(a.measureDate) }}</td>
                         <td class="text-center">
@@ -682,7 +682,7 @@ loadStats()
 .col-athlete { width: 104px; }
 .col-task { width: 150px; }
 .col-type { width: 68px; }
-.col-attempt { width: 64px; }
+.col-attempt { width: 76px; }
 .col-date { width: 112px; }
 .col-result { min-width: 120px; }
 .col-detail { width: 72px; }

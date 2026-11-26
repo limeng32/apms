@@ -725,6 +725,19 @@ test('H6', '测试结果：列表默认只看当前结果，自动选择取最�
   assert(list.rows.every(r => String(r.isSelected) === '1'), '默认 isSelected=1')
   const all = call('get', '/apms/test-result/list', { pageNum: '1', pageSize: '50', taskId: '1', isSelected: '' })
   assert(all.total >= list.total, '显式不限选中时条数更多')
+
+  // attemptTotal 契约：每行带同组尝试总数，口径与 sameGroup 一致，且不受 isSelected 筛选影响
+  const sameGroupOf = (r, ref) => String(r.athleteId) === String(ref.athleteId)
+    && (ref.taskItemId != null
+      ? String(r.taskItemId) === String(ref.taskItemId)
+      : r.taskItemId == null
+        && String(r.indicatorId ?? '') === String(ref.indicatorId ?? '')
+        && String(r.modelId ?? '') === String(ref.modelId ?? ''))
+  assert(list.rows.length > 0, '列表有数据可校验')
+  list.rows.forEach((r) => {
+    const total = db().testResults.filter(x => sameGroupOf(x, r)).length
+    assertEq(r.attemptTotal, total, `list 行 #${r.id} attemptTotal=同组实际条数`)
+  })
   // LOWER_BETTER 组（30 米冲刺）：新口径下自动选择与方向无关，必须取最新一次有效测量
   const sprintGroup = (() => {
     for (const r0 of db().testResults) {
@@ -736,6 +749,12 @@ test('H6', '测试结果：列表默认只看当前结果，自动选择取最�
     return null
   })()
   assert(sprintGroup, '蓝本存在多条尝试的 LOWER_BETTER 结果组')
+  // 关键语义：列表默认只看当前结果（每组仅 1 行），但 M 必须是全组尝试数而非 1
+  const sprintShown = list.rows.find(r =>
+    String(r.taskItemId) === String(sprintGroup[0].taskItemId)
+    && String(r.athleteId) === String(sprintGroup[0].athleteId))
+  assert(sprintShown, '多尝试组的当前结果行在默认列表中')
+  assertEq(sprintShown.attemptTotal, sprintGroup.length, '筛选只看当前结果时 M 仍为全组尝试总数')
   {
     const taskItemId = sprintGroup[0].taskItemId
     const athleteId = sprintGroup[0].athleteId
@@ -758,6 +777,10 @@ test('H6', '测试结果：列表默认只看当前结果，自动选择取最�
   }
   const btm = call('get', '/apms/test-result/by-task-member', { taskId: '1', athleteId: '1001' })
   expect200(btm); assert(Array.isArray(btm.data) && btm.data.length >= 1)
+  btm.data.forEach((r) => {
+    const total = db().testResults.filter(x => sameGroupOf(x, r)).length
+    assertEq(r.attemptTotal, total, `by-task-member 行 #${r.id} attemptTotal 正确`)
+  })
   // 网格成绩带出契约（ResultGridEntryDialog.loadExistingValues 依赖）：
   // 选中行必须带 itemType/indicatorId，主值可经 values.result.numericValue 取到
   const selected = btm.data.find(r => r.isSelected === '1' && r.itemType === 'INDICATOR')
@@ -886,6 +909,7 @@ test('H6e', '散录归一：指标/模型统一最新一次当选（不看数值
   expect200(fg)
   assertEq(fg.data.length, 2, '散录同组返回两条')
   assert(fg.data.every(r => String(r.modelId) === '1'), '全是该模型')
+  assert(fg.data.every(r => r.attemptTotal === 2), '散录行 attemptTotal=同组两条，不串指标/任务行')
 })
 
 test('H6f', '结构化采集配置：算法注册表可枚举；RSA 绑定算法；字段角色可配置且 CRUD 保留；设备模型推送永远 401', async () => {

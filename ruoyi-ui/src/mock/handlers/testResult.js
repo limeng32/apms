@@ -15,6 +15,13 @@ function sameGroup(r, ref) {
     && String(r.modelId ?? '') === String(ref.modelId ?? '')
 }
 
+/** 给结果行附加同组尝试总数（对应后端 selectVo 的 attempt_total 相关子查询） */
+function withAttemptTotal(rows) {
+  const all = getDb().testResults
+  rows.forEach((r) => { r.attemptTotal = all.filter(x => sameGroup(x, r)).length })
+  return rows
+}
+
 /**
  * 同组归一代表记录（与后端 pickRepresentative 一致）：
  * 指标/模型统一取最新有效测量，不再按评价方向择优。
@@ -45,7 +52,7 @@ export const testResultHandlers = [
     const { taskId, athleteId } = ctx.query
     const rows = getDb().testResults.filter(r =>
       String(r.taskId) === String(taskId) && String(r.athleteId) === String(athleteId))
-    return listData(rows)
+    return listData(withAttemptTotal(rows))
   }),
 
   // 散录（不绑任务）同组尝试：同队员 + 同指标/模型
@@ -53,7 +60,7 @@ export const testResultHandlers = [
     const { athleteId, indicatorId, modelId } = ctx.query
     const ref = { athleteId, taskItemId: null, indicatorId: indicatorId ?? null, modelId: modelId ?? null }
     const rows = getDb().testResults.filter(r => sameGroup(r, ref))
-    return listData(rows)
+    return listData(withAttemptTotal(rows))
   }),
 
   // 自动选当前结果：同任务项+同队员的全部尝试里取最新一次有效测量（与后端同口径）
@@ -95,12 +102,14 @@ export const testResultHandlers = [
 
   route('get', '/apms/test-result/list', (ctx) => {
     const q = ctx.query
-    return pageRows(getDb().testResults, q, [
+    const page = pageRows(getDb().testResults, q, [
       { key: 'taskId', value: q.taskId },
       { key: 'athleteId', value: q.athleteId },
       { key: 'itemType', value: q.itemType },
       { key: 'isSelected', value: q.isSelected ?? '1' }
     ])
+    withAttemptTotal(page.rows)
+    return page
   }),
 
   // 在线网格批量录入（逐人提交，非逐格）

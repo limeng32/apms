@@ -55,6 +55,8 @@ public class ApmsTestResult extends BaseEntity {
     private String modelName;
     private String itemType;
     private Integer itemSortOrder;
+    /** 同组尝试总数（非持久化，由列表查询相关子查询计算）：任务内=同 task_item+队员，散录=同队员+指标/模型 */
+    private Integer attemptTotal;
 
     // 聚合
     private List<ApmsTestResultValue> values;
@@ -112,6 +114,8 @@ public class ApmsTestResult extends BaseEntity {
     public void setItemType(String t) { this.itemType = t; }
     public Integer getItemSortOrder() { return itemSortOrder; }
     public void setItemSortOrder(Integer o) { this.itemSortOrder = o; }
+    public Integer getAttemptTotal() { return attemptTotal; }
+    public void setAttemptTotal(Integer attemptTotal) { this.attemptTotal = attemptTotal; }
     public List<ApmsTestResultValue> getValues() { return values; }
     public void setValues(List<ApmsTestResultValue> values) { this.values = values; }
     public List<ApmsTestResultRep> getReps() { return reps; }

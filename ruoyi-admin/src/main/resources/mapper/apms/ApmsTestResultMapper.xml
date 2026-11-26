@@ -34,6 +34,7 @@
         <result column="mdl_name"            property="modelName"/>
         <result column="item_type"           property="itemType"/>
         <result column="item_sort"           property="itemSortOrder"/>
+        <result column="attempt_total"       property="attemptTotal"/>
     </resultMap>
 
     <sql id="selectVo">
@@ -54,7 +55,18 @@
                CASE WHEN r.model_id IS NOT NULL     THEN 'MODEL'
                     WHEN r.indicator_id IS NOT NULL THEN 'INDICATOR'
                     ELSE ti.item_type END AS item_type,
-               ti.sort_order AS item_sort
+               ti.sort_order AS item_sort,
+               <!-- 同组尝试总数（与 autoSelectBest/sameGroup 同口径，不受外层筛选影响）：
+                    任务行按 task_item+队员；散录行按 队员+指标/模型 且 task_item_id IS NULL。
+                    IFNULL 归一是为了让 NULL 归属列也能等值比较（id 均为正数，0 不会撞真实 id） -->
+               (SELECT COUNT(*) FROM apms_test_result g
+                 WHERE g.athlete_id = r.athlete_id
+                   AND (
+                     (r.task_item_id IS NOT NULL AND g.task_item_id = r.task_item_id)
+                     OR (r.task_item_id IS NULL AND g.task_item_id IS NULL
+                         AND IFNULL(g.indicator_id, 0) = IFNULL(r.indicator_id, 0)
+                         AND IFNULL(g.model_id, 0) = IFNULL(r.model_id, 0))
+                   )) AS attempt_total
         FROM apms_test_result r
         LEFT JOIN apms_test_task t      ON r.task_id     = t.id
         LEFT JOIN apms_task_item ti    ON r.task_item_id = ti.id
