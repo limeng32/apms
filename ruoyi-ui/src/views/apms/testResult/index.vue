@@ -356,7 +356,7 @@
         commit-url="/apms/test-result/import/commit"
         template-url="apms/test-result/import/template"
         show-task-select
-        :tips="['仅支持 .xlsx 格式与指标（INDICATOR）成绩，模型类测试请在任务中手工录入', '每格一个数值；非数字或超出允许范围的单元格会在预览中标红，错误行将跳过', '必须选择关联任务，模板与校验均按该任务的队员/指标执行']"
+        :tips="['仅支持 .xlsx 格式与指标（INDICATOR）成绩，模型类测试请在任务中手工录入', '每格一个数值；非数字或超出允许范围的单元格会在预览中标红，错误行将跳过', '必须选择关联任务，模板与校验均按该任务的队员/指标执行', '与该队员当日最新成绩完全相同的成绩会自动跳过，不产生重复记录']"
         @success="handleImportSuccess"
       />
     </div>

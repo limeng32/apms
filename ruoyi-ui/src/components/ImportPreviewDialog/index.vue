@@ -127,7 +127,7 @@
         <template #sub-title>
           <div class="ip-result-stats">
             <span class="ip-stat ip-stat-ok">成功 {{ result.committed }} 行</span>
-            <span class="ip-stat ip-stat-conflict" v-if="result.skipped">跳过 {{ result.skipped }} 行</span>
+            <span class="ip-stat ip-stat-conflict" v-if="result.skipped">跳过 {{ result.skipped }} 条</span>
             <span class="ip-stat ip-stat-err" v-if="result.failed">失败 {{ result.failed }} 行</span>
           </div>
         </template>

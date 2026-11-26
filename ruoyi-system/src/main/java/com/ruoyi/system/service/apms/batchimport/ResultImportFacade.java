@@ -24,6 +24,8 @@ import com.ruoyi.system.domain.apms.ApmsTestTask;
 import com.ruoyi.system.mapper.apms.ApmsIndicatorMapper;
 import com.ruoyi.system.mapper.apms.ApmsTaskItemMapper;
 import com.ruoyi.system.mapper.apms.ApmsTaskMemberMapper;
+import com.ruoyi.system.mapper.apms.ApmsTestResultMapper;
+import com.ruoyi.system.mapper.apms.ApmsTestResultValueMapper;
 import com.ruoyi.system.service.apms.InputRangeValidator;
 import com.ruoyi.system.service.apms.ITestResultImportProvider.ImportResult;
 import com.ruoyi.system.service.apms.batchimport.ImportPreviewVo.CellVo;
@@ -36,6 +38,8 @@ import com.ruoyi.system.service.apms.batchimport.ResultImportDraft.DraftRow;
  * 测试成绩两阶段批量导入：预览（解析/精确匹配/范围标色）+ 一次性 token 提交。
  *
  * <p>一期仅支持 INDICATOR；MODEL 列预览灰显忽略。
+ * <p>提交去重：单元格成绩与该队员/该任务/当日同指标的最新一次成绩数值一致时跳过不写，
+ * 计入 skipped 并给明细，避免重新上传含已录数据的模板时产生重复 attempt。
  *
  * @author apms
  */
@@ -51,6 +55,8 @@ public class ResultImportFacade {
     @Autowired private ApmsIndicatorMapper indicatorMapper;
     @Autowired private ApmsTaskItemMapper taskItemMapper;
     @Autowired private ApmsTaskMemberMapper taskMemberMapper;
+    @Autowired private ApmsTestResultMapper resultMapper;
+    @Autowired private ApmsTestResultValueMapper resultValueMapper;
     @Autowired private InputRangeValidator rangeValidator;
     @Autowired private ImportDraftStore draftStore;
     @Autowired private ResultImportRowWriter rowWriter;
@@ -279,6 +285,16 @@ public class ResultImportFacade {
             }
             List<ResultImportItem> items = new ArrayList<>();
             for (DraftCell c : row.cells) {
+                // 去重：与该队员/该任务/当日同指标的最新一次成绩数值一致则不再记录
+                // （重新上传含已录数据的模板时，未改动的格子不会产生重复 attempt）
+                BigDecimal latestValue = latestValueOnDate(row.taskId, row.athleteId, c.indicatorId, measureDate);
+                if (latestValue != null && latestValue.compareTo(c.value) == 0) {
+                    result.setSkipped(result.getSkipped() + 1);
+                    result.getSkippedDetails().add(who + "：指标 " + c.code + " 成绩 "
+                            + c.value.stripTrailingZeros().toPlainString()
+                            + " 与当日最新成绩一致，跳过不重复记录");
+                    continue;
+                }
                 ApmsTestResult tr = new ApmsTestResult();
                 tr.setAthleteId(row.athleteId);
                 tr.setTaskId(row.taskId);
@@ -297,6 +313,8 @@ public class ResultImportFacade {
                 tv.setNumericValue(c.value);
                 items.add(new ResultImportItem(tr, Collections.singletonList(tv)));
             }
+            // 整行成绩全部命中去重：无内容可写，不计入成功/失败
+            if (items.isEmpty()) continue;
             try {
                 rowWriter.writeRow(items);
                 result.setCommitted(result.getCommitted() + 1);
@@ -307,6 +325,36 @@ public class ResultImportFacade {
         }
         draftStore.complete(DOMAIN, token, result);
         return result;
+    }
+
+    /**
+     * 查该队员在指定任务/日期/指标下最新一次成绩的主值（用于导入去重）。
+     *
+     * <p>口径：selectList 按 attempt_no 升序，末条即当日最新一次尝试（含本批次先前行已提交的记录，
+     * 因此同一文件内的重复行同样会被跳过）；主值优先取 fieldKey='result'，缺省回退首个数值。
+     * 数值比较用 {@link BigDecimal#compareTo}，58 与 58.0 视为相等。
+     *
+     * @return 最新成绩数值；无当日记录或记录无值时返回 null（null 不触发去重）
+     */
+    private BigDecimal latestValueOnDate(Long taskId, Long athleteId, Long indicatorId, Date measureDate) {
+        ApmsTestResult q = new ApmsTestResult();
+        q.setTaskId(taskId);
+        q.setAthleteId(athleteId);
+        q.setIndicatorId(indicatorId);
+        q.setMeasureDate(measureDate);
+        q.setItemType("INDICATOR");
+        List<ApmsTestResult> sameDay = resultMapper.selectList(q);
+        if (sameDay == null || sameDay.isEmpty()) return null;
+        ApmsTestResult latest = sameDay.get(sameDay.size() - 1);
+        List<ApmsTestResultValue> vals = resultValueMapper.selectByResultId(latest.getId());
+        if (vals == null || vals.isEmpty()) return null;
+        BigDecimal fallback = null;
+        for (ApmsTestResultValue v : vals) {
+            if (v.getNumericValue() == null) continue;
+            if ("result".equals(v.getFieldKey())) return v.getNumericValue();
+            if (fallback == null) fallback = v.getNumericValue();
+        }
+        return fallback;
     }
 
     private ApmsTestTask idQuery(Long id) {
