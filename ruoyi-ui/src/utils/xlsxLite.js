@@ -50,11 +50,22 @@ function colLetter(idx) {
   return out
 }
 
-function sheetXml(rows) {
+/**
+ * 样式表：xf 0 = 默认常规；xf 1 = 文本（内置 numFmtId=49 即 "@"）。
+ * 日期列单元格引用 s="1" 后，Excel/WPS 不会把录入的 yyyy-MM-dd 自动转成本地化日期型。
+ */
+const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`
+
+const TEXT_STYLE_XF = 1
+
+function sheetXml(rows, textCols) {
+  const textSet = new Set(textCols || [])
   const rowXml = rows.map((row, rIdx) => {
     const cells = row.map((val, cIdx) => {
       const ref = `${colLetter(cIdx)}${rIdx + 1}`
-      return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(val)}</t></is></c>`
+      const styleAttr = textSet.has(cIdx) ? ` s="${TEXT_STYLE_XF}"` : ''
+      return `<c r="${ref}"${styleAttr} t="inlineStr"><is><t xml:space="preserve">${escapeXml(val)}</t></is></c>`
     }).join('')
     return `<row r="${rIdx + 1}">${cells}</row>`
   }).join('')
@@ -63,7 +74,7 @@ function sheetXml(rows) {
 }
 
 const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`
 
 const ROOT_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`
@@ -72,7 +83,7 @@ const WORKBOOK = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="import" sheetId="1" r:id="rId1"/></sheets></workbook>`
 
 const WORKBOOK_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`
 
 /**
  * STORE 方式打 ZIP（无压缩，无需 deflate 实现）。
@@ -149,22 +160,25 @@ function zipStore(entries) {
 /**
  * 生成 xlsx 二进制（字符串二维数组 → XLSX bytes）。
  * @param {string[][]} rows 行数据（第一行通常为说明行，第二行为表头）
+ * @param {number[]} [textCols] 需要强制文本格式的列下标（如日期列传 [2]），
+ *   防止 Excel/WPS 把该列输入自动转成本地化日期型
  * @returns {Uint8Array}
  */
-export function buildXlsxBytes(rows) {
+export function buildXlsxBytes(rows, textCols = []) {
   const parts = [
     ['[Content_Types].xml', CONTENT_TYPES],
     ['_rels/.rels', ROOT_RELS],
     ['xl/workbook.xml', WORKBOOK],
     ['xl/_rels/workbook.xml.rels', WORKBOOK_RELS],
-    ['xl/worksheets/sheet1.xml', sheetXml(rows)]
+    ['xl/styles.xml', STYLES],
+    ['xl/worksheets/sheet1.xml', sheetXml(rows, textCols)]
   ]
   return zipStore(parts.map(([name, xml]) => ({ name, data: enc.encode(xml) })))
 }
 
 /** 浏览器侧直接生成可下载 Blob */
-export function buildXlsxBlob(rows) {
-  return new Blob([buildXlsxBytes(rows)], {
+export function buildXlsxBlob(rows, textCols = []) {
+  return new Blob([buildXlsxBytes(rows, textCols)], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
   })
 }

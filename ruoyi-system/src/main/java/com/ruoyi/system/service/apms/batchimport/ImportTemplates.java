@@ -229,6 +229,9 @@ public class ImportTemplates {
         return out;
     }
 
+    /** measure_date 列固定为第 3 列（成绩/体态模板同构：编号、姓名、日期…） */
+    private static final int DATE_COL_IDX = 2;
+
     private byte[] buildXlsx(String sheetName, List<String> guide, List<String> header,
                              List<String[]> athleteRows, boolean hasSession) {
         try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
@@ -237,17 +240,30 @@ public class ImportTemplates {
             Font bold = wb.createFont();
             bold.setBold(true);
             headStyle.setFont(bold);
+            // 日期列强制文本格式（@）：用户在 Excel/WPS 录入或编辑日期时不会被自动转成
+            // 本地化日期型单元格（如 2024/12/12、2024年12月12日），保证回填仍是 yyyy-MM-dd 文本
+            CellStyle textStyle = wb.createCellStyle();
+            textStyle.setDataFormat(wb.createDataFormat().getFormat("@"));
+            sheet.setDefaultColumnStyle(DATE_COL_IDX, textStyle);
 
             Row g = sheet.createRow(0);
             for (int i = 0; i < guide.size(); i++) {
                 org.apache.poi.ss.usermodel.Cell c = g.createCell(i);
                 c.setCellValue(guide.get(i));
+                if (i == DATE_COL_IDX) c.setCellStyle(textStyle);
             }
             Row h = sheet.createRow(1);
             for (int i = 0; i < header.size(); i++) {
                 org.apache.poi.ss.usermodel.Cell c = h.createCell(i);
                 c.setCellValue(header.get(i));
-                c.setCellStyle(headStyle);
+                if (i == DATE_COL_IDX) {
+                    CellStyle dateHeadStyle = wb.createCellStyle();
+                    dateHeadStyle.cloneStyleFrom(headStyle);
+                    dateHeadStyle.setDataFormat(wb.createDataFormat().getFormat("@"));
+                    c.setCellStyle(dateHeadStyle);
+                } else {
+                    c.setCellStyle(headStyle);
+                }
             }
             int rowIdx = 2;
             for (String[] r : athleteRows) {
@@ -256,7 +272,9 @@ public class ImportTemplates {
                 row.createCell(1).setCellValue(r[1]);
                 // 宽行（含已录数据）把日期/场次/数值一并写入；窄行只有前两列
                 for (int i = 2; i < header.size() && i < r.length; i++) {
-                    if (r[i] != null && !r[i].isEmpty()) row.createCell(i).setCellValue(r[i]);
+                    org.apache.poi.ss.usermodel.Cell cell = row.createCell(i);
+                    if (i == DATE_COL_IDX) cell.setCellStyle(textStyle);
+                    if (r[i] != null && !r[i].isEmpty()) cell.setCellValue(r[i]);
                 }
             }
             sheet.createFreezePane(0, 2);

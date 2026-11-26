@@ -1638,7 +1638,7 @@ test('I1', 'CRC32 参考实现满足标准向量（空串=0，123456789=0xCBF439
   assertEq(crc32Ref(new TextEncoder().encode('123456789')), 0xCBF43926, '标准向量')
 })
 
-test('I2', 'buildXlsxBytes：STORE zip 结构/5 个部件/CRC 与尺寸自洽/sheet 内容可还原', async () => {
+test('I2', 'buildXlsxBytes：STORE zip 结构/6 个部件/CRC 与尺寸自洽/sheet 内容可还原', async () => {
   const { buildXlsxBytes } = await import(src('utils/xlsxLite'))
   const rows = [
     ['#说明行', '姓名'],
@@ -1651,8 +1651,8 @@ test('I2', 'buildXlsxBytes：STORE zip 结构/5 个部件/CRC 与尺寸自洽/sh
   // 解析 EOCD（末尾 22 字节）
   const eocd = new DataView(bytes.buffer, bytes.length - 22)
   assertEq(eocd.getUint32(0, true), 0x06054b50, 'EOCD 签名')
-  assertEq(eocd.getUint16(8, true), 5, '5 个 zip 条目')
-  assertEq(eocd.getUint16(10, true), 5, '中央目录条目数一致')
+  assertEq(eocd.getUint16(8, true), 6, '6 个 zip 条目')
+  assertEq(eocd.getUint16(10, true), 6, '中央目录条目数一致')
 
   // 遍历本地文件头，STORE 方式提取原始数据
   const entries = new Map()
@@ -1673,7 +1673,7 @@ test('I2', 'buildXlsxBytes：STORE zip 结构/5 个部件/CRC 与尺寸自洽/sh
     p = dataStart + size
   }
   for (const part of ['[Content_Types].xml', '_rels/.rels', 'xl/workbook.xml',
-    'xl/_rels/workbook.xml.rels', 'xl/worksheets/sheet1.xml']) {
+    'xl/_rels/workbook.xml.rels', 'xl/styles.xml', 'xl/worksheets/sheet1.xml']) {
     assert(entries.has(part), `包含部件 ${part}`)
   }
   const sheet = entries.get('xl/worksheets/sheet1.xml')
@@ -1685,13 +1685,41 @@ test('I2', 'buildXlsxBytes：STORE zip 结构/5 个部件/CRC 与尺寸自洽/sh
   assert(entries.get('xl/workbook.xml').includes('name="import"'), 'workbook 表名 import')
 })
 
-test('I3', 'buildXlsxBytes：空表与中文 BOM 无关场景不抛错，单行可生成', async () => {
+test('I3', 'buildXlsxBytes：空表不抛错；textCols 日期列带文本样式（numFmtId=49），其余列不带', async () => {
   const { buildXlsxBytes } = await import(src('utils/xlsxLite'))
   const one = buildXlsxBytes([['a', 'b']])
   assert(one.length > 0 && one[0] === 0x50, '单行模板生成成功')
   const empty = buildXlsxBytes([])
   const dv = new DataView(empty.buffer, empty.length - 22)
-  assertEq(dv.getUint16(8, true), 5, '无数据行时部件仍为 5 个')
+  assertEq(dv.getUint16(8, true), 6, '无数据行时部件仍为 6 个')
+
+  // 日期列（下标 2）强制文本：解包校验 styles 与单元格 s 属性
+  const bytes = buildXlsxBytes([
+    ['guide', 'g', '测试日期(YYYY-MM-DD)'],
+    ['athlete_id', 'athlete_name', 'measure_date'],
+    ['1001', '张志远', '2024-12-12']
+  ], [2])
+  const parts = new Map()
+  let p = 0
+  while (p < bytes.length - 22 && new DataView(bytes.buffer, p).getUint32(0, true) === 0x04034b50) {
+    const dv2 = new DataView(bytes.buffer, p)
+    const nameLen = dv2.getUint16(26, true)
+    const extraLen = dv2.getUint16(28, true)
+    const size = dv2.getUint32(18, true)
+    const name = new TextDecoder().decode(bytes.subarray(p + 30, p + 30 + nameLen))
+    parts.set(name, new TextDecoder().decode(bytes.subarray(p + 30 + nameLen + extraLen,
+      p + 30 + nameLen + extraLen + size)))
+    p = p + 30 + nameLen + extraLen + size
+  }
+  const styles = parts.get('xl/styles.xml')
+  assert(styles.includes('numFmtId="49"') && styles.includes('applyNumberFormat="1"'), 'styles 含内置文本格式 49')
+  const sheet = parts.get('xl/worksheets/sheet1.xml')
+  assert(/<c r="C1"[^>]*s="1"/.test(sheet), '说明行日期列引用文本样式')
+  assert(/<c r="C2"[^>]*s="1"/.test(sheet), '表头日期列引用文本样式')
+  assert(/<c r="C3"[^>]*s="1"/.test(sheet), '数据行日期列引用文本样式')
+  assert(!/<c r="A3"[^>]*s=/.test(sheet), '非文本列（编号）不带样式')
+  assert(parts.get('[Content_Types].xml').includes('/xl/styles.xml'), 'Content_Types 注册 styles')
+  assert(parts.get('xl/_rels/workbook.xml.rels').includes('Target="styles.xml"'), 'workbook 关系挂 styles')
 })
 
 /* ------------------------------ 汇总（串行执行） ------------------------------ */

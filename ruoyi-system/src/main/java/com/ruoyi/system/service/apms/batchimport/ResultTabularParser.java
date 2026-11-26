@@ -161,20 +161,31 @@ public class ResultTabularParser {
     }
 
     /**
-     * 日期解析（与历史 CSV 导入同口径白名单）：YYYY-MM-DD / YYYY/M.D / YYYY.M.D，
-     * 尾部时间截断；非法抛 ParseException。
+     * 日期解析白名单（成绩/体态/历史 CSV 三条导入链路共用）。
+     *
+     * <p>背景：模板日期列虽已下发为文本格式，但用户在 Excel/WPS 中编辑时仍可能被自动转成
+     * 日期型单元格，POI DataFormatter 按本地化格式渲染出不同文本。这里在入口统一归一化，
+     * 兼容：{@code 2024-12-12}、{@code 2024/12/12}（含全角／）、{@code 2024.12.12}（含全角．）、
+     * {@code 2024年12月12日}、以及带时间后缀（空格/T/制表符截断）的形态；仅接受 4 位年份在前。
+     * 非法抛 ParseException。
      */
     public static Date parseMeasureDate(String raw) throws ParseException {
         if (raw == null || raw.trim().isEmpty()) throw new ParseException("日期为空", 0);
         String s = raw.trim();
+        // 1) 截断时间部分：空格 / T / 制表符 / 全角空格起均视为日期结束
         int cut = s.length();
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
-            if (c == ' ' || c == 'T' || c == '\t') { cut = i; break; }
+            if (c == ' ' || c == 'T' || c == '\t' || c == '　') { cut = i; break; }
         }
-        s = s.substring(0, cut).replace('/', '-').replace('.', '-');
+        s = s.substring(0, cut);
+        // 2) 中文年月日 → 短横线；日字（结尾）直接丢弃
+        s = s.replace('年', '-').replace('月', '-').replace("日", "");
+        // 3) 各类分隔符归一为短横线（半角/全角斜杠、半角/全角句点、顿号）
+        s = s.replace('/', '-').replace('／', '-')
+             .replace('.', '-').replace('．', '-').replace('、', '-');
         if (!s.matches("\\d{4}-\\d{1,2}-\\d{1,2}")) {
-            throw new ParseException("不支持的日期格式: " + raw, 0);
+            throw new ParseException("不支持的日期格式: " + raw + "（请使用 2024-12-12 形式）", 0);
         }
         try {
             LocalDate ld = LocalDate.parse(s, DateTimeFormatter.ofPattern("yyyy-M-d"));

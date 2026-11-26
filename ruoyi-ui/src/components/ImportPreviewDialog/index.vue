@@ -344,7 +344,8 @@ async function demoDownloadTaskXlsx(taskId) {
       }
     })
 
-    const blob = buildXlsxBlob(lines)
+    // 第 3 列（下标 2）为 measure_date：强制文本格式，避免 Excel/WPS 把日期自动转成本地化日期型
+    const blob = buildXlsxBlob(lines, [2])
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
