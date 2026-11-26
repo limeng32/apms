@@ -57,6 +57,10 @@ public class ResultImportFacade {
 
     /** 预览（不入库） */
     public ImportPreviewVo preview(MultipartFile file, Long taskId, Long userId) {
+        // 批量导入必须绑定任务，不允许散录批量导入（前端已禁用，后端兜底防绕过）
+        if (taskId == null) {
+            throw new ServiceException("批量导入必须指定关联任务，不支持散录批量导入");
+        }
         List<String[]> matrix;
         try {
             matrix = reader.read(file.getInputStream(), file.getOriginalFilename());
@@ -70,19 +74,11 @@ public class ResultImportFacade {
         vo.getErrors().addAll(parsed.errorRows);
         vo.getWarnings().addAll(parsed.warnings);
 
-        // 散录入口禁止文件自带 task_id
-        if (taskId == null) {
-            boolean anyTask = parsed.rows.stream().anyMatch(r -> r.taskId != null);
-            if (anyTask) {
-                vo.getErrors().add("散录批量导入不允许在文件中指定 task_id，请删除 task_id 列后重新上传");
-            }
-        } else {
-            // 任务入口：任务必须存在且在数据权限内
-            ApmsTestTask q = new ApmsTestTask();
-            q.setId(taskId);
-            if (taskScopeQuery.findScopedById(q) == null) {
-                vo.getErrors().add("任务 " + taskId + " 不存在或不在当前数据权限范围内");
-            }
+        // 任务必须存在且在数据权限内
+        ApmsTestTask q = new ApmsTestTask();
+        q.setId(taskId);
+        if (taskScopeQuery.findScopedById(q) == null) {
+            vo.getErrors().add("任务 " + taskId + " 不存在或不在当前数据权限范围内");
         }
 
         // 任务指标项索引（任务模式）：indicatorId → taskItemId

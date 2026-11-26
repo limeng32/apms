@@ -4,11 +4,11 @@
              append-to-body class="ip-dialog" :close-on-click-modal="false" @close="handleClose">
     <!-- ===== 步骤 1：下载模板 + 选择文件 ===== -->
     <div v-if="step === 1">
-      <!-- 关联任务：成绩导入可在散录/任务间选择；任务抽屉入口为锁定态；体态导入不显示 -->
+      <!-- 关联任务：成绩导入必须选择任务（不支持散录批量导入）；任务抽屉入口为锁定态；体态导入不显示 -->
       <div v-if="showTaskSelect || lockedTaskId" class="ip-task-row">
         <span class="ip-tpl-label">关联任务：</span>
-        <el-select v-if="showTaskSelect" v-model="selectedTaskId" filterable clearable
-                   placeholder="不选 = 散录（不计入任务进度）" style="width:340px">
+        <el-select v-if="showTaskSelect" v-model="selectedTaskId" filterable
+                   placeholder="请选择关联任务（必选）" style="width:340px">
           <el-option v-for="t in taskOptions" :key="t.id"
                      :label="`#${t.id} ${t.taskName}`" :value="t.id"/>
         </el-select>
@@ -17,27 +17,28 @@
         </span>
         <span class="ip-task-hint">
           {{ showTaskSelect
-            ? (selectedTaskId ? '将按所选任务校验成员/指标，成绩计入该任务进度' : '未选任务：本次为散录，不计入任务进度')
+            ? (selectedTaskId ? '将按所选任务校验成员/指标，成绩计入该任务进度' : '批量导入必须指定关联任务，不支持散录导入')
             : '' }}
         </span>
       </div>
       <div class="ip-tpl-row">
         <span class="ip-tpl-label">导入模板：</span>
-        <el-button link type="primary" :icon="Download" @click="downloadTpl('xlsx')">下载 Excel 模板 (.xlsx)</el-button>
-        <el-button link type="primary" @click="downloadTpl('csv')">下载 CSV 模板 (.csv)</el-button>
+        <el-button link type="primary" :icon="Download" @click="downloadTpl">
+          {{ hasTask ? '下载 Excel 模板（含已录数据）(.xlsx)' : '下载 Excel 模板 (.xlsx)' }}
+        </el-button>
       </div>
       <el-upload
         ref="uploadRef"
         drag
         :auto-upload="false"
         :limit="1"
-        accept=".xlsx,.xls,.csv"
+        accept=".xlsx"
         :on-change="onFileChange"
         :on-exceed="onExceed"
         :on-remove="onRemove"
       >
         <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-        <div class="el-upload__text">将 xlsx / xls / csv 文件拖到此处，或<em>点击选择</em></div>
+        <div class="el-upload__text">将 xlsx 文件拖到此处，或<em>点击选择</em></div>
         <template #tip>
           <div class="el-upload__tip ip-tip">
             单个文件不超过 10MB、最多 1000 行；{{ defaultTip }}
@@ -144,7 +145,7 @@
     <template #footer>
       <template v-if="step === 1">
         <el-button @click="handleClose">取消</el-button>
-        <el-button type="primary" :loading="parsing" :disabled="!file" @click="doPreview">解析预览</el-button>
+        <el-button type="primary" :loading="parsing" :disabled="!file || (showTaskSelect && !hasTask)" @click="doPreview">解析预览</el-button>
       </template>
       <template v-else-if="step === 2">
         <el-button @click="backToStep1">上一步（重选文件）</el-button>
@@ -166,7 +167,10 @@
 import { ref, computed } from 'vue'
 import { Download, UploadFilled } from '@element-plus/icons-vue'
 import { previewImport, commitImport } from '@/api/apms/batchImport'
-import { listTestTask } from '@/api/apms/testTask'
+import { listTestTask, listTaskItem, listTaskMember } from '@/api/apms/testTask'
+import { listByTaskMember } from '@/api/apms/testResult'
+import { isDemoMode } from '@/utils/auth'
+import { buildXlsxBlob } from '@/utils/xlsxLite'
 
 const props = defineProps({
   title: { type: String, default: '批量导入' },
@@ -220,6 +224,8 @@ const effectiveForm = computed(() => {
   }
   return props.extraForm
 })
+// 是否已选定具体任务：决定模板是否含已录数据与按钮文案
+const hasTask = computed(() => !!effectiveForm.value.taskId)
 
 function open() {
   visible.value = true
@@ -243,6 +249,14 @@ function resetState() {
 }
 
 function onFileChange(uploadFile) {
+  const name = (uploadFile.raw?.name || '').toLowerCase()
+  if (!name.endsWith('.xlsx')) {
+    // accept 仅过滤文件选择器，拖拽可绕过：前端即时拦截，后端亦有同款兜底
+    proxy.$modal.msgWarning('仅支持 .xlsx 格式文件，请重新选择')
+    file.value = null
+    uploadRef.value?.clearFiles()
+    return
+  }
   file.value = uploadFile.raw
 }
 function onExceed(files) {
@@ -255,14 +269,102 @@ function onRemove() {
   file.value = null
 }
 
-function downloadTpl(format) {
-  const params = { format, ...effectiveForm.value }
-  const prefix = props.previewUrl.includes('body-measure') ? 'body-measure-template' : 'test-result-template'
-  proxy.download(props.templateUrl, params, `${prefix}.${format}`, { method: 'get' })
+function downloadTpl() {
+  const taskId = effectiveForm.value.taskId
+  // 演示环境无 blob 通道（request.download 统一拦截）：选了任务的成绩模板改由前端按
+  // 后端同口径本地生成含已录数据的 xlsx，保证演示可验收
+  if (isDemoMode()) {
+    if (taskId && !props.previewUrl.includes('body-measure')) {
+      demoDownloadTaskXlsx(taskId)
+      return
+    }
+    // 体态模板：维持原有演示拦截提示
+  }
+  const params = { format: 'xlsx', ...effectiveForm.value }
+  const isBody = props.previewUrl.includes('body-measure')
+  const prefix = isBody
+    ? 'body-measure-template'
+    : (taskId ? `test-result-task-${taskId}-template` : 'test-result-template')
+  proxy.download(props.templateUrl, params, `${prefix}.xlsx`, { method: 'get' })
+}
+
+/** 演示环境：按后端 ImportTemplates 同口径生成含已录数据的成绩 xlsx 并本地下载 */
+async function demoDownloadTaskXlsx(taskId) {
+  try {
+    const [itemRes, memberRes] = await Promise.all([
+      listTaskItem(taskId),
+      listTaskMember(taskId)
+    ])
+    // 指标列：仅 INDICATOR，按 sortOrder 升序，与后端任务模板列顺序一致
+    const items = (itemRes.data || itemRes.rows || [])
+      .filter(it => it.itemType === 'INDICATOR' && it.indicatorCode)
+      .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+    const codes = items.map(it => it.indicatorCode)
+    const codeToCol = new Map(codes.map((c, i) => [c, i + 4]))
+    const header = ['athlete_id', 'athlete_name', 'measure_date', 'session_key', ...codes]
+    const guide = ['#运动员编号（优先填写；留空则按姓名精确匹配，重名必须填编号）',
+      '运动员姓名（与系统一致，用于核对）', '测试日期(YYYY-MM-DD)', '场次（选填，如S1）',
+      ...items.map(it => it.indicatorUnit ? `${it.indicatorName}(${it.indicatorUnit})` : it.indicatorName)]
+    const members = memberRes.data || memberRes.rows || []
+
+    // 逐成员取当前结果（isSelected=1 的 INDICATOR），按 日期+场次 分组
+    const dataRows = new Map()
+    const athletesWithData = new Set()
+    await Promise.all(members.filter(m => m.athleteId).map(async (m) => {
+      const res = await listByTaskMember(taskId, m.athleteId)
+      const rows = res.data || res.rows || []
+      rows.filter(r => r.isSelected === '1' && r.itemType === 'INDICATOR' && r.indicatorCode)
+        .forEach((r) => {
+          const col = codeToCol.get(r.indicatorCode)
+          if (col === undefined) return
+          const date = r.measureDate || ''
+          const session = r.sessionKey || ''
+          const key = `${r.athleteId}|${date}|${session}`
+          if (!dataRows.has(key)) {
+            const row = new Array(header.length).fill('')
+            row[0] = String(r.athleteId)
+            row[1] = r.athleteName || ''
+            row[2] = date
+            row[3] = session
+            dataRows.set(key, row)
+          }
+          // 与后端同兜底：值行缺 indicatorCode 时（演示态在线网格新录数据）按结果主表 code 归属
+          const num = r.values
+            ?.find(v => (v.indicatorCode ?? r.indicatorCode) === r.indicatorCode)
+            ?.numericValue
+          if (num !== null && num !== undefined) dataRows.get(key)[col] = String(num)
+          athletesWithData.add(r.athleteId)
+        })
+    }))
+    // 无记录成员补空白行
+    const lines = [guide, header, ...dataRows.values()]
+    members.forEach((m) => {
+      if (m.athleteId && !athletesWithData.has(m.athleteId)) {
+        lines.push([String(m.athleteId), m.athleteName || '', ...new Array(header.length - 2).fill('')])
+      }
+    })
+
+    const blob = buildXlsxBlob(lines)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `test-result-task-${taskId}-template.xlsx`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    proxy.$modal.msgError('演示模板生成失败：' + (e?.message || e))
+  }
 }
 
 async function doPreview() {
   if (!file.value) return
+  // 成绩批量导入必须指定关联任务（后端有同款兜底校验）
+  if (props.showTaskSelect && !hasTask.value) {
+    proxy.$modal.msgWarning('请先选择关联任务，批量导入不支持散录')
+    return
+  }
   parsing.value = true
   try {
     const res = await previewImport(props.previewUrl, file.value, effectiveForm.value)

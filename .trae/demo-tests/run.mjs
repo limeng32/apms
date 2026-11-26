@@ -1616,6 +1616,84 @@ test('H20', '组织架构：详情/排除子树/筛选/增改删排序/三重删
   assertEq(db().depts.length, before, '删除后数量还原为蓝本 6 条')
 })
 
+/* ============================ I. xlsxLite 零依赖 XLSX 生成器 ============================ */
+// 独立实现一份 CRC32 与 STORE zip 解析，避免与被测代码共享实现，做端到端校验
+const CRC32_REF_TABLE = (() => {
+  const table = new Uint32Array(256)
+  for (let n = 0; n < 256; n++) {
+    let c = n
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1)
+    table[n] = c >>> 0
+  }
+  return table
+})()
+function crc32Ref(bytes) {
+  let crc = 0xFFFFFFFF
+  for (const b of bytes) crc = CRC32_REF_TABLE[(crc ^ b) & 0xFF] ^ (crc >>> 8)
+  return (crc ^ 0xFFFFFFFF) >>> 0
+}
+
+test('I1', 'CRC32 参考实现满足标准向量（空串=0，123456789=0xCBF43926）', async () => {
+  assertEq(crc32Ref(new TextEncoder().encode('')), 0, '空串 CRC')
+  assertEq(crc32Ref(new TextEncoder().encode('123456789')), 0xCBF43926, '标准向量')
+})
+
+test('I2', 'buildXlsxBytes：STORE zip 结构/5 个部件/CRC 与尺寸自洽/sheet 内容可还原', async () => {
+  const { buildXlsxBytes } = await import(src('utils/xlsxLite'))
+  const rows = [
+    ['#说明行', '姓名'],
+    ['athlete_id', 'athlete_name', ...Array.from({ length: 25 }, (_, i) => `C${i}`)],
+    ['1001', '张<三>&"A"', ...Array.from({ length: 25 }, (_, i) => String(i))]
+  ]
+  const bytes = buildXlsxBytes(rows)
+  assertEq(bytes[0], 0x50, 'PK 签名字节 1'); assertEq(bytes[1], 0x4B, 'PK 签名字节 2')
+
+  // 解析 EOCD（末尾 22 字节）
+  const eocd = new DataView(bytes.buffer, bytes.length - 22)
+  assertEq(eocd.getUint32(0, true), 0x06054b50, 'EOCD 签名')
+  assertEq(eocd.getUint16(8, true), 5, '5 个 zip 条目')
+  assertEq(eocd.getUint16(10, true), 5, '中央目录条目数一致')
+
+  // 遍历本地文件头，STORE 方式提取原始数据
+  const entries = new Map()
+  let p = 0
+  while (p < bytes.length - 22 && new DataView(bytes.buffer, p).getUint32(0, true) === 0x04034b50) {
+    const dv = new DataView(bytes.buffer, p)
+    const method = dv.getUint16(8, true)
+    const crc = dv.getUint32(14, true)
+    const size = dv.getUint32(18, true)
+    const nameLen = dv.getUint16(26, true)
+    const extraLen = dv.getUint16(28, true)
+    assertEq(method, 0, '必须为 STORE(0)，不依赖 deflate')
+    const name = new TextDecoder().decode(bytes.subarray(p + 30, p + 30 + nameLen))
+    const dataStart = p + 30 + nameLen + extraLen
+    const data = bytes.subarray(dataStart, dataStart + size)
+    assertEq(crc32Ref(data), crc, `CRC32 自洽：${name}`)
+    entries.set(name, new TextDecoder().decode(data))
+    p = dataStart + size
+  }
+  for (const part of ['[Content_Types].xml', '_rels/.rels', 'xl/workbook.xml',
+    'xl/_rels/workbook.xml.rels', 'xl/worksheets/sheet1.xml']) {
+    assert(entries.has(part), `包含部件 ${part}`)
+  }
+  const sheet = entries.get('xl/worksheets/sheet1.xml')
+  assert(sheet.includes('<?xml') && sheet.includes('</worksheet>'), 'sheet XML 完整')
+  assert(sheet.includes('r="A1"') && sheet.includes('r="B1"'), '单元格引用 A1/B1')
+  assert(sheet.includes('r="AA2"'), '第 27 列引用为 AA2（列号进位正确）')
+  assert(sheet.includes('张&lt;三&gt;&amp;&quot;A&quot;'), 'XML 特殊字符转义')
+  assert(sheet.includes('t="inlineStr"'), 'inlineStr 文本单元格')
+  assert(entries.get('xl/workbook.xml').includes('name="import"'), 'workbook 表名 import')
+})
+
+test('I3', 'buildXlsxBytes：空表与中文 BOM 无关场景不抛错，单行可生成', async () => {
+  const { buildXlsxBytes } = await import(src('utils/xlsxLite'))
+  const one = buildXlsxBytes([['a', 'b']])
+  assert(one.length > 0 && one[0] === 0x50, '单行模板生成成功')
+  const empty = buildXlsxBytes([])
+  const dv = new DataView(empty.buffer, empty.length - 22)
+  assertEq(dv.getUint16(8, true), 5, '无数据行时部件仍为 5 个')
+})
+
 /* ------------------------------ 汇总（串行执行） ------------------------------ */
 console.error = origError
 for (const runCase of queue) {

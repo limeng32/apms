@@ -2,10 +2,14 @@ package com.ruoyi.system.service.apms.batchimport;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.ss.usermodel.Row;
@@ -19,15 +23,20 @@ import com.ruoyi.system.domain.apms.ApmsAthlete;
 import com.ruoyi.system.domain.apms.ApmsIndicator;
 import com.ruoyi.system.domain.apms.ApmsTaskItem;
 import com.ruoyi.system.domain.apms.ApmsTaskMember;
+import com.ruoyi.system.domain.apms.ApmsTestResult;
+import com.ruoyi.system.domain.apms.ApmsTestResultValue;
 import com.ruoyi.system.mapper.apms.ApmsAthleteMapper;
 import com.ruoyi.system.mapper.apms.ApmsIndicatorMapper;
 import com.ruoyi.system.mapper.apms.ApmsTaskItemMapper;
 import com.ruoyi.system.mapper.apms.ApmsTaskMemberMapper;
+import com.ruoyi.system.mapper.apms.ApmsTestResultMapper;
+import com.ruoyi.system.mapper.apms.ApmsTestResultValueMapper;
 
 /**
- * 两阶段批量导入模板生成（成绩 / 体态；xlsx + csv）。
+ * 两阶段批量导入模板生成（成绩 / 体态）。
  *
- * <p>结构：第 1 行中文说明（首列以 # 开头，解析跳过）；第 2 行机器表头；
+ * <p>当前批量导入入口仅下发 .xlsx 模板（csv 分支仅保留给历史兼容端点）。
+ * 结构：第 1 行中文说明（首列以 # 开头，解析跳过）；第 2 行机器表头；
  * 第 3 行起预填在训队员（编号+姓名），日期与数值留空。
  * 成绩模板<b>仅含启用 INDICATOR 列</b>（MODEL 一期不支持批量导入）。
  *
@@ -40,6 +49,8 @@ public class ImportTemplates {
     @Autowired private ApmsAthleteMapper athleteMapper;
     @Autowired private ApmsTaskItemMapper taskItemMapper;
     @Autowired private ApmsTaskMemberMapper taskMemberMapper;
+    @Autowired private ApmsTestResultMapper resultMapper;
+    @Autowired private ApmsTestResultValueMapper resultValueMapper;
 
     /**
      * 成绩模板。
@@ -70,7 +81,8 @@ public class ImportTemplates {
                         if (ind.getUnit() != null && !ind.getUnit().isEmpty()) g += "(" + ind.getUnit() + ")";
                         guide.add(g);
                     });
-            athleteRows = taskAthleteRows(taskId);
+            // 含已录数据：有当前结果的成员按「人+日期+场次」展开数据行，无记录成员保留空白行
+            athleteRows = taskRowsWithData(taskId, header);
         } else {
             ApmsIndicator iq = new ApmsIndicator();
             iq.setStatus("0");
@@ -84,6 +96,68 @@ public class ImportTemplates {
             athleteRows = athleteNameRows(activeAthletes());
         }
         return build(format, "test-result-template", guide, header, athleteRows, true);
+    }
+
+    /**
+     * 任务模式行构造（含已录数据）。
+     * <p>口径：只取 is_selected=1 的当前结果（与台账「最新一次」展示口径一致），
+     * 仅 INDICATOR（MODEL 不支持批量导入）；按 队员+测试日期+场次 分组，每组一行，
+     * 各指标列填当前结果的 numericValue。有数据的成员不再出空白行；无任何记录的成员
+     * 保留仅编号+姓名的空白行，等待补录。成员顺序沿用任务成员表，数据行按日期/场次稳定排序。
+     */
+    private List<String[]> taskRowsWithData(Long taskId, List<String> header) {
+        // 指标 code → 列索引（前 4 列固定为编号/姓名/日期/场次）
+        Map<String, Integer> codeToCol = new LinkedHashMap<>();
+        for (int i = 4; i < header.size(); i++) codeToCol.put(header.get(i), i);
+
+        ApmsTestResult q = new ApmsTestResult();
+        q.setTaskId(taskId);
+        q.setItemType("INDICATOR");
+        q.setIsSelected("1");
+        List<ApmsTestResult> results = resultMapper.selectList(q);
+
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+        // 分组 key = athleteId|date|session，保持插入有序：先按成员出现顺序，组内按日期/场次
+        Map<String, String[]> dataRows = new LinkedHashMap<>();
+        java.util.Set<Long> athletesWithData = new java.util.HashSet<>();
+
+        for (ApmsTestResult r : results) {
+            if (r.getAthleteId() == null || r.getIndicatorCode() == null) continue;
+            Integer col = codeToCol.get(r.getIndicatorCode());
+            if (col == null) continue; // 指标已被移出任务等历史脏数据，忽略
+            String date = r.getMeasureDate() != null ? sdf.format(r.getMeasureDate()) : "";
+            String session = r.getSessionKey() != null ? r.getSessionKey() : "";
+            String key = r.getAthleteId() + "|" + date + "|" + session;
+            String[] row = dataRows.computeIfAbsent(key, k -> {
+                String[] nr = new String[header.size()];
+                nr[0] = String.valueOf(r.getAthleteId());
+                nr[1] = r.getAthleteName() != null ? r.getAthleteName() : "";
+                nr[2] = date;
+                nr[3] = session;
+                return nr;
+            });
+            List<ApmsTestResultValue> values = resultValueMapper.selectByResultId(r.getId());
+            if (values != null) {
+                for (ApmsTestResultValue v : values) {
+                    if (v.getNumericValue() == null) continue;
+                    // 双保险：值行自带 indicatorCode 时以它为准，否则用结果主表的 code
+                    String vc = v.getIndicatorCode() != null ? v.getIndicatorCode() : r.getIndicatorCode();
+                    Integer vcCol = codeToCol.get(vc);
+                    if (vcCol != null) row[vcCol] = v.getNumericValue().stripTrailingZeros().toPlainString();
+                }
+            }
+            athletesWithData.add(r.getAthleteId());
+        }
+
+        List<String[]> out = new ArrayList<>(dataRows.values());
+        // 无记录成员补空白行（沿用任务成员顺序），让每名参测队员都在模板里有落点
+        for (ApmsTaskMember m : taskMemberMapper.selectByTaskId(taskId)) {
+            if (m.getAthleteId() == null || athletesWithData.contains(m.getAthleteId())) continue;
+            out.add(new String[]{
+                    String.valueOf(m.getAthleteId()),
+                    m.getAthleteName() != null ? m.getAthleteName() : ""});
+        }
+        return out;
     }
 
     public byte[] buildBody(String format) {
@@ -100,18 +174,8 @@ public class ImportTemplates {
 
     // ================= 内部 =================
 
-    /** 任务成员行（mapper 已 LEFT JOIN 运动员带出姓名，无需逐人查询） */
-    private List<String[]> taskAthleteRows(Long taskId) {
-        List<String[]> rows = new ArrayList<>();
-        for (ApmsTaskMember m : taskMemberMapper.selectByTaskId(taskId)) {
-            if (m.getAthleteId() == null) continue;
-            rows.add(new String[]{String.valueOf(m.getAthleteId()),
-                    m.getAthleteName() != null ? m.getAthleteName() : ""});
-        }
-        return rows;
-    }
-
-    /** @param athleteRows [编号, 姓名]；@param hasSession 是否含 session_key 列（成绩有，体态无） */
+    /** @param athleteRows 宽度可为 2（仅编号/姓名，其余留空）或与 header 等宽（含已录数据）；
+     *  @param hasSession 是否含 session_key 列（成绩有，体态无） */
     private byte[] build(String format, String fileBaseName, List<String> guide,
                          List<String> header, List<String[]> athleteRows, boolean hasSession) {
         if ("csv".equalsIgnoreCase(format)) {
@@ -149,8 +213,11 @@ public class ImportTemplates {
         sb.append(String.join(",", header)).append("\r\n");
         for (String[] r : athleteRows) {
             sb.append(csv(r[0])).append(',').append(csv(r[1]));
-            // 剩余列（日期/场次/数值）全部留空
-            for (int i = 2; i < header.size(); i++) sb.append(',');
+            // 宽行（含已录数据）逐列输出；窄行（仅编号/姓名）剩余列留空
+            for (int i = 2; i < header.size(); i++) {
+                sb.append(',');
+                if (r.length > i && r[i] != null) sb.append(csv(r[i]));
+            }
             sb.append("\r\n");
         }
         // UTF-8 BOM
@@ -187,6 +254,10 @@ public class ImportTemplates {
                 Row row = sheet.createRow(rowIdx++);
                 row.createCell(0).setCellValue(r[0]);
                 row.createCell(1).setCellValue(r[1]);
+                // 宽行（含已录数据）把日期/场次/数值一并写入；窄行只有前两列
+                for (int i = 2; i < header.size() && i < r.length; i++) {
+                    if (r[i] != null && !r[i].isEmpty()) row.createCell(i).setCellValue(r[i]);
+                }
             }
             sheet.createFreezePane(0, 2);
             for (int i = 0; i < header.size(); i++) sheet.setColumnWidth(i, 16 * 256);

@@ -12,6 +12,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.ruoyi.common.annotation.DataScope;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
+import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.core.page.TableDataInfo;
 import com.ruoyi.system.domain.apms.ApmsTestResult;
 import com.ruoyi.system.domain.apms.ApmsTestResultValue;
@@ -44,7 +45,7 @@ public class ApmsTestResultController extends BaseController {
     @Autowired
     private ImportTemplates importTemplates;
 
-    // ==================== 两阶段批量导入（Excel/CSV · 预览 → 确认） ====================
+    // ==================== 两阶段批量导入（仅 .xlsx · 预览 → 确认） ====================
 
     /** 第一步：上传解析，返回预览数据（不入库） */
     @PreAuthorize("@ss.hasPermi('apms:testResult:add')")
@@ -53,6 +54,7 @@ public class ApmsTestResultController extends BaseController {
                                     @RequestParam(value = "taskId", required = false) Long taskId) {
         if (file == null || file.isEmpty()) return AjaxResult.error("上传文件为空");
         if (file.getSize() > 10L * 1024 * 1024) return AjaxResult.error("文件不能超过 10MB");
+        if (!isXlsx(file)) return AjaxResult.error("批量导入仅支持 .xlsx 格式文件");
         return AjaxResult.success(resultImportFacade.preview(file, taskId, getUserId()));
     }
 
@@ -182,6 +184,9 @@ public class ApmsTestResultController extends BaseController {
     @PostMapping("/import/csv")
     public AjaxResult importCsv(@RequestParam("file") MultipartFile file,
                                 @RequestParam(value = "taskId", required = false) Long taskId) {
+        if (taskId == null) {
+            return AjaxResult.error("批量导入必须指定关联任务，不支持散录批量导入");
+        }
         if (file.isEmpty()) {
             return AjaxResult.error("上传文件为空");
         }
@@ -212,14 +217,17 @@ public class ApmsTestResultController extends BaseController {
                                  @RequestParam(value = "format", required = false) String format,
                                  HttpServletResponse response) throws IOException {
         if (format != null && !format.isEmpty()) {
-            // taskId 非空时模板只预填该任务成员、只列该任务指标列（与预览/提交校验同口径）
-            byte[] data = importTemplates.buildResult(format.toLowerCase(), taskId);
-            boolean xlsx = "xlsx".equalsIgnoreCase(format) || "xls".equalsIgnoreCase(format);
-            String ext = xlsx ? "xlsx" : "csv";
-            String fileName = "test-result-template." + ext;
-            response.setContentType(xlsx
-                    ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    : "text/csv; charset=UTF-8");
+            // 批量导入必须绑定任务且仅支持 xlsx：模板只预填该任务成员/指标并填充当前已录成绩
+            // （与预览/提交校验同口径）
+            if (taskId == null) {
+                throw new ServiceException("批量导入必须指定关联任务，不支持散录批量导入");
+            }
+            if (!"xlsx".equalsIgnoreCase(format)) {
+                throw new ServiceException("批量导入仅支持 .xlsx 格式模板");
+            }
+            byte[] data = importTemplates.buildResult("xlsx", taskId);
+            String fileName = "test-result-task-" + taskId + "-template.xlsx";
+            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             response.setCharacterEncoding("UTF-8");
             response.setHeader("Content-Disposition",
                     "attachment; filename=\"" + fileName + "\"; filename*=UTF-8''"
@@ -238,6 +246,12 @@ public class ApmsTestResultController extends BaseController {
         // UTF-8 BOM（EF BB BF），保证 Excel 双击打开中文不乱码。
         response.getOutputStream().write(new byte[]{(byte) 0xEF, (byte) 0xBB, (byte) 0xBF});
         response.getOutputStream().write(csv.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** 批量导入仅接受 .xlsx（前端 accept 已限制，后端兜底防绕过） */
+    private boolean isXlsx(MultipartFile file) {
+        String name = file.getOriginalFilename();
+        return name != null && name.toLowerCase().endsWith(".xlsx");
     }
 
     /** 请求体包装 */

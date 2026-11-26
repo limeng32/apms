@@ -555,7 +555,7 @@
       <result-entry-dialog ref="entryDialogRef" @success="handleEntrySuccess"/>
       <!-- 成绩录入（网格批量：任务自动绑定） -->
       <result-grid-entry-dialog ref="gridEntryDialogRef" @success="handleEntrySuccess"/>
-      <!-- Excel/CSV 批量导入（两阶段预览，extraForm 带当前任务 id 实现任务绑定） -->
+      <!-- Excel 批量导入（两阶段预览，extraForm 带当前任务 id 实现任务绑定） -->
       <import-preview-dialog
         ref="importDialogRef"
         title="任务成绩批量导入"

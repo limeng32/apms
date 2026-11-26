@@ -103,6 +103,7 @@
                              @change="toggleSelectAllPage"/>
                     </th>
                     <th class="col-athlete">运动员</th>
+                    <th class="col-task">任务</th>
                     <th class="text-center col-type">类型</th>
                     <th class="col-item">项目</th>
                     <th class="text-center col-attempt">尝试</th>
@@ -126,6 +127,10 @@
                         <span class="tr-name rk-row-link">{{ row.athleteName }}</span>
                         <GenderBadge :gender="row.athleteGender" :size="15"/>
                       </div>
+                    </td>
+                    <td class="col-task">
+                      <span v-if="row.taskName" class="tr-task" :title="row.taskName">{{ row.taskName }}</span>
+                      <span v-else class="tr-task is-free">散录</span>
                     </td>
                     <td class="text-center">
                       <span class="rk-soft-chip" :class="typeChipClass(row.itemType)">
@@ -156,10 +161,10 @@
                     </td>
                   </tr>
                   <tr v-if="!loading && resultList.length === 0">
-                    <td :colspan="hasRemovePerm ? 8 : 7" class="rk-empty-cell">
+                    <td :colspan="hasRemovePerm ? 9 : 8" class="rk-empty-cell">
                       <div class="rk-empty">
                         <p class="rk-empty-title">暂无结果</p>
-                        <p class="rk-empty-desc">调整筛选条件，或先通过 CSV 导入成绩</p>
+                        <p class="rk-empty-desc">调整筛选条件，或先通过 Excel 批量导入成绩</p>
                       </div>
                     </td>
                   </tr>
@@ -343,7 +348,7 @@
       <result-grid-entry-dialog ref="gridEntryDialogRef" @success="handleImportSuccess"/>
       <!-- 设备接入 -->
       <device-access-dialog ref="deviceDialogRef" @pushed="handleImportSuccess"/>
-      <!-- Excel/CSV 批量导入（两阶段预览） -->
+      <!-- Excel 批量导入（两阶段预览，必须指定关联任务） -->
       <import-preview-dialog
         ref="importDialogRef"
         title="测试成绩批量导入"
@@ -351,7 +356,7 @@
         commit-url="/apms/test-result/import/commit"
         template-url="apms/test-result/import/template"
         show-task-select
-        :tips="['仅支持指标（INDICATOR）成绩，模型类测试请在任务中手工录入', '每格一个数值；非数字或超出允许范围的单元格会在预览中标红，错误行将跳过', '选择关联任务后，模板与校验均按该任务的队员/指标执行；不选则为散录']"
+        :tips="['仅支持 .xlsx 格式与指标（INDICATOR）成绩，模型类测试请在任务中手工录入', '每格一个数值；非数字或超出允许范围的单元格会在预览中标红，错误行将跳过', '必须选择关联任务，模板与校验均按该任务的队员/指标执行']"
         @success="handleImportSuccess"
       />
     </div>
@@ -675,6 +680,7 @@ loadStats()
 /* 行光标统一由 roster-kit 的 .rk-row-clickable 控制（桌面 pointer / H5 default） */
 .col-id { width: 52px; }
 .col-athlete { width: 104px; }
+.col-task { width: 150px; }
 .col-type { width: 68px; }
 .col-attempt { width: 64px; }
 .col-date { width: 112px; }
@@ -690,6 +696,13 @@ loadStats()
 
 .tr-athlete { display: flex; align-items: center; gap: 6px; }
 .tr-name { font-size: 13px; font-weight: 600; color: $rk-text-1; }
+/* 任务列：长名省略，散录弱化 */
+.tr-task {
+  display: block; max-width: 100%;
+  font-size: 12.5px; color: $rk-text-2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  &.is-free { color: $rk-text-3; }
+}
 .tr-item { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .tr-code { font-size: 12px; font-weight: 600; color: $rk-brand-600; }
 .tr-item-name {

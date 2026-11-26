@@ -230,7 +230,7 @@
         </template>
       </el-dialog>
 
-      <!-- Excel/CSV 批量导入（两阶段预览） -->
+      <!-- Excel 批量导入（两阶段预览，仅 .xlsx） -->
       <import-preview-dialog
         ref="importDialogRef"
         title="体态测量批量导入"

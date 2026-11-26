@@ -16,6 +16,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.ruoyi.common.annotation.DataScope;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
+import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.system.domain.apms.ApmsBodyMeasure;
 import com.ruoyi.system.service.apms.IApmsBodyMeasureService;
 import com.ruoyi.system.service.apms.batchimport.BodyMeasureImportService;
@@ -50,6 +51,10 @@ public class ApmsBodyMeasureController extends BaseController {
     public AjaxResult importPreview(@RequestParam("file") MultipartFile file) {
         if (file == null || file.isEmpty()) return AjaxResult.error("上传文件为空");
         if (file.getSize() > 10L * 1024 * 1024) return AjaxResult.error("文件不能超过 10MB");
+        String fileName = file.getOriginalFilename();
+        if (fileName == null || !fileName.toLowerCase().endsWith(".xlsx")) {
+            return AjaxResult.error("批量导入仅支持 .xlsx 格式文件");
+        }
         return AjaxResult.success(bodyImportService.preview(file, getUserId()));
     }
 
@@ -63,18 +68,17 @@ public class ApmsBodyMeasureController extends BaseController {
         return AjaxResult.success(bodyImportService.commit(token, overwrite, getUserId()));
     }
 
-    /** 下载导入模板（format=xlsx 默认 / csv） */
+    /** 下载导入模板（仅 .xlsx） */
     @PreAuthorize("@ss.hasPermi('apms:body:list')")
     @GetMapping("/import/template")
     public void downloadTemplate(@RequestParam(value = "format", required = false, defaultValue = "xlsx") String format,
                                  HttpServletResponse response) throws IOException {
-        byte[] data = importTemplates.buildBody(format);
-        boolean xlsx = !"csv".equalsIgnoreCase(format);
-        String ext = xlsx ? "xlsx" : "csv";
-        String fileName = "body-measure-template." + ext;
-        response.setContentType(xlsx
-                ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                : "text/csv; charset=UTF-8");
+        if (!"xlsx".equalsIgnoreCase(format)) {
+            throw new ServiceException("批量导入仅支持 .xlsx 格式模板");
+        }
+        byte[] data = importTemplates.buildBody("xlsx");
+        String fileName = "body-measure-template.xlsx";
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         response.setCharacterEncoding("UTF-8");
         response.setHeader("Content-Disposition",
                 "attachment; filename=\"" + fileName + "\"; filename*=UTF-8''"
