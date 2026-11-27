@@ -162,6 +162,33 @@
   /* el-input-number 默认固定 150px，窄屏铺满表单项剩余空间 */
   .el-dialog:not(.is-fullscreen) .el-input-number { width: 100%; }
 
+  /* 窄屏表单项标签置顶纵排：固定 label-width（90/100px）在 350px 视口会吃掉近三成宽度，
+     把输入框压到与字符计数器重叠、占位符被裁切（事故：新增组合模型「方案名称」0/100 重叠）。
+     block 布局后内容区满宽，桌面端不受此媒体查询影响 */
+  .el-dialog:not(.is-fullscreen) .el-form-item { display: block; }
+  .el-dialog:not(.is-fullscreen) .el-form-item__label {
+    width: auto !important; height: auto;
+    justify-content: flex-start; margin-bottom: 4px;
+  }
+  .el-dialog:not(.is-fullscreen) .el-form-item__content { flex: none; width: 100%; }
+
+  /* 单选项允许换行：EP 默认 .el-radio__label 强制 nowrap，
+     「人工/设备采集（录入表单填写）」等长标签会直接溢出弹窗右边缘被裁切。
+     用 flex-wrap 而非纵向 flex：短选项组（必填/选填）保持横排，el-radio-button
+     分段控件（未测/已测等）布局不受影响，仅普通 el-radio 长文案折行 */
+  .el-dialog:not(.is-fullscreen) .el-radio-group { flex-wrap: wrap; row-gap: 10px; }
+  .el-dialog:not(.is-fullscreen) .el-radio {
+    height: auto; margin-right: 20px; white-space: normal;
+  }
+  .el-dialog:not(.is-fullscreen) .el-radio__label { white-space: normal; line-height: 1.5; }
+
+  /* show-word-limit 计数器位于 suffix 槽，窄屏输入框被压缩时占位符会贴到计数器上
+     （事故：方案名称输入框「如 2026…」与「0/100」挤在一起）。加左分隔线与间距明确分区 */
+  .el-dialog:not(.is-fullscreen) .el-input__count-inner {
+    padding-left: 10px;
+    border-left: 1px solid var(--el-border-color-lighter, #e4e7ed);
+  }
+
   /* 触摸目标：主按钮 ≥44px，小按钮由 24/28px 提升到 36px */
   .el-button { min-height: 44px; font-size: 14px; }
   .el-button--small { min-height: 36px; }

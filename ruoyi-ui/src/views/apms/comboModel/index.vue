@@ -63,7 +63,7 @@
                              @change="toggleRow(row)"/>
                     </td>
                     <td class="text-center rk-mono">{{ row.id }}</td>
-                    <td>
+                    <td class="col-user" @click.stop="openDetail(row)">
                       <div class="cm-model">
                         <span class="cm-model-label rk-row-link">
                           {{ row.versionLabel || '未命名方案' }}
@@ -134,7 +134,7 @@
       <!-- ===== 组成项 & 权重 抽屉（点击左表行打开） ===== -->
       <el-drawer v-model="detailDrawerVisible" :size="drawerSize" :with-header="false"
                  destroy-on-close class="cm-drawer-wrap" :style="drawerPanelStyle">
-        <div class="cm-drawer" v-if="currentCombo">
+        <div class="cm-drawer" v-if="currentCombo" v-drawer-swipe="handleSwipeClose">
           <div class="cm-drawer-head">
             <div class="cm-drawer-id">
               <div class="cm-drawer-title">组成项 &amp; 权重</div>
@@ -387,6 +387,8 @@ import { listTestModel } from '@/api/apms/testModel'
 import { Plus, Delete, ArrowLeft, ArrowRight, Close } from '@element-plus/icons-vue'
 import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
 import { useTouchViewport } from '@/utils/touchViewport'
+import { useDrawerHistory } from '@/utils/useDrawerHistory'
+import { vDrawerSwipe } from '@/utils/drawerSwipe'
 
 const { proxy } = getCurrentInstance()
 const { drawerPanelStyle } = useDrawerOffset()
@@ -475,6 +477,12 @@ const kpiCards = computed(() => [
 
 // ========= 主从（右侧抽屉） =========
 const detailDrawerVisible = ref(false)
+// H5：系统返回手势（左沿滑动/Android 返回键）先关抽屉不跳路由
+useDrawerHistory(detailDrawerVisible)
+// H5：面板内向右跟手滑动关闭；visible 变 false 后 useDrawerHistory 自动回收 history 标记位
+function handleSwipeClose() {
+  detailDrawerVisible.value = false
+}
 const currentCombo = ref(null)
 const detail = reactive({ components: [] })
 const detailLoading = ref(false)
@@ -883,5 +891,7 @@ defineExpose({
 <style lang="scss">
 .el-drawer.cm-drawer-wrap .el-drawer__body {
   padding: 0;
+  /* 抽屉内含 rk-table-scroll 宽表：横向滚动只留给表格容器，杜绝 body 层横溢 */
+  overflow-x: hidden;
 }
 </style>

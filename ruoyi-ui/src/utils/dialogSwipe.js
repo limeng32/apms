@@ -21,7 +21,7 @@
  *   <aside class="swipe-panel" v-dialog-swipe="() => store.closePanel()"> ... </aside>
  *
  * 豁免：自带横滑语义的容器加 class .dialog-swipe-ignore（如网格录入的测项翻页列表，
- * 其 overflow-x:hidden 无法被 findHorizontalScroller 识别）；输入控件内的触摸默认放行。
+ * 其 overflow-x:hidden 无法被 findHorizontalScroller 识别）。
  */
 import { findHorizontalScroller, touchViewportActive } from './drawerSwipe'
 
@@ -32,7 +32,6 @@ const SLIDE_MS = 220
 // EP dialog 离场动画时长（--el-transition-duration 默认 300ms）+ 余量：
 // 超过此时长 Vue Transition 已把 overlay 置 display:none，清理内联样式用户不可见
 const EP_LEAVE_MS = 380
-const INPUT_SELECTOR = 'input, textarea, select, [contenteditable="true"], .el-input, .el-textarea, .el-select'
 const IGNORE_SELECTOR = '.dialog-swipe-ignore'
 
 export const vDialogSwipe = {
@@ -94,8 +93,8 @@ export const vDialogSwipe = {
     function onTouchStart(e) {
       if (!touchViewportActive() || e.touches.length !== 1) return
       const target = e.target
-      // 输入控件：文本选择/光标定位优先；豁免容器：自带横滑语义（分页列表等）
-      if (target.closest(INPUT_SELECTOR) || target.closest(IGNORE_SELECTOR)) {
+      // 豁免容器：自带横滑语义（分页列表等）
+      if (target.closest(IGNORE_SELECTOR)) {
         tracking = false
         return
       }

@@ -90,8 +90,10 @@
                       <input type="checkbox" class="rk-check" :checked="ids.includes(row.id)"
                              @change="toggleRow(row)"/>
                     </td>
-                    <td class="rk-mono tm-code">{{ row.code }}</td>
-                    <td><span class="rk-row-link">{{ row.name }}</span></td>
+                    <td class="rk-mono tm-code col-user" @click.stop="openDetail(row)">
+                      <span class="rk-row-link">{{ row.code }}</span>
+                    </td>
+                    <td>{{ row.name }}</td>
                     <td class="text-center">
                       <span class="rk-soft-chip" :class="categoryChipClass(row.category)">{{ row.category || '—' }}</span>
                     </td>
@@ -147,7 +149,7 @@
       <!-- ===== 字段定义 & 规程 抽屉（点击左表行打开） ===== -->
       <el-drawer v-model="detailDrawerVisible" :size="drawerSize" :with-header="false"
                  destroy-on-close class="tm-drawer-wrap" :style="drawerPanelStyle">
-        <div class="tm-drawer" v-if="currentModel">
+        <div class="tm-drawer" v-if="currentModel" v-drawer-swipe="handleSwipeClose">
           <div class="tm-drawer-head">
             <div class="tm-drawer-id">
               <div class="tm-drawer-title">字段定义 &amp; 规程</div>
@@ -388,6 +390,8 @@ import {
 import { Plus, Delete, RefreshLeft, ArrowLeft, ArrowRight, Close } from '@element-plus/icons-vue'
 import { useDrawerOffset, useDrawerSize } from '@/utils/drawerOffset'
 import { useTouchViewport } from '@/utils/touchViewport'
+import { useDrawerHistory } from '@/utils/useDrawerHistory'
+import { vDrawerSwipe } from '@/utils/drawerSwipe'
 
 const { proxy } = getCurrentInstance()
 const { drawerPanelStyle } = useDrawerOffset()
@@ -500,6 +504,12 @@ function handleStatusChange(row) {
 
 // ========= 主从（右侧抽屉） =========
 const detailDrawerVisible = ref(false)
+// H5：系统返回手势（左沿滑动/Android 返回键）先关抽屉不跳路由
+useDrawerHistory(detailDrawerVisible)
+// H5：面板内向右跟手滑动关闭；visible 变 false 后 useDrawerHistory 自动回收 history 标记位
+function handleSwipeClose() {
+  detailDrawerVisible.value = false
+}
 const currentModel = ref(null)
 const detail = reactive({ fields: [] })
 const detailLoading = ref(false)
@@ -783,5 +793,7 @@ defineExpose({
 <style lang="scss">
 .el-drawer.tm-drawer-wrap .el-drawer__body {
   padding: 0;
+  /* 抽屉内含 rk-table-scroll 宽表：横向滚动只留给表格容器，杜绝 body 层横溢 */
+  overflow-x: hidden;
 }
 </style>

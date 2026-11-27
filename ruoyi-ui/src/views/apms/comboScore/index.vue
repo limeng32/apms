@@ -45,7 +45,7 @@
       <div class="rk-table-card">
         <div class="rk-card-head">
           <h3 class="rk-card-title">组合评分记录</h3>
-          <span class="rk-card-sub">{{ tableData.length }} 条 · 点击「快照」查看完整计算报告</span>
+          <span class="rk-card-sub">{{ tableData.length }} 条 · 点击队员姓名或「快照」查看完整计算报告</span>
         </div>
         <div class="rk-card-body flush">
           <div v-loading="loading" class="rk-table-scroll">
@@ -66,11 +66,11 @@
               </thead>
               <tbody>
                 <tr v-for="row in pagedData" :key="row.id" class="rk-row">
-                  <td>
+                  <td class="col-user" @click.stop="showSnapshot(row)">
                     <div class="rk-person">
                       <span class="cs-avatar" :style="{ background: avatarColor(row) }">{{ (row.athleteName || '?').charAt(0) }}</span>
                       <div class="rk-person-main">
-                        <div class="rk-person-link">
+                        <div class="rk-person-link rk-row-link">
                           {{ row.athleteName }}
                           <GenderBadge :gender="row.athleteGender" :size="15"/>
                         </div>

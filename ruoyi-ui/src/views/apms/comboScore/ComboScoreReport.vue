@@ -405,4 +405,34 @@ function printReport() { window.print() }
   .el-dialog__body { padding: 0 !important; }
   body { background: #fff !important; }
 }
+
+/* ========== H5（≤768px）适配：桌面布局原样保留 ========== */
+@media (max-width: 768px) {
+  /* 报告头改纵向堆叠：桌面端评分盒 min-width:180px 会把左栏压到不足一字宽，
+     标题/英文副标题/信息标签被逐字竖排（真机事故：Combo Fitness Report 竖成一列） */
+  .report-header { flex-direction: column; gap: 14px; padding: 14px; margin-bottom: 14px; }
+  .report-meta { min-width: 0; width: 100%; }
+  .report-title { font-size: 17px; line-height: 1.4; white-space: normal; }
+  .report-sub { display: block; margin-left: 0; margin-top: 2px; white-space: normal; }
+  .report-info { grid-template-columns: auto 1fr; gap: 6px 10px; font-size: 12.5px; }
+  .info-label { white-space: nowrap; }
+  .report-score-box { min-width: 0; width: 100%; padding: 14px 16px; }
+  .score-big { font-size: 34px; }
+
+  /* 分区头允许折行，长副标题不再与标题挤一行 */
+  .section-header { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .section-sub { white-space: normal; line-height: 1.5; }
+
+  /* T-Score 条形图固定列收窄，中间轨道保留弹性；标签列允许收缩防逐字竖排 */
+  .tscore-bars { padding: 8px; }
+  .tscore-bar-row { grid-template-columns: 88px 1fr 64px; gap: 8px; }
+  .bar-label { min-width: 0; }
+  .bar-label .ind-code { white-space: normal; overflow-wrap: anywhere; }
+  .bar-val { font-size: 11px; }
+  .bar-val.val-ok .t-z { margin-left: 0; display: block; }
+
+  /* 明细表交由 el-table 自身横向滚动，容器不撑弹窗 */
+  .combo-report { min-width: 0; }
+  :deep(.el-table) { font-size: 12.5px; }
+}
 </style>

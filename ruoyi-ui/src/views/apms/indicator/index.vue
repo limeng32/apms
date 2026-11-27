@@ -100,8 +100,10 @@
                       <input type="checkbox" class="rk-check" :checked="ids.includes(row.id)"
                              @change="toggleRow(row)"/>
                     </td>
-                    <td class="rk-mono ind-code">{{ row.code }}</td>
-                    <td class="col-user" @click.stop="openDetail(row)"><span class="rk-row-link">{{ row.name }}</span></td>
+                    <td class="rk-mono ind-code col-user" @click.stop="openDetail(row)">
+                      <span class="rk-row-link">{{ row.code }}</span>
+                    </td>
+                    <td>{{ row.name }}</td>
                     <td class="text-center">
                       <span class="rk-soft-chip" :class="categoryChipClass(row.category)">{{ row.category || '—' }}</span>
                     </td>

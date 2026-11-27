@@ -254,7 +254,7 @@ indicator/testTask/testResult/comboModel/medical/report/testModel 及 system/use
 
 ### 5.6 模态框右滑关闭：vDialogSwipe 指令 + SwipeDialog 全局包装（三起真实事故沉淀）
 
-指令在 `src/utils/dialogSwipe.js`，与 `vDrawerSwipe` 同构并复用 `touchViewportActive/findHorizontalScroller` 内核（阈值、边缘判定、输入控件放行完全一致）。本仓 69 个 el-dialog 分散在 49 个 SFC，**不要做 document 全局委托**，以下事故已证明该路线不可行。
+指令在 `src/utils/dialogSwipe.js`，与 `vDrawerSwipe` 同构并复用 `touchViewportActive/findHorizontalScroller` 内核（阈值、边缘判定完全一致）。本仓 69 个 el-dialog 分散在 49 个 SFC，**不要做 document 全局委托**，以下事故已证明该路线不可行。
 
 事故一：委托方案导致「再次打开弹窗消失」。
 
@@ -294,16 +294,16 @@ indicator/testTask/testResult/comboModel/medical/report/testModel 及 system/use
 自定义 teleport 浮层（非 el-dialog）的接入：`.swipe-panel` 约定。
 
 - 全局包装只接管 el-dialog；项目里还有自定义浮层（RPA 助手 `ai/plugins/rpa/AssistantPanel.vue`：teleport 到 body 的 bottom sheet，H5 下 85vh 底部上滑、桌面右侧 420px 栏），它们不经过组件解析，包装覆盖不到。
-- 接入零新逻辑：浮层根节点加 `class="swipe-panel"` 并挂 `v-dialog-swipe="() => 浮层自己的关闭函数()"`。指令面板解析为 `closest('.el-dialog') || closest('.swipe-panel')`，手势内核（门控/阈值/输入控件放行/横滚放行/幂等/吸附时序）原样复用。
+- 接入零新逻辑：浮层根节点加 `class="swipe-panel"` 并挂 `v-dialog-swipe="() => 浮层自己的关闭函数()"`。指令面板解析为 `closest('.el-dialog') || closest('.swipe-panel')`，手势内核（门控/阈值/横滚放行/幂等/吸附时序）原样复用。
 - 自定义浮层没有 `.el-overlay`，overlay/overlayDialog 解析为 null，遮罩淡出与 EP 关键帧压制自动跳过（各调用点有 null 保护）；v-if 卸载型浮层在吸附滑出（220ms）后整体移除，元素已在屏外，无突变。
-- 与既有遮罩裁决共存：RPA 面板的 useMaskDismiss 在 pointerdown 记录手势起源于面板内，touchend 合成的 click 被判为内部点击不误关；纵向消息列表靠指令的横向意向判定（|dx|>|dy|×1.2）正常滚动，textarea 靠输入控件放行正常编辑。
+- 与既有遮罩裁决共存：RPA 面板的 useMaskDismiss 在 pointerdown 记录手势起源于面板内，touchend 合成的 click 被判为内部点击不误关；纵向消息列表靠指令的横向意向判定（|dx|>|dy|×1.2）正常滚动。
 - 新写自定义浮层照此打标，不要复制手势代码，也不要把业务类名写进指令。
 
 豁免面 `.dialog-swipe-ignore`：
 
 - `findHorizontalScroller` 只认 `overflow-x:auto/scroll` 的容器；`overflow-x:hidden` 但自带横滑语义的自定义面（网格录入的测项翻页列表 `.rg-mlist`）识别不了，横滑翻页会被误接管为关闭手势。
 - 这类容器显式打 `class="dialog-swipe-ignore"`，指令 touchstart 命中即整体放行；新增同类横滑组件照此打标，不要改手势内核。
-- 输入控件（input/textarea/select/[contenteditable]/.el-input/.el-textarea/.el-select）默认放行，内部横拖是选文本/移光标。
+- 输入控件不做触摸豁免：指令只在确认横向意向（|dx|>|dy|×1.2）后才接管，输入框内的纵向滚动/文本选择走竖向分支不被阻断，横向右拖则与面板其他区域一致执行关闭，与 vDrawerSwipe 行为保持统一。
 - 适用范围：SwipeDialog 已全局接管全部 el-dialog（含 system/monitor/tool 框架页与业务 CRUD 弹窗），新写弹窗无需任何手势代码；el-drawer 仍用 vDrawerSwipe，`.el-dialog`/`.el-drawer` 类名互斥，两套手势不叠加。
 
 ## 6. 验证流程（轻量优先，禁止无头浏览器）

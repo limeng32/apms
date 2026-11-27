@@ -11,7 +11,7 @@
  * 无全局监听/游离定时器。关闭调用 ElDialog expose 的 handleClose()，与点右上角 X
  * 完全同路径——beforeClose 拦截、close 事件、update:modelValue 全链路保留，
  * 因此 v-model 双向绑定与「:model-value 单向 + @close 自管」两种用法都能正确关闭。
- * 指令的全部既有能力（≤768px 触摸门控、输入控件放行、横滚边缘放行、
+ * 指令的全部既有能力（≤768px 触摸门控、横滚边缘放行、
  * .dialog-swipe-ignore 豁免、EP 离场关键帧压制）原样继承。
  *
  * 透传契约：
